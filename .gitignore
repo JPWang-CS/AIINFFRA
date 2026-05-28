@@ -1,0 +1,14 @@
+*.exe
+*.out
+*.ptx
+*.o
+*.obj
+build/
+.vscode/
+.idea/
+__pycache__/
+*.pyc
+.venv/
+venv/
+.DS_Store
+Thumbs.db

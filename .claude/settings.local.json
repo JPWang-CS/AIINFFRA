@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:leetgpu.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(curl -s https://api.github.com/repos/AlphaGPU/leetgpu-challenges/contents/challenges)",
+      "Bash(python3 -c \"import sys,json; data=json.load\\(sys.stdin\\); [print\\(d['name']\\) for d in data]\")",
+      "WebFetch(domain:hellogithub.com)",
+      "Bash(python3 -c ' *)",
+      "WebFetch(domain:github.com)",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/AlphaGPU/leetgpu-challenges/main/README.md\")",
+      "Bash(curl -v \"https://raw.githubusercontent.com/AlphaGPU/leetgpu-challenges/main/README.md\")",
+      "Bash(curl *)",
+      "Bash(python3 scripts/fetch_papers.py --days 30 --max 5 --titles-only)",
+      "Bash(python3 -c \"import urllib.request; print\\('stdlib OK'\\)\")",
+      "Bash(python3 \"/d/desktop/牛马/Study/scripts/fetch_papers.py\" --days 30 --max 3 --titles-only)",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(python3 *)"
+    ]
+  }
+}
