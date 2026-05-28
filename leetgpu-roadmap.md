@@ -1,157 +1,69 @@
-# LeetGPU 刷题路线
+# 算子优化路线
 
-> [leetgpu.com](https://leetgpu.com) — 浏览器内写 CUDA/Triton kernel，在线编译运行，无需 GPU
-> 共 75 题：Easy 19 | Medium 44 | Hard 12
+> 5 个算子 × 多层优化阶梯。LeetGPU 题号仅用作 baseline/正确性验证。
 
----
+## GEMM (Week 1-3)
 
-## Phase 1: CUDA 基础 (Week 1-10) — 必刷 18 题
+| 版本 | 技术要点 | 验证 |
+|------|---------|------|
+| v0 naive | 每线程直接读 global memory，算一个输出 | LeetGPU `2_matrix_multiplication` |
+| v1 tiled | shared memory TILE×TILE，bank conflict 处理 | |
+| v2 vec4 | `float4` 128-bit vectorized load | |
+| v3 double buffer | 双 shared memory buffer，copy-compute overlap | |
+| v4 tensor core | `mma.sync`，FP16→FP32，warp-level matrix fragment | LeetGPU `22_gemm` (FP32) / `57_fp16_batched_matmul` |
 
-### W1-2 GPU 架构 + 编程模型
-| # | 题目 | 难度 | 学什么 |
-|---|------|------|--------|
-| 1 | 1_vector_add | Easy | grid/block/thread 模型，第一个 kernel |
-| 2 | 31_matrix_copy | Easy | global memory 读写，coalescing 概念 |
-| 3 | 19_reverse_array | Easy | stride access pattern |
+**目标**: tensor core GEMM 达到硬件峰值 70%+
 
-### W3-4 内存管理
-| # | 题目 | 难度 | 学什么 |
-|---|------|------|--------|
-| 4 | 3_matrix_transpose | Easy | shared memory + bank conflict |
-| 5 | 8_matrix_addition | Easy | 二维 grid 组织 |
-| 6 | 9_1d_convolution | Easy | shared memory tiling + halo region |
+## Softmax (Week 4-5)
 
-### W5-6 经典 ML 算子
-| # | 题目 | 难度 | 学什么 |
-|---|------|------|--------|
-| 7 | 2_matrix_multiplication | Easy | naive GEMM → tiled GEMM |
-| 8 | 21_relu | Easy | element-wise kernel 模板 |
-| 9 | 68_sigmoid | Easy | 数学函数在 GPU 上的使用 |
-| 10 | 52_silu | Easy | 融合算子思想 |
-| 11 | 54_swiglu | Easy | 多输入融合 |
-| 12 | 65_geglu | Easy | GELU 变体对比 |
+| 版本 | 技术要点 | 验证 |
+|------|---------|------|
+| v0 3-pass | max → exp sum → normalize，每个 pass 扫一遍 | LeetGPU `5_softmax` |
+| v1 online | 单 pass，running max + running sum | |
+| v2 warp reduce | `__shfl_down_sync` 做 warp-level max/sum | |
+| v3 fused | softmax 结果直接喂给下一步（如 attention 中），不写回 HBM | |
 
-### W7-8 Reduce + Softmax
-| # | 题目 | 难度 | 学什么 |
-|---|------|------|--------|
-| 13 | 4_reduction | Medium | warp shuffle + shared memory 多级归约 |
-| 14 | 5_softmax | Medium | online softmax：max-subtract + exp + sum-reduce |
-| 15 | 50_rms_normalization | Medium | RMSNorm kernel，大模型标配 |
-| 16 | 40_batch_normalization | Medium | BatchNorm 的并行化策略 |
+**目标**: online softmax 的 bandwidth utilization > 80%
 
-### W9-10 GEMM 深入 + Profiling
-| # | 题目 | 难度 | 学什么 |
-|---|------|------|--------|
-| 17 | 22_gemm | Medium | FP32 tiled GEMM，shared memory double buffering |
-| 18 | 30_batched_matrix_multiplication | Medium | batched GEMM，多 batch 并行策略 |
+## RMSNorm (Week 6)
 
----
+| 版本 | 技术要点 | 验证 |
+|------|---------|------|
+| v0 naive | 两 pass：mean → normalize | LeetGPU `50_rms_normalization` |
+| v1 warp reduce | warp shuffle + shared memory cross-warp reduce | |
+| v2 fused residual | RMSNorm(x) + x 一次完成，避免额外 memory round-trip | |
 
-## Phase 2: Triton + Attention (Week 11-18) — 必刷 16 题
+**目标**: 融合版本比 PyTorch 原生快 2×+
 
-### W11-12 Triton 入门
-| # | 题目 | 难度 | 学什么 |
-|---|------|------|--------|
-| 1 | 1_vector_add (Triton) | Easy | block-level 编程模型 vs CUDA |
-| 2 | 2_matrix_multiplication (Triton) | Easy | Triton 的 tiling 表示法 |
-| 3 | 21_relu (Triton) | Easy | element-wise 的 Triton 写法 |
+## Flash Attention (Week 7-9)
 
-### W13-14 融合算子 + Attention 基础
-| # | 题目 | 难度 | 学什么 |
-|---|------|------|--------|
-| 4 | 5_softmax (Triton) | Medium | online softmax + fused scale |
-| 5 | 6_softmax_attention | Medium | naive attention forward |
-| 6 | 86_transposed_softmax | Medium | 不同维度 softmax，理解 layout 影响 |
-| 7 | 61_rope_embedding | Medium | RoPE 旋转编码，LLaMA 标配 |
+| 版本 | 技术要点 | 验证 |
+|------|---------|------|
+| v0 naive attn | QK^T → softmax → ×V，完整 O(N²) | LeetGPU `6_softmax_attention` |
+| v1 tiled | Q/K/V 分块，online softmax 增量更新 | |
+| v2 causal | causal mask 跳过无效 tile | LeetGPU `53_casual_attention` |
+| v3 multi-head | B×H×N×d，batch + head 维并行 | LeetGPU `12_multi_head_attention` |
 
-### W15-16 Attention 全线
-| # | 题目 | 难度 | 学什么 |
-|---|------|------|--------|
-| 8 | 55_attn_w_linear_bias | Medium | attention + bias 融合 |
-| 9 | 80_grouped_query_attention | Medium | GQA — vLLM 默认使用的 attention 模式 |
-| 10 | 12_multi_head_attention | **Hard** | **完整 MHA 前向+反向** |
-| 11 | 53_casual_attention | Hard | causal mask 优化 |
+**目标**: 对 seq_len=4096，比 naive attention 快 5×+，显存降至 O(N)
 
-### W17-18 前沿 Attention 变体
-| # | 题目 | 难度 | 学什么 |
-|---|------|------|--------|
-| 12 | 59_sliding_window_attn | Hard | Mistral 同款滑动窗口 |
-| 13 | 56_linear_attention | Hard | linear attention 原理 |
-| 14 | 32_int8_quantized_matmul | Medium | INT8 量化 GEMM |
-| 15 | 81_int4_matmul | Medium | INT4 量化 GEMM |
-| 16 | 64_weight_dequantization | Medium | 反量化 kernel |
+## GQA Attention (Week 10)
+
+| 版本 | 技术要点 | 验证 |
+|------|---------|------|
+| v1 GQA | 从 MHA 扩展，K/V head 数 < Q head 数 | LeetGPU `80_grouped_query_attention` |
+
+**目标**: 完成全部 5 个算子的优化线，整理 portfolio
 
 ---
 
-## Phase 3: 推理系统相关 (Week 19-30) — 选刷 8 题
+## 进度追踪
 
-vLLM 源码学习期间，按需回刷这些题加深理解：
+| # | 算子 | v0 | v1 | v2 | v3 | v4 | 最终 GFLOPS / BW% |
+|---|------|:--:|:--:|:--:|:--:|:--:|------|
+| 1 | GEMM | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ | |
+| 2 | Softmax | ⏳ | ⏳ | ⏳ | ⏳ | - | |
+| 3 | RMSNorm | ⏳ | ⏳ | ⏳ | - | - | |
+| 4 | Flash Attn | ⏳ | ⏳ | ⏳ | ⏳ | - | |
+| 5 | GQA Attn | ⏳ | - | - | - | - | |
 
-| # | 题目 | 难度 | 与 vLLM 的关联 |
-|---|------|------|---------------|
-| 1 | 29_top_k_selection | Medium | top-k sampling |
-| 2 | 60_top_p_sampling | Medium | nucleus sampling |
-| 3 | 67_moe_topk_gating | Medium | MoE 的 top-k gating |
-| 4 | 17_dot_product | Medium | attention score 计算 |
-| 5 | 85_lora_linear | Medium | LoRA 推理时的 fused kernel |
-| 6 | 82_linear_recurrence | Medium | Mamba/SSM 类模型基础 |
-| 7 | 74_gpt2_block | **Hard** | 完整 Transformer block → 微型推理引擎 |
-| 8 | 41_simple_inference | Easy | 最简推理 pipeline 理解 |
-
----
-
-## 题目完成追踪
-
-状态：⏳ 待做 | 🚧 进行中 | ✅ 完成
-
-### Phase 1 进度
-| # | 题目 | LeetGPU ID | 难度 | 状态 | 日期 | 耗时 |
-|---|------|-----------|------|------|------|------|
-| 1 | Vector Add | 1_vector_add | Easy | ⏳ | - | - |
-| 2 | Matrix Copy | 31_matrix_copy | Easy | ⏳ | - | - |
-| 3 | Reverse Array | 19_reverse_array | Easy | ⏳ | - | - |
-| 4 | Matrix Transpose | 3_matrix_transpose | Easy | ⏳ | - | - |
-| 5 | Matrix Addition | 8_matrix_addition | Easy | ⏳ | - | - |
-| 6 | 1D Convolution | 9_1d_convolution | Easy | ⏳ | - | - |
-| 7 | Matrix Multiplication | 2_matrix_multiplication | Easy | ⏳ | - | - |
-| 8 | ReLU | 21_relu | Easy | ⏳ | - | - |
-| 9 | Sigmoid | 68_sigmoid | Easy | ⏳ | - | - |
-| 10 | SiLU | 52_silu | Easy | ⏳ | - | - |
-| 11 | SwiGLU | 54_swiglu | Easy | ⏳ | - | - |
-| 12 | GeGLU | 65_geglu | Easy | ⏳ | - | - |
-| 13 | Reduction | 4_reduction | Medium | ⏳ | - | - |
-| 14 | Softmax | 5_softmax | Medium | ⏳ | - | - |
-| 15 | RMS Normalization | 50_rms_normalization | Medium | ⏳ | - | - |
-| 16 | Batch Normalization | 40_batch_normalization | Medium | ⏳ | - | - |
-| 17 | GEMM | 22_gemm | Medium | ⏳ | - | - |
-| 18 | Batched Matmul | 30_batched_matrix_multiplication | Medium | ⏳ | - | - |
-
-### Phase 2 进度
-| # | 题目 | LeetGPU ID | 难度 | 状态 | 日期 | 耗时 |
-|---|------|-----------|------|------|------|------|
-| 1-3 | Triton 入门三题 | 1_vector_add, 2_matmul, 21_relu | Easy | ⏳ | - | - |
-| 4 | Softmax (Triton) | 5_softmax | Medium | ⏳ | - | - |
-| 5 | Softmax Attention | 6_softmax_attention | Medium | ⏳ | - | - |
-| 6 | Transposed Softmax | 86_transposed_softmax | Medium | ⏳ | - | - |
-| 7 | RoPE Embedding | 61_rope_embedding | Medium | ⏳ | - | - |
-| 8 | Attn w/ Linear Bias | 55_attn_w_linear_bias | Medium | ⏳ | - | - |
-| 9 | Grouped Query Attn | 80_grouped_query_attention | Medium | ⏳ | - | - |
-| 10 | Multi-Head Attention | 12_multi_head_attention | Hard | ⏳ | - | - |
-| 11 | Causal Attention | 53_casual_attention | Hard | ⏳ | - | - |
-| 12 | Sliding Window Attn | 59_sliding_window_attn | Hard | ⏳ | - | - |
-| 13 | Linear Attention | 56_linear_attention | Hard | ⏳ | - | - |
-| 14 | INT8 Quantized Matmul | 32_int8_quantized_matmul | Medium | ⏳ | - | - |
-| 15 | INT4 Matmul | 81_int4_matmul | Medium | ⏳ | - | - |
-| 16 | Weight Dequantization | 64_weight_dequantization | Medium | ⏳ | - | - |
-
-### Phase 3 进度
-| # | 题目 | LeetGPU ID | 难度 | 状态 | 日期 | 耗时 |
-|---|------|-----------|------|------|------|------|
-| 1 | Top-K Selection | 29_top_k_selection | Medium | ⏳ | - | - |
-| 2 | Top-P Sampling | 60_top_p_sampling | Medium | ⏳ | - | - |
-| 3 | MoE TopK Gating | 67_moe_topk_gating | Medium | ⏳ | - | - |
-| 4 | Dot Product | 17_dot_product | Medium | ⏳ | - | - |
-| 5 | LoRA Linear | 85_lora_linear | Medium | ⏳ | - | - |
-| 6 | Linear Recurrence | 82_linear_recurrence | Medium | ⏳ | - | - |
-| 7 | GPT-2 Block | 74_gpt2_block | Hard | ⏳ | - | - |
-| 8 | Simple Inference | 41_simple_inference | Easy | ⏳ | - | - |
+⏳ 待做 | 🚧 进行中 | ✅ 完成
