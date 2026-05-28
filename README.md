@@ -2,6 +2,8 @@
 
 从昇腾 NPU 到 GPU 生态的系统性学习路线，覆盖 CUDA、Triton、vLLM、分布式训练、Agent 系统。
 
+> **入口文件 → [MAIN.md](./MAIN.md)** — 当前进度、本周任务、下一步
+
 ## 路线图
 
 ```
