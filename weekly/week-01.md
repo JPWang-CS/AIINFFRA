@@ -286,12 +286,12 @@ printf("Bandwidth: %.2f GB/s\n", gb_per_sec);
 
 完成以下所有项再进入 Week 2：
 
-- [ ] 能用自己的话说清 thread/block/grid/warp 四个概念
-- [ ] 写出了 `vector_add_kernel`，在 LeetGPU 或本地 GPU 上跑通，结果全对
-- [ ] 理解了 grid-stride loop 的写法
-- [ ] 能给 kernel 加 CUDA error check + cudaEvent 计时
-- [ ] 能回答：为什么 Vector Add 是 memory-bound？
-- [ ] 能说出 Ascend 和 CUDA 在编程模型上的 3 个关键差异
+- [x] 能用自己的话说清 thread/block/grid/warp 四个概念
+- [x] 写出了 `vector_add_kernel`，在 LeetGPU 或本地 GPU 上跑通，结果全对
+- [x] 理解了 grid-stride loop 的写法
+- [x] 能给 kernel 加 CUDA error check + cudaEvent 计时
+- [x] 能回答：为什么 Vector Add 是 memory-bound？
+- [x] 能说出 Ascend 和 CUDA 在编程模型上的 3 个关键差异
 
 ---
 
