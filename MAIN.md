@@ -26,7 +26,8 @@ CUDA 基础                  Triton 算子 + 推理系统      分布式 + Agent
 |:--:|------|------|-----------|------|
 | 1 | CUDA 概念 + 第一个 kernel | [week-01.md](./weekly/week-01.md) | Vector Addition | ✅ LeetGPU 跑通 |
 | 2 | GEMM naive + 搭 GPU 服务器 | [week-02.md](./weekly/week-02.md) | `gemm_naive` | 🚧 进行中 |
-|   | ⚠️ **本周必做**：AutoDL 购买 + CUDA 环境搭建 | — | nvcc 编译跑通 | ncu 可用 |
+|   | ✅ 4090 已购 + 环境已配 + vector_add 跑通 | — | nvcc/CUDA 12.4/PyTorch 2.5.1 | 696 GB/s, 0 error |
+|   | ⚠️ SSH 被公司防火墙拦截，用 Jupyter Web Terminal | — | — | — |
 | 3 | GEMM tiled + Softmax | week-03.md | `gemm_tiled`, `softmax_naive` | GFLOPS 提升 5×+ |
 | 4 | 读 Flash Attn CUDA + Triton 入门 | week-04.md | 读代码 + Triton matmul | 能讲清 tiling 流程 |
 | 5+ | Triton 算子 + 推理系统 | 待定 | 待定 | 待定 |
