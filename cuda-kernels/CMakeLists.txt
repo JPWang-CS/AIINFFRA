@@ -9,8 +9,8 @@ set(CMAKE_CUDA_ARCHITECTURES "75;80;86;89;90")
 include_directories(${CMAKE_SOURCE_DIR}/include)
 
 # Utility: CUDA error checking + tensor helpers
-add_library(kernel_utils INTERFACE)
-target_include_directories(kernel_utils INTERFACE ${CMAKE_SOURCE_DIR}/include)
+add_library(kernel_utils STATIC ${CMAKE_SOURCE_DIR}/include/cuda_utils.cu)
+target_include_directories(kernel_utils PUBLIC ${CMAKE_SOURCE_DIR}/include)
 
 # ---- Kernels ----
 

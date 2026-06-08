@@ -15,7 +15,9 @@
       "Bash(python3 -c \"import urllib.request; print\\('stdlib OK'\\)\")",
       "Bash(python3 \"/d/desktop/牛马/Study/scripts/fetch_papers.py\" --days 30 --max 3 --titles-only)",
       "Bash(echo \"EXIT: $?\")",
-      "Bash(python3 *)"
+      "Bash(python3 *)",
+      "WebSearch",
+      "WebFetch(domain:blog.csdn.net)"
     ]
   }
 }
