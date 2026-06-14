@@ -24,6 +24,16 @@ dim3 block2d(16, 16);   // 2D block，256 threads
 dim3 grid2d( (W+15)/16, (H+15)/16 );  // 2D grid
 ```
 
+`dim3` 是 CUDA 内置的三维向量类型（`struct { uint x, y, z; }`），专门用来指定 grid/block 的形状。**没有 `dim1` 或 `dim2`**——未指定的维度自动为 1：
+
+```cpp
+dim3 a(256);           // dim3(256, 1, 1)   ← "1D"
+dim3 b(16, 16);        // dim3(16, 16, 1)   ← "2D"
+dim3 c(4, 4, 4);       // dim3(4, 4, 4)     ← "3D"
+```
+
+所以 launch 时可以直接传 `int`——整数会自动提升为 `dim3(x, 1, 1)`。kernel 内 `gridDim` / `blockDim` / `blockIdx` / `threadIdx` 都是 `dim3` 类型，未使用的维度值为 0（索引）或 1（维度大小）。
+
 ### 内置变量（kernel 内可用）
 
 ```cpp

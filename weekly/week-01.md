@@ -195,6 +195,10 @@ int main() {
 
 __global__ void vector_add(const float* A, const float* B, float* C, int N) {
     // TODO: 你来写
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < N) {
+        C[idx] = A[idx] + B[idx];
+    }
 }
 
 extern "C" void solve(const float* A, const float* B, float* C, int N) {

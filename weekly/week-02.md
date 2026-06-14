@@ -112,6 +112,8 @@ int row = blockIdx.y * blockDim.y + threadIdx.y;   // M 维度
 int col = blockIdx.x * blockDim.x + threadIdx.x;   // N 维度
 ```
 
+> 💡 `dim3` 是 CUDA 内置三维向量类型，没有 `dim1`/`dim2`，未指定维度默认=1 → [cuda-cheatsheet §1](../cuda-kernels/notes/cuda-cheatsheet.md#1-kernel-声明与启动)
+
 > **Ascend 对照**：这和 Ascend 的 tiling 分块思路一样。你把输出矩阵 C 切成 (M/16)×(N/16) 个小块，每个 block 算一块。但 CUDA v0 阶段，每个 block 内的 thread 还是一个个从 global memory 读 A 和 B，没有用 shared memory。
 
 **计算 GFLOPS**：
