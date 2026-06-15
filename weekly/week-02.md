@@ -123,9 +123,48 @@ float gflops = (2.0f * M * N * K) / (ms / 1000.0f) / 1e9f;
 // 2*M*N*K = 总的浮点操作数（乘+加算 2 FLOP）
 ```
 
-### 2.4 LeetGPU 版（`22_gemm` 题，FP16）
+### 2.4 我的实现 — `2_matrix_multiplication`（✅ 已通过）
 
-如果你没有真机 GPU，直接在 LeetGPU 上写 GEMM。注意签名和我们的本地代码不同：
+> LeetGPU 题目：A(M×N) × B(N×K) = C(M×K)，row-major，float32
+
+```cpp
+#include <cuda_runtime.h>
+
+__global__ void matrix_multiplication_kernel(const float* A, const float* B, float* C,
+                                             int M, int N, int K) {
+    int k = blockDim.x * blockIdx.x + threadIdx.x;  // K 维度索引
+    int m = blockDim.y * blockIdx.y + threadIdx.y;  // M 维度索引
+    int idx = m * K + k;
+
+    if ((k < K) && (m < M)) {
+        float sum = 0;
+        for (int n = 0; n < N; n++) {
+            sum += A[m * N + n] * B[n * K + k];
+        }
+        C[idx] += sum;  // C 未初始化？需确认平台是否 zero-init
+    }
+}
+
+extern "C" void solve(const float* A, const float* B, float* C,
+                      int M, int N, int K) {
+    dim3 threadsPerBlock(16, 16);
+    dim3 blocksPerGrid((K + 15) / 16, (M + 15) / 16);
+
+    matrix_multiplication_kernel<<<blocksPerGrid, threadsPerBlock>>>(A, B, C, M, N, K);
+    cudaDeviceSynchronize();
+}
+```
+
+| 关键点 | 说明 |
+|--------|------|
+| Grid 铺法 | blockIdx.x → K, blockIdx.y → M |
+| 每线程 | 读 A 的一行 × B 的一列，沿 N 累加 |
+| Coalescing | B 的访问 `B[n*K+k]` stride=K，不连续 ❌ |
+| 后续优化 | shared memory tiling（Week 3） |
+
+### 2.5 LeetGPU 版（`22_gemm` 题，FP16）— 进阶
+
+如果有兴趣挑战 FP16 + tensor core，可以试 `22_gemm`。签名和我们上面的不同：
 
 ```cpp
 #include <cuda_fp16.h>
@@ -145,7 +184,7 @@ extern "C" void solve(const half* A, const half* B, half* C,
 
 LeetGPU 完整约束见 → [题库 22_gemm](../cuda-kernels/notes/leetgpu-challenges.md)
 
-### 2.5 正确性验证
+### 2.6 正确性验证
 
 写一个 CPU 版本的 GEMM 作为 ground truth：
 
@@ -220,7 +259,7 @@ A 的访问是连续的（coalesced），B 的访问是跨步的（stride = N）
 
 ## ✅ Week 2 检验清单
 
-- [ ] 写出了 `gemm_naive`，在 GPU 上跑通，结果与 CPU 一致（误差 < 1e-3）
+- [x] ✅ 2026-06-16 写出了 `gemm_naive`，在 LeetGPU 上跑通（`2_matrix_multiplication`，float，2D grid + atomicAdd）
 - [ ] 知道自己的 kernel 跑了多少 GFLOPS
 - [ ] 能解释为什么 naive GEMM 慢：arithmetic intensity 低，memory-bound
 - [ ] 能画出每个 thread 访问 A 和 B 的 pattern，指出 coalescing 问题

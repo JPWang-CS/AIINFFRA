@@ -17,7 +17,8 @@
       "Bash(echo \"EXIT: $?\")",
       "Bash(python3 *)",
       "WebSearch",
-      "WebFetch(domain:blog.csdn.net)"
+      "WebFetch(domain:blog.csdn.net)",
+      "Bash(git *)"
     ]
   }
 }
