@@ -29,6 +29,8 @@ CUDA 基础                  Triton 算子 + 推理系统      分布式 + Agent
 |   | ✅ 4090 已购 + 环境已配 + vector_add 跑通 | — | nvcc/CUDA 12.4/PyTorch 2.5.1 | 696 GB/s, 0 error |
 |   | ⚠️ SSH 被公司防火墙拦截，用 Jupyter Web Terminal | — | — | — |
 |   | ✅ GEMM naive LeetGPU 跑通（2026-06-16） | — | `2_matrix_multiplication` float 版 | 2D grid, atomicAdd |
+|   | ✅ GEMM fp16 naive LeetGPU 跑通（2026-06-22） | [gemm_fp16_naive.cu](./cuda-kernels/gemm/gemm_fp16_naive.cu) | half 精度 + alpha/beta | [Code Review](./cuda-kernels/notes/code-review-gemm-fp16-naive.md) |
+|   | ✅ GEMM fp16 tiled LeetGPU 跑通（2026-06-22） | [gemm_fp16_tiled.cu](./cuda-kernels/gemm/gemm_fp16_tiled.cu) | TILE=32 shared mem | LeetGPU 测试 K=16 太小无加速，待 4090 大 K 验证 |
 | 3 | GEMM tiled + Softmax | week-03.md | `gemm_tiled`, `softmax_naive` | GFLOPS 提升 5×+ |
 | 4 | 读 Flash Attn CUDA + Triton 入门 | week-04.md | 读代码 + Triton matmul | 能讲清 tiling 流程 |
 | 5+ | Triton 算子 + 推理系统 | 待定 | 待定 | 待定 |

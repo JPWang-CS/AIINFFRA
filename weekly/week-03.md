@@ -238,10 +238,10 @@ extern "C" void solve(const float* input, float* output, int N) {
 
 ## ✅ Week 3 检验清单
 
-- [ ] `gemm_tiled` 跑通，结果与 CPU 一致
-- [ ] 对比 naive vs tiled GFLOPS，提升 ≥ 5×
-- [ ] 能解释 `__syncthreads` 在两个位置各起什么作用
-- [ ] 知道 TILE=32 的 shared memory 用量（8 KB），以及为什么 TILE=64 可能有 bank conflict
+- [x] ✅ `gemm_tiled` fp16 跑通 LeetGPU（2026-06-22） → [gemm_fp16_tiled.cu](../cuda-kernels/gemm/gemm_fp16_tiled.cu)
+- [ ] 对比 naive vs tiled GFLOPS（⏳ LeetGPU K=16 太小无差异，待 4090 大 K 验证）
+- [x] ✅ 能解释 `__syncthreads` 在两个位置各起什么作用
+- [x] ✅ 知道 TILE=32 的 shared memory 用量（As+Bs = 4 KB），以及为什么 TILE=64 可能有 bank conflict
 - [ ] `softmax_naive` 跑通，结果正确
 - [ ] 理解 warp shuffle reduce 的原理和 `__shfl_down_sync` 的语义
 - [ ] 知道 Triton 的 `tl.max`/`tl.sum` 底层就是用 warp shuffle 实现的
