@@ -23,8 +23,8 @@
 | 论文 | 年份 | 优先级 | 状态 | 笔记 |
 |------|------|--------|------|------|
 | Flash Attention: Fast and Memory-Efficient Exact Attention with IO-Awareness | 2022 | P0 | ✅ | [笔记](./attention/flash-attention.md) |
-| Flash Attention 2: Faster Attention with Better Parallelism and Work Partitioning | 2023 | P0 | ⏳ | _待写_ |
-| GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints | 2023 | P0 | ⏳ | _待写_ |
+| Flash Attention 2: Faster Attention with Better Parallelism and Work Partitioning | 2023 | P0 | ✅ | [笔记](./attention/flash-attention-2.md) |
+| GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints | 2023 | P0 | ✅ | [笔记](./attention/gqa.md) |
 | Ring Attention with Blockwise Transformers for Near-Infinite Context | 2023 | P1 | ⏳ | |
 
 ## Inference

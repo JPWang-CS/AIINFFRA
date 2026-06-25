@@ -46,22 +46,23 @@
 ### 注意力演进
 | 主题 | 有论文? | 状态 |
 |------|:--:|:--:|
-| MHA→MQA→GQA→MLA | ✔ GQA | ⏳ |
-| [Flash Attention 机制](flash-attention-mechanism.md) | ✔ [已有](../../papers/attention/flash-attention.md) | ✅ |
+| MHA→MQA→GQA→MLA | ✔ [GQA](../../papers/attention/gqa.md) | ⏳ |
+| [Flash Attention 机制](flash-attention-mechanism.md) | ✔ [FA1](../../papers/attention/flash-attention.md) · [FA2](../../papers/attention/flash-attention-2.md) | ✅ |
+| [MLA（DeepSeek-V2/V3）](mla-deepseek.md) | ✔ DeepSeek-V2 | ✅ |
 | 线性注意力 / Ring Attention | ✔ | ⏳ |
 
 ### 模型架构
 | 主题 | 状态 |
 |------|:--:|
-| MoE（原理 + 推理挑战） | ⏳ |
+| [MoE 推理挑战](moe-inference.md) | ✅ |
 | Mamba / SSM | ⏳ |
 
 ### 推理系统技术
 | 主题 | 状态 |
 |------|:--:|
 | continuous batching | ⏳ |
-| chunked prefill / PD 分离 | ⏳ |
-| 投机解码 speculative decoding | ⏳ |
+| chunked prefill / [PD 分离](pd-disaggregation.md) | ✅ |
+| [投机解码 speculative decoding](speculative-decoding.md) | ✅ |
 | RadixAttention | ⏳ |
 
 ### 训练 / 并行
@@ -77,4 +78,8 @@
 1. **[Online Softmax](online-softmax.md)** — 单趟增量 softmax，Flash Attn 的心脏（给 A4/A5 铺路）
 2. **[Parallel Reduce](parallel-reduce.md)** — GPU 并行归约模式，树状 reduce + warp shuffle（A4 Softmax 要用）
 3. **[Flash Attention 机制](flash-attention-mechanism.md)** — IO-aware tiling + online softmax，A5 读代码前必看
-4. **[INT8 / FP8 量化基础](quantization-int8-fp8.md)** — 数值格式对比、对称/非对称量化、性能数据（C 线推理系统铺路）
+4. **[INT8 / FP8 量化基础](quantization-int8-fp8.md)** — 数值格式对比、对称/非对称量化、性能数据（C 线铺路）
+5. **[MoE 推理挑战](moe-inference.md)** — Expert routing、load imbalance、AllToAll 通信（C 线 vLLM 必知）
+6. **[Speculative Decoding](speculative-decoding.md)** — Draft-verify loop，2-3× 加速，适用条件分析
+7. **[PD 分离](pd-disaggregation.md)** — Prefill/Decode disaggregation，P99 TTFT 降低 4×，硬件选型
+8. **[MLA（DeepSeek）](mla-deepseek.md)** — 低秩 KV 压缩，比 GQA 再省 2×，DeepSeek-V2/V3 核心

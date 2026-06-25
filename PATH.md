@@ -95,22 +95,23 @@
 ## 注意力演进
 | 主题 | 笔记 | 论文 | 状态 |
 |------|------|------|:--:|
-| MHA→MQA→GQA→MLA | _待写_ | _GQA 待建_ | ⏳ |
-| Flash Attention 1→2→3 | [flash-attention-mechanism.md](./notes/algorithms/flash-attention-mechanism.md) | [flash-attention](./papers/attention/flash-attention.md) | ✅ |
+| MHA→MQA→GQA→MLA | ⏳ | [gqa.md](./papers/attention/gqa.md) | ⏳ |
+| Flash Attention 1→2→3 | [flash-attention-mechanism.md](./notes/algorithms/flash-attention-mechanism.md) | [FA1](./papers/attention/flash-attention.md) · [FA2](./papers/attention/flash-attention-2.md) | ✅ |
+| MLA（DeepSeek-V2/V3） | [mla-deepseek.md](./notes/algorithms/mla-deepseek.md) | DeepSeek-V2 | ✅ |
 | 线性注意力 / Ring Attention | _待写_ | — | ⏳ |
 
 ## 模型架构
 | 主题 | 笔记 | 状态 |
 |------|------|:--:|
-| MoE（原理 + 推理挑战） | _待写_ | ⏳ |
+| MoE 推理挑战 | [moe-inference.md](./notes/algorithms/moe-inference.md) | ✅ |
 | Mamba / SSM | _待写_ | ⏳ |
 
 ## 推理系统技术
 | 主题 | 笔记 | 状态 |
 |------|------|:--:|
 | continuous batching | _待写_ | ⏳ |
-| chunked prefill / PD 分离 | _待写_ | ⏳ |
-| 投机解码 speculative decoding | _待写_ | ⏳ |
+| PD 分离 | [pd-disaggregation.md](./notes/algorithms/pd-disaggregation.md) | ✅ |
+| 投机解码 speculative decoding | [speculative-decoding.md](./notes/algorithms/speculative-decoding.md) | ✅ |
 | RadixAttention | _待写_ | ⏳ |
 
 ## 训练 / 并行
