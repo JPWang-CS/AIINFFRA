@@ -134,7 +134,7 @@ __shared__ float As[TILE][TILE + 1];  // 多一列，打破 stride=32 的对齐
 
 ## ✅ 本课检验清单
 
-- [x] ✅ `gemm_fp16_tiled` LeetGPU 跑通（2026-06-22，TILE=32）→ [solutions/cuda/gemm_fp16_tiled.cu](../solutions/cuda/gemm_fp16_tiled.cu)
+- [x] ✅ `gemm_fp16_tiled` LeetGPU 跑通（2026-06-22，TILE=32）→ [solutions/cuda/gemm/tiled_fp16.cu](../solutions/cuda/gemm/tiled_fp16.cu)
 - [x] ✅ 能解释 `__syncthreads` 在两个位置各起什么作用
 - [x] ✅ 知道 TILE=32 的 shared memory 用量（As+Bs = 4KB），以及为什么 TILE=64 可能有 bank conflict
 - [ ] 对比 naive vs tiled GFLOPS，提升 ≥ 5×（⏳ LeetGPU K=16 太小无差异，待 4090 大 K 验证）
@@ -144,7 +144,7 @@ __shared__ float As[TILE][TILE + 1];  // 多一列，打破 stride=32 的对齐
 ## Part 6：我的实现 — `gemm_fp16_tiled`（✅ 已通过）
 
 > 2026-06-25，LeetGPU `22_gemm` fp16，TILE=32，shared memory tiling
-> 代码归档在 [solutions/cuda/gemm_fp16_tiled.cu](../solutions/cuda/gemm_fp16_tiled.cu)
+> 代码归档在 [solutions/cuda/gemm/tiled_fp16.cu](../solutions/cuda/gemm/tiled_fp16.cu)
 
 ```cpp
 constexpr int tileLen = 32;

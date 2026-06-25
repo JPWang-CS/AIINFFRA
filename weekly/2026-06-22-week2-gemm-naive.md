@@ -57,9 +57,9 @@
 
 ## 产出物
 
-- [x] solutions/cuda/gemm_naive.cu
-- [x] solutions/cuda/gemm_fp16_naive.cu
-- [x] solutions/cuda/gemm_fp16_tiled.cu
+- [x] solutions/cuda/gemm/gemm_naive.cu
+- [x] solutions/cuda/gemm/gemm_fp16_naive.cu
+- [x] solutions/cuda/gemm/gemm_fp16_tiled.cu
 - [x] notes/cuda/code-review-gemm-fp16-naive.md
 - [x] LeetGPU `2_matrix_multiplication` 跑通
 - [x] LeetGPU `22_gemm` fp16 两版跑通
