@@ -21,6 +21,8 @@
 
 | 日期 | 主题 | 对应 PATH |
 |------|------|----------|
-| _（拉模式从下一轮开始积累）_ | | |
+| [2026-06-25-gemm-done](2026-06-25-gemm-done.md) | GEMM 完成 + 仓库重组 | A2 A3 |
+| [2026-06-22-week2-gemm-naive](2026-06-22-week2-gemm-naive.md) | GEMM naive + tiled fp16 | A2 A3 |
+| [2026-06-16-week1-cuda-basics](2026-06-16-week1-cuda-basics.md) | CUDA 基础 + Vector Add + 4090 配置 | A1 |
 
-> 历史：早期 week-01~04 是按周组织的教程，已拆进 [lessons/](../lessons/)，原文件历史在 git。
+> 早期 week-03/04 的教程已拆进 [lessons/](../lessons/)（尚未开始学，无回顾记录）。
