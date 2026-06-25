@@ -115,9 +115,52 @@ int main() {
     printf("Tiled: %.2f ms  %.0f GFLOPS\n", mt, gt);
 
     printf("\n=== RESULT ===\nSpeedup: %.1fx (Naive %.0f -> Tiled %.0f GFLOPS)\n", gt / gn, gn, gt);
-    printf("4090 FP16 peak: ~330 TFLOPS (via Tensor Core)\n");
+    printf("4090 L2: 72MB  |  K=2048: A+B=16MB fits in L2 -> naive already L2-bound\n");
 
     cudaFree(dA2); cudaFree(dB2); cudaFree(dC2);
     free(hA); free(hB); free(hCn); free(hCt);
+
+    // === Large K test: K=8192, A+B=64MB, exceeds half L2 -> tiling should win ===
+    int M2=2048,N2=2048,K2=8192;
+    size_t sA2=M2*K2*2,sB2=K2*N2*2,sC2=M2*N2*2;
+    printf("\n=== GEMM fp16 M=N=2048 K=%d (large K, > L2) ===\n",K2);
+
+    half *hA2=(half*)malloc(sA2),*hB2=(half*)malloc(sB2),*hCn2=(half*)malloc(sC2);
+    srand(42);
+    for(int i=0;i<M2*K2;i++)hA2[i]=__float2half_rn((float)rand()/RAND_MAX-.5f);
+    for(int i=0;i<K2*N2;i++)hB2[i]=__float2half_rn((float)rand()/RAND_MAX-.5f);
+    memset(hCn2,0,sC2);
+
+    half *dA3,*dB3,*dC3;
+    CUDA_CHECK(cudaMalloc(&dA3,sA2));CUDA_CHECK(cudaMalloc(&dB3,sB2));CUDA_CHECK(cudaMalloc(&dC3,sC2));
+    CUDA_CHECK(cudaMemcpy(dA3,hA2,sA2,cudaMemcpyHostToDevice));CUDA_CHECK(cudaMemcpy(dB3,hB2,sB2,cudaMemcpyHostToDevice));
+
+    dim3 ng3((N2+15)/16,(M2+15)/16),tg3((M2+TILE-1)/TILE,(N2+TILE-1)/TILE);
+
+    CUDA_CHECK(cudaMemset(dC3,0,sC2));naive_k<<<ng3,nb>>>(dA3,dB3,dC3,M2,N2,K2);CUDA_CHECK(cudaDeviceSynchronize());
+
+    CUDA_CHECK(cudaMemset(dC3,0,sC2));
+    cudaEventRecord(ev_st);
+    for(int i=0;i<5;i++)naive_k<<<ng3,nb>>>(dA3,dB3,dC3,M2,N2,K2);
+    cudaEventRecord(ev_en);cudaEventSynchronize(ev_en);
+    float mn2;cudaEventElapsedTime(&mn2,ev_st,ev_en);mn2/=5;
+    float gn2=2.0f*M2*N2*K2/(mn2/1000)/1e9;
+    printf("Naive: %.2f ms  %.0f GFLOPS\n",mn2,gn2);
+
+    CUDA_CHECK(cudaMemset(dC3,0,sC2));
+    cudaEventRecord(ev_st);
+    for(int i=0;i<5;i++)tiled_k<<<tg3,tb>>>(dA3,dB3,dC3,M2,N2,K2);
+    cudaEventRecord(ev_en);cudaEventSynchronize(ev_en);
+    float mt2;cudaEventElapsedTime(&mt2,ev_st,ev_en);mt2/=5;
+    float gt2=2.0f*M2*N2*K2/(mt2/1000)/1e9;
+    printf("Tiled: %.2f ms  %.0f GFLOPS\n",mt2,gt2);
+
+    printf("Speedup: %.1fx (K=%d, A+B=%dMB > 0.5*L2)\n",gt2/gn2,K2,(int)((M2*K2+K2*N2)*2/1e6));
+    printf("\n=== 总结 ===\n");
+    printf("K=2048 (fits L2):  naive %.0f vs tiled %.0f GFLOPS  (tiling 没有用)\n",gn,gt);
+    printf("K=8192 (> L2):     naive %.0f vs tiled %.0f GFLOPS  (tiling 才有用)\n",gn2,gt2);
+
+    cudaFree(dA3);cudaFree(dB3);cudaFree(dC3);
+    free(hA2);free(hB2);free(hCn2);
     return 0;
 }
