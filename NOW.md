@@ -24,14 +24,14 @@ GEMM（naive + tiled）已全部完成。这一步写 Softmax：naive 3-pass →
 
 ## 🧠 理论线（理解）
 
-**现在 · GQA（Grouped Query Attention）**
-online softmax 和 parallel reduce 已学完。下一步理解 GQA——现代 LLM 推理的标配注意力机制。
+**现在 · online softmax（第一条）**
+和 A4 Softmax 天然配对——边写 softmax 代码，边理解它底层的算法原理。
 
-- 读：[papers/attention/gqa.md](./papers/attention/gqa.md)（已写） · 补充 [notes/algorithms/mla-deepseek.md](./notes/algorithms/mla-deepseek.md)（MLA 是 GQA 的延伸）
-- 关键数字：G=8 是甜点，KV cache 节省 87.5%（LLaMA 2 70B：64 heads → 8 KV heads）
-- 产出：能讲清 MHA→MQA→GQA→MLA 的演进线 + 各模型的 G 值
+- 读：[notes/algorithms/online-softmax.md](./notes/algorithms/online-softmax.md)（15 分钟）
+- 关键推导：为什么单 pass 等价于 3-pass → `m_new = max(m_old, max(new))` + `correction = exp(m_old - m_new)`
+- 产出：[ ] 能推一遍 online 更新公式，能讲清"为什么比 3-pass 省 3× HBM 读写"
 
-**接下来**：MLA（DeepSeek-V2/V3）→ AWQ 量化 → continuous batching
+**接下来**：parallel reduce → Flash Attention 机制 → INT8/FP8 量化 → GQA → MLA
 
 ---
 
