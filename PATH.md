@@ -35,7 +35,7 @@
 | A2 | [02 gemm-naive](./lessons/02-gemm-naive.md) | `gemm_naive` (float) | LeetGPU 跑通（2026-06-16） | [memory-model](./notes/cuda/memory-model.md) | [gemm.cu](./reference/cuda/gemm/gemm.cu) · 我的→[gemm_naive.cu](./solutions/cuda/gemm/naive_float.cu) | ✅ |
 | A2+ | — | `gemm_fp16_naive` | LeetGPU fp16 跑通（2026-06-22）·[review](./notes/cuda/code-review-gemm-fp16-naive.md) | — | 我的→[gemm_fp16_naive.cu](./solutions/cuda/gemm/naive_fp16.cu) | ✅ |
 | A3 | [03 gemm-tiled](./lessons/03-gemm-tiled.md) | `gemm_tiled` (float) | GFLOPS 比 naive ≥ 5× | [memory-model §3.3](./notes/cuda/memory-model.md) | [gemm.cu](./reference/cuda/gemm/gemm.cu) | ✅ |
-| A3+ | — | `gemm_fp16_tiled` | LeetGPU fp16 跑通（2026-06-22）·TILE=32·⚠️ K=16 太小无加速，待 4090 大 K 验证 | — | 我的→[gemm_fp16_tiled.cu](./solutions/cuda/gemm/tiled_fp16.cu) | ✅ |
+| A3+ | — | `gemm_fp16_tiled` | LeetGPU 跑通（2026-06-22）· 4090 实测 K=2048/8192 tiled 0.6x naive（L2 cache + occupancy，详见 benchmark） | — | [benchmark.cu](./solutions/cuda/gemm/benchmark.cu) | ✅ |
 | A4 | [04 softmax](./lessons/04-softmax.md) | `softmax_naive` | LeetGPU 跑通，结果正确 | [warp-and-sync §4](./notes/cuda/warp-and-sync.md) | [softmax.cu](./reference/cuda/softmax/softmax.cu) | ⏳ |
 | A5 | [05 flash-attn-reading](./lessons/05-flash-attn-reading.md) | 读代码（不手写） | 能标注每个 `__syncthreads` 作用 | [triton-under-the-hood](./notes/cuda/triton-under-the-hood.md) | [flash_attn.cu](./reference/cuda/flash_attention/flash_attn.cu) · [论文](./papers/attention/flash-attention.md) | ⏳ |
 

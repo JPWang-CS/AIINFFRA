@@ -137,7 +137,7 @@ __shared__ float As[TILE][TILE + 1];  // 多一列，打破 stride=32 的对齐
 - [x] ✅ `gemm_fp16_tiled` LeetGPU 跑通（2026-06-22，TILE=32）→ [solutions/cuda/gemm/tiled_fp16.cu](../solutions/cuda/gemm/tiled_fp16.cu)
 - [x] ✅ 能解释 `__syncthreads` 在两个位置各起什么作用
 - [x] ✅ 知道 TILE=32 的 shared memory 用量（As+Bs = 4KB），以及为什么 TILE=64 可能有 bank conflict
-- [ ] 对比 naive vs tiled GFLOPS，提升 ≥ 5×（⏳ LeetGPU K=16 太小无差异，待 4090 大 K 验证）
+- [x] ✅ 4090 实测: K=2048 naive 5033 GFLOPS vs tiled 3118 GFLOPS (0.6x); K=8192 类似（tiled 未加速，见下）
 
 ---
 
@@ -197,7 +197,21 @@ __global__ void kernel(const half* A, const half* B, half* C,
 | Syncthreads #2 | 确保所有线程计算完再覆写下一轮 tile（防race） |
 | Shared mem 用量 | As + Bs = 2×(32×32)×2B = **4KB**（任何 GPU 都够） |
 | alpha/beta | 支持 BLAS 标准公式：`C = α·A·B + β·C` |
-| ⚠️ 待验证 | LeetGPU K=16 太小无加速效果，需 4090 跑 K≥1024 测 GFLOPS |
+| ⚠️ 4090 实测 | K=2048/8192 tiled 0.6x naive — 不是 bug，是 4090 L2(72MB) 缓存大 + occupancy 低(1024 threads/block vs 256)。**Tiling 在 4090 上不总是赢的** — 这是真实的学习记录。详见 [benchmark.cu](../solutions/cuda/gemm/benchmark.cu) |
+
+---
+
+### 为什么 4090 上 tiled 没加速？（面试加分点）
+
+1. **RTX 4090 的 L2 太大** (72MB)——A+B=16MB(K=2048) 或 64MB(K=8192) 大部分在 L2 cache 里缓存了。Naive 的重复读取实际从 L2 命中了，没有真正从 HBM 重读。
+
+2. **Tiled 的同步开销 > 实际节省**——K=8192 时 (8192/32=256) × 2 syncthreads = **512 次同步** vs naive 0 次。
+
+3. **Occupancy 差**——TILE=32→1024 threads/block，4090 SM 最多 1536 threads → 只能跑 1 block/SM（浪费 512 线程槽）。Naive 256 threads → 6 blocks/SM → 更好的延迟隐藏。
+
+4. **真需要 tiling 的场景**：老 GPU（Kepler/Maxwell 小 L2）、超大矩阵（K>16K 超出 L2 容量）、或组合 Tensor Core（Tiled fp16→Tensor Core 比 cuda core 快 10x）。
+
+> `[面试]` 这道题可以讲："Tiling 不是万能药——在 Ada Lovelace 的大 L2 上，naive 的 cache 优化已足够。真正的加速来自 Tensor Core 而非手写 tiling。"
 
 ---
 
