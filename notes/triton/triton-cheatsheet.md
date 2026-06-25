@@ -1,7 +1,7 @@
 # Triton 语法速查
 
 > 日常写 Triton 最常用的 API 和 pattern。每个条目最小可用代码。
-> 底层 CUDA 对照 → [../../cuda-kernels/notes/triton-under-the-hood.md](../../cuda-kernels/notes/triton-under-the-hood.md)
+> 底层 CUDA 对照 → [../cuda/triton-under-the-hood.md](../cuda/triton-under-the-hood.md)
 
 ---
 
@@ -247,6 +247,6 @@ TRITON_PRINT_AUTOTUNING=1                 # 打印 autotuning 结果
 
 | 文档 | 内容 |
 |------|------|
-| [../../cuda-kernels/notes/triton-under-the-hood.md](../../cuda-kernels/notes/triton-under-the-hood.md) | Triton 生成的 CUDA 代码长什么样 |
-| [../../cuda-kernels/notes/memory-model.md](../../cuda-kernels/notes/memory-model.md) | CUDA 内存层级（理解 Triton 背后） |
+| [../cuda/triton-under-the-hood.md](../cuda/triton-under-the-hood.md) | Triton 生成的 CUDA 代码长什么样 |
+| [../cuda/memory-model.md](../cuda/memory-model.md) | CUDA 内存层级（理解 Triton 背后） |
 | [triton-vs-cuda.md](./triton-vs-cuda.md) | Triton vs CUDA 编程模型对比 |

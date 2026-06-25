@@ -1,6 +1,6 @@
 # Triton vs CUDA 深度对比
 
-*Phase 2 学习笔记*
+*Triton 阶段笔记（算子线 B）*
 
 ---
 

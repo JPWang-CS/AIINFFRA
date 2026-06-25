@@ -1,21 +1,14 @@
-# Triton Kernels (Phase 2: Week 11-18)
+# Reference — Triton Kernels
 
-OpenAI Triton 实现的 ML 算子，用于对比 CUDA 版本，理解 block-level 编程模型。
-
-## 学习目标
-
-- 理解 Triton 的 programming model（block-level、no warp-level control）
-- 能用 Triton 写常见 ML kernel
-- 理解 Flash Attention 的 Triton 实现
+> **参考实现，看不抄。** 学的时候对着 [lessons/](../../lessons/) 从空文件自己写，写完跑通存进 [solutions/](../../solutions/)。
+> 笔记和速查在 [notes/triton/](../../notes/triton/)，学习路径在 [PATH.md](../../PATH.md)。
 
 ## 目录
 
-| 目录 | 内容 | LeetGPU 对应 | 状态 |
-|------|------|-------------|------|
-| [matmul/](./matmul/) | Triton 版 GEMM | Matrix Multiplication (Easy) | ⏳ |
-| [fused_mlp/](./fused_mlp/) | Fused SiLU/GeGLU + Linear | - | ⏳ |
-| [flash_attention/](./flash_attention/) | Triton 版 Flash Attention | Flash Attention (Hard) | ⏳ |
-| [notes/](./notes/) | Triton 学习笔记 | - | ⏳ |
+| 目录 | 内容 | 对应课 |
+|------|------|--------|
+| [matmul/](./matmul/) | Triton 版 GEMM（L2 cache 优化、GROUP_M swizzle） | [Lesson 06](../../lessons/06-triton-intro.md) |
+| [flash_attention/](./flash_attention/) | Triton 版 Flash Attention（online softmax） | [Lesson 05](../../lessons/05-flash-attn-reading.md) → B3 |
 
 ## Triton vs CUDA 关键差异
 
@@ -27,6 +20,8 @@ OpenAI Triton 实现的 ML 算子，用于对比 CUDA 版本，理解 block-leve
 | 优化重点 | Occupancy、bank conflict、coalescing | Tile size、autotuning |
 | 编译 | nvcc → PTX → SASS | Triton → MLIR → PTX → SASS |
 
+完整对比 → [notes/triton/triton-vs-cuda.md](../../notes/triton/triton-vs-cuda.md)
+
 ## 环境
 
 ```bash
@@ -37,4 +32,4 @@ pip install triton
 ## 相关资源
 
 - [Triton 官方文档](https://triton-lang.org/)
-- [Triton 教程（含中文）](https://github.com/dsl-learn/LeetGPU)
+- [Triton 速查表](../../notes/triton/triton-cheatsheet.md)

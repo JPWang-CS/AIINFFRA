@@ -1,4 +1,6 @@
-# vLLM 源码深挖 (Phase 3: Week 19-30)
+# vLLM 源码深挖（算子线 C：推理系统）
+
+> 走到算子线 C 时激活。进度看 [PATH.md](../PATH.md)。
 
 理解 vLLM 的完整推理链路，从请求入队到 token 响应。
 

@@ -1,4 +1,6 @@
-# Agent 实验室 (Phase 5: 贯穿全程)
+# Agent 实验室（算子线 E：熟悉 + 1 个 demo）
+
+> 进度看 [PATH.md](../PATH.md)。
 
 理解 Agent 架构和 MCP 协议，跟踪前沿论文，搭建可展示的 Agent 应用。
 

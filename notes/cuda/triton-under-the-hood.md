@@ -2,7 +2,7 @@
 
 > 学 CUDA 不是为了手写极致优化，而是为了**看懂 Triton 在底层做了什么**。
 > 本文建立 Triton 概念和 CUDA 实现的对照关系。
-> Triton API 速查 → [../../triton-kernels/notes/triton-cheatsheet.md](../../triton-kernels/notes/triton-cheatsheet.md)
+> Triton API 速查 → [../triton/triton-cheatsheet.md](../triton/triton-cheatsheet.md)
 
 ---
 
@@ -235,7 +235,7 @@ compiled = triton.compile(my_kernel, signature=..., constants=...)
 
 | 文档 | 内容 |
 |------|------|
-| [../../triton-kernels/notes/triton-cheatsheet.md](../../triton-kernels/notes/triton-cheatsheet.md) | Triton 语法速查 |
+| [../triton/triton-cheatsheet.md](../triton/triton-cheatsheet.md) | Triton 语法速查 |
 | [memory-model.md](./memory-model.md) | CUDA 内存层级（理解 Triton 背后在做什么） |
 | [warp-and-sync.md](./warp-and-sync.md) | Warp 调度（理解 Triton 的 block 内并行） |
 | [gpu-architecture.md](./gpu-architecture.md) | GPU 架构基础 |

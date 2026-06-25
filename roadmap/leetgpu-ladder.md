@@ -1,69 +1,63 @@
-# 算子优化路线
+# 可选 CUDA 深钻菜单
 
-> 5 个算子 × 多层优化阶梯。LeetGPU 题号仅用作 baseline/正确性验证。
-
-## GEMM (Week 1-3)
-
-| 版本 | 技术要点 | 验证 |
-|------|---------|------|
-| v0 naive | 每线程直接读 global memory，算一个输出 | LeetGPU `2_matrix_multiplication` |
-| v1 tiled | shared memory TILE×TILE，bank conflict 处理 | |
-| v2 vec4 | `float4` 128-bit vectorized load | |
-| v3 double buffer | 双 shared memory buffer，copy-compute overlap | |
-| v4 tensor core | `mma.sync`，FP16→FP32，warp-level matrix fragment | LeetGPU `22_gemm` (FP32) / `57_fp16_batched_matmul` |
-
-**目标**: tensor core GEMM 达到硬件峰值 70%+
-
-## Softmax (Week 4-5)
-
-| 版本 | 技术要点 | 验证 |
-|------|---------|------|
-| v0 3-pass | max → exp sum → normalize，每个 pass 扫一遍 | LeetGPU `5_softmax` |
-| v1 online | 单 pass，running max + running sum | |
-| v2 warp reduce | `__shfl_down_sync` 做 warp-level max/sum | |
-| v3 fused | softmax 结果直接喂给下一步（如 attention 中），不写回 HBM | |
-
-**目标**: online softmax 的 bandwidth utilization > 80%
-
-## RMSNorm (Week 6)
-
-| 版本 | 技术要点 | 验证 |
-|------|---------|------|
-| v0 naive | 两 pass：mean → normalize | LeetGPU `50_rms_normalization` |
-| v1 warp reduce | warp shuffle + shared memory cross-warp reduce | |
-| v2 fused residual | RMSNorm(x) + x 一次完成，避免额外 memory round-trip | |
-
-**目标**: 融合版本比 PyTorch 原生快 2×+
-
-## Flash Attention (Week 7-9)
-
-| 版本 | 技术要点 | 验证 |
-|------|---------|------|
-| v0 naive attn | QK^T → softmax → ×V，完整 O(N²) | LeetGPU `6_softmax_attention` |
-| v1 tiled | Q/K/V 分块，online softmax 增量更新 | |
-| v2 causal | causal mask 跳过无效 tile | LeetGPU `53_casual_attention` |
-| v3 multi-head | B×H×N×d，batch + head 维并行 | LeetGPU `12_multi_head_attention` |
-
-**目标**: 对 seq_len=4096，比 naive attention 快 5×+，显存降至 O(N)
-
-## GQA Attention (Week 10)
-
-| 版本 | 技术要点 | 验证 |
-|------|---------|------|
-| v1 GQA | 从 MHA 扩展，K/V head 数 < Q head 数 | LeetGPU `80_grouped_query_attention` |
-
-**目标**: 完成全部 5 个算子的优化线，整理 portfolio
+> **B 级够用不用看这页。** 想在某个算子钻到硬件峰值、或面试要 CUDA 深度，再来翻。
+> 基础层（naive / tiled / online / warp-reduce）和进度都在 [PATH.md](../PATH.md) 算子线——这里只列**比 B 级更深**的进阶层。
+> LeetGPU 题号用作 baseline/正确性验证。完整题库 → [notes/cuda/leetgpu-challenges.md](../notes/cuda/leetgpu-challenges.md)
 
 ---
 
-## 进度追踪
+## GEMM 进阶
 
-| # | 算子 | v0 | v1 | v2 | v3 | v4 | 最终 GFLOPS / BW% |
-|---|------|:--:|:--:|:--:|:--:|:--:|------|
-| 1 | GEMM | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ | |
-| 2 | Softmax | ⏳ | ⏳ | ⏳ | ⏳ | - | |
-| 3 | RMSNorm | ⏳ | ⏳ | ⏳ | - | - | |
-| 4 | Flash Attn | ⏳ | ⏳ | ⏳ | ⏳ | - | |
-| 5 | GQA Attn | ⏳ | - | - | - | - | |
+> 基础 naive/tiled 见 PATH A2/A3。下面是 tiled 之后往峰值钻的层：
 
-⏳ 待做 | 🚧 进行中 | ✅ 完成
+| 层 | 技术要点 | 验证 |
+|------|---------|------|
+| vec4 | `float4` 128-bit vectorized load，减少访存指令 | |
+| double buffer | 双 shared memory buffer，copy-compute overlap（≈ Ascend pipe 流水） | |
+| tensor core | `mma.sync`，FP16→FP32，warp-level matrix fragment | `22_gemm` / `57_fp16_batched_matmul` |
+
+**目标**：tensor core GEMM 达硬件峰值 70%+
+
+## Softmax 进阶
+
+> 基础 3-pass/online/warp-reduce 见 PATH A4。
+
+| 层 | 技术要点 |
+|------|---------|
+| fused | softmax 结果直接喂下一步（如 attention 内），不写回 HBM |
+
+**目标**：online softmax 的 bandwidth utilization > 80%
+
+## Norm（LayerNorm / RMSNorm）
+
+> ⭐ 整个 Norm 在 Triton-first 路径里是 bonus（现实 LLM 用 RMSNorm）。料：[reference/cuda/layernorm/layernorm.cu](../reference/cuda/layernorm/layernorm.cu)
+
+| 层 | 技术要点 | 验证 |
+|------|---------|------|
+| warp reduce | warp shuffle + shared memory cross-warp reduce | `50_rms_normalization` |
+| fused residual | RMSNorm(x) + x 一次完成，省一次 memory round-trip | |
+
+**目标**：融合版比 PyTorch 原生快 2×+
+
+## Flash Attention 进阶
+
+> 基础（读懂 tiled + online softmax）见 PATH A5。下面是手写到能跑、再往上：
+
+| 层 | 技术要点 | 验证 |
+|------|---------|------|
+| causal | causal mask 跳过无效 tile | `53_casual_attention` |
+| multi-head | B×H×N×d，batch + head 维并行 | `12_multi_head_attention` |
+
+**目标**：seq_len=4096 比 naive attention 快 5×+，显存降至 O(N)
+
+## GQA Attention
+
+| 层 | 技术要点 | 验证 |
+|------|---------|------|
+| GQA | 从 MHA 扩展，K/V head 数 < Q head 数 | `80_grouped_query_attention` |
+
+> GQA 的机制理解（非手写）在理论线"注意力演进"——这里是想手写优化时的进阶。
+
+---
+
+*这是静态的进阶清单，不追踪进度（进度在 [PATH.md](../PATH.md)）。手写这些任意一层，对面试都是强信号。*

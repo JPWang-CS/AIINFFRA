@@ -197,32 +197,36 @@ atol/rtol: 0.05
 
 ---
 
-## 推荐刷题路线
+## 刷题路线（按难度/主题聚类）
+
+> 不绑周次——这是题目地图，按你算子线进度随用随取。学习节奏看 [PATH.md](../../PATH.md) / [NOW.md](../../NOW.md)。
 
 ```
-Week 1 ─ Easy:  1_vector_add → 8_matrix_addition → 2_matrix_multiplication
-                 然后进入 22_gemm (Medium)
-Week 2 ─ GEMM:  22_gemm 优化阶梯 v0→v4
-                 并行 4_reduction (为 Softmax 做准备)
-Week 3 ─ GEMM:  22_gemm Tensor Core 版本
-                 30_batched_matmul, 57_fp16_batched_matmul
-Week 4 ─ Softmax: 5_softmax → 6_softmax_attention
-                 17_dot_product, 16_prefix_sum (parallel pattern)
-Week 5 ─ Softmax: 5_softmax online/warp-reduce 版本
-                 29_top_k_selection, 60_top_p_sampling
-Week 6 ─ RMSNorm: 50_rms_normalization → 40_batch_normalization
-                 61_rope_embedding (高频面试加分)
-Week 7 ─ Attn:   12_multi_head_attention (Hard)
-                 53_casual_attention (Hard)
-Week 8 ─ Attn:   12/53 的 tiled + online softmax 版本
-Week 9 ─ Attn:   56_linear_attention, 59_sliding_window_attn
-                 完整 Flash Attn 自实现
-Week 10 - GQA:   80_grouped_query_attention
-                 84_swiglu_mlp_block (Llama FFN)
-Bonus   ─ LLM:   67_moe_topk_gating, 94_ssm_selective_scan
-                 85_lora_linear, 87_speculative_decoding
-                 74_gpt2_block, 93_llama_transformer_block
+入门 (Easy)        1_vector_add → 8_matrix_addition → 2_matrix_multiplication
+                   4_reduction, 17_dot_product, 16_prefix_sum (parallel pattern)
+
+GEMM              2_matrix_multiplication (naive→tiled) → 22_gemm (Medium)
+                   30_batched_matmul, 57_fp16_batched_matmul
+                   ⭐ 22_gemm Tensor Core 版（可选深钻 → roadmap/leetgpu-ladder.md）
+
+Softmax/采样       5_softmax → 6_softmax_attention
+                   29_top_k_selection, 60_top_p_sampling
+
+Norm              50_rms_normalization, 40_batch_normalization
+                   61_rope_embedding (高频面试加分)
+
+Attention         12_multi_head_attention (Hard), 53_casual_attention (Hard)
+                   tiled + online softmax 版 → 完整 Flash Attn 自实现
+                   56_linear_attention, 59_sliding_window_attn
+
+GQA/MLP           80_grouped_query_attention, 84_swiglu_mlp_block (Llama FFN)
+
+LLM 整块 (Bonus)   67_moe_topk_gating, 94_ssm_selective_scan
+                   85_lora_linear, 87_speculative_decoding
+                   74_gpt2_block, 93_llama_transformer_block
 ```
+
+> Tensor Core / v2+ 优化层是 ⭐ 可选，见 [roadmap/leetgpu-ladder.md](../../roadmap/leetgpu-ladder.md)。
 
 ---
 

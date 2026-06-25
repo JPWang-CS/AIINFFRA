@@ -1,6 +1,6 @@
 # GPU 架构：NVIDIA vs Da Vinci（昇腾）对比
 
-*Phase 1 Week 1-2 学习笔记*
+*CUDA 打底阶段笔记*
 *状态：📖 在读*
 
 ---
