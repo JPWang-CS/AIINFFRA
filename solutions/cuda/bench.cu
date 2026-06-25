@@ -19,7 +19,7 @@ __global__ void naive_k(const half* A, const half* B, half* C, int M, int N, int
 __global__ void tiled_k(const half* A, const half* B, half* C, int M, int N, int K) {
     int m = blockIdx.x * TILE + threadIdx.x, n = blockIdx.y * TILE + threadIdx.y;
     float s = 0;
-    __shared__ half As[TILE][TILE], Bs[TILE][TILE];
+    __shared__ half As[TILE][TILE+1], Bs[TILE][TILE+1];  // +1 padding 防 bank conflict
     for (int t = 0; t < (K + TILE - 1) / TILE; ++t) {
         int aK = t * TILE + threadIdx.y;
         As[threadIdx.x][threadIdx.y] = (m < M && aK < K) ? A[m * K + aK] : __float2half_rn(0.0f);
