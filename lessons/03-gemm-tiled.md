@@ -141,6 +141,66 @@ __shared__ float As[TILE][TILE + 1];  // 多一列，打破 stride=32 的对齐
 
 ---
 
+## Part 6：我的实现 — `gemm_fp16_tiled`（✅ 已通过）
+
+> 2026-06-25，LeetGPU `22_gemm` fp16，TILE=32，shared memory tiling
+> 代码归档在 [solutions/cuda/gemm_fp16_tiled.cu](../solutions/cuda/gemm_fp16_tiled.cu)
+
+```cpp
+constexpr int tileLen = 32;
+
+__global__ void kernel(const half* A, const half* B, half* C,
+                       int M, int N, int K, float alpha, float beta) {
+    int m = blockIdx.x * tileLen + threadIdx.x;
+    int n = blockIdx.y * tileLen + threadIdx.y;
+    float sum = 0.0f;
+
+    // 每个线程先搬运暂存
+    __shared__ half As[tileLen][tileLen];
+    __shared__ half Bs[tileLen][tileLen];
+
+    // 遍历 K
+    for (int t = 0; t < (K + tileLen - 1) / tileLen; ++t) {
+        // A 矩阵按列步进
+        int aK = t * tileLen + threadIdx.y;
+        As[threadIdx.x][threadIdx.y] = (m < M && aK < K)
+            ? A[m * K + aK] : __float2half_rn(0.0f);
+
+        // B 矩阵按行步进
+        int bK = t * tileLen + threadIdx.x;
+        Bs[threadIdx.x][threadIdx.y] = (n < N && bK < K)
+            ? B[bK * N + n] : __float2half_rn(0.0f);
+
+        __syncthreads();
+
+        for (int k = 0; k < tileLen; k++) {
+            sum += __half2float(As[threadIdx.x][k]) *
+                   __half2float(Bs[k][threadIdx.y]);
+        }
+
+        __syncthreads();
+    }
+
+    if (m < M && n < N) {
+        C[m * N + n] = __float2half_rn(
+            alpha * sum + beta * __half2float(C[m * N + n]));
+    }
+}
+```
+
+| 关键点 | 说明 |
+|--------|------|
+| Grid 铺法 | blockIdx.x→M，blockIdx.y→N，和 naive 版（x→K, y→M）不同 |
+| A tile 加载 | threadIdx.y 走 K 维度(列)，threadIdx.x 走 M 维度(行) |
+| B tile 加载 | threadIdx.x 走 K 维度(行)，threadIdx.y 走 N 维度(列) |
+| Syncthreads #1 | 确保所有线程加载完 tile 再开始计算 |
+| Syncthreads #2 | 确保所有线程计算完再覆写下一轮 tile（防race） |
+| Shared mem 用量 | As + Bs = 2×(32×32)×2B = **4KB**（任何 GPU 都够） |
+| alpha/beta | 支持 BLAS 标准公式：`C = α·A·B + β·C` |
+| ⚠️ 待验证 | LeetGPU K=16 太小无加速效果，需 4090 跑 K≥1024 测 GFLOPS |
+
+---
+
 ## 知识库索引
 
 | 想深入理解 | 去看 |
