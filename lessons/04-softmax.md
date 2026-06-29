@@ -17,13 +17,42 @@
 
 ---
 
-## Part 1：定义
+## Part 0：这个算子在模型里干嘛？
+
+Softmax 是 **Attention 的归一化层**——把 raw attention scores 变成概率分布：
 
 ```
-softmax(x_i) = exp(x_i - max(x)) / Σ_j exp(x_j - max(x))
+Attention 计算流程（以 LLaMA 为例）：
 
-"max trick" 是必须的——不做减法，exp(大数) 会溢出到 inf。
+x (输入) → Q = x @ W_Q    ┐
+          → K = x @ W_K    ├─ 三个 GEMM
+          → V = x @ W_V    ┘
+              ↓
+S = Q @ K^T / √d_k          ← QK^T 点积，得到 raw scores (N×N 矩阵)
+              ↓
+P = softmax(S)              ← ⬅ Softmax！把每行变成概率（Σ=1）
+              ↓
+O = P @ V                   ← 加权求和，得到 attention output
 ```
+
+**Softmax 的作用**：
+1. **归一化**：让每行（每个 query token 对所有 key token 的关注度）变成概率分布——权重和为 1
+2. **非线性**：通过指数函数拉开差距（高分更高，低分更低）
+3. **可微**：反向传播梯度流畅
+
+**什么模型用**：所有使用 Attention 的模型——LLaMA/GPT/BERT/DeepSeek/Mistral/Qwen/Claude 系列。没有 softmax 就没有 self-attention。
+
+**注意**：FFN 里的激活函数（SiLU/GELU/ReLU）看起来像但不同——它们也是 element-wise 归一化，但不需要 sum=1。"softmax 和 GELU 的区别"是面试高频题。
+
+> `[面试]` 必问："softmax 在 Transformer 的哪里？" → 在 Attention 里，把 scaled dot-product scores 变成概率权重。一个 N×N 矩阵，每行做一次 softmax。
+
+## Part 1：数学定义
+
+$$
+\text{softmax}(x_i) = \frac{\exp(x_i - \max x)}{\sum_j \exp(x_j - \max x)}
+$$
+
+"max trick" 是必须的——不做减法，$\exp(\text{大数})$ 会溢出到 inf。
 
 ---
 
@@ -37,54 +66,30 @@ __global__ void softmax_naive(const float* input, float* output,
     int row = blockIdx.x;
     if (row >= B) return;
 
-    // Pass 1: 找 max
-    float max_val = -FLT_MAX;
-    for (int j = threadIdx.x; j < D; j += blockDim.x) {
-        float val = input[row * D + j];
-        if (val > max_val) max_val = val;
-    }
-    // 需要 block 内 reduce max → 见 Part 3
+    // TODO Pass 1: 找 max
+    //   每个 thread 扫自己负责的列，记局部 max
+    //   然后用 reduce 合并成全局 max（见下面的"临时方案"）
 
-    // Pass 2: 算指数和
-    float sum = 0.0f;
-    for (int j = threadIdx.x; j < D; j += blockDim.x) {
-        sum += expf(input[row * D + j] - max_val);
-    }
-    // 需要 block 内 reduce sum
+    // TODO Pass 2: 算指数和
+    //   用全局 max 算 exp(x_i - max)，累加
 
-    // Pass 3: normalize + 写回
-    for (int j = threadIdx.x; j < D; j += blockDim.x) {
-        output[row * D + j] = expf(input[row * D + j] - max_val) / sum;
-    }
+    // TODO Pass 3: normalize + 写回
+    //   exp(x_i - max) / 全局和
 }
 ```
 
-先完成 3 个 pass 的框架，不用 reduce。让 thread 0 串行做 reduce（效率低但能跑对）：
+**这个 kernel 缺什么**：3 个 pass 都要做 block 内 reduce（把各线程的局部 max/sum 合并成全局值）。先不写 warp shuffle，用 thread 0 串行 reduce 让结果跑对：
 
 ```cpp
-// 临时方案：thread 0 负责 reduce
+// 临时方案：thread 0 负责 reduce，其余线程等待
+// 1. 每个线程把局部值写到 shared memory
+// 2. __syncthreads()
+// 3. thread 0 串行遍历 shared memory，合并成全局值
+// 4. 全局值写回 shared memory
+// 5. __syncthreads()
+// 6. 所有线程读取全局值，继续计算
+// 提示：max 用 fmaxf，sum 用 +=
 // 更好的方案见 Part 3 的 warp reduce
-__shared__ float shared_max[256];  // 假设 blockDim=256
-__shared__ float shared_sum[256];
-
-shared_max[threadIdx.x] = max_val;
-shared_sum[threadIdx.x] = sum;
-__syncthreads();
-
-if (threadIdx.x == 0) {
-    float global_max = shared_max[0];
-    float global_sum = shared_sum[0];
-    for (int i = 1; i < blockDim.x; i++) {
-        if (shared_max[i] > global_max) global_max = shared_max[i];
-        global_sum += shared_sum[i];
-    }
-    shared_max[0] = global_max;  // 写入 shared mem 让其他 thread 读取
-    shared_sum[0] = global_sum;
-}
-__syncthreads();
-
-max_val = shared_max[0];
-sum = shared_sum[0];
 ```
 
 ---

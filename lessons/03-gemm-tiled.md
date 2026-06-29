@@ -17,25 +17,35 @@
 
 ---
 
+## Part 0：tiled 和 naive 在模型里一样，区别是规模
+
+Tiled GEMM 和 naive GEMM 算的是同一个东西——矩阵乘法。在模型里的位置完全一样（QKV projection、FFN gate/up/down、attention output projection）。
+
+**什么时候 tiling 赢**：K 维度足够大，且 L2 cache 不够。例如：
+- LLaMA-7B 的 FFN：$d_{\text{model}}=4096 \to d_{\text{ff}}=11008$，这个 K 维度巨大，A+B 数据量远超 L2
+- 老 GPU（Kepler/Maxwell）L2 小，tiling 始终有效
+- 4090 L2=72MB，小规模(K<8K) naive 已够快
+
+**面试关键点**："Tiling 什么时候必须？" → 当数据量超出 L2 cache 容量时，shared memory tiling 是唯一避免反复读 HBM 的手段。
+
 ## Part 1：原理回顾
 
 Naive GEMM 的问题：每个 thread 从 global memory 读 `2×K` 个元素。K=1024 时，2K 次 global memory read per output element → 严重 memory-bound。
 
 Tiled GEMM 的思路：**把 A 和 B 切成 TILE×TILE 的小块，先搬到 shared memory，在片上高速计算。**
 
-```
 把 K 维度切成 TILE 大小的段：
 
-C[block_y : block_y+TILE][block_x : block_x+TILE] +=
-    A[block_y : block_y+TILE][t : t+TILE] × B[t : t+TILE][block_x : block_x+TILE]
+$$
+C[block\_y : block\_y + TILE][block\_x : block\_x + TILE] \mathrel{+}= A[block\_y : block\_y + TILE][t : t + TILE] \times B[t : t + TILE][block\_x : block\_x + TILE]
+$$
 
-每个 block 做 TILE×TILE 的输出，循环 K/TILE 次：
+每个 block 做 $TILE \times TILE$ 的输出，循环 $K/TILE$ 次：
   1. 加载 A_tile（所有 thread 合作搬）
   2. 加载 B_tile
-  3. __syncthreads()
+  3. $\text{\_\_syncthreads()}$
   4. 在 shared memory 上计算部分积
-  5. __syncthreads()（在覆写 tile 之前）
-```
+  5. $\text{\_\_syncthreads()}$（在覆写 tile 之前）
 
 > **Ascend 对照**：这和 Ascend 的 L1 Buffer tiling 完全一样——把大矩阵切开，小块搬入片上内存（L1 Buffer/Shared Memory），在片上计算。区别是 Ascend 用 pipe 机制做搬运和计算的流水线重叠，CUDA 需要你手动控制 `__syncthreads()`。
 
@@ -92,12 +102,12 @@ __global__ void gemm_tiled(const float* A, const float* B, float* C,
 
 ```
 影响因素：
-1. Shared memory 容量：TILE×TILE×2×4B = TILE² × 8B
-   TILE=32 → 8 KB（任何卡都够）
-   TILE=64 → 32 KB（T4 需要调整 shared mem 配置）
+1. Shared memory 容量：$TILE \times TILE \times 2 \times 4\text{B} = TILE^{2} \times 8\text{B}$
+   $TILE = 32 \to 8$ KB（任何卡都够）
+   $TILE = 64 \to 32$ KB（T4 需要调整 shared mem 配置）
 
-2. Block 大小：TILE×TILE 个 thread
-   TILE=32 → 1024 threads → 刚好上限
+2. Block 大小：$TILE \times TILE$ 个 thread
+   $TILE = 32 \to 1024$ threads → 刚好上限
 
 3. Occupancy：每个 block 用多少 shared memory
    Shared mem 用多了 → 同时驻留 SM 的 block 数少 → occupancy 低

@@ -13,6 +13,20 @@
 
 ---
 
+---
+
+## Part 0：Triton 写的算子 = 同样的数学，不同的写法
+
+Triton 写的 Vector Add / MatMul / Softmax / Flash Attention **和 CUDA 版算的数学完全一样**，模型里的位置也一样。
+
+**关键差异**：
+- **CUDA**：你写 thread-level 逻辑——每个 thread 读哪个元素、怎么同步、怎么 avoid bank conflict
+- **Triton**：你写 block-level 逻辑——声明"这个 tile 怎么算"，编译器自动分配线程、插入同步、优化访存
+
+**为什么 Triton 是主力**：同样功能的 GEMM，CUDA 要 ~100 行（手动 tiling/sync），Triton ~30 行。性能接近手写 CUDA（~93-95%），开发时间降 5-10×。
+
+---
+
 ## Part 1：环境
 
 ```bash

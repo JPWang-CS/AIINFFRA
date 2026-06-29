@@ -4,20 +4,13 @@
 #include <cfloat>
 
 // ============================================================
-// Simplified Flash Attention — forward pass, causal optional
+// Flash Attention — tiling + online softmax, O(N²)→O(N) 显存
 //
-// Key ideas (from Flash Attention paper):
-// 1. Tiling: Q split into blocks (Br), K/V split into blocks (Bc)
-// 2. Online softmax: track running m (max), l (exp sum) per Q block
-// 3. Incremental rescaling: when max updates, rescale old accumulator
-//
-// Q: B×H×D   K: B×H×D   V: B×H×D   (query, key, value)
-// O: B×H×D     output = softmax(QK^T/√d) × V
-//
-// This simplified version:
-//  - B=1, H=1 (single head for clarity)
-//  - Square: seq_len = N, head_dim = d
-//  - Br = Bc = TILE constant
+// 【算子是什么】和 standard attention 算的一样: O = softmax(QK^T/√d) × V
+//   但通过 tiling + online softmax 避免存储 N×N 中间矩阵
+// 【在模型里干嘛】替换所有 Transformer 的 self-attention 实现
+// 【什么模型用】LLaMA 2/3、GPT-4、DeepSeek-V2/V3、Mistral、Qwen、Claude（所有现代 LLM）
+// ============================================================
 // ============================================================
 
 #define BR 32 // tile size for Q rows

@@ -52,13 +52,14 @@ attn = softmax(Q @ K.T / sqrt(d_k)) @ V
 
 ### 数学等价性
 
-```
-传统: K = x W_K = x W_DKV W_UK
-     = (x W_DKV) W_UK = c_KV W_UK
+$$
+\begin{aligned}
+\text{传统: } K &= x W_K = x W_{DKV} W_{UK} \\
+     &= (x W_{DKV}) W_{UK} = c_{KV} W_{UK}
+\end{aligned}
+$$
 
-等价于先做低秩分解: W_K ≈ W_DKV × W_UK
-                  rank = d_c（远小于 H × d_k）
-```
+等价于先做低秩分解: $W_K \approx W_{DKV} \times W_{UK}$，rank $= d_c$（远小于 $H \times d_k$）
 
 这是标准的低秩矩阵分解（LoRA 的推理版本）。
 

@@ -1,7 +1,16 @@
 // ============================================================
-// gemm_fp16_tiled.cu — 手写版本（2026-06-25）
-// C = alpha * A × B + beta * C，half 精度，shared memory tiling
-// TILE=32，LeetGPU 接口
+// gemm_fp16_tiled.cu — tiled GEMM with shared memory（2026-06-25）
+// C = alpha * A × B + beta * C，half 精度，shared memory tiling，TILE=32
+//
+// 【算子是什么】矩阵乘法 + shared memory tiling 优化
+//   - 和 naive 算的一样，但通过把 A/B 切成 32×32 tile 搬到 shared memory，
+//     减少 HBM 重复读取。每个 tile 在片上复用，减少了 K/TILE 倍 HBM 访存。
+// 【在模型里干嘛】同 naive GEMM——所有 Linear/FFN 层。
+//   - 区别：当 K 维度大（如 FFN 的 d_ff=11008），tiling 能显著减少 HBM 访存
+//   - 但在 4090 大 L2(72MB) 上，小规模(K<8K) naive 的 cache 命中率够高，tiling 不总是赢
+// 【什么模型用】LLaMA/DeepSeek/Qwen 的推理引擎（TensorRT-LLM/vLLM 内部用 tiled GEMM）
+//
+// 代码归档。讲解见 ../../lessons/03-gemm-tiled.md
 // ============================================================
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>

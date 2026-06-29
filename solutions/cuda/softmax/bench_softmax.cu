@@ -6,7 +6,18 @@
 
 #define CUDA_CHECK(e) do { cudaError_t r=e; if(r){printf("ERR %s\n",cudaGetErrorString(r));exit(1);} }while(0)
 
-// =================== Naive: 3-pass, shared mem reduce by thread 0 ====================
+// ============================================================
+// softmax_bench.cu — Naive 3-pass vs Online 1-pass benchmark
+//
+// 【算子是什么】softmax: 把向量映射为概率分布（每元素∈[0,1]，和为 1）
+//   - Naive: 3 遍遍历（max → sum_exp → normalize）
+//   - Online: 1 遍遍历（增量更新 running max/sum，修正因子校正）
+// 【在模型里干嘛】Attention 的归一化——把 QK^T dot-product scores 变成概率权重
+//   S = Q@K^T/√d  →  P = softmax(S)  →  O = P@V
+//   每个 token 对所有 token 的 attention 权重通过 softmax 归一化为概率分布
+// 【什么模型用】所有 Transformer 的 Multi-Head Attention
+//   LLaMA/GPT/BERT/DeepSeek/Mistral/Qwen/Claude 系列
+// ============================================================
 __global__ void softmax_naive(const float* in, float* out, int B, int D) {
     int row = blockIdx.x;
     if (row >= B) return;

@@ -1,5 +1,11 @@
 """Triton Matrix Multiplication — starter template.
 
+【算子是什么】矩阵乘法 GEMM: C = A × B，Triton 实现
+【在模型里干嘛】所有 Linear/FFN 层、QKV projection、attention output projection
+【什么模型用】LLaMA/GPT/DeepSeek/Mistral 的 Triton 推理 kernel
+- PyTorch 2.0+ `torch.compile` 内部用 Triton 生成 GEMM kernel
+- vLLM/TensorRT-LLM 的 custom GEMM 也大量用 Triton
+
 Key Triton concepts demonstrated:
 1. @triton.jit — JIT-compiled GPU kernel
 2. tl.program_id(axis) — block index (like blockIdx in CUDA)

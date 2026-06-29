@@ -1,5 +1,9 @@
 """Triton Flash Attention — forward pass.
 
+【算子是什么】Flash Attention: O = softmax(QK^T/√d) × V，用 online softmax 避免存 N×N 矩阵
+【在模型里干嘛】所有 Transformer 的 self-attention——每个 token 对所有 token 的加权聚合
+【什么模型用】LLaMA 2/3、GPT-4、DeepSeek-V2/V3、Mistral/Qwen/Claude（所有现代 LLM 的默认 attention 实现）
+
 Based on the Flash Attention 2 algorithm:
 - Q split into blocks along sequence dimension
 - K/V split into blocks along sequence dimension

@@ -5,7 +5,16 @@
 #include <cstdlib>
 #define CUDA_CHECK(e) do{cudaError_t r=e;if(r){printf("ERR %s\n",cudaGetErrorString(r));exit(1);}}while(0)
 
-// ====== Kernels ======
+// ============================================================
+// GEMM benchmark — Naive vs Tiled tile-size sweep (K=2048/8192/32768)
+//
+// 【算子是什么】矩阵乘法 GEMM (FP16)
+// 【在模型里干嘛】所有 Linear/FFN 层。K 维度对应模型 hidden_dim/intermediate_dim
+//   - QKV projection: K = d_model (如 4096)
+//   - FFN up/gate: K = d_model (如 4096)
+//   - FFN down: K = d_ff = d_model × inter_size (如 4096×8/3≈11008)
+// 【什么模型用】所有 Transformer 的推理/训练 GEMM kernel
+// ============================================================
 __global__ void naive_k(const half* A, const half* B, half* C, int M, int N, int K) {
     int m = blockIdx.y * 16 + threadIdx.y, n = blockIdx.x * 16 + threadIdx.x;
     if (n >= N || m >= M) return;

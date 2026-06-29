@@ -4,8 +4,11 @@
 #include <cfloat>
 
 // ============================================================
-// Kernel 1: Naive softmax (3-pass: max → exp sum → normalize)
-// Each row is independent. B = rows, D = columns.
+// Softmax Reference — naive 3-pass + online 1-pass
+//
+// 【算子是什么】softmax(x_i) = exp(x_i-max(x)) / Σ_j exp(x_j-max(x))
+// 【在模型里干嘛】Attention 归一化——把 raw scores 变成概率分布
+// 【什么模型用】所有 Transformer 的 self-attention / cross-attention
 // ============================================================
 __global__ void softmax_naive(const float *input, float *output,
                               int B, int D) {

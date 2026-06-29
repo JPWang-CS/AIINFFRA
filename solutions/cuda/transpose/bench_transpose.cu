@@ -4,8 +4,16 @@
 #include <cstdlib>
 #define CUDA_CHECK(e) do{cudaError_t r=e;if(r){printf("ERR %s\n",cudaGetErrorString(r));exit(1);}}while(0)
 
-// Naive: each thread reads 1 element, writes 1 element
-// Row-major read (coalesced), column-major write (stride=N, terrible)
+// ============================================================
+// bench_transpose.cu — Naive vs Tiled Matrix Transpose
+//
+// 【算子是什么】矩阵转置: out[j][i] = in[i][j]
+// 【在模型里干嘛】Attention 中的 QK^T 需要 K 的转置、batch/seq 维度交换、
+//   multi-head 的 reshape+transpose 操作（[B,N,H,D]↔[B,H,N,D]）
+// 【什么模型用】所有 Transformer——LLaMA/GPT/DeepSeek/Mistral
+//   - Q@K^T 中 K 需要转置（N×d → d×N）
+//   - Flash Attention 的分块策略本质是 transpose + tiling 的组合
+// ============================================================
 __global__ void transpose_naive(const float* in, float* out, int N) {
     int x = blockIdx.x * 32 + threadIdx.x;
     int y = blockIdx.y * 32 + threadIdx.y;

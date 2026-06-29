@@ -65,7 +65,7 @@ Warp divergence 发生时硬件序列化两路，最坏算力减半。避免：1
 
 **Q7：tensor core 如何工作？**
 
-Tensor core 是专门执行矩阵乘加（D = A×B + C）的硬件单元，A100 FP16 达 312 TFLOPS（vs CUDA core 的 19.5 TFLOPS）。WMMA API 让 32 个 thread 协作操作 16×16 tile。实际通过 cuBLAS / CUTLASS / Triton（`tl.dot` 自动生成 `mma.sync`）调用。
+Tensor core 是专门执行矩阵乘加（$D = A \times B + C$）的硬件单元，A100 FP16 达 312 TFLOPS（vs CUDA core 的 19.5 TFLOPS）。WMMA API 让 32 个 thread 协作操作 16×16 tile。实际通过 cuBLAS / CUTLASS / Triton（`tl.dot` 自动生成 `mma.sync`）调用。
 
 **Q8：INT8 量化的 CUDA 层变化？**
 
@@ -97,7 +97,7 @@ Triton 是 block-level 编程模型：你指定 tile 对数据的操作（`tl.lo
 
 **Q15：GQA 的 KV cache 节省怎么算？**
 
-GQA 将 H 个 Q heads 分为 G 组，每组共享一个 KV head（G 个 KV heads，G < H）。KV cache 节省比例 = G/H。LLaMA 2 70B (G=8, H=64): 节省 87.5%，每 token KV 从 2.56 MB 降到 320 KB。
+GQA 将 H 个 Q heads 分为 G 组，每组共享一个 KV head（G 个 KV heads，$G < H$）。KV cache 节省比例 $= G/H$。LLaMA 2 70B ($G=8, H=64$): 节省 87.5%，每 token KV 从 2.56 MB 降到 320 KB。
 
 ---
 
@@ -109,7 +109,7 @@ GQA 将 H 个 Q heads 分为 G 组，每组共享一个 KV head（G 个 KV heads
 
 **Q2：KV cache 占多少显存？优化手段？**
 
-公式：`2 × num_layers × num_kv_heads × head_dim × seq_len × batch × dtype_bytes`。LLaMA-2-70B (GQA, FP16), seq=4096, batch=1 ≈ 4 GB；batch=32 则 128 GB。优化：GQA/MQA（减少 kv_heads）、KV cache 量化（INT8/FP4）、PagedAttention（减少碎片）、prefix caching（复用相同 prompt）。
+公式：$2 \times \text{num\_layers} \times \text{num\_kv\_heads} \times \text{head\_dim} \times \text{seq\_len} \times \text{batch} \times \text{dtype\_bytes}$。LLaMA-2-70B (GQA, FP16), seq=4096, batch=1 ≈ 4 GB；batch=32 则 128 GB。优化：GQA/MQA（减少 kv_heads）、KV cache 量化（INT8/FP4）、PagedAttention（减少碎片）、prefix caching（复用相同 prompt）。
 
 **Q3：speculative decoding 的原理？**
 

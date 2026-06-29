@@ -3,8 +3,11 @@
 #include <cmath>
 
 // ============================================================
-// Kernel 1: Naive GEMM — C = A × Bᵀ  (A: M×K, B: N×K)
-// One thread per output element. No shared memory.
+// GEMM Reference — naive + tiled (shared memory) + Coalescing variants
+//
+// 【算子是什么】矩阵乘法 C = A × B
+// 【在模型里干嘛】所有 Linear/FFN 层、QKV projection、attention output projection
+// 【什么模型用】所有神经网络。LLaMA-7B 一个 forward 约 256 次 GEMM（32层×8次/层）
 // ============================================================
 __global__ void gemm_naive(const float *A, const float *B, float *C,
                            int M, int N, int K) {

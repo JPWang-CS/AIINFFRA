@@ -7,7 +7,7 @@
 ## 解决了什么问题
 
 标准 self-attention 的两大瓶颈：
-1. **显存 O(N²)**：N×N 的 attention 矩阵（QK^T 和 softmax 后的权重）必须写回 HBM
+1. **显存 $O(N^{2})$**：$N \times N$ 的 attention 矩阵（$QK^{T}$ 和 softmax 后的权重）必须写回 HBM
 2. **Bandwidth-bound**：每次 forward 都要从 HBM 读写这个巨大矩阵，HBM 带宽成为限制
 
 序列长度 N=4096 时，FP16 的 attention 矩阵就要 32MB（单头）；N=16384 时 512MB。A100 的 HBM 带宽只有 1.5TB/s，读写这个矩阵吃掉大量时间。
@@ -15,32 +15,39 @@
 ## 核心思路（3 个技巧组合）
 
 ### 1. Tiling（分块）
-不要一次性算完整的 `QK^T`，而是把 Q/K/V 都切成小块：
-```
-Q: [N, d] 按行切成 Br×d 的块 (Br ≈ 32-128)
-K: [N, d] 按行切成 Bc×d 的块 (Bc ≈ 32-128)
-V: [N, d] 同 K
-```
-每次只在 SRAM (shared memory / L1) 里处理 **Br×Bc** 的小 attention tile，算完后立即用它更新输出，**不写回 HBM**。
+不要一次性算完整的 $QK^{T}$，而是把 Q/K/V 都切成小块：
+
+$$
+\begin{aligned}
+Q &: [N, d] \text{ 按行切成 } B_r \times d \text{ 的块 } (B_r \approx 32\text{-}128) \\
+K &: [N, d] \text{ 按行切成 } B_c \times d \text{ 的块 } (B_c \approx 32\text{-}128) \\
+V &: [N, d] \text{ 同 } K
+\end{aligned}
+$$
+
+每次只在 SRAM (shared memory / L1) 里处理 **$B_r \times B_c$** 的小 attention tile，算完后立即用它更新输出，**不写回 HBM**。
 
 ### 2. Online Softmax（增量更新 O）
 因为分块了，softmax 的 max 和 sum 要增量维护（详见 [online-softmax.md](online-softmax.md)）：
+
 ```
-对 Q 的每一行（Br 行）:
-  初始: m = -∞, l = 0, O = 0  (running max, sum, output)
+对 Q 的每一行（$B_r$ 行）:
+  初始: $m = -\infty,\; l = 0,\; O = 0$  (running max, sum, output)
   
-  遍历 K 的每个块 (Bc 行):
-    S = Q_block @ K_block^T        (Br × Bc)
-    m_new, l_new = online_update(S, m, l)
-    correction = exp(m - m_new)
-    O = O * correction + softmax(S) @ V_block
+  遍历 K 的每个块 ($B_c$ 行):
+    $S = Q_{\text{block}} \times K_{\text{block}}^{T}$        ($B_r \times B_c$)
+    $m_{\text{new}}, l_{\text{new}} = \text{online\_update}(S, m, l)$
+    $\text{correction} = \exp(m - m_{\text{new}})$
+    $O = O \times \text{correction} + \text{softmax}(S) \times V_{\text{block}}$
   
-  O /= l_final
+  $O \;\mathrel{/}= l_{\text{final}}$
 ```
+
+关键：**O 是增量累积的**，每来一个 K/V 块就更新一次，最终得到完整输出。
 关键：**O 是增量累积的**，每来一个 K/V 块就更新一次，最终得到完整输出。
 
 ### 3. Recomputation（反向时不存 attention）
-前向不存 N×N 的 attention 矩阵（省显存），反向传播时从 Q/K/V 重新算一遍。因为**重算比存储+读取更快**（HBM 慢，compute 快）。
+前向不存 $N \times N$ 的 attention 矩阵（省显存），反向传播时从 Q/K/V 重新算一遍。因为**重算比存储+读取更快**（HBM 慢，compute 快）。
 
 只需要额外存：
 - `m` 和 `l`（每行 2 个 FP32，总共 2N 个数）
@@ -54,7 +61,7 @@ V: [N, d] 同 K
 | Flash Attention | 1.5 MB (QKV) + 0.064 MB (m,l) | **20 ms** | 400 ms |
 
 **提速**: ~5× (短序列) ~ 10×+ (长序列，naive 会 OOM)  
-**显存节省**: O(N²) → O(N)
+**显存节省**: $O(N^{2}) \to O(N)$
 
 ## 伪代码（单头，forward）
 

@@ -3,10 +3,15 @@
 #include <cmath>
 
 // ============================================================
-// Kernel: LayerNorm forward
-// y = (x - mean) / sqrt(var + eps) * gamma + beta
-// Input: B×D, normalize over D dimension per row.
-// Gamma, beta: length D (optional, set to 1/0 if NULL).
+// LayerNorm Reference
+//
+// 【算子是什么】y = (x - mean) / sqrt(var + eps) * gamma + beta
+//   沿 D 维度归一化每行，保持均值=0 方差=1，再 affine transform
+// 【在模型里干嘛】每个 Transformer block 两次：Attention 前 + FFN 前
+//   - 稳定训练：防止激活值漂移/爆炸
+//   - LLaMA 用 RMSNorm（去掉 mean 减法），更快，效果接近
+// 【什么模型用】GPT (LayerNorm)、LLaMA (RMSNorm)、BERT (LayerNorm)
+//   几乎所有 Transformer 架构都有归一化层（只是 Norm 类型不同）
 // ============================================================
 
 // Step 1: compute mean and variance per row (warp-level reduce)

@@ -1,3 +1,9 @@
+// ============================================================
+// Vector Add — element-wise addition: C[i] = A[i] + B[i]
+//
+// 【在模型里干嘛】Residual connections、bias addition、LayerNorm/RMSNorm 内部步骤
+// 【什么模型用】所有 Transformer（LLaMA/GPT/BERT/Mistral）的 skip connection
+// ============================================================
 #include "cuda_utils.h"
 #include <cstdio>
 #include <vector>

@@ -217,22 +217,22 @@ nvcc -Xptxas -v kernel.cu
 
 ### 4.3 Occupancy 计算
 
-```
-Occupancy = (active_warps_per_SM) / (max_warps_per_SM)
+$$
+\text{Occupancy} = \frac{\text{active\_warps\_per\_SM}}{\text{max\_warps\_per\_SM}}
+$$
 
 限制因素（取最紧的那个）：
-1. Register per thread：active_warps = floor(65536 / (reg_per_thread × 32))
-2. Shared memory per block：active_blocks = floor(shmem_per_SM / shmem_per_block)
+1. Register per thread：$\text{active\_warps} = \lfloor 65536 \;/\; (\text{reg\_per\_thread} \times 32) \rfloor$
+2. Shared memory per block：$\text{active\_blocks} = \lfloor \text{shmem\_per\_SM} \;/\; \text{shmem\_per\_block} \rfloor$
 3. Max blocks per SM：hardware limit (A100 = 32)
 
 A100 例子：
 - reg/thread = 64，shared/block = 32 KB，block_size = 256 (=8 warps)
-- Register 限制：floor(65536 / (64×32)) = 32 warps = 4 blocks
-- Shared mem 限制：floor(164KB / 32KB) = 5 blocks
+- Register 限制：$\lfloor 65536 / (64 \times 32) \rfloor = 32$ warps = 4 blocks
+- Shared mem 限制：$\lfloor 164\text{KB} / 32\text{KB} \rfloor = 5$ blocks
 - Block 限制：max 32
-- 最终：min(4, 5, 32) = 4 blocks = 32 warps
-- Occupancy = 32/64 = 50%
-```
+- 最终：$\min(4, 5, 32) = 4$ blocks = 32 warps
+- $\text{Occupancy} = 32/64 = 50\%$
 
 > **Ascend 对照**：Ascend 没有 occupancy 概念，因为它的任务调度模型不同。但调 register/shared memory 用量来最大化并行度的思路是通用的。
 
@@ -250,20 +250,21 @@ A100 例子：
 
 ### 5.2 手指算法（Roofline Model）
 
-```
-Arithmetic Intensity (AI) = Total FLOPs / Total Bytes Moved
+$$
+\text{Arithmetic Intensity (AI)} = \frac{\text{Total FLOPs}}{\text{Total Bytes Moved}}
+$$
 
 GEMM 例子：
-- M=N=K=1024，FLOPs = 2.1G，Bytes = ~12 MB
-- AI = 2.1G / 12M ≈ 175 FLOP/byte
-- A100: 312 TFLOPS / 2000 GB/s ≈ 156 FLOP/byte  ← 转折点
-- AI > 156 → compute bound；AI < 156 → memory bound
-- 1024×1024×1024 GEMM：AI = 175 > 156 → compute bound ✓
+- $M=N=K=1024$，FLOPs $= 2.1\text{G}$，Bytes $= \sim\!12\text{ MB}$
+- $\text{AI} = 2.1\text{G} \;/\; 12\text{M} \approx 175 \text{ FLOP/byte}$
+- A100: $312 \text{ TFLOPS} \;/\; 2000 \text{ GB/s} \approx 156 \text{ FLOP/byte}$ ← 转折点
+- $\text{AI} > 156 \to$ compute bound；$\text{AI} < 156 \to$ memory bound
+- $1024 \times 1024 \times 1024$ GEMM：$\text{AI} = 175 > 156 \to$ compute bound ✓
 
 Vector Add 例子：
-- N=1M，FLOPs = 1M，Bytes = 12 MB
-- AI = 1M / 12M = 0.083 FLOP/byte
-- 远远 < 156 → 严重 memory bound ✗
+- $N=1\text{M}$，FLOPs $= 1\text{M}$，Bytes $= 12\text{ MB}$
+- $\text{AI} = 1\text{M} \;/\; 12\text{M} = 0.083 \text{ FLOP/byte}$
+- 远远 $< 156 \to$ 严重 memory bound ✗
 ```
 
 > FLOPs 计算：乘加算 2 FLOP

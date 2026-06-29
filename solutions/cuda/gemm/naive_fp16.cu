@@ -1,6 +1,12 @@
 // ============================================================
 // gemm_fp16_naive.cu — 手写版本（2026-06-22）
 // C = alpha * A × B + beta * C，half 精度，LeetGPU 接口
+//
+// 【算子是什么】矩阵乘法 GEMM，FP16 精度，支持 BLAS 标准公式
+// 【在模型里干嘛】所有 Linear/FFN 层。FP16 是推理默认精度——7B 模型从 14GB→7GB。
+//   Attention: Q = x@W_Q, K = x@W_K, V = x@W_V, output = concat(heads)@W_O
+//   FFN: gate = x@W_gate, up = x@W_up, down = (gate⊙up)@W_down
+// 【什么模型用】LLaMA 2/3 (FP16 推理)、GPT-3/4、所有 HuggingFace 半精度模型
 // ============================================================
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>

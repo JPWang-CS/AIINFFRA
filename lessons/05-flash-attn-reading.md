@@ -14,6 +14,30 @@
 
 ---
 
+---
+	
+## Part 0：这个算子在模型里干嘛？
+
+Flash Attention **不是新算子**——它和 naive attention 算的东西**一模一样**，改变的是**怎么算**：
+
+```
+同样的数学公式：
+  O = softmax(QK^T / √d) × V
+
+不同的执行策略：
+  Naive Attention:   算完整 N×N 矩阵 → 存 HBM → 读回来 softmax → 写 HBM → 读回来 × V
+                      ↑ O(N²) 显存，大量 HBM 读写
+  
+  Flash Attention:   把 Q 切成小块 → 每块循环遍历所有 K/V 块
+                     → 用 online softmax 增量累加 O
+                     → 不存中间 N×N 矩阵
+                     ↑ O(N) 显存，HBM 读写大幅减少
+```
+
+**最终结果一样**（数值误差 < 1e-5），但显存从 $O(N^{2})$ 降到 $O(N)$，速度提升 2-10×。
+
+**什么模型用**：所有现代 LLM 的默认 attention 实现——LLaMA 2/3、GPT-4、DeepSeek-V2/V3、Mistral、Qwen、Claude。PyTorch 的 `torch.nn.functional.scaled_dot_product_attention` 内部自动走 Flash Attention（如果满足 dtype/causal 条件）。
+
 ## Part 1：为什么读 Flash Attention
 
 Flash Attention 是 Triton 生态的标志性算子。它融合了 tiling、online softmax、shared memory、causal mask——是 CUDA 优化技术的集大成者，也是面试的超级高频题。
@@ -26,16 +50,20 @@ Flash Attention 是 Triton 生态的标志性算子。它融合了 tiling、onli
 
 ```
 Standard Attention:
-  S = QK^T / √d           → O(N²) 显存（存整个 S 矩阵）
-  P = softmax(S)
-  O = P × V
+$$
+\begin{aligned}
+S &= \frac{QK^{T}}{\sqrt{d}} &\quad&\to O(N^{2})\text{ 显存（存整个 S 矩阵）} \\
+P &= \text{softmax}(S) \\
+O &= P \times V
+\end{aligned}
+$$
 
 Flash Attention:
-  把 Q 按行分块（Q_tile），K/V 按列分块（K_tile/V_tile）
-  对每个 Q_tile，循环遍历所有 K_tile/V_tile：
-    1. 加载 Q_tile, K_tile, V_tile 到 shared memory
+  把 Q 按行分块（$Q_{\text{tile}}$），K/V 按列分块（$K_{\text{tile}}/V_{\text{tile}}$）
+  对每个 $Q_{\text{tile}}$，循环遍历所有 $K_{\text{tile}}/V_{\text{tile}}$：
+    1. 加载 $Q_{\text{tile}}, K_{\text{tile}}, V_{\text{tile}}$ 到 shared memory
     2. 用 online softmax 增量计算 attention
-    3. 不存 S 矩阵 → O(N) 显存
+    3. 不存 S 矩阵 → $O(N)$ 显存
 ```
 
 ---
@@ -64,13 +92,13 @@ Flash Attention:
        每个 Q 块 × 所有 K/V 块
 
 4. 内层（106-131 行）:
-   score = Q_row · K_row / √d   ← 计算注意力分数
-   m_new = max(m, score)        ← online softmax: 更新 max
-   p = exp(score - m_new)       ← 对应当前要加上的项
-   acc *= exp(m - m_new)        ← 重新缩放旧累加器
-   acc += p * V_row             ← 加上当前项
-   l = l * scale + p            ← 重新缩放旧归一化因子
-   m = m_new
+   $\text{score} = Q_{\text{row}} \cdot K_{\text{row}} \;/\; \sqrt{d}$   ← 计算注意力分数
+   $m_{\text{new}} = \max(m, \text{score})$        ← online softmax: 更新 max
+   $p = \exp(\text{score} - m_{\text{new}})$       ← 对应当前要加上的项
+   $\text{acc} \mathrel{*}= \exp(m - m_{\text{new}})$          ← 重新缩放旧累加器
+   $\text{acc} \mathrel{+}= p \times V_{\text{row}}$           ← 加上当前项
+   $l = l \times \text{scale} + p$            ← 重新缩放旧归一化因子
+   $m = m_{\text{new}}$
 ```
 
 **这个 kernel 的 CUDA 概念清单**（看你能认出几个）：

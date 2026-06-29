@@ -30,21 +30,29 @@ LLM 推理慢、显存占用大：
 ## INT8 量化原理
 
 ### 对称量化（Symmetric）
-```
-FP16_val ∈ [-α, α]  →  INT8_val ∈ [-127, 127]
-scale = α / 127
-INT8_val = round(FP16_val / scale)
-FP16_val ≈ INT8_val * scale
-```
+
+$$
+\begin{aligned}
+\text{FP16\_val} \in [-\alpha, \alpha] &\;\to\; \text{INT8\_val} \in [-127, 127] \\
+\text{scale} &= \frac{\alpha}{127} \\
+\text{INT8\_val} &= \operatorname{round}\left(\frac{\text{FP16\_val}}{\text{scale}}\right) \\
+\text{FP16\_val} &\approx \text{INT8\_val} \times \text{scale}
+\end{aligned}
+$$
+
 只需要存一个 **scale**（每层或每通道一个）。
 
 ### 非对称量化（Asymmetric）
-```
-FP16_val ∈ [β, γ]  →  INT8_val ∈ [-128, 127]
-scale = (γ - β) / 255
-zero_point = round(-β / scale) - 128
-INT8_val = round(FP16_val / scale) + zero_point
-```
+
+$$
+\begin{aligned}
+\text{FP16\_val} \in [\beta, \gamma] &\;\to\; \text{INT8\_val} \in [-128, 127] \\
+\text{scale} &= \frac{\gamma - \beta}{255} \\
+\text{zero\_point} &= \operatorname{round}\left(\frac{-\beta}{\text{scale}}\right) - 128 \\
+\text{INT8\_val} &= \operatorname{round}\left(\frac{\text{FP16\_val}}{\text{scale}}\right) + \text{zero\_point}
+\end{aligned}
+$$
+
 需要存 **scale + zero_point**。适合分布不对称的激活（如 ReLU 后全是正数）。
 
 ### 量化粒度

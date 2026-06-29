@@ -110,6 +110,42 @@ if (threadIdx.x % 2 == 0) {
 
 ## Part 2：Vector Addition — 你的第一个 Kernel（动手）
 
+### 这个算子在模型里干嘛？
+
+**数学定义**：$C[i] = A[i] + B[i]$，逐元素加法（element-wise add）。
+
+**在 Transformer 里的位置**（以 LLaMA 一个 block 为例）：
+
+```
+Input
+  ↓
+LayerNorm         → element-wise（kernel fusion 会合并进前一步）
+  ↓
+QKV Projection    → GEMM（矩阵乘）
+  ↓
+  ... Attention ...
+  ↓
++ Residual        → ⬅ Vector Add！（输入 + Attention 输出）
+  ↓
+LayerNorm         → element-wise
+  ↓
+FFN (gate+up)     → GEMM
+  ↓ Activation     → element-wise（SiLU）
+  ↓ × gate        → Vector Add × element-wise mul（gated activation）
+  ↓ down proj     → GEMM
+  ↓
++ Residual        → ⬅ Vector Add！（加回 FFN 前的输入）
+```
+
+Vector Add 本身很快（memory-bound），单独提出来学是因为它是**最简单的 kernel**——只做一次内存读写和一次加法，不涉及 shared memory、同步、tiling。用它能练熟：
+
+- grid/block/thread 索引计算
+- grid-stride loop
+- cudaEvent 计时 + bandwidth 计算
+- memory-bound vs compute-bound 判断
+
+**什么模型用**：所有 Transformer（LLaMA/GPT/BERT/DeepSeek/Mistral）、CNN（ResNet 的 residual）、任何有 skip connection 或 bias addition 的模型。
+
 ### 任务
 
 写一个 GPU 程序，做两个向量的逐元素加法：`C[i] = A[i] + B[i]`。
