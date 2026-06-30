@@ -21,6 +21,7 @@
 
 | 日期 | 主题 | 对应 PATH |
 |------|------|----------|
+| [2026-06-29-week3-infra](2026-06-29-week3-infra.md) | Agent/Skills 搭建 + 内容打磨 | 全路线 |
 | [2026-06-25-gemm-done](2026-06-25-gemm-done.md) | GEMM 完成 + 仓库重组 | A2 A3 |
 | [2026-06-22-week2-gemm-naive](2026-06-22-week2-gemm-naive.md) | GEMM naive + tiled fp16 | A2 A3 |
 | [2026-06-16-week1-cuda-basics](2026-06-16-week1-cuda-basics.md) | CUDA 基础 + Vector Add + 4090 配置 | A1 |

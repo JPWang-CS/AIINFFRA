@@ -6,17 +6,13 @@
 
 ## 🔧 算子线（动手）
 
-**现在 · A4 — Softmax**
-GEMM（naive + tiled）已全部完成。这一步写 Softmax：naive 3-pass → online 1-pass → warp shuffle reduce。
+**现在 · A4 — Softmax（优化阶段）**
+3-pass naive 已在 LeetGPU `5_softmax` 跑通（2026-07-01）。接下来挖优化：
 
-- 读：[Lesson 04 — Softmax](./lessons/04-softmax.md) · 深入 [warp-and-sync §4](./notes/cuda/warp-and-sync.md)
-- 理论提前铺好了：[online softmax](./notes/algorithms/online-softmax.md) · [parallel reduce](./notes/algorithms/parallel-reduce.md)
-- 自己写：`softmax_naive`（3-pass），LeetGPU `5_softmax` 跑通
-- 验收：
-  - [ ] 结果正确（max abs err < 1e-5）
-  - [ ] 理解 max trick 为什么必须
-  - [ ] 能解释 warp shuffle reduce 的 `__shfl_down_sync` 语义
-- 跑通后：改成 online 1-pass，对比吞吐
+- [ ] fuse max + sum 到同一个 kernel（省一次 launch）
+- [ ] online softmax（1-pass，省 3× HBM 读）
+- [ ] warp shuffle reduce（`__shfl_down_sync` 替代 shared memory 归约）
+- [ ] 对比吞吐量（3-pass vs online vs warp shuffle）
 
 **接下来**：A5 读 Flash Attn CUDA → B1 Triton 入门
 
@@ -37,6 +33,7 @@ GEMM（naive + tiled）已全部完成。这一步写 Softmax：naive 3-pass →
 
 ## ✅ 刚完成
 
+- 算子线 A4: Softmax 3-pass naive LeetGPU `5_softmax` 跑通 ✅（2026-07-01）
 - 算子线 A3/A3+: GEMM fp16 naive + tiled LeetGPU 跑通 ✅（2026-06-22）
 - 理论线: online softmax + parallel reduce 学完
 
