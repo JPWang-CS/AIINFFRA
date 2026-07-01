@@ -18,7 +18,9 @@
       "Bash(python3 *)",
       "WebSearch",
       "WebFetch(domain:blog.csdn.net)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Bash(ls -la .claude/agent-memory/ascend-to-gpu-coach/)",
+      "Bash(cat .claude/agent-memory/ascend-to-gpu-coach/MEMORY.md)"
     ]
   }
 }

@@ -1,16 +1,20 @@
 ---
 name: code-ownership-clarification
-description: "仓库 .cu 文件是 Agent 参考代码，用户实际工作在 LeetGPU/4090 上手写并记录在 weekly md"
+description: "Agent 产物 ≠ 用户进度：reference/cuda 的 .cu + notes/algorithms 的笔记都是我生成的素材，用户实掌握要另算"
 metadata:
   type: project
 ---
 
-**Rule**: 仓库 `cuda-kernels/` 下的 `.cu` 文件是 Agent 写的参考实现。用户在 LeetGPU/4090 上从零手写自己的 kernel，进度记录在 `weekly/*.md` 和 `MAIN.md` 中。
+**Rule（Agent 产物 ≠ 用户进度）**: 仓库里我(Agent)生成的东西都只是素材/参考，不等于用户已掌握。两类：
+- **代码**：`reference/cuda/` 的 `.cu` 是参考（看不抄）；用户从零手写、跑通的 kernel 才进 `solutions/cuda/`。
+- **理论笔记**：`notes/algorithms/` 的笔记多是我起草的草稿；用户「读过 + 能讲清」才算学过。
 
-**Why**: 用户的 memory 明确写明 ".cu files are Agent reference"。用户的学习方式是"自己写——仓库 .cu 是参考，从空文件开始"。
+进度权威源：代码看 `solutions/` 跑通 + `weekly/*.md`；理论看用户明确说学过。`PATH.md`/`NOW.md` 是**计划源**，其 ✅ 若来自我生成的笔记，不代表用户已学。
+
+**Why**: 用户 2026-07-01 明确指出「8 条笔记是你生成的，我只看了前两条，需要区分我看到还是你生成的」。同理 .cu 参考代码存在也不等于用户写过。
 
 **How to apply**:
-- 评估进度时以 MAIN.md + weekly/*.md 为准，不以 .cu 文件存在为准
-- 辅导时引导用户从零手写，而非让用户阅读/修改 Agent 的参考代码
-- 更新进度追踪时必须标注"用户已完成" vs "Agent 参考已有"
-- 用户完成某个版本后，他们会在 weekly md 里记录并在 LeetGPU/4090 上跑通
+- 汇报进度时**必须分两栏**：「用户已学/已写」 vs 「Agent 已生成(待读/参考)」，绝不把笔记或参考代码的存在当成用户进度
+- 理论线：截至 2026-07-01 用户实学 2 条（online softmax、parallel reduce），其余 6 条笔记（flash-attn 机制、MLA、INT8/FP8、MoE、PD 分离、投机解码）是待读草稿
+- 辅导时引导用户从零手写代码，而非改我的参考
+- 相关：[[project-progress]] [[feedback-style]]

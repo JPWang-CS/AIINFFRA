@@ -1,3 +1,4 @@
 - [User background](user-background.md) — Ascend C 算子经验转 CUDA/Triton，目标 ML 系统工程师
-- [Project progress](project-progress.md) — A2 GEMM naive 已过，现 A3 tiled；拉模式两条线，权威进度看 PATH.md
+- [Project progress](project-progress.md) — A4 Softmax naive 已过(2026-07-01)，现挖 softmax 优化；理论线用户实学 2 条；权威看 PATH.md
 - [Feedback: style](feedback-style.md) — 通俗讲题、代码简洁、先分析后建议、更新记录
+- [Artifact ≠ progress](code-ownership-clarification.md) — 我生成的 .cu 参考 + notes 笔记都不等于用户进度；汇报分「已学/已写」vs「已生成」
