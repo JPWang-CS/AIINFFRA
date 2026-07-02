@@ -20,7 +20,9 @@
       "WebFetch(domain:blog.csdn.net)",
       "Bash(git *)",
       "Bash(ls -la .claude/agent-memory/ascend-to-gpu-coach/)",
-      "Bash(cat .claude/agent-memory/ascend-to-gpu-coach/MEMORY.md)"
+      "Bash(cat .claude/agent-memory/ascend-to-gpu-coach/MEMORY.md)",
+      "Bash(command -v nvcc)",
+      "Bash(nvcc --version)"
     ]
   }
 }
