@@ -255,13 +255,50 @@ s_new = s_old * exp(m_old - m_new) + exp(x_i - m_new)   // max 变了就修正�
 
 ---
 
+## Part 7：True Online Softmax 练习（2026-07-10）
+
+> LeetGPU 上实践 `maxSumkernel`：per-thread K-element online scan + block tree reduce merge (m,s) pair。2-pass（含 normalize）。
+
+**核心 kernel 结构**：
+
+```cpp
+__global__ void maxSumkernel(const float* input, float* partial_sum, float* partial_max, int N) {
+    // ① 每个 thread 串行扫 chunkSize 个元素，逐元素维护 (m, s)
+    float m = -INFINITY, s = 0.0f;
+    for (int64_t idx = chunkStart; idx < chunkEnd; ++idx) {
+        float val   = input[idx];
+        float m_new = fmaxf(m, val);
+        s = s * expf(m - m_new) + expf(val - m_new);  // online 公式
+        m = m_new;
+    }
+    // ② block 内 tree reduce 合并 256 个 (m, s) pair
+    // merge 公式：s_new = s_a·exp(m_a-m_new) + s_b·exp(m_b-m_new)  （交换律+结合律）
+    // ③ tid==0 写 partial_max[idx], partial_sum[idx]
+}
+```
+
+**实践踩坑**：
+
+| 坑 | 现象 | 解法 |
+|---|---|---|
+| tree reduce 空线程 `-inf - (-inf)` → `expf(NaN)` → NaN 污染 | N<256 时结果乱 | `if (m_a == -INFINITY)` 跳过，不碰 expf |
+| `__syncthreads()` 前部分线程提前 `return` | 死锁 / UB | 空线程带哨兵走完全程 |
+| device 指针在 host 直接读 | 未定义行为 | 必须 `cudaMemcpy` |
+| `cudaMalloc` 用 `free` 释放 | crash | 必须 `cudaFree` |
+| normalize 单线程串行 N 个 expf | 1ms → 60ms | 必须 `normalize_kernel<<<N blocks>>>(...)` 多 block 并行 |
+
+> 当前 LeetGPU 通过方案：3-pass naive ~1ms。`maxSumkernel` 设计正确，待 parallelize normalize 步骤。
+
+---
+
 ## ✅ 本课检验清单
 
 - [x] `softmax_naive` 跑通，结果正确（3-pass 跨 block，2026-07-01）
-- [ ] 理解 max trick 为什么必须（防止 exp 溢出）
+- [x] 理解 max trick 为什么必须（防止 exp 溢出）
+- [x] `maxSumkernel` 实现：per-thread online scan + tree reduce merge (m,s) pair（2026-07-10）
 - [ ] 理解 warp shuffle reduce 的原理和 `__shfl_down_sync` 的语义
 - [ ] 知道 Triton 的 `tl.max`/`tl.sum` 底层就是用 warp shuffle 实现的
-- [ ] 了解 online softmax（单 pass）的思路 → 通向 Flash Attention
+- [x] 了解 online softmax（单 pass）的思路 → 通向 Flash Attention
 
 ---
 
