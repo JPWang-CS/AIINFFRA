@@ -22,7 +22,9 @@
       "Bash(ls -la .claude/agent-memory/ascend-to-gpu-coach/)",
       "Bash(cat .claude/agent-memory/ascend-to-gpu-coach/MEMORY.md)",
       "Bash(command -v nvcc)",
-      "Bash(nvcc --version)"
+      "Bash(nvcc --version)",
+      "Bash(echo '=========== __TRACKED_VAR__ ===========')",
+      "Read(//d/Desktop/Code/CC4Ascend/projects/**)"
     ]
   }
 }

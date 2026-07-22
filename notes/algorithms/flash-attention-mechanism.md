@@ -31,20 +31,23 @@ $$
 因为分块了，softmax 的 max 和 sum 要增量维护（详见 [online-softmax.md](online-softmax.md)）：
 
 ```
-对 Q 的每一行（$B_r$ 行）:
-  初始: $m = -\infty,\; l = 0,\; O = 0$  (running max, sum, output)
-  
-  遍历 K 的每个块 ($B_c$ 行):
-    $S = Q_{\text{block}} \times K_{\text{block}}^{T}$        ($B_r \times B_c$)
-    $m_{\text{new}}, l_{\text{new}} = \text{online\_update}(S, m, l)$
-    $\text{correction} = \exp(m - m_{\text{new}})$
-    $O = O \times \text{correction} + \text{softmax}(S) \times V_{\text{block}}$
-  
-  $O \;\mathrel{/}= l_{\text{final}}$
+对 Q 的每一行 (Br 行):
+  初始: m = -inf,  l = 0,  O = 0        # running max, sum, output
+
+  遍历 K 的每个块 (Bc 行):
+    S = Q_block @ K_block^T             # [Br, Bc] attention scores
+    m_new = max(m, max(S, dim=1))       # 沿每行(Bc 维)取 max
+    correction = exp(m - m_new)
+    P = exp(S - m_new)                  # 未归一化, [Br, Bc]
+    l = l * correction + sum(P, dim=1)  # 沿每行求和
+    O = O * correction + P @ V_block
+    m = m_new
+
+  O /= l                               # 最后一步才归一化
 ```
 
-关键：**O 是增量累积的**，每来一个 K/V 块就更新一次，最终得到完整输出。
-关键：**O 是增量累积的**，每来一个 K/V 块就更新一次，最终得到完整输出。
+关键 ①：**O 累积的是未归一化的 `P @ V`**（`P = exp(S - m_new)`），除以 `l` 的归一化**只在最后做一次**——不能在循环里用 `softmax(S)` 提前归一化，否则各块的分母不一致，结果错。
+关键 ②：**每来一个 K/V 块就同步修正 m、l、O**（旧的 O 和 l 都乘 correction 拉回同一基准），最终得到与整行一次性算 softmax 完全相同的输出。
 
 ### 3. Recomputation（反向时不存 attention）
 前向不存 $N \times N$ 的 attention 矩阵（省显存），反向传播时从 Q/K/V 重新算一遍。因为**重算比存储+读取更快**（HBM 慢，compute 快）。
