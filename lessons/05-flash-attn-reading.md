@@ -2,7 +2,7 @@
 
 > 主题：读懂 Flash Attention 的 CUDA 代码（不手写），认全里面的 CUDA 概念
 > 前置：完成 [Lesson 04](04-softmax.md)，理解 shared memory tiling + online softmax
-> 状态：⏳ 待做（见 [PATH.md](../PATH.md)）
+> 状态：🚧 进行中（见 [PATH.md](../PATH.md)）
 
 📚 **本课重点知识库**：
 - [Triton 底层 CUDA 对照](../notes/cuda/triton-under-the-hood.md) — Triton 代码对应什么 CUDA

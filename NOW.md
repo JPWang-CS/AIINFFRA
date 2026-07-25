@@ -30,7 +30,7 @@
 
 ---
 
-## 📦 已完成 · A4 — Softmax（优化阶段）
+## 📦 已完成 · A4 — Softmax（主线交付 · 优化延伸暂挂）
 
 >   **课程**：[Lesson 04 — Softmax](./lessons/04-softmax.md)（含优化建议 Part 6）  
 >   **基础代码**：[softmax_naive.cu](./solutions/cuda/softmax/softmax_naive.cu) — 3-pass 已跑通（2026-07-01），在此之上改

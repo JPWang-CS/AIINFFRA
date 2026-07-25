@@ -28,22 +28,38 @@ $$
 每次只在 SRAM (shared memory / L1) 里处理 **$B_r \times B_c$** 的小 attention tile，算完后立即用它更新输出，**不写回 HBM**。
 
 ### 2. Online Softmax（增量更新 O）
-因为分块了，softmax 的 max 和 sum 要增量维护（详见 [online-softmax.md](online-softmax.md)）：
+因为分块了，softmax 的 max 和 sum 要增量维护（详见 [online-softmax.md](online-softmax.md)）。对 Q 的每一行，跨 K/V 块维护运行态 $(m,\ \ell,\ O)$，第 $j$ 个 K/V 块到来时：
+
+$$
+\begin{aligned}
+S_j &= Q_{\text{tile}} K_j^{\top} / \sqrt{d} && [B_r, B_c]\ \text{scores} \\
+m^{\text{new}} &= \max\bigl(m,\ \mathrm{rowmax}(S_j)\bigr) \\
+f &= \exp(m - m^{\text{new}}) && \text{回溯修正因子} \\
+P_j &= \exp(S_j - m^{\text{new}}) && \text{未归一化权重} \\
+\ell &\leftarrow \ell \cdot f + \mathrm{rowsum}(P_j) \\
+O   &\leftarrow O \cdot f + P_j V_j \\
+m   &\leftarrow m^{\text{new}}
+\end{aligned}
+$$
+
+所有块扫完后归一化：$O \leftarrow O / \ell$（只在最后做一次，循环里不归一化）。伪代码（对应上面的公式）：
 
 ```
-对 Q 的每一行 (Br 行):
-  初始: m = -inf,  l = 0,  O = 0        # running max, sum, output
+对 Q 的每个块 (Br 行,整块一起向量化算):
+  初始: m = full(Br, -inf)              # [Br]    每行 running max
+        l = zeros(Br)                   # [Br]    每行 running sum
+        O = zeros(Br, d)                # [Br, d] 输出累加器
 
   遍历 K 的每个块 (Bc 行):
-    S = Q_block @ K_block^T             # [Br, Bc] attention scores
-    m_new = max(m, max(S, dim=1))       # 沿每行(Bc 维)取 max
-    correction = exp(m - m_new)
-    P = exp(S - m_new)                  # 未归一化, [Br, Bc]
-    l = l * correction + sum(P, dim=1)  # 沿每行求和
-    O = O * correction + P @ V_block
-    m = m_new
+    S = Q_block @ K_block^T / sqrt(d)   # [Br, Bc]  attention scores
+    m_new = max(m, max(S, dim=1))       # [Br] ⊕ [Br] → [Br]
+    correction = exp(m - m_new)         # [Br]      回溯修正因子
+    P = exp(S - m_new[:, None])             # [Br,Bc] - [Br,1]沿Bc广播 → [Br,Bc]  未归一化权重
+    l = l * correction + sum(P, dim=1)      # [Br]·[Br] + [Br] → [Br]
+    O = O * correction[:, None] + P @ V_block  # [Br,d]·[Br,1]沿d广播 + [Br,Bc]@[Bc,d] → [Br,d]
+    m = m_new                           # [Br]
 
-  O /= l                               # 最后一步才归一化
+  O /= l                                # [Br,d] / [Br] → [Br,d]   最后才归一化
 ```
 
 关键 ①：**O 累积的是未归一化的 `P @ V`**（`P = exp(S - m_new)`），除以 `l` 的归一化**只在最后做一次**——不能在循环里用 `softmax(S)` 提前归一化，否则各块的分母不一致，结果错。
