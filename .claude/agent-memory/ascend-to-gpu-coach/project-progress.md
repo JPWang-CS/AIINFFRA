@@ -1,6 +1,6 @@
 ---
 name: project-progress
-description: 进度——A4 Softmax naive 已过(2026-07-01)，现挖 softmax 优化；A5 Flash Attn 读码 next。权威源 PATH.md
+description: 进度——A4 baseline/2-pass online 已提交(2026-08-03)，1-pass true online 待落盘；A5 读码未完成；计划已升级为密集课表
 metadata:
   type: project
 ---
@@ -9,9 +9,11 @@ metadata:
 
 两条平行路径（不是旧的 5 算子阶梯）：**算子线**（A CUDA→B Triton→C 推理…，动手写代码）+ **理论线**（每周一条算法/理论，产出 notes/algorithms 笔记）。方向 Triton-first，CUDA 只到 B 级，不深钻 tensor core（除非用户要或面试需要）。详见 [[user-background]]。
 
-**当前（2026-07-01）**：
-- 算子线：A1–A4 全过。A4 Softmax 3-pass naive 刚在 LeetGPU `5_softmax` 跑通，现进优化阶段（fuse max+sum → online 1-pass → warp shuffle reduce → 吞吐对比）。下一站 A5 读 Flash Attn CUDA → B1 Triton。
-- 理论线：**区分「我生成」vs「用户学过」**——8 条笔记是我(Agent)起草的草稿，不等于用户掌握。用户实际学过 2 条：online softmax + parallel reduce（NOW.md 前两条）。其余 6 条（flash-attn 机制、MLA、INT8/FP8、MoE、PD 分离、投机解码）是待读草稿。里程碑 ≥12 指用户真正掌握数，不是笔记数。见 [[code-ownership-clarification]]。
+**当前（2026-08-03）**：
+- 算子线：A1-A3 ✅，A4 baseline 3-pass ✅（2026-07-01）、2-pass fused online ✅（2026-07-11）；1-pass true online 在 LeetGPU 实践过但未落盘；warp shuffle/三版 benchmark 未做。A5 Flash Attn CUDA 读码未完成，只有 lesson/参考/机制笔记准备。2026-07-25 后无新代码提交。
+- 理论线：**区分「我生成」vs「用户学过」**——8 条笔记是我(Agent)起草的草稿，不等于用户掌握。用户实际学过 2 条：online softmax + parallel reduce。其余 6 条（flash-attn 机制、MLA、INT8/FP8、MoE、PD 分离、投机解码）是待读草稿。里程碑 ≥12 指用户真正掌握数，不是笔记数。见 [[code-ownership-clarification]]。
+- 计划：2026-08-03 新增 `roadmap/ai-infra-curriculum.md`，参考 AIInfraGuide 的 4 模块结构，规定每阶段产出=代码+数字+面试口径。
+- 内容：2026-08-03 新增 `latest-model-architectures.md` + `remaining-theory-primer.md` + `model-tracker.md`，均扩展为详细分类草稿，未计入用户已学；PATH/课表新增 M1.5 模型结构追踪。
 
 **留存的事实纠正**（A2 GEMM naive，LeetGPU `2_matrix_multiplication`，FP32，C=A×B，2D grid 16×16，`threadIdx.x→k`）：
 - 写回用 `=` 非 `+=`（每线程独占输出，无需累加）

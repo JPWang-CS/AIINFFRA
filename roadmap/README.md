@@ -1,7 +1,7 @@
 # Roadmap — 一年总路线 + 未来阶段
 
 > 这是**长期视野**：一年要去哪、各阶段大致顺序。日常执行看 [PATH.md](../PATH.md)，当前焦点看 [NOW.md](../NOW.md)。
-> 这里的未来阶段（vLLM/分布式/Agent/面试）现在只有计划，走到了再展开。
+> [ai-infra-curriculum.md](ai-infra-curriculum.md) 是 PATH 的执行参考，不是另起的学习线；下面的未来阶段仍是占位计划，走到再展开。
 
 ## 全景
 
@@ -9,7 +9,7 @@
 两条平行路径（地位一样，每周并行）：
 
 算子线（动手）  A CUDA打底 ─→ B Triton ─→ C 推理系统 ─→ D 分布式 ─→ E Agent
-                ← 现在在 A（A2✅ → A3）
+                ← 现在在 A（A4 主线完成 → A5 读 Flash Attn）
 理论线（理解）  GPU优化算法 · 量化 · 注意力演进 · 模型架构 · 推理系统技术 · 训练/并行
 ```
 
@@ -21,6 +21,7 @@
 
 | 文件 | 对应阶段 | 内容 |
 |------|---------|------|
+| [ai-infra-curriculum.md](ai-infra-curriculum.md) | PATH 全路线 | PATH 执行参考：任务、验收、外部参考 |
 | [vllm.md](vllm.md) | C 推理系统 | vLLM 源码深挖：Scheduler / PagedAttention / Worker / 量化通路 |
 | [distributed.md](distributed.md) | D 分布式 | DDP / FSDP / TP / PP demo + 通信模式 |
 | [agents.md](agents.md) | E Agent | MCP demo / Tool Use / RAG project |
@@ -42,5 +43,6 @@
 - [CUDA C++ Programming Guide](https://docs.nvidia.com/cuda/cuda-c-programming-guide/)
 - [CUDA MODE Lectures](https://github.com/cuda-mode/lectures)
 - [Triton Language Docs](https://triton-lang.org/)
+- [AIInfraGuide](https://github.com/caomaolufei/AIInfraGuide) — CUDA / 分布式 / 推理 / 面试宝典
 - [vLLM Source](https://github.com/vllm-project/vllm)
 - [Anthropic MCP Docs](https://modelcontextprotocol.io/)

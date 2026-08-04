@@ -1,6 +1,7 @@
 # Algorithms — 理论线
 
 > 每周一条算法/理论。不只是写代码——补原理、量化、新架构、系统设计。
+> 状态约定：`🚧 草稿/速览` 表示 Agent 已生成、用户还没消化，不计入“已学”。
 > 当前学哪条由 [NOW.md](../../NOW.md) 指定，全貌和进度在 [PATH.md](../../PATH.md) 理论线。
 
 ## 为什么有这条线
@@ -25,6 +26,13 @@
 
 ---
 
+## 怎么用（配合 NOW / PATH）
+
+- [NOW.md](../../NOW.md) 决定当前学哪条；[PATH.md](../../PATH.md) 是唯一进度源。
+- 本目录按 PATH 理论线 6 子类组织，新增主题先进 README，再写独立笔记。
+- `🚧 草稿` 不更新 PATH 状态；只有你能讲清并完成最小验证后，才由教练把对应项标为 ✅。
+- 不在这里另建“新路线”，所有内容都挂回 PATH 的算子线/理论线。
+
 ## 主题池（6 子类，跟业界动态走）
 
 ### GPU 优化算法
@@ -32,54 +40,50 @@
 |------|:--:|
 | [online softmax](online-softmax.md)（Flash 的心脏） | ✅ |
 | [parallel reduce / prefix sum](parallel-reduce.md) | ✅ |
-| Norm 的 reduce 模式（LayerNorm/RMSNorm，料→[reference](../../reference/cuda/layernorm/layernorm.cu)） | ⏳ |
-| work partitioning（Flash 2 的思路） | ⏳ |
+| Norm 的 reduce 模式（LayerNorm/RMSNorm，[速览](remaining-theory-primer.md)，料→[reference](../../reference/cuda/layernorm/layernorm.cu)） | 🚧 速览 |
+| work partitioning（Flash 2 的思路） | 🚧 [速览](remaining-theory-primer.md) |
 
 ### 量化
 | 主题 | 有论文? | 状态 |
 |------|:--:|:--:|
-| [数值格式 INT8 / FP8](quantization-int8-fp8.md) | — | ✅ |
-| AWQ | ✔ 两边写 | ⏳ |
-| GPTQ | ✔ 两边写 | ⏳ |
-| SmoothQuant / KV Cache 量化 | 部分 | ⏳ |
+| [数值格式 INT8 / FP8](quantization-int8-fp8.md) | — | 🚧 草稿 |
+| AWQ | ✔ 两边写 | 🚧 [速览](remaining-theory-primer.md) |
+| GPTQ | ✔ 两边写 | 🚧 [速览](remaining-theory-primer.md) |
+| SmoothQuant / KV Cache 量化 | 部分 | 🚧 [速览](remaining-theory-primer.md) |
 
 ### 注意力演进
 | 主题 | 有论文? | 状态 |
 |------|:--:|:--:|
-| MHA→MQA→GQA→MLA | ✔ [GQA](../../papers/attention/gqa.md) | ⏳ |
-| [Flash Attention 机制](flash-attention-mechanism.md) | ✔ [FA1](../../papers/attention/flash-attention.md) · [FA2](../../papers/attention/flash-attention-2.md) | ✅ |
-| [MLA（DeepSeek-V2/V3）](mla-deepseek.md) | ✔ DeepSeek-V2 | ✅ |
-| 线性注意力 / Ring Attention | ✔ | ⏳ |
+| MHA→MQA→GQA→MLA | ✔ [GQA](../../papers/attention/gqa.md) | 🚧 [速览](remaining-theory-primer.md) |
+| [Flash Attention 机制](flash-attention-mechanism.md) | ✔ [FA1](../../papers/attention/flash-attention.md) · [FA2](../../papers/attention/flash-attention-2.md) | 🚧 草稿 |
+| [MLA（DeepSeek-V2/V3）](mla-deepseek.md) | ✔ DeepSeek-V2 | 🚧 草稿 |
+| 线性注意力 / Ring Attention | ✔ | 🚧 [速览](remaining-theory-primer.md) |
 
 ### 模型架构
 | 主题 | 状态 |
 |------|:--:|
-| [MoE 推理挑战](moe-inference.md) | ✅ |
-| Mamba / SSM | ⏳ |
+| [最新模型架构地图](latest-model-architectures.md)（LLaMA/Qwen/DeepSeek/GPT/Claude/Gemini/MoE/SSM） | 🚧 草稿 |
+| [模型追踪表](model-tracker.md) | 🚧 草稿 |
+| [MoE 推理挑战](moe-inference.md) | 🚧 草稿 |
+| Mamba / SSM | 🚧 [最新模型与结构](latest-model-architectures.md) |
 
 ### 推理系统技术
 | 主题 | 状态 |
 |------|:--:|
-| continuous batching | ⏳ |
-| chunked prefill / [PD 分离](pd-disaggregation.md) | ✅ |
-| [投机解码 speculative decoding](speculative-decoding.md) | ✅ |
-| RadixAttention | ⏳ |
+| continuous batching | 🚧 [速览](remaining-theory-primer.md) |
+| chunked prefill / [PD 分离](pd-disaggregation.md) | 🚧 草稿 |
+| [投机解码 speculative decoding](speculative-decoding.md) | 🚧 草稿 |
+| RadixAttention | 🚧 [速览](remaining-theory-primer.md) |
 
 ### 训练 / 并行
 | 主题 | 有论文? | 状态 |
 |------|:--:|:--:|
-| ZeRO / FSDP | ✔ [已有](../../papers/training/zero-paper.md) | ⏳ |
-| TP / PP / EP 通信 | ✔ Megatron | ⏳ |
+| ZeRO / FSDP | ✔ [已有](../../papers/training/zero-paper.md) | 🚧 [速览](remaining-theory-primer.md) |
+| TP / PP / EP 通信 | ✔ Megatron | 🚧 [速览](remaining-theory-primer.md) |
 
 > 看到新东西随时加一行。
 
-## 已学笔记（按学习顺序）
+## 笔记索引（按掌握度更新）
 
-1. **[Online Softmax](online-softmax.md)** — 单趟增量 softmax，Flash Attn 的心脏（给 A4/A5 铺路）
-2. **[Parallel Reduce](parallel-reduce.md)** — GPU 并行归约模式，树状 reduce + warp shuffle（A4 Softmax 要用）
-3. **[Flash Attention 机制](flash-attention-mechanism.md)** — IO-aware tiling + online softmax，A5 读代码前必看
-4. **[INT8 / FP8 量化基础](quantization-int8-fp8.md)** — 数值格式对比、对称/非对称量化、性能数据（C 线铺路）
-5. **[MoE 推理挑战](moe-inference.md)** — Expert routing、load imbalance、AllToAll 通信（C 线 vLLM 必知）
-6. **[Speculative Decoding](speculative-decoding.md)** — Draft-verify loop，2-3× 加速，适用条件分析
-7. **[PD 分离](pd-disaggregation.md)** — Prefill/Decode disaggregation，P99 TTFT 降低 4×，硬件选型
-8. **[MLA（DeepSeek）](mla-deepseek.md)** — 低秩 KV 压缩，比 GQA 再省 2×，DeepSeek-V2/V3 核心
+- ✅ 用户已掌握：**[Online Softmax](online-softmax.md)**、**[Parallel Reduce](parallel-reduce.md)**
+- 🚧 Agent 草稿，待消化：**[Flash Attention 机制](flash-attention-mechanism.md)**、**[INT8 / FP8 量化基础](quantization-int8-fp8.md)**、**[MoE 推理挑战](moe-inference.md)**、**[Speculative Decoding](speculative-decoding.md)**、**[PD 分离](pd-disaggregation.md)**、**[MLA（DeepSeek）](mla-deepseek.md)**、**[最新模型与结构](latest-model-architectures.md)**、**[剩余理论主题速览](remaining-theory-primer.md)**、**[模型追踪表](model-tracker.md)**

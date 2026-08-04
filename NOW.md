@@ -1,6 +1,6 @@
 # NOW — 现在做什么
 
-> 进来先看这。两条线并列，各有"现在 + 接下来"。完整地图 → [PATH.md](./PATH.md)
+> 进来先看这。两条线并列，各有"现在 + 接下来"。完整地图 → [PATH.md](./PATH.md) · 密集课表 → [roadmap/ai-infra-curriculum.md](./roadmap/ai-infra-curriculum.md)
 
 ---
 
@@ -38,8 +38,8 @@
 | 优化 | 说明 | 状态 |
 |------|------|:--:|
 | 3-pass naive | findMax → countSum → normalize，~1ms | ✅ `softmax_naive.cu` 2026-07-01 |
-| true online | per-thread K-element scan + tree reduce merge (m,s) pair → `maxSumkernel` | ✅ LeetGPU 已实现 2026-07-10 |
-| ~~fuse max+sum~~ | 已被 true online 替代（含在一个 kernel 里了） | ➖ |
+| 2-pass fused online | 一趟出 (partial_max, partial_sum) → host merge → normalize | ✅ `softmax_online.cu` 2026-07-11 |
+| true online 1-pass | per-thread K-element scan + tree reduce merge (m,s) pair → `maxSumkernel` | ⏳ LeetGPU 实践过（2026-07-10），仓库未落盘 |
 | warp shuffle reduce | `__shfl_down_sync` 替代 shared memory 归约 | ⏳ |
 | benchmark 对比 | 3-pass vs online vs warp shuffle → ncu 分析带宽 | ⏳ |
 
@@ -56,25 +56,25 @@
 - **LeetGPU** `5_softmax`：贴 `solve()` 直接提交，在线判题
 - **服务器**：`KERNEL=xxx.cu ./run.sh` 本地测精度 + 带宽，harness → [main.cu](./solutions/cuda/softmax/main.cu) + [run.sh](./solutions/cuda/softmax/run.sh)
 
-**接下来**：warp shuffle 替代 shared memory → benchmark 三版对比 → A5 读 Flash Attn CUDA
+**接下来**：补 1-pass true online 落盘 → warp shuffle 三版 benchmark → 继续 A5 读 Flash Attn CUDA
 
 ---
 
 ## 🧠 理论线（理解）
 
 **现在 · online softmax**
-和 A4 Softmax 天然配对——代码已写 `maxSumkernel`，边写边理解底层算法原理。
+和 A4 Softmax 天然配对——LeetGPU 上实践过 `maxSumkernel`，仓库落盘版本仍是 2-pass fused，下一步把 1-pass 提交进来。
 
 - ✅ 能推一遍 online 更新公式，能讲清"为什么比 3-pass 省 3× HBM 读写"（2026-07-10）
 - ✅ merge 公式 `s_new = s_a·exp(m_a-m_new) + s_b·exp(m_b-m_new)` 满足交换律+结合律 → 可用于 tree reduce
 
-**接下来**：parallel reduce → Flash Attention 机制 → INT8/FP8 量化 → GQA → MLA
+**接下来**：模型结构与最新模型（[最新模型与结构](notes/algorithms/latest-model-architectures.md) + [剩余理论速览](notes/algorithms/remaining-theory-primer.md)）→ GQA/MLA/MoE → Mamba/SSM → 剩余理论逐条深钻
 
 ---
 
 ## ✅ 刚完成
 
-- 算子线 A4: Softmax 3-pass naive LeetGPU `5_softmax` 跑通 ✅（2026-07-01）
+- 算子线 A4: Softmax 3-pass naive LeetGPU `5_softmax` 跑通 ✅（2026-07-01）· 2-pass fused ✅（2026-07-11）· 1-pass true online ⏳ 待落盘
 - 算子线 A3/A3+: GEMM fp16 naive + tiled LeetGPU 跑通 ✅（2026-06-22）
 - 理论线: online softmax + parallel reduce 学完
 

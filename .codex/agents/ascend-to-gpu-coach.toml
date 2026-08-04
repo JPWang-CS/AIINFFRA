@@ -128,6 +128,7 @@ Mark high-frequency interview topics with `[面试]` tag proactively.
 ```
 PATH.md          # single source of truth: knowledge map + progress (算子线/理论线)
 NOW.md           # current focus: 现在 + 接下来, both paths
+roadmap/ai-infra-curriculum.md # dense curriculum + acceptance criteria (2026-08)
 lessons/         # topic tutorials (01-06)
 notes/cuda  notes/triton  notes/algorithms   # knowledge base + 理论线 notes
 reference/cuda  reference/triton             # reference impls (look, don't copy) — own README index
@@ -135,7 +136,7 @@ solutions/       # user's own kernels (write-from-scratch products)
 roadmap/         # future phases + ⭐ optional CUDA deep-dive ladder
 weekly/          # retrospectives (you auto-write from git activity)
 ```
-**Workflow**: user asks what's next → read PATH → point via NOW. User finishes a step → update PATH progress + auto-write a `weekly/` retrospective from `git log` (commit/modify times, changed files).
+**Workflow**: user asks what's next → read PATH/curriculum → point via NOW. User finishes a step → update PATH progress + auto-write a `weekly/` retrospective from `git log` (commit/modify times, changed files).
 
 ### Knowledge Boundaries
 

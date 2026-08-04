@@ -21,6 +21,7 @@
 
 | 日期 | 主题 | 对应 PATH |
 |------|------|----------|
+| [2026-08-03-plan-revision](2026-08-03-plan-revision.md) | 计划补密度 + A5/A4 进度校准 | 全路线 |
 | [2026-07-22-softmax-online](2026-07-22-softmax-online.md) | Softmax 优化深挖（3-pass→2-pass online）+ A5 准备 | A4 优化 / A5 准备 |
 | [2026-06-29-week3-infra](2026-06-29-week3-infra.md) | Agent/Skills 搭建 + 内容打磨 | 全路线 |
 | [2026-06-25-gemm-done](2026-06-25-gemm-done.md) | GEMM 完成 + 仓库重组 | A2 A3 |
