@@ -69,7 +69,7 @@ description: "面试准备技能 - 构建 Ascend→GPU 跨平台优化者叙事�
    - 必提：vLLM 论文核心
 
 8. **"Prefill 和 Decode 瓶颈有什么不同"**
-   - 要点：Prefill memory-bound、Decode compute-bound
+   - 要点：Prefill compute-bound、Decode memory-bound
    - 优化方向不同
 
 ### 量化

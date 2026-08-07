@@ -15,6 +15,7 @@ description: "周报生成技能 - 基于git活动自动生成周报"
 git log --since="1 week ago" --oneline
 git diff --stat
 文件修改时间分析
+HISTORY.md 最近变更
 ```
 
 ### 2. 分类整理
@@ -50,6 +51,11 @@ git diff --stat
 - [计划2]
 ```
 
+## 完成后
+1. 保存到 weekly/YYYY-MM-DD-topic.md
+2. 更新 HISTORY.md 最近变更记录
+3. 默认不修改 PATH.md / NOW.md
+
 ## 输出格式
 ```
 📊 本周活动总结：
@@ -62,7 +68,7 @@ git diff --stat
 ✅ [完成项]
 📖 [进行项]
 
-📝 周报已保存：weekly/YYYY-MMDD-weekX.md
+📝 周报已保存：weekly/YYYY-MM-DD-topic.md
 ```
 
 ## 调用时机

@@ -1,6 +1,7 @@
 # AIINFFRA Skills
 
 可复用的技能模块，供 Agent 调用。每个 skill 是一个独立的 `.md` 文件，包含：
+> 新会话先读 [AGENTS.md](../../AGENTS.md) 和 [HISTORY.md](../../HISTORY.md)，再决定调用哪个 skill。
 - **name**: 技能标识符
 - **description**: 何时使用
 - **content**: 技能的具体实现
@@ -16,6 +17,9 @@
 | [interview-prep](./interview-prep.md) | 面试准备（叙事+题库） | 用户说"准备面试"时 |
 | [theory-study](./theory-study.md) | 理论学习（6 子类指导） | 用户说"这周学 XXX"时 |
 | [weekly-report](./weekly-report.md) | 周报生成（基于 git） | 用户说"生成周报"时 |
+| [progress-resume](./progress-resume.md) | 跨电脑/新会话恢复上下文 | 用户说"继续/当前进度/换电脑"时 |
+| [triton-guide](./triton-guide.md) | Triton 实现指导（当前主线） | 用户写/调试 Triton kernel 时 |
+| [operator-building](./operator-building.md) | 最新模型与算子构建 | 用户想实现 GQA/MLA/MoE/FlashAttention/PagedAttention 时 |
 
 ## 调用方式
 

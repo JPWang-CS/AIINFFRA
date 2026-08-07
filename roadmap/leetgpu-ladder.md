@@ -1,8 +1,33 @@
 # 可选 CUDA 深钻菜单
 
-> **B 级够用不用看这页。** 想在某个算子钻到硬件峰值、或面试要 CUDA 深度，再来翻。
-> 基础层（naive / tiled / online / warp-reduce）和进度都在 [PATH.md](../PATH.md) 算子线——这里只列**比 B 级更深**的进阶层。
+> B 级够用不用看这页。想要面试强信号、或想把某个算子钻到峰值再回来。
+> 基础层（naive / tiled / online / warp-reduce）和进度都在 [PATH.md](../PATH.md) 算子线。
 > LeetGPU 题号用作 baseline/正确性验证。完整题库 → [notes/cuda/leetgpu-challenges.md](../notes/cuda/leetgpu-challenges.md)
+
+---
+
+## 怎么用
+
+1. 每次只选一个算子。
+2. 在 B 级版本上逐步加一层优化。
+3. 每层都要有 correctness check + 性能数字。
+4. 跑不过、没数字就不算完成。
+
+### 完成标准
+
+- [ ] 代码在 `solutions/`
+- [ ] 正确性和 reference 对齐
+- [ ] 有 GFLOPS 或 GB/s
+- [ ] 能说出这一层优化省了什么
+- [ ] 能用 Nsight 看到瓶颈变化
+
+### 示例：GEMM vec4
+
+```text
+B 级：float 标量 load
+进阶：float4 一次读 4 个 float
+验证：看 kernel 指令数和带宽是否改善
+```
 
 ---
 

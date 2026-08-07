@@ -1,4 +1,46 @@
 # GPU/ML 系统工程师面试准备指南
+
+> 配套大模型板块 [面试笔记](../notes/llm/interview.md)。
+> 使用方式：不是一次性读完，而是按求职前 8-12 周滚动复习。
+
+---
+
+## 如何使用本计划
+
+1. 第一遍：先读“硬技能要求”和“高频题”，确认差距。
+2. 第二遍：按模块刷题，每题都要写 1 分钟版本。
+3. 第三遍：做系统设计题，要画图、算数字、说取舍。
+4. 面试前：只复习自己的项目和数字，不背整篇。
+
+### 8 周冲刺节奏
+
+| 周 | 重点 | 输出 |
+|----|------|------|
+| W1 | CUDA/GPU 高频题 | 每题 1 分钟口径 |
+| W2 | Triton + Flash Attention | 代码示例 + benchmark |
+| W3 | 推理系统 | vLLM 链路图 |
+| W4 | 量化 + 投机解码 | 取舍表 |
+| W5 | 分布式训练 | 显存账本 + 通信图 |
+| W6 | 系统设计题 | 完整设计稿 |
+| W7 | 项目打磨 | 3-5 个可讲项目 |
+| W8 | 模拟面试 | 高频题录音复盘 |
+
+### 面试回答结构
+
+每个技术题都按这个结构：
+
+```text
+是什么 -> 为什么需要 -> 关键机制 -> 关键数字 -> 取舍 -> 怎么验证
+```
+
+### 示例回答模板
+
+问：为什么 Decode 是 memory-bound？
+
+答：Decode 每步只生成一个 token，但必须读全部模型权重和全部历史 KV cache；计算量小，HBM 读取量大，所以瓶颈是显存带宽。验证方法是用 Nsight 看 memory throughput 是否接近上限。
+
+---
+
 ## 面向：Ascend NPU → NVIDIA GPU/ML Systems 转型工程师
 
 ---
@@ -65,11 +107,11 @@ Warp divergence 发生时硬件序列化两路，最坏算力减半。避免：1
 
 **Q7：tensor core 如何工作？**
 
-Tensor core 是专门执行矩阵乘加（$D = A \times B + C$）的硬件单元，A100 FP16 达 312 TFLOPS（vs CUDA core 的 19.5 TFLOPS）。WMMA API 让 32 个 thread 协作操作 16×16 tile。实际通过 cuBLAS / CUTLASS / Triton（`tl.dot` 自动生成 `mma.sync`）调用。
+Tensor core 是专门执行矩阵乘加（$D = A \times B + C$）的硬件单元，A100 稀疏 FP16 可达约 312 TFLOPS（dense 约 156 TFLOPS），CUDA core FP32 约 19.5 TFLOPS。WMMA API 让 32 个 thread 协作操作 16×16 tile。实际通过 cuBLAS / CUTLASS / Triton（`tl.dot` 自动生成 `mma.sync`）调用。
 
 **Q8：INT8 量化的 CUDA 层变化？**
 
-INT8 推理用 `dp4a` 指令（4 个 INT8 的点积，A100 理论 624 TOPS ≈ FP16 的 2×）。挑战：per-channel/per-token scaling 控制误差；矩阵维度需 16/64 对齐；非矩阵算子（layernorm, softmax）仍需 FP16 格式转换。
+INT8 推理用 `dp4a` 指令（4 个 INT8 的点积，A100 稀疏 INT8 理论约 624 TOPS，dense 约 312 TOPS）。挑战：per-channel/per-token scaling 控制误差；矩阵维度需 16/64 对齐；非矩阵算子（layernorm, softmax）仍需 FP16 格式转换。
 
 **Q9：FlashAttention 为什么快？**
 
@@ -93,11 +135,11 @@ PCIe 4.0 x16 双向 ~32 GB/s，NVLink 4.0 (H100) 单 GPU 总带宽 ~900 GB/s。�
 
 **Q14：解释 Triton 和 CUDA 的区别。**
 
-Triton 是 block-level 编程模型：你指定 tile 对数据的操作（`tl.load`、`tl.dot`、`tl.store`），编译器自动处理 thread 分配、shared memory promotion、coalescing、syncthreads。性能接近手写 CUDA（~93-95%），开发时间降 10×。Flash Attention 2 就是用 Triton 写的。
+Triton 是 block-level 编程模型：你指定 tile 对数据的操作（`tl.load`、`tl.dot`、`tl.store`），编译器自动处理 thread 分配、shared memory promotion、coalescing、syncthreads。性能接近手写 CUDA（~93-95%），开发时间降 10×。Triton 官方 tutorial 用 Triton 实现了 FlashAttention；官方 FlashAttention-2 本身是 CUDA/CUTLASS 实现。
 
 **Q15：GQA 的 KV cache 节省怎么算？**
 
-GQA 将 H 个 Q heads 分为 G 组，每组共享一个 KV head（G 个 KV heads，$G < H$）。KV cache 节省比例 $= G/H$。LLaMA 2 70B ($G=8, H=64$): 节省 87.5%，每 token KV 从 2.56 MB 降到 320 KB。
+GQA 将 H 个 Q heads 分为 G 组，每组共享一个 KV head（G 个 KV heads，$G < H$）。KV cache 节省比例 $= G/H$。LLaMA 2 70B ($G=8, H=64$): 节省 87.5%，每 token KV 从 2.5 MiB 降到 320 KiB。
 
 ---
 
@@ -109,7 +151,7 @@ GQA 将 H 个 Q heads 分为 G 组，每组共享一个 KV head（G 个 KV heads
 
 **Q2：KV cache 占多少显存？优化手段？**
 
-公式：$2 \times \text{num\_layers} \times \text{num\_kv\_heads} \times \text{head\_dim} \times \text{seq\_len} \times \text{batch} \times \text{dtype\_bytes}$。LLaMA-2-70B (GQA, FP16), seq=4096, batch=1 ≈ 4 GB；batch=32 则 128 GB。优化：GQA/MQA（减少 kv_heads）、KV cache 量化（INT8/FP4）、PagedAttention（减少碎片）、prefix caching（复用相同 prompt）。
+公式：$2 \times \text{num\_layers} \times \text{num\_kv\_heads} \times \text{head\_dim} \times \text{seq\_len} \times \text{batch} \times \text{dtype\_bytes}$。LLaMA-2-70B (GQA, FP16), seq=4096, batch=1 ≈ 1.25 GiB；batch=32 则约 40 GiB。优化：GQA/MQA（减少 kv_heads）、KV cache 量化（INT8/FP4）、PagedAttention（减少碎片）、prefix caching（复用相同 prompt）。
 
 **Q3：speculative decoding 的原理？**
 

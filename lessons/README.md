@@ -13,9 +13,9 @@
 | 03 | [gemm-tiled](03-gemm-tiled.md) | Shared memory tiling + bank conflict | [reference/cuda/gemm/](../reference/cuda/gemm/gemm.cu) | ✅ |
 | 04 | [softmax](04-softmax.md) | Softmax + warp shuffle reduce | [reference/cuda/softmax/](../reference/cuda/softmax/softmax.cu) | 🚧 |
 | 05 | [flash-attn-reading](05-flash-attn-reading.md) | 读懂 Flash Attention CUDA 代码 | [reference/cuda/flash_attention/](../reference/cuda/flash_attention/flash_attn.cu) | 🚧 |
-| 06 | [triton-intro](06-triton-intro.md) | 第一个 Triton kernel（分水岭） | [reference/triton/](../reference/triton/) | ⏳ |
+| 06 | [triton-intro](06-triton-intro.md) | 第一个 Triton kernel（当前主线分水岭） | [reference/triton/](../reference/triton/) | 🚧 |
 
-> 01-06 是 CUDA 打底阶段（"能读懂 CUDA 代码"的 B 级深度）。06 之后切 Triton 为主力 + 推理系统，见 [PATH.md](../PATH.md)。
+> 01-05 是 CUDA 打底阶段（"能读懂 CUDA 代码"的 B 级深度）。当前主线已切到 06 Triton 实现阶段；详细任务见 [roadmap/ai-infra-curriculum.md](../roadmap/ai-infra-curriculum.md)。
 
 ## 这些课怎么来的
 

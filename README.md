@@ -3,7 +3,7 @@
 从昇腾 NPU 到 GPU 生态的系统性学习。方向：ML 系统工程师 · Triton 为主力 · CUDA 为底层 · 推理系统并行。
 
 > ## 👉 现在学什么 → [NOW.md](./NOW.md)
-> 完整路径和进度 → [PATH.md](./PATH.md)　|　长期路线 → [roadmap/](./roadmap/)　|　PATH 执行参考 → [roadmap/ai-infra-curriculum.md](./roadmap/ai-infra-curriculum.md)
+> Agent 启动规则 → [AGENTS.md](./AGENTS.md)　|　完整路径和进度 → [PATH.md](./PATH.md)　|　PATH 执行参考 → [roadmap/ai-infra-curriculum.md](./roadmap/ai-infra-curriculum.md)　|　跨电脑恢复 → [HISTORY.md](./HISTORY.md)
 
 ---
 
@@ -32,6 +32,7 @@
 | [notes/cuda/](./notes/cuda/) | CUDA 速查 + 深入：内存模型、warp、架构对比、Triton 底层对照、LeetGPU 题库 |
 | [notes/triton/](./notes/triton/) | Triton 速查 + Triton vs CUDA |
 | [notes/algorithms/](./notes/algorithms/) | 理论线：量化、新算法、GPU 优化算法、推理技术（6 子类） |
+| [notes/llm/](./notes/llm/) | 大模型内容板块：结构 / 推理 / 训练 / 面试 / 论文（不独立维护进度） |
 | [papers/](./papers/) | 论文笔记 + 索引（[流程](./papers/process.md)） |
 
 ### 代码
