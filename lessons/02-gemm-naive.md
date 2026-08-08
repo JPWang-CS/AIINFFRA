@@ -80,16 +80,18 @@ $$
 
 **Row-major**：`A[i][j] = A[i * K + j]`（C 语言的默认布局）
 
+```text
+A (M x K):              B (K x N):
+[a00 a01 a02]  K=3      [b00 b01]  N=2
+[a10 a11 a12]  M=2      [b10 b11]  K=3
+                        [b20 b21]
 ```
-矩阵 A $(M \times K)$:         矩阵 B $(K \times N)$:
-$[\begin{matrix}a_{00} & a_{01} & a_{02}\end{matrix}] \quad K=3$   $[\begin{matrix}b_{00} & b_{01}\end{matrix}] \quad N=2$
-$[\begin{matrix}a_{10} & a_{11} & a_{12}\end{matrix}] \quad M=2$   $[\begin{matrix}b_{10} & b_{11}\end{matrix}] \quad K=3$
-                                                                 $[\begin{matrix}b_{20} & b_{21}\end{matrix}]$
+
+每个输出元素是两个向量的点积：
 
 $$
 C[i][j] = a_{i0} \times b_{0j} + a_{i1} \times b_{1j} + a_{i2} \times b_{2j}
 $$
-```
 
 ---
 
@@ -254,23 +256,25 @@ void gemm_cpu(const float* A, const float* B, float* C, int M, int N, int K) {
 
 naive GEMM 的瓶颈是 **global memory 延迟**。
 
-```
-每个 thread 算一个 $C[i][j]$：
-  → 读 A 的 $K$ 个元素（global memory）
-  → 读 B 的 $K$ 个元素（global memory）
-  → 算 $K$ 次乘加
+```text
+每个 thread 算一个 C[i][j]：
+  → 读 A 的 K 个元素（global memory）
+  → 读 B 的 K 个元素（global memory）
+  → 算 K 次乘加
   → 写 1 个结果
+```
 
 $$
 \text{计算量} = 2K \text{ FLOP}
 $$
+
 $$
 \text{访存量} = 2K \times 4\text{B} = 8K \text{ bytes}
 $$
+
 $$
 \text{算术强度} = \frac{2K}{8K} = 0.25 \text{ FLOP/byte} \quad\leftarrow \text{极低！}
 $$
-```
 
 T4 的 HBM 带宽 ~320 GB/s。0.25 FLOP/byte × 320 GB/s ≈ **80 GFLOPS** 是这个 kernel 能达到的理论上限——远低于 T4 FP32 峰值的 8 TFLOPS。
 
@@ -280,12 +284,16 @@ T4 的 HBM 带宽 ~320 GB/s。0.25 FLOP/byte × 320 GB/s ≈ **80 GFLOPS** 是�
 
 ### 3.3 画出访问模式
 
-```
-$C[i][j]$ 需要 A 的第 $i$ 行和 B 的第 $j$ 列：
+C[i][j] 需要 A 的第 i 行和 B 的第 j 列：
+
+A 的读取：
 
 $$
 A: [a_{i0}\;\; a_{i1}\;\; a_{i2}\;\; \ldots\;\; a_{i(K-1)}] \quad\leftarrow \text{读 }K\text{ 个连续元素（好，coalesced）}
 $$
+
+B 的读取：
+
 $$
 B: \begin{aligned} &b_{0j} \\
 &b_{1j} \\
@@ -293,7 +301,6 @@ B: \begin{aligned} &b_{0j} \\
 &\;\vdots \\
 &b_{(K-1)j} \end{aligned} \quad\leftarrow \text{读 }K\text{ 个元素，但跨 }N\text{ 的步长！}
 $$
-```
 
 A 的访问是连续的（coalesced），B 的访问是跨步的（stride = N）。GPU 每次读 B 实际上都在读一个 cache line 但只用一个 float——严重的带宽浪费。
 

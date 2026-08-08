@@ -100,17 +100,23 @@ __global__ void gemm_tiled(const float* A, const float* B, float* C,
 
 ## Part 3：TILE 大小的选择
 
-```
-影响因素：
-1. Shared memory 容量：$TILE \times TILE \times 2 \times 4\text{B} = TILE^{2} \times 8\text{B}$
-   $TILE = 32 \to 8$ KB（任何卡都够）
-   $TILE = 64 \to 32$ KB（T4 需要调整 shared mem 配置）
+Shared memory 容量：
 
-2. Block 大小：$TILE \times TILE$ 个 thread
-   $TILE = 32 \to 1024$ threads → 刚好上限
+$$
+TILE \times TILE \times 2 \times 4\text{B} = TILE^{2} \times 8\text{B}
+$$
+
+```text
+影响因素：
+1. Shared memory 容量：
+   TILE=32 -> 8 KB
+   TILE=64 -> 32 KB
+
+2. Block 大小：TILE * TILE 个 thread
+   TILE=32 -> 1024 threads -> 刚好上限
 
 3. Occupancy：每个 block 用多少 shared memory
-   Shared mem 用多了 → 同时驻留 SM 的 block 数少 → occupancy 低
+   Shared mem 用多了 -> 同时驻留 SM 的 block 数少 -> occupancy 低
 
 建议：先从 TILE=32 开始，跑通后再试 TILE=16 和 TILE=64 对比
 ```

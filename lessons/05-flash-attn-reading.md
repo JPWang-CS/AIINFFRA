@@ -48,22 +48,24 @@ Flash Attention 是 Triton 生态的标志性算子。它融合了 tiling、onli
 
 ## Part 2：核心思想（3 句话）
 
-```
 Standard Attention:
+
 $$
 \begin{aligned}
-S &= \frac{QK^{T}}{\sqrt{d}} &\quad&\to O(N^{2})\text{ 显存（存整个 S 矩阵）} \\
+S &= \frac{QK^{T}}{\sqrt{d}} &&\to O(N^{2})\text{ 显存（存整个 S 矩阵）} \\
 P &= \text{softmax}(S) \\
 O &= P \times V
 \end{aligned}
 $$
 
 Flash Attention:
-  把 Q 按行分块（$Q_{\text{tile}}$），K/V 按列分块（$K_{\text{tile}}/V_{\text{tile}}$）
-  对每个 $Q_{\text{tile}}$，循环遍历所有 $K_{\text{tile}}/V_{\text{tile}}$：
-    1. 加载 $Q_{\text{tile}}, K_{\text{tile}}, V_{\text{tile}}$ 到 shared memory
-    2. 用 online softmax 增量计算 attention
-    3. 不存 S 矩阵 → $O(N)$ 显存
+
+```text
+把 Q 按行分块（Q_tile），K/V 按列分块（K_tile/V_tile）
+对每个 Q_tile，循环遍历所有 K_tile/V_tile：
+  1. 加载 Q_tile, K_tile, V_tile 到 shared memory
+  2. 用 online softmax 增量计算 attention
+  3. 不存 S 矩阵 → O(N) 显存
 ```
 
 ---
@@ -92,13 +94,13 @@ Flash Attention:
        每个 Q 块 × 所有 K/V 块
 
 4. 内层（106-131 行）:
-   $\text{score} = Q_{\text{row}} \cdot K_{\text{row}} \;/\; \sqrt{d}$   ← 计算注意力分数
-   $m_{\text{new}} = \max(m, \text{score})$        ← online softmax: 更新 max
-   $p = \exp(\text{score} - m_{\text{new}})$       ← 对应当前要加上的项
-   $\text{acc} \mathrel{*}= \exp(m - m_{\text{new}})$          ← 重新缩放旧累加器
-   $\text{acc} \mathrel{+}= p \times V_{\text{row}}$           ← 加上当前项
-   $l = l \times \text{scale} + p$            ← 重新缩放旧归一化因子
-   $m = m_{\text{new}}$
+   score = Q_row · K_row / sqrt(d)              ← 计算注意力分数
+   m_new = max(m, score)                        ← online softmax: 更新 max
+   p = exp(score - m_new)                       ← 对应当前要加上的项
+   acc *= exp(m - m_new)                        ← 重新缩放旧累加器
+   acc += p * V_row                             ← 加上当前项
+   l = l * scale + p                            ← 重新缩放旧归一化因子
+   m = m_new
 ```
 
 **这个 kernel 的 CUDA 概念清单**（看你能认出几个）：
