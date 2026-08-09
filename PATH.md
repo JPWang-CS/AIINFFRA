@@ -44,7 +44,7 @@
 | A3 | [03 gemm-tiled](./lessons/03-gemm-tiled.md) | `gemm_tiled` (float) | GFLOPS 比 naive ≥ 5× | [memory-model §3.3](./notes/cuda/memory-model.md) | [gemm.cu](./reference/cuda/gemm/gemm.cu) | ✅ |
 | A3+ | — | `gemm_fp16_tiled` | LeetGPU 跑通（2026-06-22）· 4090 实测 K=2048/8192 tiled 0.6x naive（L2 cache + occupancy，详见 benchmark） | — | [benchmark.cu](./solutions/cuda/gemm/benchmark.cu) | ✅ |
 | A4 | [04 softmax](./lessons/04-softmax.md) | `softmax_naive` → `softmax_online` → `softmax_1pass` | 3-pass baseline ✅（2026-07-01）· 2-pass fused ✅ · 1-pass true online 待落盘 · warp shuffle/benchmark 待做 | [warp-and-sync §4](./notes/cuda/warp-and-sync.md) | [softmax.cu](./reference/cuda/softmax/softmax.cu) · 我的→[softmax_naive.cu](./solutions/cuda/softmax/softmax_naive.cu) · [softmax_online.cu](./solutions/cuda/softmax/softmax_online.cu) | 🚧 |
-| A5 | [05 flash-attn-reading](./lessons/05-flash-attn-reading.md) | 读代码（不手写） | 能标注每个 `__syncthreads` 作用 | [triton-under-the-hood](./notes/cuda/triton-under-the-hood.md) | [flash_attn.cu](./reference/cuda/flash_attention/flash_attn.cu) · [论文](./papers/attention/flash-attention.md) | 🚧 |
+| A5 | [05 flash-attn-reading](./lessons/05-flash-attn-reading.md) | 读代码（不手写） | 能标注每个 `__syncthreads` 作用（2026-08-10 ✅，[阅读笔记](./notes/cuda/flash-attn-reading.md)，发现 2 个真实 bug） | [triton-under-the-hood](./notes/cuda/triton-under-the-hood.md) | [flash_attn.cu](./reference/cuda/flash_attention/flash_attn.cu) · [论文](./papers/attention/flash-attention.md) | ✅ |
 
 **阶段出口**：A5 完成 = CUDA B 级达成，切 B 线。
 
@@ -54,7 +54,7 @@
 
 | 阶段 | 课 | 自己写 | 验收 | 参考 | 状态 |
 |:-:|----|--------|------|------|:--:|
-| B1 | [06 triton-intro](./lessons/06-triton-intro.md) | Triton vec_add + matmul | GPU/CPU 模拟跑通 | [matmul.py](./reference/triton/matmul/matmul.py) | ⏳ |
+| B1 | [06 triton-intro](./lessons/06-triton-intro.md) | Triton vec_add（Agent 草稿，待你自己重写）· matmul 待做 | 流程：自己写 → LeetGPU 跑通 → 真实 GPU 跑通 → 性能分析（GB/s） | [matmul.py](./reference/triton/matmul/matmul.py) | ⏳ |
 | B2 | _按需生成_ | Triton fused softmax | 对比 PyTorch 正确 + 提速 | — | ⏳ |
 | B3 | _按需生成_ | Triton flash attention | 对比 PyTorch ref 正确 | [flash_attn.py](./reference/triton/flash_attention/flash_attn.py) | ⏳ |
 | B4 | _按需生成_ | Triton GQA / fused MLP | 正确性 + autotuning | [activations.cuh](./reference/cuda/include/activations.cuh)（料） | ⏳ |
@@ -103,7 +103,7 @@
 | 主题 | 笔记 | 论文 | 状态 |
 |------|------|------|:--:|
 | MHA→MQA→GQA→MLA | [速览](./notes/algorithms/remaining-theory-primer.md) + [最新模型](./notes/algorithms/latest-model-architectures.md) | [gqa.md](./papers/attention/gqa.md) | 🚧 |
-| Flash Attention 1→2→3 | [flash-attention-mechanism.md](./notes/algorithms/flash-attention-mechanism.md) | [FA1](./papers/attention/flash-attention.md) · [FA2](./papers/attention/flash-attention-2.md) | 🚧 |
+| Flash Attention 1→2→3 | [flash-attention-mechanism.md](./notes/algorithms/flash-attention-mechanism.md) | [FA1](./papers/attention/flash-attention.md) · [FA2](./papers/attention/flash-attention-2.md) | 🚧 → FA1 机制已消化（2026-08-10 A5），FA2/3 待补 |
 | MLA（DeepSeek-V2/V3） | [mla-deepseek.md](./notes/algorithms/mla-deepseek.md) | DeepSeek-V2 | 🚧 |
 | 线性注意力 / Ring Attention | [速览](./notes/algorithms/remaining-theory-primer.md) | — | 🚧 |
 

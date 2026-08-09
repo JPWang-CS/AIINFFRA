@@ -7,11 +7,10 @@
 
 ## 0. 最后更新
 
-- 2026-08-06
-- 当前主线：PATH B Triton 实现阶段
+- 2026-08-10
+- 当前主线：PATH B Triton 实现（B1 vec_add 待用户自己写，matmul 下一步）
 - 并行强化：最新模型与算子构建能力（GQA/MLA/MoE/FlashAttention/PagedAttention 等）
-- Agent/Skill：新增 AGENTS.md、progress-resume、triton-guide，教练 agent 已同步
-- 当前状态：学习计划已补全，Triton 代码尚未开始落盘
+- 当前状态：A5 读码完成；vector_add / softmax_1pass 为 Agent 草稿待用户重写；本机 venv 已就绪（torch CPU + triton-windows）
 
 ---
 
@@ -64,10 +63,35 @@ A CUDA 打底 -> B Triton -> C 推理系统 -> D 分布式 -> E Agent
 | A3+ GEMM fp16 tiled + benchmark | ✅ | 4090 实测 tiled 约 0.6x naive，L2/occupancy 结论 |
 | A4 Softmax 3-pass | ✅ | 2026-07-01，LeetGPU `5_softmax` |
 | A4 Softmax 2-pass fused online | ✅ | 2026-07-11，`softmax_online.cu` |
-| A4 1-pass true online | ⏳ | LeetGPU 实践过，仓库未落盘 |
+| A4 1-pass true online | 🚧 | Agent 草稿 `softmax_1pass.cu`（2026-08-09，算法模拟+编译通过），待用户重写 |
 | A4 warp shuffle / benchmark | ⏳ | 待做 |
-| A5 Flash Attention 读码 | 🚧 | 课程/参考/机制笔记已就绪，逐段注释未完成 |
-| B1-B5 Triton 实现 | 🚧 当前 | 尚未落盘 |
+| A5 Flash Attention 读码 | ✅ | 2026-08-10，逐段注释完成，[阅读笔记](../notes/cuda/flash-attn-reading.md)，发现 2 个真实 bug |
+| B1 Triton vec_add + matmul | 🚧 当前 | `vector_add.py` 为 Agent 草稿（2026-08-10），待用户重写；matmul 待做 |
+| B2-B5 Triton 实现 | ⏳ | 待做 |
+
+### 存档：A4 Softmax 详情（2026-07-01 ~ 08-09）
+
+> 课程：[Lesson 04](../lessons/04-softmax.md) · 周报：[2026-07-22](../weekly/2026-07-22-softmax-online.md)
+
+| 优化 | 说明 | 状态 |
+|------|------|:--:|
+| 3-pass naive | findMax → countSum → normalize，~1ms | ✅ `softmax_naive.cu` 2026-07-01 |
+| 2-pass fused online | 一趟出 (partial_max, partial_sum) → host merge → normalize | ✅ `softmax_online.cu` 2026-07-11 |
+| true online 1-pass | per-thread K-element scan + tree reduce merge (m,s) pair → `maxSumkernel` | 🚧 Agent 草稿 `softmax_1pass.cu` 2026-08-09（算法模拟 + 编译通过），待用户重写 |
+| warp shuffle reduce | `__shfl_down_sync` 替代 shared memory 归约 | ⏳ 暂缓（用户决定） |
+| benchmark 对比 | 3-pass vs online vs warp shuffle → ncu 分析带宽 | ⏳ 暂缓（用户决定） |
+
+**2026-07-10 实践要点**：
+
+- per-thread online scan：逐元素维护 `(m, s)` pair，公式 `m_new=max(m,val), s=s·exp(m-m_new)+exp(val-m_new)`
+- tree reduce merge 公式：`s_new = s_a·exp(m_a-m_new) + s_b·exp(m_b-m_new)`，满足交换律+结合律
+- 哨兵 NaN：两个空线程 merge 时 `-inf - (-inf) = NaN` → `if (m_a == -INFINITY)` 跳过
+- `__syncthreads()`：同 block 所有线程必须全部到达，否则死锁；不能提前 `return`
+- Device 指针：kernel 写入的 device 指针不能在 host 直接读，必须 `cudaMemcpy`；`cudaMalloc` 用 `cudaFree`
+- 性能陷阱：normalize 必须多 block 并行，单线程串行 N 个 `expf` 会崩到 60ms
+- LeetGPU 通过方案：3-pass（`findMax_kernel` + `countSum_kernel` + `softmax_kernel`）~1ms baseline
+
+LeetGPU `5_softmax` 贴 `solve()` 提交；服务器 `KERNEL=xxx.cu ./run.sh` 测精度 + 带宽（harness → `solutions/cuda/softmax/main.cu` + `run.sh`）。
 
 ### 理论线
 
@@ -75,7 +99,7 @@ A CUDA 打底 -> B Triton -> C 推理系统 -> D 分布式 -> E Agent
 |------|:--:|------|
 | Online Softmax | ✅ 已掌握 | 能推公式，能讲 HBM 优化 |
 | Parallel Reduce | ✅ 已掌握 | 树状 reduce + warp shuffle |
-| Flash Attention 机制 | 🚧 草稿 | Agent 生成，待消化 |
+| Flash Attention 机制 | ✅ FA1 已消化 | 2026-08-10 经 A5 读码 + 问答消化；FA2/3 待补 |
 | INT8/FP8 量化 | 🚧 草稿 | 待消化 |
 | MoE 推理 | 🚧 草稿 | 待消化 |
 | Speculative Decoding | 🚧 草稿 | 待消化 |
@@ -132,6 +156,10 @@ roadmap/leetgpu-ladder.md        # 可选 CUDA 深钻
 
 | 日期 | 内容 |
 |------|------|
+| 2026-08-10 | NOW.md 瘦身：已完成单元移入 HISTORY 存档，NOW 只留当前焦点 + 历史跳转 |
+| 2026-08-10 | 校准 B 线流程：自己写 → LeetGPU → 真实 GPU → 性能分析 |
+| 2026-08-10 | A5 读码完成（笔记 + 2 个 bug）；`vector_add.py` 为 Agent 草稿待用户重写；本机 venv 搭好 |
+| 2026-08-09 | A4 1-pass true online：Agent 起草 `softmax_1pass.cu`（算法模拟+编译通过），待用户重写；跳过三版 benchmark |
 | 2026-08-06 | 补全所有学习计划，当前主线切到 Triton 实现 |
 | 2026-08-06 | 新增 AGENTS.md、progress-resume/triton-guide skill，优化 coach agent |
 | 2026-08-06 | 新增最新模型与算子构建能力路线，接入 M2.5 |

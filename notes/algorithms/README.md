@@ -56,7 +56,7 @@
 | 主题 | 有论文? | 状态 |
 |------|:--:|:--:|
 | MHA→MQA→GQA→MLA | ✔ [GQA](../../papers/attention/gqa.md) | 🚧 [速览](remaining-theory-primer.md) |
-| [Flash Attention 机制](flash-attention-mechanism.md) | ✔ [FA1](../../papers/attention/flash-attention.md) · [FA2](../../papers/attention/flash-attention-2.md) | 🚧 草稿 |
+| [Flash Attention 机制](flash-attention-mechanism.md) | ✔ [FA1](../../papers/attention/flash-attention.md) · [FA2](../../papers/attention/flash-attention-2.md) | ✅ FA1 已消化（2026-08-10 A5）；FA2/3 待补 |
 | [MLA（DeepSeek-V2/V3）](mla-deepseek.md) | ✔ DeepSeek-V2 | 🚧 草稿 |
 | 线性注意力 / Ring Attention | ✔ | 🚧 [速览](remaining-theory-primer.md) |
 

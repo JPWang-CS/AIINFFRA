@@ -9,6 +9,8 @@ LeetGPU 挂了 / 想看真实带宽时，在本地或服务器上验证 `solve()
 | `softmax_naive.cu` | **我** | LeetGPU `5_softmax` 提交：3-pass 跨 block 归约，`extern "C" solve`。**不动** |
 | `main.cu` | harness（非学习目标） | 造数据 → 调 `solve` → 对比 CPU 双精度参考 → 报误差/吞吐/带宽。**不含 kernel** |
 | `run.sh` | harness | 编译 + 运行 |
+| `softmax_online.cu` | **我** | 2-pass fused：一趟出 (max,sum)，host 修正 merge 后 normalize |
+| `softmax_1pass.cu` | Agent 草稿 | 1-pass true online：per-thread (m,s) scan + tree-merge（算法模拟+编译通过），待**我**从空文件重写 |
 | `bench_softmax.cu` | （参考，不是我写的） | naive vs online 自带 benchmark，kernel inline，2D batched 题型，跟我的 1D 题型不同 |
 
 ## 跑
@@ -17,6 +19,7 @@ LeetGPU 挂了 / 想看真实带宽时，在本地或服务器上验证 `solve()
 ./run.sh                                # 默认测 N = 1024 / 65536 / 500000 / 1048576
 ./run.sh 500000                         # 只测 LeetGPU 题面 max
 KERNEL=softmax_online.cu ./run.sh       # 以后测新版本（同签名 solve）
+KERNEL=softmax_1pass.cu ./run.sh        # 1-pass true online
 ARCH=-arch=sm_89 ./run.sh               # 指定架构（默认 -arch=native）
 ```
 
