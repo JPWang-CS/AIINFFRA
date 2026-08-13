@@ -1,42 +1,278 @@
 # Lesson 06 — Triton 入门：写第一个 Kernel
 
-> 主题：写出第一个 Triton kernel（Vector Add → MatMul），对比 CUDA
-> 前置：建议先完成 [Lesson 05](05-flash-attn-reading.md)，理解 tiling 和 online softmax；如果当前主线直接进入 Triton，也可以先写 vec add 再补 A5
-> 状态：🚧 当前主线（详细任务见 [roadmap/ai-infra-curriculum.md](../roadmap/ai-infra-curriculum.md)）
+> 主题：从零写第一个 Triton kernel：Vector Add → MatMul，并完成"正确性 → 性能 → 记录"闭环
+> 前置：建议先完成 [Lesson 05](05-flash-attn-reading.md)（理解 tiling 和 online softmax）；如果当前主线直接进 Triton，也可以先写 vec_add 再补 A5
+> 状态：🚧 当前主线（B1），详细任务见 [roadmap/ai-infra-curriculum.md](../roadmap/ai-infra-curriculum.md)
+> 范围：本课只做 B1（vec_add + matmul）。Softmax / Flash Attention / GQA 是后面的课，不要一次学完。
 
 📚 **本课重点知识库**：
-- [Triton 语法速查](../notes/triton/triton-cheatsheet.md) — 本课主力参考
+- [Triton 语法速查](../notes/triton/triton-cheatsheet.md) — 写代码时随时查
 - [Triton 底层 CUDA 对照](../notes/cuda/triton-under-the-hood.md) — Triton 代码对应什么 CUDA
 - [Triton vs CUDA 对比](../notes/triton/triton-vs-cuda.md) — 编程模型差异
 
-🎯 **这是分水岭**：从这里开始，Triton 成为主力优化工具（见 [PATH.md](../PATH.md) 权重）。
+🔄 **完成一个算子的标准流程**（全仓库通用）：
 
----
-
-## Part 0：Triton 写的算子 = 同样的数学，不同的写法
-
-Triton 写的 Vector Add / MatMul / Softmax / Flash Attention **和 CUDA 版算的数学完全一样**，模型里的位置也一样。
-
-**关键差异**：
-- **CUDA**：你写 thread-level 逻辑——每个 thread 读哪个元素、怎么同步、怎么 avoid bank conflict
-- **Triton**：你写 block-level 逻辑——声明"这个 tile 怎么算"，编译器自动分配线程、插入同步、优化访存
-
-**为什么 Triton 是主力**：同样功能的 GEMM，CUDA 要 ~100 行（手动 tiling/sync），Triton ~30 行。性能接近手写 CUDA（~93-95%），开发时间降 5-10×。
-
----
-
-## Part 1：环境
-
-```bash
-pip install triton
-# 需要 NVIDIA GPU（T4 或以上）
-# 如果没 GPU，用 TRITON_INTERPRET=1 在 CPU 上模拟运行（调试）
-# LeetGPU 也支持在线跑 Triton
+```text
+自己写（空文件） → LeetGPU 对照 → 真实 GPU 跑通 → 性能分析（GB/s / GFLOPS）
+→ 数字记进 solutions/triton/README.md → 才算 ✅
 ```
 
+Agent 只做 review，不代写代码。本课最后有参考答案，但要求是：**先自己写，写完再打开对照**。
+
 ---
 
-## Part 2：第一个 Kernel — Vector Add in Triton
+## 学习计划（照这个节奏走）
+
+| 阶段 | 做什么 | 产出 | 验收 |
+|---|---|---|---|
+| S1 环境 + vec_add | 确认环境；读 Part 0-2；自己写 `vector_add.py`，CPU 解释器验证 | `solutions/triton/vector_add.py` | 与 `torch.add` 完全一致 |
+| S2 LeetGPU 对照 | 对照 LeetGPU / 官方教程，补边界 case | 修正后的 kernel | N=1000 / N=1 / N=256 / N=257 都正确 |
+| S3 真实 GPU + 性能 | 服务器 4090 实机跑；按 Part 4 测带宽；对比 `torch.add` | README 数字行 | 带宽达到 `torch.add` 的 80% 以上（能解释差异） |
+| S4 MatMul | 读 Part 5，按三步走：单 tile → K 循环 → autotune | `matmul.py` + GFLOPS | 正确 + 数字入 README |
+
+> 每阶段完成再进下一阶段。S4 不必一次做完：先跑通单 tile 就算赢。
+
+---
+
+# Part 0：先建立正确的心智模型
+
+## 0.1 Triton 是什么
+
+Triton 是一个 **Python 写的 GPU 编程语言（DSL）+ 编译器**。你写的代码看起来像 Python，但它不是普通 Python 函数——`@triton.jit` 装饰的函数会被 Triton 编译器编译成 GPU 机器码（PTX → cubin），真正在 GPU 上跑。
+
+关键心智：**Triton 不是"用 Python 写 CUDA"，而是"用 block 粒度描述计算，编译器替你处理线程"**。
+
+CUDA 和 Triton 写的是同一套数学，只是抽象层级不同：
+
+| 问题 | CUDA 的回答 | Triton 的回答 |
+|---|---|---|
+| 谁来执行 | thread（线程） | program（一个 block 对应一个 program） |
+| 我控制什么 | 每个 thread 读写哪个元素 | 每个 program 处理哪个 tile |
+| 线程怎么协作 | 你写 `__syncthreads()`、shared memory | 编译器自动插入同步、分配 shared memory |
+| 访存怎么优化 | 你手动保证 coalesced、避免 bank conflict | 编译器自动做向量化 + 布局优化 |
+| Tensor Core | 你写 `wmma` / `mma.sync` | `tl.dot`，编译器选指令 |
+
+## 0.2 一次典型运行的分解
+
+假设 `N = 1000, BLOCK_SIZE = 256`，启动 `add_kernel[grid]`：
+
+```text
+host:  add_kernel[grid=(4,)](x, y, out, N, BLOCK_SIZE=256)
+                    │
+                    ▼
+GPU:   grid = 4 个 program（= 4 个 CUDA block）
+       program 0: 处理元素 [0, 256)
+       program 1: 处理元素 [256, 512)
+       program 2: 处理元素 [512, 768)
+       program 3: 处理元素 [768, 1024)   ← 但 N 只有 1000，最后 24 个越界
+                    │
+                    ▼
+       每个 program 内部：编译器把它变成一个 CUDA block，
+       内部 256 个 thread 协作完成这 256 个元素，
+       tl.load 会自动让相邻 thread 读相邻地址（coalesced）
+```
+
+所以你在 Triton 里写的是"**一个 program 怎么处理一个 tile**"，而不是"一个 thread 怎么处理一个元素"。
+
+## 0.3 编译链路
+
+```text
+@triton.jit 的 Python 函数
+   → TritonIR（中间表示，能看到你的程序结构）
+   → TTGIR（加了 layout/sync 的 IR，能看到编译器怎么安排线程和内存）
+   → PTX（NVIDIA 汇编）
+   → cubin（GPU 机器码）
+```
+
+调试时可以用 `kernel.asm` 查看中间结果（见 Part 7），这是 Triton 比"黑盒 Python"强的地方：你能看到编译器把你的 tile 代码变成了什么。
+
+## 0.4 为什么性能能接近手写 CUDA
+
+Triton 帮你做四件事，恰好是手写 CUDA 最花时间的四件事：
+
+1. **自动向量化**：`tl.load` 一段连续数据时，编译器生成 128-bit（比如 4 个 float）的向量加载，而不是逐元素加载
+2. **自动 shared memory**：`tl.load` 的 tile 会被安排经过 shared memory 或寄存器，编译器决定
+3. **自动同步**：需要同步的地方自动插 `bar.sync`
+4. **自动选指令**：`tl.dot` 根据 dtype 和硬件选 `mma` / `wgmma` 等 tensor core 指令
+
+你省下的时间花在更重要的地方：**算法和分块策略**。
+
+---
+
+# Part 1：环境准备
+
+## 1.1 两个运行环境，两种用途
+
+| 环境 | 位置 | 用途 | 性能结论 |
+|---|---|---|---|
+| CPU 解释器 | 本机 venv（Windows + triton-windows + CPU torch） | 验证逻辑正确性 | ❌ 不能产生性能结论 |
+| 真实 GPU | 服务器 / 4090（CUDA torch） | 跑性能、验收 | ✅ 唯一的性能来源 |
+
+## 1.2 验证环境
+
+本机 venv 已配好（2026-08-10），先确认能 import：
+
+```powershell
+.venv\Scripts\python.exe -c "import torch, triton; print(torch.__version__, triton.__version__)"
+```
+
+真实 GPU 环境跑通后，确认 CUDA 可见：
+
+```bash
+python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+```
+
+应输出 `True NVIDIA GeForce RTX 4090` 之类。
+
+## 1.3 CPU 解释器怎么用
+
+Triton 提供一个 CPU 解释模式：不编译、不启动 GPU，而是用 Python 逐行模拟 kernel 的逻辑。只用来**验正确性**。
+
+```powershell
+$env:TRITON_INTERPRET='1'
+.venv\Scripts\python.exe solutions/triton/vector_add.py
+```
+
+注意两点：
+
+- 解释器支持大部分 Triton 语义（`tl.load`、`tl.store`、`tl.program_id`、`tl.arange` 等），但**不支持性能分析**
+- 解释模式下即使本机没有 GPU 也能跑，所以写代码阶段不依赖服务器
+
+## 1.4 常见环境问题
+
+| 现象 | 原因 | 处理 |
+|---|---|---|
+| `import triton` 失败 | Windows 上官方 wheel 不存在 | 用 triton-windows（本仓库 venv 已装好） |
+| `torch.cuda.is_available()` 为 False | 装的是 CPU 版 torch，或没有 GPU | 本机正常；性能验收去服务器 |
+| 解释器跑出来的结果和真机不同 | 边界 case 用了未定义值（`other` 没写） | 所有 mask 的 load 都显式给 `other=` |
+| 第一次跑很慢 | JIT 编译（编译缓存） | 正常，第二次起会用缓存 |
+
+---
+
+# Part 2：Vector Add 逐层拆解
+
+## 2.1 问题
+
+```text
+out[i] = x[i] + y[i]    for i in [0, N)
+```
+
+三个一维 float32 张量，长度 N。每个元素 4 字节。
+
+## 2.2 内存布局
+
+GPU 显存里，`x`、`y`、`out` 各是一段**连续**内存：
+
+```text
+地址：  x[0] x[1] x[2] ... x[N-1]
+        y[0] y[1] y[2] ... y[N-1]
+        out[0] out[1] ... out[N-1]
+        每个元素占 4 字节
+```
+
+连续意味着：我们可以按"一段一段"的方式处理，每段就是 BLOCK_SIZE 个元素。这也是 GPU 访存快的前提——连续地址的访问会被合并（coalesced）成少量大请求。
+
+## 2.3 并行策略
+
+把 N 个元素切成若干段，每段交给一个 program：
+
+```text
+N = 1000, BLOCK_SIZE = 256
+
+段 0（program 0）: [0, 256)
+段 1（program 1）: [256, 512)
+段 2（program 2）: [512, 768)
+段 3（program 3）: [768, 1024)   ← 只有 768..999 有效
+```
+
+分段数 = `ceil(N / BLOCK_SIZE) = ceil(1000/256) = 4`。
+
+## 2.4 program_id 和 grid
+
+```python
+pid = tl.program_id(0)     # 当前 program 在 grid 里的编号，0, 1, 2, 3
+```
+
+- `tl.program_id(axis)`：等价于 CUDA 的 `blockIdx.x`
+- grid 是一维的（一个数字），因为这里只需要沿元素方向切分
+- 二维问题（比如 matmul）会用 `tl.program_id(0)` 和 `tl.program_id(1)`，见 Part 5
+
+## 2.5 offsets：这个 program 负责哪些元素
+
+```python
+offsets = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+```
+
+- `tl.arange(0, BLOCK_SIZE)` 生成 `[0, 1, 2, ..., BLOCK_SIZE-1]` 这样一个整数向量（等价于 CUDA 里一个 block 的 `threadIdx.x` 全集）
+- `pid * BLOCK_SIZE` 是这段的起点
+- 对 program 3：`offsets = 768 + [0..255] = [768, 769, ..., 1023]`
+
+**注意**：`offsets` 是**元素索引**，不是字节地址。后面 `x_ptr + offsets` 的含义是"第 offsets 个元素的地址"，编译器会自动乘上元素大小（float 就是 4 字节）。
+
+## 2.6 mask：越界保护
+
+program 3 负责到 1023，但 N=1000，`offsets >= 1000` 的 24 个位置不存在。必须用 mask 挡住：
+
+```python
+mask = offsets < n_elements
+```
+
+```text
+offsets:  768 ... 998 999 | 1000 ... 1023
+mask:     True ... True True | False ... False
+                               ↑ 这 24 个位置不读写
+```
+
+**为什么必须有 mask**：
+
+- 不 mask 的 `tl.load` 会去读越界地址——可能读到别的数据或直接非法访问
+- 不 mask 的 `tl.store` 会写越界——可能破坏其他内存，甚至让 kernel 崩
+- mask 是**逐元素**的：一个 program 里有效和无效元素可以同时存在
+
+## 2.7 tl.load / tl.store
+
+```python
+x = tl.load(x_ptr + offsets, mask=mask, other=0.0)
+y = tl.load(y_ptr + offsets, mask=mask, other=0.0)
+tl.store(out_ptr + offsets, x + y, mask=mask)
+```
+
+- `tl.load(ptr + offsets, mask=mask, other=0.0)`：按 offsets 加载一批元素；mask=False 的位置返回 `other`
+- `tl.store(ptr + offsets, value, mask=mask)`：按 offsets 写回；mask=False 的位置不写
+- `other=0.0` 是**必须的**：加法里被 mask 掉的位置不参与最终结果，但如果 `other` 不给定，这些位置的值是未定义的（可能是垃圾数），结果会错
+
+## 2.8 为什么 BLOCK_SIZE 必须是 tl.constexpr
+
+```python
+def add_kernel(..., BLOCK_SIZE: tl.constexpr):
+```
+
+`tl.constexpr` 表示这个参数是**编译期常量**：kernel 被编译时，BLOCK_SIZE 的值会直接写进代码里。
+
+为什么需要？因为：
+
+- `tl.arange(0, BLOCK_SIZE)` 的长度必须是编译期确定的（它决定寄存器/向量宽度）
+- BLOCK_SIZE 影响循环展开、shared memory 分配、寄存器分配——这些都得在编译时知道
+- 运行时普通参数（比如 `n_elements`）则不同，它们按值传进 kernel，不参与编译期决策
+
+实际效果：`BLOCK_SIZE=256` 和 `BLOCK_SIZE=1024` 是两个不同的编译版本，各有各的缓存。
+
+## 2.9 host 端启动：grid 和 cdiv
+
+```python
+grid = lambda meta: (triton.cdiv(n_elements, meta['BLOCK_SIZE']),)
+add_kernel[grid](x, y, output, n_elements, BLOCK_SIZE=256)
+```
+
+- `triton.cdiv(a, b)` = ceil(a / b)，向上取整除法
+- grid 是"启动多少个 program"，这里 = ceil(N / BLOCK_SIZE)
+- `grid` 写成 **lambda，参数叫 meta**：因为 `BLOCK_SIZE` 是 constexpr，编译器需要知道它才能算 grid 大小；meta 里装着所有 constexpr 参数的值。写成 `lambda meta:` 就能用 `meta['BLOCK_SIZE']`
+- 你也可以直接写死数字：`grid = (triton.cdiv(N, 256),)`，但那样以后换 BLOCK_SIZE 就得改两处
+
+## 2.10 完整 kernel（参考答案：先自己写完再打开）
+
+<details>
+<summary>参考答案（写完后对照，不要提前看）</summary>
 
 ```python
 import triton
@@ -49,14 +285,12 @@ def add_kernel(
     n_elements,
     BLOCK_SIZE: tl.constexpr,
 ):
-    # 你的第一个 Triton kernel
-    # TODO:
-    # 1. 获取 program_id
-    # 2. 计算偏移量
-    # 3. tl.load x 和 y
-    # 4. 做加法
-    # 5. tl.store 结果
-    pass
+    pid = tl.program_id(0)                     # 1. 我是第几个 program
+    offsets = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)  # 2. 我负责哪些元素
+    mask = offsets < n_elements                # 3. 哪些元素有效
+    x = tl.load(x_ptr + offsets, mask=mask, other=0.0)   # 4. 加载 x
+    y = tl.load(y_ptr + offsets, mask=mask, other=0.0)   # 5. 加载 y
+    tl.store(output_ptr + offsets, x + y, mask=mask)     # 6. 相加写回
 
 def add(x: torch.Tensor, y: torch.Tensor):
     output = torch.empty_like(x)
@@ -66,203 +300,396 @@ def add(x: torch.Tensor, y: torch.Tensor):
     return output
 ```
 
-参考 → [Triton 语法速查](../notes/triton/triton-cheatsheet.md) §1
+逐行解释：
 
-> **CUDA 对照**：`tl.program_id(0)` ≈ `blockIdx.x`，`tl.arange(0, BLOCK_SIZE)` ≈ 一个 block 内的 `threadIdx.x` 全体。Triton 一次操作一整个 block 的 tile，不写单个 thread。
+1. `tl.program_id(0)`：得到当前 program 编号（0 到 grid-1）
+2. `offsets`：元素索引向量。program 3 得到 `[768..1023]`
+3. `mask`：逐元素判断是否越界
+4-5. 加载两个输入。注意 `other=0.0`：mask=False 的位置返回 0，不参与计算
+6. 相加并写回。mask=False 的位置不写，所以越界不会破坏内存
 
----
+</details>
 
-## Part 3：第二个 Kernel — Matrix Multiply in Triton
-
-用 `tl.dot` 做矩阵乘。这是你未来最常用的 Triton 操作。
-
-参考 → [Triton 语法速查](../notes/triton/triton-cheatsheet.md) §7
+## 2.11 验证：正确性和边界
 
 ```python
-@triton.jit
-def matmul_kernel(A, B, C, M, N, K,
-                  BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr):
-    # TODO: 对照 cheatsheet 的 GEMM pattern 自己写
-    pass
+torch.manual_seed(0)
+for N in [1, 256, 257, 1000, 2**20]:
+    x = torch.randn(N, device='cuda')
+    y = torch.randn(N, device='cuda')
+    out = add(x, y)
+    torch.testing.assert_close(out, x + y)
+    print(f'N={N}: OK')
 ```
 
-写完后对照参考实现 → [reference/triton/matmul/matmul.py](../reference/triton/matmul/matmul.py)
+为什么这些 N 必须测：
+
+| N | 测什么 |
+|---|---|
+| 1 | 只有一个元素，grid=1，BLOCK 远大于 N，全靠 mask |
+| 256 | N 正好等于 BLOCK_SIZE，没有 mask 情况（也测不出 mask 问题） |
+| 257 | 多一个元素，grid=2，第二个 program 只有 1 个有效元素 |
+| 1000 | 典型非整数倍，最后一段大部分是 mask |
+| 2^20 | 大数组，顺带为性能测试做准备 |
+
+如果 N=257 错，基本就是 mask 或 grid 算错了。
 
 ---
 
-## Part 4：对比 CUDA vs Triton
+# Part 3：LeetGPU 对照
 
-写完 Triton GEMM 后，对比你在 Lesson 02-03 写的 CUDA GEMM：
+写完、本地验证通过后，再打开参考：
 
-| 维度 | CUDA | Triton |
-|------|------|--------|
-| 代码行数 | ~50 行（tiled） | ~25 行 |
-| shared memory | 手动分配 + `__syncthreads` | `tl.load` 自动处理 |
-| Tensor Core | 需要手动 `mma.sync` / `wmma` | `tl.dot` 自动选择 |
-| bank conflict | 手动 padding | 编译器尽量自动避免 |
-| 调试难度 | ncu 逐 kernel 看 | 打印 IR 或 CPU 模拟 |
+1. [LeetGPU](https://github.com/dsl-learn/LeetGPU) 的 Triton vec_add 题/解
+2. [dsl-learn/triton-tutorial](https://github.com/dsl-learn/triton-tutorial) 的 ex1-vector_add（项目已归档，但 vec_add 部分仍可用）
+3. [Triton 官方教程 01-vector-add](https://triton-lang.org/main/getting-started/tutorials/01-vector-add.html)
 
-完整对比 → [triton-vs-cuda.md](../notes/triton/triton-vs-cuda.md)
+对照时只问三个问题：
+
+1. **grid 和 BLOCK_SIZE 为什么不同/相同？** —— BLOCK_SIZE 没有唯一正确答案，它是性能和正确性的折中；官方用 1024 不代表 256 错
+2. **mask 的 `other` 影响结果吗？为什么必须是 0.0？** —— 加法里被 mask 掉的 x/y 如果不返回 0，垃圾值会污染结果
+3. **为什么用 `torch.empty_like` 而不是 `zeros_like`？** —— kernel 会写满每个有效位置，`zeros_like` 白白多一次清零；代价是你必须保证 grid 全覆盖
+
+> 注意：LeetGPU 的题目有自己的 `solve` 函数签名（比如输入是裸指针 + N），和本地写法不同。本地先跑通，再去 LeetGPU 适配接口。
 
 ---
 
+# Part 4：性能分析
 
-## Part 5：怎么一步步写对
+## 4.1 为什么 vec_add 是带宽瓶颈（roofline 视角）
 
-### 5.1 Vector Add 的完整心理模型
+每个元素的工作量：
 
 ```text
-N = 1000, BLOCK_SIZE = 256
-grid = ceil(1000 / 256) = 4 个 block
+读 x: 4 字节
+读 y: 4 字节
+写 out: 4 字节
+计算: 1 次加法（1 FLOP）
 
-block 0: 处理 [0, 256)
-block 1: 处理 [256, 512)
-block 2: 处理 [512, 768)
-block 3: 处理 [768, 1000)，但 1000 不是 256 的倍数
-         => 最后 24 个位置越界，必须用 mask
+算术强度 = 1 FLOP / 12 字节 ≈ 0.083 FLOP/B
 ```
 
-写代码时的固定顺序：
-
-```python
-@triton.jit
-def add_kernel(x_ptr, y_ptr, out_ptr, N, BLOCK_SIZE: tl.constexpr):
-    pid = tl.program_id(0)
-    offsets = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
-    mask = offsets < N
-    x = tl.load(x_ptr + offsets, mask=mask, other=0.0)
-    y = tl.load(y_ptr + offsets, mask=mask, other=0.0)
-    tl.store(out_ptr + offsets, x + y, mask=mask)
-```
-
-不要先写优化，先保证这三件事正确：
-1. 每个元素只被一个 block 处理。
-2. 越界位置不参与计算。
-3. launch 的 grid 覆盖全部元素。
-
-### 5.2 MatMul：从输出 tile 反推指针
-
-假设输出是 `[M, N]`，每个 block 算一个 `BLOCK_M x BLOCK_N` 的 tile。
+4090 的量级：
 
 ```text
-pid_m = tl.program_id(0)   # 这个 block 负责哪一组行
-pid_n = tl.program_id(1)   # 这个 block 负责哪一组列
-
-A tile 起点 = pid_m * BLOCK_M * K
-B tile 起点 = pid_n * BLOCK_N
-C tile 起点 = pid_m * BLOCK_M * N + pid_n * BLOCK_N
+FP32 算力 ≈ 82 TFLOPS
+显存带宽 ≈ 1008 GB/s
+两者交叉点 ≈ 82e12 / 1008e9 ≈ 81 FLOP/B
 ```
 
-然后循环 `K`：
+算术强度（0.083）比交叉点（81）低了约 1000 倍，意味着**计算能力远远过剩，瓶颈完全是显存带宽**。所以优化 vec_add 的目标不是"让计算更快"，而是"让访存更高效、数据量更少"。这也是为什么后面做 Flash Attention 时，核心指标是"省了多少次 HBM 读写"。
+
+## 4.2 有效带宽怎么测
 
 ```python
-acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
+import triton
+
+# 计时工具：返回平均耗时（毫秒）
+mean_ms = triton.testing.do_bench(lambda: add(x, y))
+
+# 有效带宽 = 总数据量 / 时间
+bytes_moved = 3 * N * 4   # 读 x + 读 y + 写 out
+bandwidth_gbps = bytes_moved / (mean_ms / 1000) / 1e9
+print(f'{bandwidth_gbps:.1f} GB/s')
+```
+
+注意：
+
+- N 要足够大（至少 2^25），否则 launch 开销（几十微秒）占大头，测出来虚低
+- 分别测 `torch.add` 和你的 kernel，用同一个 N、同一个计时方法，才有可比性
+- BLOCK_SIZE 分别试 128 / 256 / 512 / 1024，记录结果
+
+## 4.3 期望值
+
+```text
+N = 2^25 = 33,554,432
+数据量 = 3 × 33,554,432 × 4 ≈ 0.403 GB
+如果 mean_ms = 0.50 ms → 带宽 = 0.403 / 0.0005 ≈ 805 GB/s
+```
+
+4090 参考锚点：
+
+| 指标 | 数值 |
+|---|---|
+| 理论带宽 | ~1008 GB/s |
+| 合格 Triton vec_add | 600+ GB/s |
+| `torch.add` | 通常 650-850 GB/s |
+
+**如果比 torch.add 低 20% 以上**，按这个顺序查：
+
+1. N 够不够大（< 2^20 就别测性能）
+2. BLOCK_SIZE 是不是太小（128 以下容易带宽上不去）或太大（1024 以上占用率下降）
+3. 是不是忘了解释器变量（`TRITON_INTERPRET` 开着时测的是 Python 模拟，数字没有意义）
+
+## 4.4 记录
+
+把结果写进 `solutions/triton/README.md`，这是 B1 验收的一部分：
+
+```text
+vector_add (2026-08-XX)
+- N=2^25, BLOCK_SIZE=256, RTX 4090
+- 正确性: assert_close OK (N=1/256/257/1000/2^20)
+- 带宽: 805 GB/s (torch.add: 820 GB/s)
+- 结论: 内存带宽瓶颈，BLOCK_SIZE=256 最优
+```
+
+---
+
+# Part 5：MatMul 详解
+
+## 5.1 问题
+
+```text
+C[M, N] = A[M, K] @ B[K, N]
+```
+
+每个输出元素 `C[i][j]` 都是 A 的第 i 行和 B 的第 j 列做点积：
+
+```text
+C[i][j] = Σ_k A[i][k] * B[k][j]
+```
+
+## 5.2 输出分块：每个 program 算一个 tile
+
+朴素想法：每个 program 算 C 的一个元素——太浪费，一个 program 只干一个点积，GPU 的并行度和数据复用都上不去。
+
+正确做法：**每个 program 算 C 的一个 `BLOCK_M × BLOCK_N` 小块**。
+
+```text
+M = N = K = 1024, BLOCK_M = 128, BLOCK_N = 128
+
+C 是 1024×1024，切成 8×8 = 64 个 tile
+grid = (8, 8)，即 64 个 program
+
+program (pid_m=3, pid_n=5) 负责：
+  行 [384, 512) × 列 [640, 768) 这一块
+```
+
+为什么要这样分块？因为计算一个输出 tile 时，A 的行块和 B 的列块会被**反复使用**（K 维循环），分块让这些数据能留在寄存器/shared memory 里复用，而不是每次从 HBM 重读。这正是 GEMM 优化的核心：**数据复用**。
+
+## 5.3 指针计算（从输出 tile 反推）
+
+三个矩阵都是 row-major 连续存储：
+
+```text
+A[i][k] 的地址 = A + i * K + k
+B[k][j] 的地址 = B + k * N + j
+C[i][j] 的地址 = C + i * N + j
+```
+
+当前 program 负责的输出 tile 起点：
+
+```text
+pid_m = tl.program_id(0)   # 负责哪一组行
+pid_n = tl.program_id(1)   # 负责哪一组列
+
+行索引: offs_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)   # [BLOCK_M]
+列索引: offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)   # [BLOCK_N]
+K 索引: offs_k = tl.arange(0, BLOCK_K)                     # [BLOCK_K]
+```
+
+A 的 tile 指针（形状 [BLOCK_M, BLOCK_K]）：
+
+```python
+a_ptrs = A + offs_m[:, None] * K + offs_k[None, :]
+```
+
+B 的 tile 指针（形状 [BLOCK_K, BLOCK_N]）：
+
+```python
+b_ptrs = B + offs_k[:, None] * N + offs_n[None, :]
+```
+
+C 的 tile 指针（形状 [BLOCK_M, BLOCK_N]）：
+
+```python
+c_ptrs = C + offs_m[:, None] * N + offs_n[None, :]
+```
+
+**为什么用 `[:, None]` / `[None, :]`**：把一维索引扩成二维，才能生成 [BLOCK_M, BLOCK_K] 这样的二维 tile。`offs_m[:, None]` 是列向量（BLOCK_M 行 1 列），`offs_k[None, :]` 是行向量（1 行 BLOCK_K 列），相加广播成完整二维索引。
+
+K 循环时指针怎么走：
+
+```python
 for k in range(0, K, BLOCK_K):
     a = tl.load(a_ptrs)   # [BLOCK_M, BLOCK_K]
     b = tl.load(b_ptrs)   # [BLOCK_K, BLOCK_N]
     acc += tl.dot(a, b)
-    a_ptrs += BLOCK_K
-    b_ptrs += BLOCK_K * N
+    a_ptrs += BLOCK_K            # A 往右走一个 BLOCK_K（列偏移 = BLOCK_K）
+    b_ptrs += BLOCK_K * N        # B 往下走一个 BLOCK_K（行偏移 = BLOCK_K 行 × N 列）
 ```
 
-调试顺序：
-1. 先固定 `BLOCK_K = K`，不做 K 循环，只验证单个 tile 正确。
-2. 再做 K 循环。
-3. 最后做 autotune。
+第二个步进（`BLOCK_K * N`）是新手最常错的地方：B 是 [K, N]，跳过一个 BLOCK_K 行，需要跨过 `BLOCK_K × N` 个元素。
 
-### 5.3 Softmax：先想 reduce 方向
-
-一维 softmax：
+## 5.4 tl.dot：Tensor Core 入口
 
 ```python
-x = tl.load(ptr + offsets, mask=mask, other=-float('inf'))
-x_max = tl.max(x, axis=0)
-num = tl.exp(x - x_max)
-denom = tl.sum(num, axis=0)
-y = num / denom
+acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
+acc += tl.dot(a, b)   # a: [BLOCK_M, BLOCK_K], b: [BLOCK_K, BLOCK_N]
 ```
 
-二维 softmax 每行独立：
+`tl.dot` 的语义：
+
+- 输入形状必须匹配：`[BLOCK_M, BLOCK_K] @ [BLOCK_K, BLOCK_N] → [BLOCK_M, BLOCK_N]`
+- **累加器用 fp32**：即使 a/b 是 fp16，累加也在 fp32 做，精度更好
+- 编译器看到 `tl.dot` 会生成 tensor core 指令（4090 上是 `mma.sync`），而不是普通乘加循环
+
+dtype 决定能不能用 tensor core：
+
+| dtype | 4090 行为 | 备注 |
+|---|---|---|
+| fp16 / bf16 | 走 tensor core，最快 | 模型推理/训练的主流 |
+| fp32 | 默认 TF32（`tl.dot` 的 `input_precision` 控制） | 精度比真 fp32 低，性能接近 fp16 |
+| fp32 (ieee) | 普通 CUDA core 算 | 精度最高，最慢 |
+
+BLOCK 尺寸注意：
+
+- `tl.dot` 一般要求每个维度 ≥ 16（tensor core 的 mma 指令最小形状）
+- BLOCK_K 太小（比如 8）会让 dot 退化成低效路径，还浪费 shared memory 带宽
+- 常见组合：`BLOCK_M=128, BLOCK_N=128, BLOCK_K=32/64`
+
+## 5.5 三步走：先正确，再性能
+
+**Step 1：固定 BLOCK_K = K，不做循环**
+
+只验证"单个输出 tile"算得对。M=N=K 用 1024，BLOCK_M=BLOCK_N=128，BLOCK_K=1024（一步算完）。这个阶段性能不重要，目标是：**一个 program 能算对一块**。
+
+**Step 2：加 K 循环**
+
+K 循环让 tile 可以处理任意大的 K，同时把数据量控制在 shared memory 能容纳的范围。循环里只做三件事：load A tile → load B tile → `acc += tl.dot(a, b)`。
+
+**Step 3：autotune**
 
 ```python
-row = tl.arange(0, BLOCK_M)[:, None]
-col = tl.arange(0, BLOCK_N)[None, :]
-offsets = row * N + col
-
-x = tl.load(x_ptr + offsets)
-x_max = tl.max(x, axis=1)          # 每行一个 max
-num = tl.exp(x - x_max[:, None])   # 广播到 [BLOCK_M, BLOCK_N]
-denom = tl.sum(num, axis=1)
-y = num / denom[:, None]
+@triton.autotune(
+    configs=[
+        triton.Config({'BLOCK_M': 128, 'BLOCK_N': 128, 'BLOCK_K': 32}, num_stages=2, num_warps=4),
+        triton.Config({'BLOCK_M': 128, 'BLOCK_N': 128, 'BLOCK_K': 64}, num_stages=3, num_warps=4),
+        triton.Config({'BLOCK_M': 64,  'BLOCK_N': 128, 'BLOCK_K': 64}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_M': 128, 'BLOCK_N': 256, 'BLOCK_K': 64}, num_stages=3, num_warps=8),
+    ],
+    key=['M', 'N', 'K'],
+)
 ```
 
-关键：`axis=1` 后形状变成 `[BLOCK_M]`，要恢复成 `[BLOCK_M, 1]` 才能广播。
+autotune 在第一次启动时对每个 config 各跑一遍 benchmark，选最快的，之后都用它。
 
-### 5.4 Flash Attention：保持 running state
+- `configs` 里的字典 key 必须和 kernel 参数名一致（BLOCK_M/BLOCK_N/BLOCK_K）
+- `num_warps` 和 `num_stages` 也是编译选项：warps 多 = 并行度大；stages 多 = 更深流水线（用更多 shared memory 换更少的访存等待）
+- `key=['M','N','K']`：告诉 autotune 哪些运行时参数变化时需要重新调参（不同形状的最优 config 不一样）
+- 用了 autotune 后，启动 kernel **不要再传** BLOCK_M/BLOCK_N/BLOCK_K 这些 constexpr（config 会填）
 
-Triton 版的核心是维护三个 running state：
-
-```python
-m = tl.full((BLOCK_M,), -float('inf'), dtype=tl.float32)
-l = tl.zeros((BLOCK_M,), dtype=tl.float32)
-acc = tl.zeros((BLOCK_M, HEAD_DIM), dtype=tl.float32)
-
-for kv_start in range(0, N, BLOCK_KV):
-    k = tl.load(...)   # [BLOCK_KV, HEAD_DIM]
-    v = tl.load(...)   # [BLOCK_KV, HEAD_DIM]
-    scores = tl.dot(q, tl.trans(k)) * scale  # [BLOCK_M, BLOCK_KV]
-    m_new = tl.maximum(m, tl.max(scores, axis=1))
-    correction = tl.exp(m - m_new)
-    p = tl.exp(scores - m_new[:, None])
-    l = l * correction + tl.sum(p, axis=1)
-    acc = acc * correction[:, None] + tl.dot(p, v)
-    m = m_new
-```
-
-不要一上来就写 causal，先不加 mask 跑通，再加 causal。
-
-### 5.5 GQA：先理解 head 映射
-
-GQA 里 query head 数 > key/value head 数：
+## 5.6 GFLOPS 怎么算
 
 ```text
-Q head 0..3  -> 共用 K/V head 0
-Q head 4..7  -> 共用 K/V head 1
+FLOPs = 2 × M × N × K   （每个输出元素做 K 次乘 + K 次加）
+
+例子：M=N=K=4096，耗时 1.2 ms
+FLOPs = 2 × 4096³ = 137.4 GFLOP
+TFLOPS = 137.4e9 / 1.2e-3 ≈ 114 TFLOPS
 ```
 
-Triton 实现时，先在 host 端把 Q 按 group 重排，或者把 Q head 索引除以 group size 后再映射到 K/V head。
+4090 参考锚点（fp16）：
 
-## ✅ 本课检验清单
+```text
+理论峰值 ≈ 330 TFLOPS（fp16 dense）
+torch.matmul 通常能到 250-300 TFLOPS（cuBLAS，大矩阵）
+初版 Triton matmul 能到 50-150 TFLOPS 就算入门
+```
 
-### 环境与基础
-- [ ] `python -c "import triton, torch"` 能跑
-- [ ] Triton Vector Add 跑通，和 PyTorch 对齐
-- [ ] Triton MatMul 跑通，记录 GFLOPS
+先和 `torch.matmul` 比，别和自己比。如果差很多，先检查：dtype 是不是 fp16、BLOCK 是不是太小、autotune 有没有生效。
 
-### 理解
-- [ ] 能解释 `tl.program_id` / `tl.arange` / `tl.load` / `tl.store` 对应 CUDA 什么
-- [ ] 能解释 `tl.dot` 在 GPU 上怎么被编译执行
-- [ ] 能说出 Triton 相比手写 CUDA 的 3 个主要简化点
-- [ ] 能解释 mask 和 other 的作用
+## 5.7 完整 kernel
 
-### 进阶
-- [ ] Triton Fused Softmax 跑通
-- [ ] Triton Flash Attention 跑通并对比 PyTorch ref
-- [ ] GQA 或 Fused MLP 跑通
-- [ ] 能用 autotune 给出至少一组调参结论
+先自己写，卡住时参考 [reference/triton/matmul/matmul.py](../reference/triton/matmul/matmul.py)。它包含 mask 处理（M/N/K 不是 BLOCK 倍数时）和 autotune。
 
 ---
 
-## 知识库索引
+# Part 6：常见坑（每条都带原理）
+
+| 坑 | 现象 | 原因 | 怎么避免 |
+|---|---|---|---|
+| `tl.arange` 大小不是 2 的幂 | 编译报错 | arange 长度必须是编译期确定的 2 的幂，编译器按此分配向量宽度 | BLOCK 一律取 2 的幂（128/256/512...） |
+| 把 offsets 当成字节 | 结果错得离谱或越界 | `ptr + offsets` 是元素偏移，编译器按 dtype 换算字节 | 记住 `x_ptr + i` 是"第 i 个元素" |
+| 忘 mask | 结果错 / 崩 | 最后一段读写了不存在的元素 | 非整除的 N 必须 mask，且测试 N=257 |
+| 忘 `other=` | 结果时对时错 | mask=False 位置返回未定义值 | 所有 mask 的 load 都写 `other=0.0` |
+| 解释器测性能 | 数字毫无意义 | 解释器是 Python 逐行模拟，不是编译后的 GPU 代码 | 性能只在真机测 |
+| grid 没覆盖全部元素 | 结果尾部全 0 | 比如用 `N // BLOCK_SIZE` 而不是 cdiv，最后一段被丢掉 | 用 `triton.cdiv` |
+| matmul 忘加 `[:, None]` | 形状错/广播错 | 一维索引无法生成二维 tile | 行索引 `[:, None]`，列索引 `[None, :]` |
+| B 的 K 循环步进写错 | K>BLOCK_K 时结果错 | B 跳过一个 BLOCK_K 行要跨 `BLOCK_K * N` 个元素，不是 `BLOCK_K` | 用 5.3 的公式，或先跑 BLOCK_K=K 验证 |
+| `tl.dot` dtype 不匹配 | 编译/运行报错 | a、b 必须是同 dtype | 先统一 fp16 或 fp32 |
+| 一上来就 autotune | 不知道问题在哪 | autotune 只是找最快 config，不修 bug | 先正确，再手动试 BLOCK，最后 autotune |
+
+---
+
+# Part 7：调试手段
+
+| 手段 | 怎么用 | 解决什么 |
+|---|---|---|
+| CPU 解释器 | `TRITON_INTERPRET=1 python xxx.py` | 逻辑错误、边界错误，不依赖 GPU |
+| 边界测试 | N=1/256/257/1000 | mask 和 grid 错误 |
+| `assert_close` | 和 `torch.add` / `torch.matmul` 对比 | 正确性 |
+| 打印 IR | `print(add_kernel.asm['ttgir'])`（编译后） | 看编译器做了什么布局/同步 |
+| 打印 PTX | `print(add_kernel.asm['ptx'])` | 确认 `tl.dot` 是否真的生成了 mma 指令 |
+| autotune 日志 | `TRITON_PRINT_AUTOTUNING=1` | 看每个 config 的实测耗时，确认 autotune 生效 |
+| `do_bench` | `triton.testing.do_bench(fn)` | 稳定计时（自动 warmup + 多次取均值） |
+
+调试顺序固定：解释器跑对 → 边界全过 → 真机跑对 → 才谈性能。
+
+---
+
+# ✅ 本课验收清单
+
+环境与基础：
+
+- [ ] `import torch, triton` 能跑
+- [ ] vec_add 自己从空文件写完，CPU 解释器 + 真机都跑通，与 `torch.add` 对齐
+- [ ] N=1 / 256 / 257 / 1000 边界正确
+- [ ] LeetGPU Triton vec_add 通过
+
+理解：
+
+- [ ] 能解释 `tl.program_id` / `tl.arange` / `tl.load` / `tl.store` 对应 CUDA 的什么
+- [ ] 能解释 mask 和 other 的作用，以及为什么加法必须 `other=0.0`
+- [ ] 能说清 vec_add 为什么是带宽瓶颈（算术强度 vs 交叉点）
+- [ ] 能徒手算出一个 N、BLOCK_SIZE 下的 grid 大小和每段范围
+
+性能（B1 完成标准）：
+
+- [ ] 真实 GPU 实测，带宽数字记入 `solutions/triton/README.md`
+- [ ] 能解释你的 GB/s 和 `torch.add` 差多少、为什么
+
+进阶（B1 之后）：
+
+- [ ] matmul 单 tile 跑通（BLOCK_K=K）
+- [ ] matmul K 循环跑通，记录 GFLOPS
+- [ ] autotune 至少给出一组调参结论（哪个 config 快、为什么）
+
+---
+
+# 资源
+
+| 想深入 | 去看 |
+|---|---|
+| Triton 官方教程 01-vector-add | https://triton-lang.org/main/getting-started/tutorials/01-vector-add.html |
+| Triton 官方教程 03-matrix-multiplication | https://triton-lang.org/main/getting-started/tutorials/03-matrix-multiplication.html |
+| CUDA-MODE L14（Triton 引导） | https://github.com/cuda-mode/lectures —— 写完 vec_add 再看 |
+| CUDA-MODE L9（reductions） | https://github.com/cuda-mode/lectures —— 写 softmax（B2）前看 |
+| Triton 中文教程（已归档） | https://github.com/dsl-learn/triton-tutorial —— vec_add/转置部分可用 |
+| LeetGPU | https://github.com/dsl-learn/LeetGPU |
+| CUDA-MODE 中文笔记 | https://github.com/BBuf/how-to-optim-algorithm-in-cuda |
+| 下一课 | B2 Triton Fused Softmax（Lesson 按需生成；前置：online softmax 已掌握 + CUDA-MODE L9） |
+
+# 知识库索引
 
 | 想深入理解 | 去看 |
-|-----------|------|
-| Triton 所有 API | [triton-cheatsheet.md](../notes/triton/triton-cheatsheet.md) |
-| Triton → CUDA 底层实现 | [triton-under-the-hood.md](../notes/cuda/triton-under-the-hood.md) |
+|---|---|
+| Triton 所有 API（按场景查） | [triton-cheatsheet.md](../notes/triton/triton-cheatsheet.md) |
+| Triton → CUDA 底层实现（layout/sync/mma） | [triton-under-the-hood.md](../notes/cuda/triton-under-the-hood.md) |
 | Triton vs CUDA 编程模型 | [triton-vs-cuda.md](../notes/triton/triton-vs-cuda.md) |
 | Triton MatMul 参考实现 | [reference/triton/matmul/matmul.py](../reference/triton/matmul/matmul.py) |
-| 接下来去哪 | [PATH.md](../PATH.md) — Triton 算子 + 推理系统 |
+| 接下来去哪 | [PATH.md](../PATH.md) — B2 Triton Fused Softmax |
 
 ---
 
-*Lesson 06 · Triton 入门 · 源自原 week-04（后半）*
+*Lesson 06 · Triton 入门 · B1 当前主线 · 2026-08-13 全面重写*

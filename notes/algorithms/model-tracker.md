@@ -16,7 +16,7 @@
 推荐先学：
 
 1. LLaMA 系列：GQA + SwiGLU + RoPE + RMSNorm，最完整的 Dense 样本。
-2. DeepSeek-V2/V3：MLA + DeepSeekMoE + MTP，当前最重要的两个结构考点。
+2. DeepSeek-V2/V3.2/V4：MLA → DSA → CSA/HCA，当前最重要的结构考点（V4 详见 [deepseek-v4.md](deepseek-v4.md)）。
 3. Qwen 系列：Dense/MoE 路线都有，适合量化、vLLM 部署实验。
 4. Mamba/Jamba：理解 Attention 之外的替代路线。
 
@@ -28,7 +28,11 @@
 |------|------------|---------|----------|:--:|:--:|------|
 | LLaMA | 3.1/3.2/3.3、4 代 | GQA、RoPE、SwiGLU、RMSNorm；4 代有 MoE/多模态 | GQA | 部分 | 🟡 | [latest-model-architectures](latest-model-architectures.md) |
 | Qwen | 2.5、3 代 | GQA、SwiGLU、RoPE；Dense/MoE 都有 | GQA | 部分 | ⚪ | [latest-model-architectures](latest-model-architectures.md) |
+| Qwen | 3.5（397B-A17B） | GDN×3 + Full Attention×1 混合、512+1 experts、top-10、RoPE、RMSNorm | GDN 层无 KV（recurrent state）；full attention 层 GQA | ✅ | 🟡 | [GDN](gdn-linear-attention.md) |
 | DeepSeek | V2/V3/R1 | MLA、DeepSeekMoE、MTP、FP8 训练 | MLA | ✅ | 🟡 | [MLA](mla-deepseek.md) · [MoE](moe-inference.md) |
+| DeepSeek | V3.2（~685B / 37B active） | MLA + DSA + DeepSeekMoE + MTP-3 | MLA + DSA indexer | ✅ | 🟡 | [DSA](dsa-sparse-attention.md) · [MLA](mla-deepseek.md) |
+| DeepSeek | V4（Pro ~1.6T / ~49B active · Flash 284B / ~13B active） | CSA + HCA（MLA 骨架）+ Lightning Indexer top-k + 滑窗；MoE 权重 MXFP4、Muon、mHC | CSA 压缩 KV（1M ctx 下 ≈ V3.2 的 10%） | ✅ | ⚪ | [DeepSeek-V4](deepseek-v4.md) |
+| GLM | 5 | DSA（复用 DeepSeek 实现）、256 experts、8 active、~44B active | DSA indexer | ✅ | 🟡 | [DSA](dsa-sparse-attention.md) |
 | Mistral/Mixtral | 7B、8x7B、8x22B | GQA、Sliding Window、MoE | GQA | ✅ | 🟡 | [latest-model-architectures](latest-model-architectures.md) |
 | GPT/o-series | GPT-4o、o1、o3 | Decoder-only；o-series 推理时思考；公开细节少 | 未公开 | 未公开 | 🔴 | [latest-model-architectures](latest-model-architectures.md) |
 | Claude | 3.x/4 代 | 未完整公开；Transformer + 对齐 | 未公开 | 未公开 | 🔴 | [latest-model-architectures](latest-model-architectures.md) |
@@ -64,3 +68,5 @@
 ## 更新记录
 
 - 2026-08-03：建立模型追踪表，先记录主流家族和结构观察点。
+- 2026-08-13：新增 Qwen3.5（GDN 混合注意力）、DeepSeek-V3.2（MLA+DSA+MTP-3）、GLM-5（DSA 架构复用）。
+- 2026-08-14：新增 DeepSeek-V4 行（CSA+HCA、Muon、MXFP4），资料入库；入口 [deepseek-v4.md](deepseek-v4.md)。

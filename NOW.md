@@ -21,14 +21,20 @@
 
 ## 🧠 理论线（理解）
 
-**现在 · 模型结构与最新模型**
-和 A5 读码配对——Flash Attention 1 的机制（`(m, l, acc)` 滚动 + scale 修正 + tile 流转）已消化，其余草稿仍待逐条深钻。
+**现在 · 主线 A：DeepSeek-V3.2 第 1 步 — config + 手算**
 
-- ✅ Flash Attention 1 机制：经 A5 读码 + 问答消化（2026-08-10），能讲清滚动公式和 tiling 为什么省 HBM
-- ✅ 能推一遍 online 更新公式，能讲清"为什么比 3-pass 省 3× HBM 读写"（2026-07-10）
-- ✅ merge 公式 `s_new = s_a·exp(m_a-m_new) + s_b·exp(m_b-m_new)` 满足交换律+结合律 → 可用于 tree reduce
+任务：先读 [DeepSeek-V3.2 手算工作纸](./notes/algorithms/deepseek-v32-handcalc.md) §2 前置——KV cache 是什么、在 DeepSeek 里 MLA/DSA/V4 怎么用——再算三笔账：KV cache（128K 单请求 ≈9GB）、权重显存（BF16 ≈1.37TB）、前向 FLOPs（4K prefill ≈303 TFLOP）；每个数写一句"所以需要 XX"。算完对照答案，过 → 第 2 步注意力（FA2 → MLA → DSA），再进第 3 步 V4 增量（CSA/HCA → mHC/Muon → FP4）。
 
-**接下来**：模型结构与最新模型（[最新模型与结构](notes/algorithms/latest-model-architectures.md) + [剩余理论速览](notes/algorithms/remaining-theory-primer.md)）→ GQA/MLA/MoE → Mamba/SSM → 剩余理论逐条深钻
+第 1 步是热身：三笔账给第 2 步的 MLA/DSA 和第 3 步的 V4 增量提供数字基础。A5 读完的 FlashAttention 在第 2 步接续（FA2 → MLA → DSA）；训练侧枝干 A1（FP8 训练 → [优化器](./notes/algorithms/optimizers-adam.md) → ZeRO/FSDP）挪到 serving 之后，不插队。
+
+**路线**：第 1 步热身（手算）→ 第 2 步注意力（FA2 → MLA → DSA）→ 枝干 A2（KV 量化）→ 第 3 步 V4 增量（CSA/HCA → mHC/Muon → FP4）→ 第 4 步 MoE → 枝干 A3（权重量化）→ 第 5 步 MTP → 第 6 步 serving（含 V4 磁盘 KV / TileLang）→ 枝干 A1（训练侧）→ 主线 B（Qwen3.5，含枝干 B1 Mamba/SSM）。完整路由：[algorithms README](./notes/algorithms/README.md)
+
+**已完成**
+- ✅ FA1 机制（2026-08-10，A5 读码消化）：滚动公式 + tiling 为什么省 HBM
+- ✅ online 更新公式（2026-07-10）：为什么比 3-pass 省 3× HBM 读写
+- ✅ merge 公式满足交换律 + 结合律，可用于 tree reduce
+
+**备注**：V4 已确认存在——2026-04-24 预览开源（Pro ~1.6T / ~49B active · Flash 284B / ~13B active），07-31 Flash 正式，08-13 V4-Pro-0813 正式。主线不切 V4：V3.2 是完整开源基线，V4 的 27%/10% 需要 V3.2 做分母；V4 作为增量挂在第 2 步注意力之后（CSA/HCA → mHC/Muon → FP4），详见 [deepseek-v4.md](./notes/algorithms/deepseek-v4.md)。2026-08-13 新草稿（FA2 / GDN / DSA / FA4 / SageAttention3-Kascade）仍随主线步骤消化，不单独排队。
 
 ## 📚 已完成 / 历史
 

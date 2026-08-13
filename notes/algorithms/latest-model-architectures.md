@@ -23,6 +23,7 @@
 13. [怎么学：从 config 到 benchmark](#13-怎么学从-config-到-benchmark)
 14. [面试高频题库](#14-面试高频题库)
 15. [参考与配套材料](#15-参考与配套材料)
+16. [2026 新架构：混合注意力与稀疏注意力](#16-2026-新架构混合注意力与稀疏注意力)
 
 ---
 
@@ -573,3 +574,48 @@ RoPE 引入 Q/K 的旋转操作，RMSNorm 引入 row-wise reduce。两者都会�
 - [剩余理论主题速览](remaining-theory-primer.md)
 - [模型追踪表](model-tracker.md)
 - AIInfraGuide 的 Transformer 与 GPU 章节，见 [roadmap/ai-infra-curriculum.md](../../roadmap/ai-infra-curriculum.md)
+
+---
+
+## 16. 2026 新架构：混合注意力与稀疏注意力
+
+2026 年四个可学的生产案例，目标都是同一个：**让长上下文变便宜**。
+
+### Qwen3.5：GDN 线性注意力混合（省 KV + 近线性长序列）
+
+- 60 层 = 15 组 ×（3 GDN + 1 full attention）；512+1 experts、每 token 激活 10 个；397B 总参 / 17B 激活
+- GDN 层没有传统 KV cache，只有固定大小的 recurrent state + conv state；full attention 层保留精确召回
+- 推理影响：长上下文成本接近线性，但 recurrent state 对 prefill 批量不友好（需要 chunked / parallel scan）
+- 详细：[GDN（Qwen3.5）](gdn-linear-attention.md)
+
+### DeepSeek-V3.2：MLA + DSA（压 KV + 只算 top-k）
+
+- ~685B 总参 / 37B 激活；MLA 压缩 KV 存储，DSA 用 indexer 只选 K=2048 个 key 做完整 attention
+- 复杂度 O(L²) → O(L·K)；推理栈（vLLM / TRT-LLM / SGLang / TileRT）都有 sparse MLA / fp8_ds_mla / MTP-3 支持
+- 详细：[DSA](dsa-sparse-attention.md)
+
+### GLM-5：DSA 架构复用
+
+- 78 层、256 experts、8 active、激活约 44B；代码层面复用 DeepSeek 的 DSA 实现
+- 说明稀疏注意力已成为"标准件"，模型之间互相复用实现
+- 详细：[DSA](dsa-sparse-attention.md)
+
+### DeepSeek-V4：CSA + HCA（MLA 骨架 + 压缩稀疏）
+
+- 发布线：2026-04-24 预览开源（V4-Pro ~1.6T 总参 / ~49B 激活；V4-Flash 284B / ~13B 激活；原生 1M 上下文）；2026-07-31 V4-Flash 正式；2026-08-13 V4-Pro-0813 正式（架构不变，后训练大幅提升）
+- 注意力 = **CSA + HCA 混合**，保留 MLA 低秩 latent 骨架：
+  - **CSA（压缩稀疏注意力）**：每 m=4 个 token 用重叠窗口（2m）+ joint softmax 压成 1 个 compressed entry；Lightning Indexer 打分选 top-k（Pro k=1024 / Flash k=512）；核心 attention 是 shared-KV 多 query，所有 head 共用同一组压缩 KV
+  - **HCA（压缩稠密注意力）**：m'=128、无 indexer、无 overlap，对全部压缩 entry 做 dense attention，兜底召回
+  - 每层另留最近 128 个未压缩 token 的滑窗分支（`sliding_window=128`）
+- 层排布：V4-Pro 61 层 + MTP，前 2 层纯 HCA，之后 CSA/HCA 交替（`compress_ratios=[128,128,4,128,4,...,4,0]`）；V4-Flash 同模式 43 层
+- 1M 上下文账（对比 V3.2）：V4-Pro prefill FLOPs ≈ 27%、KV cache ≈ 10%；V4-Flash ≈ 10% / 7%；对比 BF16 GQA-8 基线 KV 仅约 2%
+- 同代配套：partial RoPE（只旋最后 64 维）、attention sink（每 head 可学习 logit）、grouped output projection（组内 bottleneck 1024）、mHC 流形约束超连接（4 条残差流 + 双随机 B 矩阵）、Muon 优化器（替代 AdamW 大矩阵部分）、MoE 权重 MXFP4（E2M1）QAT + 非专家 FP8 + KV 混合精度
+- 推理侧：MegaMoE 波次调度（1.5–1.73×，已进 DeepGEMM）、TileLang/DeepGEMM 替代手写 CUDA/cuBLAS、磁盘 KV + SWA 三档策略
+- 注意：V4 config 与 V3.2 不兼容（无 `kv_lora_rank`，改用 `compress_ratios`），不要把 V3.2 手算公式直接套 V4
+- 详细：[DeepSeek-V4（CSA + HCA）](deepseek-v4.md) · 对照基准：[DeepSeek-V3.2 / DSA](dsa-sparse-attention.md)
+
+### 注意力实现侧同步更新
+
+- FA4 + FlexAttention：可编程注意力（score_mod + block 稀疏），Blackwell 上默认后端推进中 → [fa4-flexattention.md](fa4-flexattention.md)
+- SageAttention3：Q/K 量化到 FP4（microscaling），带宽降 4x → [attention-2026-sage3-kascade.md](attention-2026-sage3-kascade.md)
+- Kascade：anchor layer 算 exact top-k、跨层复用索引，免训练 → [attention-2026-sage3-kascade.md](attention-2026-sage3-kascade.md)

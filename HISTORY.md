@@ -7,6 +7,8 @@
 
 ## 0. 最后更新
 
+- 2026-08-14（确认 DeepSeek-V4：2026-04-24 预览开源、07-31 Flash 正式、08-13 V4-Pro-0813 正式；核心 = CSA + HCA（MLA 骨架）+ Lightning Indexer + mHC/Muon + MXFP4；1M ctx 下 prefill ≈ V3.2 的 27%、KV ≈ 10%；主线不切 V4，改为 V3.2 打底、V4 做增量，挂主线 A 第 3 步；新笔记 deepseek-v4.md，tracker / 架构地图 / algorithms README / NOW 同步）
+- 2026-08-13（理论线重构为"主干 + 枝干 + 字典"：主干=模型主线，枝干=必要小模块按挂载点学；主线 A 第 1 步手算是热身，A5/FA1 在第 2 步注意力接续（FA2 → MLA → DSA），训练侧枝干 A1 挪到 serving 之后；新笔记：FA2、FA4/FlexAttention、GDN/Qwen3.5、DSA、SageAttention3/Kascade、优化器 Adam/AdamW【枝干 A1】）
 - 2026-08-10
 - 当前主线：PATH B Triton 实现（B1 vec_add 待用户自己写，matmul 下一步）
 - 并行强化：最新模型与算子构建能力（GQA/MLA/MoE/FlashAttention/PagedAttention 等）
@@ -28,7 +30,7 @@ A CUDA 打底 -> B Triton -> C 推理系统 -> D 分布式 -> E Agent
 
 ## 2. 当前主线
 
-现在只做 PATH B：Triton 实现。
+算子线现在做 PATH B：Triton 实现；理论线并行推进主线 A（DeepSeek-V3.2 → V4 增量）。
 
 完成顺序：
 
@@ -107,6 +109,9 @@ LeetGPU `5_softmax` 贴 `solve()` 提交；服务器 `KERNEL=xxx.cu ./run.sh` �
 | MLA / DeepSeek | 🚧 草稿 | 待消化 |
 | 最新模型结构 | 🚧 草稿 | 已补全详细内容 |
 | 剩余理论速览 | 🚧 草稿 | 已分类补全 |
+| FA2 / FA4 / GDN / DSA / SageAttention3 | 🚧 草稿 2026-08-13 | 随主线步骤消化，不单独排队 |
+| 优化器 Adam/AdamW | 🚧 草稿 2026-08-13 | 枝干 A1 第 1 段（主线 A serving 之后） |
+| DeepSeek-V4（CSA+HCA） | 🚧 草稿 2026-08-14 | 主线 A 第 3 步：CSA/HCA → mHC/Muon → MXFP4/混合精度 |
 
 ---
 
@@ -156,6 +161,7 @@ roadmap/leetgpu-ladder.md        # 可选 CUDA 深钻
 
 | 日期 | 内容 |
 |------|------|
+| 2026-08-14 | V4 资料入库（发布线 / CSA+HCA / mHC/Muon / MXFP4 / MegaMoE / TileLang / 磁盘 KV）；tracker、架构地图、algorithms README、NOW 同步；新增 [deepseek-v4.md](../notes/algorithms/deepseek-v4.md) 草稿 |
 | 2026-08-10 | NOW.md 瘦身：已完成单元移入 HISTORY 存档，NOW 只留当前焦点 + 历史跳转 |
 | 2026-08-10 | 校准 B 线流程：自己写 → LeetGPU → 真实 GPU → 性能分析 |
 | 2026-08-10 | A5 读码完成（笔记 + 2 个 bug）；`vector_add.py` 为 Agent 草稿待用户重写；本机 venv 搭好 |
@@ -180,7 +186,7 @@ roadmap/leetgpu-ladder.md        # 可选 CUDA 深钻
 2. 读 [roadmap/ai-infra-curriculum.md](./roadmap/ai-infra-curriculum.md) 当前主线。
 3. 读 [NOW.md](./NOW.md) 和 [PATH.md](./PATH.md) 确认最新状态。
 4. 检查 `git status` 和 `git diff`，确认是否有未提交改动。
-5. 继续当前主线：Triton Vector Add 开始。
+5. 算子线从 Triton Vector Add 开始；理论线按 [NOW.md](./NOW.md) 走主线 A（DeepSeek-V3.2 → V4 增量）。
 
 ---
 

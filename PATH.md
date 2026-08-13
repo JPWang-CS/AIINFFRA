@@ -19,7 +19,7 @@
 ```
 算子线   A CUDA打底 ─→ B Triton ─→ C 推理系统 ─→ D 分布式 ─→ E Agent
 理论线   GPU优化算法 · 量化 · 注意力演进 · 模型架构 · 推理系统技术 · 训练/并行
-         （6 子类滚动挑，跟业界动态走）
+         （两条模型主线：DeepSeek-V3.2 / Qwen3.5，概念作枝干挂载）
 ```
 
 ---
@@ -81,7 +81,7 @@
 
 # 理论线（理解）
 
-> 每周一条,产出一页笔记进 [notes/algorithms/](./notes/algorithms/)。有标志性论文的,论文精读放 [papers/](./papers/)、这里写"机制+怎么实现"并互链（边界规矩见 [algorithms/README](./notes/algorithms/README.md)）。
+> 模型驱动主干 + 枝干 + 字典：主干决定学什么（DeepSeek-V3.2 / Qwen3.5），必要小模块是挂在主干上的枝干（按挂载点学，不推迟），字典只做概念速查；推进顺序按主干走，不按子类推进。产出一页笔记进 [notes/algorithms/](./notes/algorithms/)。有标志性论文的,论文精读放 [papers/](./papers/)、这里写"机制+怎么实现"并互链（边界规矩见 [algorithms/README](./notes/algorithms/README.md)）。
 
 ## GPU 优化算法
 | 主题 | 笔记 | 状态 |
@@ -103,9 +103,12 @@
 | 主题 | 笔记 | 论文 | 状态 |
 |------|------|------|:--:|
 | MHA→MQA→GQA→MLA | [速览](./notes/algorithms/remaining-theory-primer.md) + [最新模型](./notes/algorithms/latest-model-architectures.md) | [gqa.md](./papers/attention/gqa.md) | 🚧 |
-| Flash Attention 1→2→3 | [flash-attention-mechanism.md](./notes/algorithms/flash-attention-mechanism.md) | [FA1](./papers/attention/flash-attention.md) · [FA2](./papers/attention/flash-attention-2.md) | 🚧 → FA1 机制已消化（2026-08-10 A5），FA2/3 待补 |
+| Flash Attention 1→2→3 | [flash-attention-mechanism.md](./notes/algorithms/flash-attention-mechanism.md) · [FA2](./notes/algorithms/flash-attention-2.md) | [FA1](./papers/attention/flash-attention.md) · [FA2](./papers/attention/flash-attention-2.md) | 🚧 → FA1 ✅（2026-08-10 A5），FA2 草稿 2026-08-13，FA3 待补 |
 | MLA（DeepSeek-V2/V3） | [mla-deepseek.md](./notes/algorithms/mla-deepseek.md) | DeepSeek-V2 | 🚧 |
-| 线性注意力 / Ring Attention | [速览](./notes/algorithms/remaining-theory-primer.md) | — | 🚧 |
+| FA4 / FlexAttention | [fa4-flexattention.md](./notes/algorithms/fa4-flexattention.md) | 官方博客/PR | 🚧 草稿 2026-08-13 |
+| DSA（DeepSeek-V3.2 / GLM-5） | [dsa-sparse-attention.md](./notes/algorithms/dsa-sparse-attention.md) | DeepSeek-V3.2 · GLM-5 | 🚧 草稿 2026-08-13 |
+| SageAttention3 / Kascade | [attention-2026-sage3-kascade.md](./notes/algorithms/attention-2026-sage3-kascade.md) | SageAttention3 · Kascade | 🚧 草稿 2026-08-13 |
+| 线性注意力 / [GDN（Qwen3.5）](./notes/algorithms/gdn-linear-attention.md) / Ring Attention | [速览](./notes/algorithms/remaining-theory-primer.md) | — | 🚧 |
 
 ## 模型架构
 | 主题 | 笔记 | 状态 |
@@ -126,6 +129,7 @@
 ## 训练 / 并行
 | 主题 | 笔记 | 论文 | 状态 |
 |------|------|------|:--:|
+| 优化器：Adam / AdamW（含显存账） | [optimizers-adam.md](./notes/algorithms/optimizers-adam.md) | 论文散 | 🚧 枝干 A1（主线 A serving 之后） |
 | ZeRO / FSDP | [速览](./notes/algorithms/remaining-theory-primer.md) | [zero-paper](./papers/training/zero-paper.md) | 🚧 |
 | TP / PP / EP 通信 | [速览](./notes/algorithms/remaining-theory-primer.md) | — | 🚧 |
 
@@ -144,7 +148,7 @@
 
 ## 里程碑
 
-- [ ] 算子线：A4 三版 benchmark 完成，A5 能标注 Flash Attn 每个同步点
+- [ ] 算子线：A4 1-pass 落盘 + benchmark 收尾，B1 vec_add 自写 → LeetGPU → 真实 GPU → 性能分析
 - [ ] 算子线：B1-B3 完成，Triton 写出 Flash Attention 并记录性能差距
 - [ ] 模型结构：能对着 HF config 讲清一个最新模型的 GQA/MoE/位置编码
 - [ ] 算子线：C1-C4 完成，跑通 vLLM benchmark 并讲清 PagedAttention/scheduling
