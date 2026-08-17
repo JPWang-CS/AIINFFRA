@@ -55,6 +55,11 @@ score = softmax(Q · Kᵀ / √d)
 
 所以 KV cache 一句话定义：**推理时把每个历史 token 每层的 K、V 向量存在显存里，供后续 token 的 attention 重复使用。**
 
+补充三个容易混的点：
+
+- **“追加”不是数值相加**：KV cache 是沿序列维度拼接，`cache_K[t]=K_t`，`cache_V[t]=V_t`，缓存从 `[K1]` 一路长到 `[K1,K2,...,Kt]`。
+- **K/V 只算一次**：$K_i = x_i W_K$、$V_i = x_i W_V$ 只由 token 自己的 embedding 决定，不依赖后面的 token。prefill 一次算完整段 prompt 的 K/V，decode 每步只算新 token 自己的 K/V 并追加。
+- **Q 不缓存**：每一步 attention 只用当前 token 的 Q 去查全部历史 K/V；旧 token 的 Q 在后续步不再被使用，缓存 Q 只会白占显存。
 ### 2.3 KV cache 有多大：先看形状，再算字节
 
 每个 token 经过每一层，都会产生一组 K/V。存多少，取决于"每层有几个 KV head、每个 head 多长、K 和 V 各一份"：
@@ -118,6 +123,15 @@ GQA（8 KV heads）:            ≈ 32 GB
 MLA（V3.2）:                  ≈ 9 GB
 ```
 
+**GQA 的 32 GB 是这样来的**（同口径 128K）：
+
+```text
+每 token 每层 = 2 × 8 KV heads × 128 dim × 2 字节 = 4096 字节 = 4 KB
+61 层 → 4096 × 61 = 249,856 字节 ≈ 244 KB/token
+128K → 249,856 × 131,072 = 32,749,125,632 字节 ≈ 30.5 GiB（十进制约 32.7 GB）
+```
+
+也可以直接用 MHA 缩 16 倍：MHA 是 128 KV heads，GQA 是 8 KV heads，`512 GB ÷ 16 = 32 GB`。
 **一句话结论**：MLA 把 KV 从几百 GB 压到个位数 GB，但 9GB/请求仍然不便宜 → 所以还要 DSA 只算 top-k、KV 量化（fp8_ds_mla）。
 
 ## 4. 第二笔账：权重显存多大
