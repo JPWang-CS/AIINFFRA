@@ -148,7 +148,7 @@
 
 ## 里程碑
 
-- [ ] 算子线：A4 1-pass 落盘 + benchmark 收尾，B1 vec_add 自写 → LeetGPU → 真实 GPU → 性能分析
+- [ ] 算子线：A4 1-pass 后置收尾；B1 vec_add 已自写并通过 LeetGPU，待真实 GPU → 性能分析
 - [ ] 算子线：B1-B3 完成，Triton 写出 Flash Attention 并记录性能差距
 - [ ] 模型结构：能对着 HF config 讲清一个最新模型的 GQA/MoE/位置编码
 - [ ] 算子线：C1-C4 完成，跑通 vLLM benchmark 并讲清 PagedAttention/scheduling

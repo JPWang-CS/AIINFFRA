@@ -15,7 +15,7 @@
 - 2026-08-10
 - 当前主线：PATH B Triton 实现（B1 vec_add 待用户自己写，matmul 下一步）
 - 并行强化：最新模型与算子构建能力（GQA/MLA/MoE/FlashAttention/PagedAttention 等）
-- 当前状态：A5 读码完成；vector_add / softmax_1pass 为 Agent 草稿待用户重写；本机 venv 已就绪（torch CPU + triton-windows）
+- 当前状态：A5 读码完成；Triton Vector Add 已由用户自己写完并通过 LeetGPU，待真实 GPU benchmark；softmax_1pass 仍为后置 CUDA 草稿；本机 venv 已就绪（torch CPU + triton-windows）
 
 ---
 
@@ -71,7 +71,7 @@ A CUDA 打底 -> B Triton -> C 推理系统 -> D 分布式 -> E Agent
 | A4 1-pass true online | 🚧 | Agent 草稿 `softmax_1pass.cu`（2026-08-09，算法模拟+编译通过），待用户重写 |
 | A4 warp shuffle / benchmark | ⏳ | 待做 |
 | A5 Flash Attention 读码 | ✅ | 2026-08-10，逐段注释完成，[阅读笔记](./notes/cuda/flash-attn-reading.md)，发现 2 个真实 bug |
-| B1 Triton vec_add + matmul | 🚧 当前 | `vector_add.py` 为 Agent 草稿（2026-08-10），待用户重写；matmul 待做 |
+| B1 Triton vec_add + matmul | 🚧 当前 | Vector Add 已由用户自己写完并通过 LeetGPU（2026-08-20）；真实 GPU benchmark 与 matmul 待做 |
 | B2-B5 Triton 实现 | ⏳ | 待做 |
 
 ### 存档：A4 Softmax 详情（2026-07-01 ~ 08-09）

@@ -45,7 +45,7 @@
 | A1-A4 CUDA 算子线 | ✅ | [HISTORY.md 存档](./HISTORY.md)（含 A4 三版 softmax 细节）· [周报 07-22](./weekly/2026-07-22-softmax-online.md) |
 | A5 Flash Attn 读码 | ✅ 2026-08-10 | [阅读笔记](./notes/cuda/flash-attn-reading.md)（3 个 `__syncthreads` + 2 个真实 bug） |
 | 理论线已掌握 | online softmax · parallel reduce · FA1 机制 | [algorithms README](./notes/algorithms/README.md) |
-| B1 草稿（不算完成） | Agent 代写，待你自己重写 | [vector_add.py](./solutions/triton/vector_add.py) · [softmax_1pass.cu](./solutions/cuda/softmax/softmax_1pass.cu) |
+| B1 当前 | Vector Add 已自己写完并通过 LeetGPU；真实 GPU benchmark 待做 | [vector_add.py](./solutions/triton/vector_add.py) · [softmax_1pass.cu](./solutions/cuda/softmax/softmax_1pass.cu) |
 
 ---
 
