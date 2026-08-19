@@ -7,6 +7,9 @@
 
 ## 0. 最后更新
 
+- 2026-08-20（全盘校准：算子主线固定为 Triton B1，统一执行顺序为“自己写 → LeetGPU → 真实 GPU → benchmark”；纯 CUDA kernel 后置；新增最新论文/模型资料快照 `notes/llm/updates/2026-08-20.md`，同步 PATH/NOW/课程与构建路线）
+- 2026-08-20（Triton Vector Add 由用户自己完成并通过 LeetGPU；B1 剩余真实 GPU 验证与 GB/s 记录）
+
 - 2026-08-14（确认 DeepSeek-V4：2026-04-24 预览开源、07-31 Flash 正式、08-13 V4-Pro-0813 正式；核心 = CSA + HCA（MLA 骨架）+ Lightning Indexer + mHC/Muon + MXFP4；1M ctx 下 prefill ≈ V3.2 的 27%、KV ≈ 10%；主线不切 V4，改为 V3.2 打底、V4 做增量，挂主线 A 第 3 步；新笔记 deepseek-v4.md，tracker / 架构地图 / algorithms README / NOW 同步）
 - 2026-08-13（理论线重构为"主干 + 枝干 + 字典"：主干=模型主线，枝干=必要小模块按挂载点学；主线 A 第 1 步手算是热身，A5/FA1 在第 2 步注意力接续（FA2 → MLA → DSA），训练侧枝干 A1 挪到 serving 之后；新笔记：FA2、FA4/FlexAttention、GDN/Qwen3.5、DSA、SageAttention3/Kascade、优化器 Adam/AdamW【枝干 A1】）
 - 2026-08-10

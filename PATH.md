@@ -54,7 +54,7 @@
 
 | 阶段 | 课 | 自己写 | 验收 | 参考 | 状态 |
 |:-:|----|--------|------|------|:--:|
-| B1 | [06 triton-intro](./lessons/06-triton-intro.md) | Triton vec_add（Agent 草稿，待你自己重写）· matmul 待做 | 流程：自己写 → LeetGPU 跑通 → 真实 GPU 跑通 → 性能分析（GB/s） | [matmul.py](./reference/triton/matmul/matmul.py) | ⏳ |
+| B1 | [06 triton-intro](./lessons/06-triton-intro.md) | Triton vec_add：LeetGPU 已跑通 · matmul 待做 | **自己写 → LeetGPU ✅ → 真实 GPU 跑通 → 性能分析（GB/s）**；纯 CUDA kernel 深钻后置 | [matmul.py](./reference/triton/matmul/matmul.py) | 🚧 当前 |
 | B2 | _按需生成_ | Triton fused softmax | 对比 PyTorch 正确 + 提速 | — | ⏳ |
 | B3 | _按需生成_ | Triton flash attention | 对比 PyTorch ref 正确 | [flash_attn.py](./reference/triton/flash_attention/flash_attn.py) | ⏳ |
 | B4 | _按需生成_ | Triton GQA / fused MLP | 正确性 + autotuning | [activations.cuh](./reference/cuda/include/activations.cuh)（料） | ⏳ |

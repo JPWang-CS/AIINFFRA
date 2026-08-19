@@ -34,6 +34,8 @@
 
 **现在进入 PATH B：Triton 实现阶段。**
 
+统一执行顺序：**自己从空文件写 → LeetGPU 跑通 → 真实 GPU 跑通 → 性能分析 → 记录正确性/性能/面试口径**。纯 CUDA kernel、warp shuffle、手写 FlashAttention 等底层深钻暂不插队，放到 Triton 主线阶段性完成后。
+
 优先级：
 ```text
 Triton vec add -> matmul -> fused softmax -> flash attention -> GQA/fused MLP

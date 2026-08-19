@@ -7,6 +7,8 @@
 
 ## 板块结构
 
+最新外部资料快照：[2026-08-20 更新](updates/2026-08-20.md)。它只记录经过公开论文/官方入口核对的增量信息，不替代 `PATH.md` 的进度状态。
+
 | 子板块 | 内容 | 入口 | 状态 |
 |--------|------|------|:--:|
 | 模型结构 | Transformer、Attention 变体、MoE、SSM、模型家族、HF config | [architectures.md](architectures.md) | 🚧 草稿 |

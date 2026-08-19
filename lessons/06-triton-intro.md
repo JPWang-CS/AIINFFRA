@@ -645,7 +645,7 @@ torch.matmul 通常能到 250-300 TFLOPS（cuBLAS，大矩阵）
 - [ ] `import torch, triton` 能跑
 - [ ] vec_add 自己从空文件写完，CPU 解释器 + 真机都跑通，与 `torch.add` 对齐
 - [ ] N=1 / 256 / 257 / 1000 边界正确
-- [ ] LeetGPU Triton vec_add 通过
+- [x] LeetGPU Triton vec_add 通过（2026-08-20）
 
 理解：
 

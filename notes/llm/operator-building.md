@@ -20,6 +20,16 @@
 
 ## 2. 构建能力总路线
 
+### 2.0 统一落地流程
+
+新组件一律按以下顺序推进：
+
+```text
+自己从空文件写 -> LeetGPU 验证 -> 真实 GPU 验证 -> benchmark / profiler -> 记录面试口径
+```
+
+纯 CUDA kernel 只作为后置深钻，不替代 Triton 主线；除非当前任务本身就是 CUDA 底层机制，否则不提前展开 warp shuffle、手写 FlashAttention 等内容。
+
 ```text
 Dense Transformer 基础件
   -> GQA / MLA / MoE

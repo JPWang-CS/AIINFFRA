@@ -13,9 +13,11 @@
 > **前置已满足**：A5 Flash Attn 读码 ✅（[阅读笔记](./notes/cuda/flash-attn-reading.md)）
 
 **已完成**：
-- `vector_add.py` 是 Agent 代写的草稿（2026-08-10，CPU 解释器验证过）——按仓库规则"代码自己从空文件写"，**不算完成**
+- Triton Vector Add 已由你自己完成并在 LeetGPU 跑通（2026-08-20）；真实 GPU benchmark 尚未完成
 
-**接下来**：你自己从空文件写 vec_add（Lesson 06 Part 2）→ **LeetGPU 跑通 → 服务器真实 GPU 跑通 → 性能分析** → 标记 ✅ → 再写 MatMul（`tl.dot` + K 循环）
+**执行纪律**：所有新算子先走 **自己从空文件写 → LeetGPU 跑通 → 服务器真实 GPU 跑通 → 性能分析**。CUDA 纯 kernel / warp shuffle / 手写 FlashAttention 后置到 Triton 主线完成后，不插队。
+
+**接下来**：服务器真实 GPU 跑通 → 记录 GB/s → 再写 MatMul（`tl.dot` + K 循环）
 
 ---
 
@@ -27,7 +29,7 @@
 
 第 1 步是热身：三笔账给第 2 步的 MLA/DSA 和第 3 步的 V4 增量提供数字基础。A5 读完的 FlashAttention 在第 2 步接续（FA2 → MLA → DSA）；训练侧枝干 A1（FP8 训练 → [优化器](./notes/algorithms/optimizers-adam.md) → ZeRO/FSDP）挪到 serving 之后，不插队。
 
-**路线**：第 1 步热身（手算）→ 第 2 步注意力（FA2 → MLA → DSA）→ 枝干 A2（KV 量化）→ 第 3 步 V4 增量（CSA/HCA → mHC/Muon → FP4）→ 第 4 步 MoE → 枝干 A3（权重量化）→ 第 5 步 MTP → 第 6 步 serving（含 V4 磁盘 KV / TileLang）→ 枝干 A1（训练侧）→ 主线 B（Qwen3.5，含枝干 B1 Mamba/SSM）。完整路由：[algorithms README](./notes/algorithms/README.md)
+**路线**：第 1 步热身（手算）→ 第 2 步注意力（FA2 → MLA → DSA）→ 枝干 A2（KV 量化）→ 第 3 步 V4 增量（CSA/HCA → mHC/Muon → FP4）→ 第 4 步 MoE → 枝干 A3（权重量化）→ 第 5 步 MTP → 第 6 步 serving（含 V4 磁盘 KV / TileLang）→ 枝干 A1（训练侧）→ 主线 B（Qwen3.5，含枝干 B1 Mamba/SSM）。最新论文与资料快照见 [2026-08-20 update](./notes/llm/updates/2026-08-20.md)。完整路由：[algorithms README](./notes/algorithms/README.md)
 
 **已完成**
 - ✅ FA1 机制（2026-08-10，A5 读码消化）：滚动公式 + tiling 为什么省 HBM
