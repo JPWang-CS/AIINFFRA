@@ -16,6 +16,27 @@
 
 > Prefill 计算量大但可并行，Decode 计算量小但每次都要读全部权重和 KV cache，所以是 memory-bound。
 
+### Prefill / Decode 的 Q 关系
+
+来源相同：
+
+```text
+Q_i = x_i @ W_Q，K_i = x_i @ W_K，V_i = x_i @ W_V
+```
+
+差别：
+
+| 维度 | Prefill | Decode |
+|------|---------|--------|
+| Q 公式 | x_i @ W_Q | x_i @ W_Q，相同 |
+| Q 数量 | 整段 prompt，一批 | 每次 1 个新 token |
+| Q 形状 | [S, d] | [1, d] |
+| QK^T | 矩阵乘矩阵 | 向量乘矩阵 |
+| 瓶颈 | compute-bound | memory-bound |
+| Q 是否缓存 | 不缓存 | 不缓存，现算现用 |
+
+衔接：prefill 一次算完整段 prompt 的 K/V 存入 cache；decode 每步只算新 token 的 Q/K/V，新 Q 查历史 K/V，新 K/V 追加进 cache。
+
 ---
 
 ## 2. KV cache 与显存
@@ -37,6 +58,26 @@ KV cache 决定：
 - KV 量化：INT8/FP8。
 - prefix cache：复用相同前缀。
 - 驱逐/摘要：丢旧 token。
+
+### decode 越长，压力越大
+
+decode 第 t 步：
+
+```text
+Q_t = [1, d]
+K_cache = [t, d]，V_cache = [t, d]
+scores = Q_t @ K_cache^T   # [1, t]
+```
+
+所以：
+
+- 每步 attention 范围 O(t)，t 越大越慢。
+- KV cache 显存 O(t)。
+- 生成 T 个 token 的总 attention 计算量 ≈ 1+2+...+T = O(T^2)。
+
+压力主要来自显存、每步 HBM 读取、单 token 延迟，不是权重。
+
+缓解手段里，GQA/MLA/量化主要省存储和带宽，稀疏/窗口/线性注意力才能减少每步要看的长度。
 
 ---
 

@@ -70,13 +70,13 @@ A CUDA 打底 -> B Triton -> C 推理系统 -> D 分布式 -> E Agent
 | A4 Softmax 2-pass fused online | ✅ | 2026-07-11，`softmax_online.cu` |
 | A4 1-pass true online | 🚧 | Agent 草稿 `softmax_1pass.cu`（2026-08-09，算法模拟+编译通过），待用户重写 |
 | A4 warp shuffle / benchmark | ⏳ | 待做 |
-| A5 Flash Attention 读码 | ✅ | 2026-08-10，逐段注释完成，[阅读笔记](../notes/cuda/flash-attn-reading.md)，发现 2 个真实 bug |
+| A5 Flash Attention 读码 | ✅ | 2026-08-10，逐段注释完成，[阅读笔记](./notes/cuda/flash-attn-reading.md)，发现 2 个真实 bug |
 | B1 Triton vec_add + matmul | 🚧 当前 | `vector_add.py` 为 Agent 草稿（2026-08-10），待用户重写；matmul 待做 |
 | B2-B5 Triton 实现 | ⏳ | 待做 |
 
 ### 存档：A4 Softmax 详情（2026-07-01 ~ 08-09）
 
-> 课程：[Lesson 04](../lessons/04-softmax.md) · 周报：[2026-07-22](../weekly/2026-07-22-softmax-online.md)
+> 课程：[Lesson 04](./lessons/04-softmax.md) · 周报：[2026-07-22](./weekly/2026-07-22-softmax-online.md)
 
 | 优化 | 说明 | 状态 |
 |------|------|:--:|
@@ -130,6 +130,7 @@ LeetGPU `5_softmax` 贴 `solve()` 提交；服务器 `KERNEL=xxx.cu ./run.sh` �
 | [notes/llm/training-systems.md](./notes/llm/training-systems.md) | 训练系统 |
 | [notes/llm/interview.md](./notes/llm/interview.md) | 面试 |
 | [notes/llm/papers.md](./notes/llm/papers.md) | 论文 |
+| [notes/llm/operator-building.md](./notes/llm/operator-building.md) | 最新模型与算子构建路线 |
 
 ---
 
@@ -164,10 +165,11 @@ roadmap/leetgpu-ladder.md        # 可选 CUDA 深钻
 
 | 日期 | 内容 |
 |------|------|
-| 2026-08-14 | V4 资料入库（发布线 / CSA+HCA / mHC/Muon / MXFP4 / MegaMoE / TileLang / 磁盘 KV）；tracker、架构地图、algorithms README、NOW 同步；新增 [deepseek-v4.md](../notes/algorithms/deepseek-v4.md) 草稿 |
+| 2026-08-14 | V4 资料入库（发布线 / CSA+HCA / mHC/Muon / MXFP4 / MegaMoE / TileLang / 磁盘 KV）；tracker、架构地图、algorithms README、NOW 同步；新增 [deepseek-v4.md](./notes/algorithms/deepseek-v4.md) 草稿 |
 | 2026-08-10 | NOW.md 瘦身：已完成单元移入 HISTORY 存档，NOW 只留当前焦点 + 历史跳转 |
 | 2026-08-10 | 校准 B 线流程：自己写 → LeetGPU → 真实 GPU → 性能分析 |
 | 2026-08-10 | A5 读码完成（笔记 + 2 个 bug）；`vector_add.py` 为 Agent 草稿待用户重写；本机 venv 搭好 |
+| 2026-08-08 | 修复 `lessons/02/03/05` 中公式写在代码块内的问题，公式恢复正常渲染 |
 | 2026-08-09 | A4 1-pass true online：Agent 起草 `softmax_1pass.cu`（算法模拟+编译通过），待用户重写；跳过三版 benchmark |
 | 2026-08-06 | 补全所有学习计划，当前主线切到 Triton 实现 |
 | 2026-08-06 | 新增 AGENTS.md、progress-resume/triton-guide skill，优化 coach agent |
