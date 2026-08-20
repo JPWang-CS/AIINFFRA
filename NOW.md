@@ -23,9 +23,9 @@
 
 ## 🧠 理论线（理解）
 
-**现在 · 主线 A：DeepSeek-V3.2 第 1 步 — config + 手算**
+**现在 · 主线 A：DeepSeek-V3.2 第 2 步 — 注意力（FA2 → MLA → DSA）**
 
-任务：先读 [DeepSeek-V3.2 手算工作纸](./notes/algorithms/deepseek-v32-handcalc.md) §2 前置——KV cache 是什么、在 DeepSeek 里 MLA/DSA/V4 怎么用——再算三笔账：KV cache（128K 单请求 ≈9GB）、权重显存（BF16 ≈1.37TB）、前向 FLOPs（4K prefill ≈303 TFLOP）；每个数写一句"所以需要 XX"。算完对照答案，过 → 第 2 步注意力（FA2 → MLA → DSA），再进第 3 步 V4 增量（CSA/HCA → mHC/Muon → FP4）。
+当前任务：阅读 [FlashAttention-2 笔记](./notes/algorithms/flash-attention-2.md)，重点搞清 FA1 → FA2 的 work partitioning、同步/非矩阵乘开销、Q/K/V tile 分配；完成一页总结后，再进入 MLA → DSA。
 
 第 1 步是热身：三笔账给第 2 步的 MLA/DSA 和第 3 步的 V4 增量提供数字基础。A5 读完的 FlashAttention 在第 2 步接续（FA2 → MLA → DSA）；训练侧枝干 A1（FP8 训练 → [优化器](./notes/algorithms/optimizers-adam.md) → ZeRO/FSDP）挪到 serving 之后，不插队。
 
