@@ -21,6 +21,8 @@ metadata:
 
 **A3+ 反直觉结果（好面试素材）**：4090 实测 fp16 tiled GEMM 只有 naive 的 ~0.6x（K=2048/8192）。原因：naive 的重复访存已被 L2 cache 吃掉 + tiled 版 occupancy 受限。结论"tiling 不总是赢，要看 L2 命中和 occupancy"。
 
-**环境**：本机 venv 已就绪（torch CPU + triton-windows）；无 nvcc 时 CUDA 在 LeetGPU 浏览器端跑；`solve` 入口签名不可改，参数已是 device pointer。本地有 4090 时用 `reference/cuda/CMakeLists.txt` 编译对照。
+**环境**：本机 venv 已就绪（torch CPU + triton-windows），只用于 Triton CPU 解释器正确性验证；真实 GPU benchmark 使用 **AutoDL RTX 4090**，不是泛指其他服务器。无 nvcc 时 CUDA 在 LeetGPU 浏览器端跑；`solve` 入口签名不可改，参数已是 device pointer。本地有 4090 时用 `reference/cuda/CMakeLists.txt` 编译对照。代码在本地 `solutions/` 编写，AutoDL 负责真实 GPU 运行和性能数字，结果回填仓库 README。
+
+**Artifact 纠正（2026-08-23）**：本地 `solutions/triton/vector_add.py` 实际由提交 `209e274` 于 2026-08-10 引入，之后没有代码提交；8 月 20 日更新的只是 PATH/NOW/HISTORY。按 ownership 规则，它仍应视为预先存在的 Agent 草稿，不能仅凭文件存在认定为用户亲写。文档记录的“用户已通过 LeetGPU”与本地文件归属分开处理；该文件也不是直接的 LeetGPU `solve` 提交，而是 standalone wrapper。
 
 **How to apply:** profiling 数据让用户从 LeetGPU/4090 拿，别开本地 nvcc。不要按旧阶梯"不跳级"推进——用户定节奏，卡住帮看、要完整代码就给。Agent 代写的代码不算完成，必须用户自己重写并跑通。当前执行顺序是自己写 → LeetGPU → 真实 GPU → benchmark，纯 CUDA kernel 后置。相关：[[feedback-style]] [[code-ownership-clarification]]
