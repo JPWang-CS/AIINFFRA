@@ -7,6 +7,7 @@
 
 ## 0. 最后更新
 
+- 2026-08-20：理论线完成 DeepSeek-V3.2 config + KV Cache / 权重显存 / FLOPs 三笔手算；下一步进入 FA2 → MLA → DSA。
 - 2026-08-20（全盘校准：算子主线固定为 Triton B1，统一执行顺序为“自己写 → LeetGPU → 真实 GPU → benchmark”；纯 CUDA kernel 后置；新增最新论文/模型资料快照 `notes/llm/updates/2026-08-20.md`，同步 PATH/NOW/课程与构建路线）
 - 2026-08-20（Triton Vector Add 由用户自己完成并通过 LeetGPU；B1 剩余真实 GPU 验证与 GB/s 记录）
 
@@ -109,7 +110,7 @@ LeetGPU `5_softmax` 贴 `solve()` 提交；服务器 `KERNEL=xxx.cu ./run.sh` �
 | MoE 推理 | 🚧 草稿 | 待消化 |
 | Speculative Decoding | 🚧 草稿 | 待消化 |
 | PD 分离 | 🚧 草稿 | 待消化 |
-| MLA / DeepSeek | 🚧 草稿 | 待消化 |
+| MLA / DeepSeek | 🚧（DeepSeek-V3.2 config + 三笔手算 ✅ 2026-08-20；FA2 / MLA / DSA 待学） | 下一步：注意力主线 |
 | 最新模型结构 | 🚧 草稿 | 已补全详细内容 |
 | 剩余理论速览 | 🚧 草稿 | 已分类补全 |
 | FA2 / FA4 / GDN / DSA / SageAttention3 | 🚧 草稿 2026-08-13 | 随主线步骤消化，不单独排队 |

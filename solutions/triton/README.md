@@ -7,7 +7,7 @@
 
 | 文件 | 功能 | 验收 |
 |------|------|------|
-| `vector_add.py` | Triton Vector Add | Agent 草稿 2026-08-10（CPU 解释器跑通），待**我**从空文件重写后标记完成 |
+| `vector_add.py` | Triton Vector Add | **用户从空文件完成并通过 LeetGPU（2026-08-20）**；真实 GPU benchmark 与 GB/s 记录待做 |
 | `matmul.py` | Triton tiled GEMM | 正确性 + GFLOPS |
 | `fused_softmax.py` | Triton Fused Softmax | 正确性 + 提速 |
 | `flash_attention.py` | Triton Flash Attention | 对比 PyTorch ref + 显存/速度 |

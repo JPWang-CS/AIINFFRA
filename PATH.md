@@ -54,7 +54,7 @@
 
 | 阶段 | 课 | 自己写 | 验收 | 参考 | 状态 |
 |:-:|----|--------|------|------|:--:|
-| B1 | [06 triton-intro](./lessons/06-triton-intro.md) | Triton vec_add：LeetGPU 已跑通 · matmul 待做 | **自己写 → LeetGPU ✅ → 真实 GPU 跑通 → 性能分析（GB/s）**；纯 CUDA kernel 深钻后置 | [matmul.py](./reference/triton/matmul/matmul.py) | 🚧 当前 |
+| B1 | [06 triton-intro](./lessons/06-triton-intro.md) | Triton vec_add：用户自写并通过 LeetGPU ✅（2026-08-20）· MatMul 待做 | **自己写 → LeetGPU ✅ → 真实 GPU 跑通 → 性能分析（GB/s）**；当前剩余 Vector Add 真实 GPU benchmark，随后写 MatMul；纯 CUDA kernel 深钻后置 | [matmul.py](./reference/triton/matmul/matmul.py) | 🚧 当前 |
 | B2 | _按需生成_ | Triton fused softmax | 对比 PyTorch 正确 + 提速 | — | ⏳ |
 | B3 | _按需生成_ | Triton flash attention | 对比 PyTorch ref 正确 | [flash_attn.py](./reference/triton/flash_attention/flash_attn.py) | ⏳ |
 | B4 | _按需生成_ | Triton GQA / fused MLP | 正确性 + autotuning | [activations.cuh](./reference/cuda/include/activations.cuh)（料） | ⏳ |
@@ -113,7 +113,7 @@
 ## 模型架构
 | 主题 | 笔记 | 状态 |
 |------|------|:--:|
-| 最新模型架构地图（LLaMA/Qwen/DeepSeek/GPT/Claude/Gemini/MoE/SSM） | [latest-model-architectures.md](./notes/algorithms/latest-model-architectures.md) | 🚧 |
+| 最新模型架构地图（LLaMA/Qwen/DeepSeek/GPT/Claude/Gemini/MoE/SSM） | [latest-model-architectures.md](./notes/algorithms/latest-model-architectures.md) | 🚧（DeepSeek-V3.2 config + 手算 ✅ 2026-08-20） |
 | 模型追踪表（最新模型/结构/学习状态） | [model-tracker.md](./notes/algorithms/model-tracker.md) | 🚧 |
 | MoE 推理挑战 | [moe-inference.md](./notes/algorithms/moe-inference.md) | 🚧 |
 | Mamba / SSM | [最新模型与结构](./notes/algorithms/latest-model-architectures.md) + [速览](./notes/algorithms/remaining-theory-primer.md) | 🚧 |
