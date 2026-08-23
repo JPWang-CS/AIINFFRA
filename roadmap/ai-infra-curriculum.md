@@ -240,11 +240,11 @@ def add_kernel(x_ptr, y_ptr, out_ptr, N, BLOCK_SIZE: tl.constexpr):
 ```
 
 完成定义：
-- [ ] `solutions/triton/vector_add.py` 跑通
-- [ ] 和 PyTorch 对齐
+- [x] `solutions/triton/vector_add.py` 跑通（AutoDL 实际 GPU）
+- [x] 和 PyTorch 对齐（`assert_close`，N=1/256/257/1000/2^20）
 - [ ] 能解释 mask 的作用
 
-### B2：MatMul
+### B1（续）：MatMul
 
 目标：写出 tiled GEMM。
 

@@ -54,7 +54,7 @@
 
 | 阶段 | 课 | 自己写 | 验收 | 参考 | 状态 |
 |:-:|----|--------|------|------|:--:|
-| B1 | [06 triton-intro](./lessons/06-triton-intro.md) | Triton vec_add：用户自写并通过 LeetGPU ✅（2026-08-20）· MatMul 待做 | **自己写 → LeetGPU ✅ → 真实 GPU 跑通 → 性能分析（GB/s）**；当前剩余 Vector Add 真实 GPU benchmark，随后写 MatMul；纯 CUDA kernel 深钻后置 | [matmul.py](./reference/triton/matmul/matmul.py) | 🚧 当前 |
+| B1 | [06 triton-intro](./lessons/06-triton-intro.md) | Vector Add：用户自写 + LeetGPU + AutoDL 实际 GPU benchmark ✅（840.1 GB/s）；MatMul 进行中 | **自己写 → LeetGPU → 真实 GPU → 性能分析**；当前焦点为 MatMul，纯 CUDA kernel 深钻后置 | [matmul.py](./reference/triton/matmul/matmul.py) | 🚧 当前 |
 | B2 | _按需生成_ | Triton fused softmax | 对比 PyTorch 正确 + 提速 | — | ⏳ |
 | B3 | _按需生成_ | Triton flash attention | 对比 PyTorch ref 正确 | [flash_attn.py](./reference/triton/flash_attention/flash_attn.py) | ⏳ |
 | B4 | _按需生成_ | Triton GQA / fused MLP | 正确性 + autotuning | [activations.cuh](./reference/cuda/include/activations.cuh)（料） | ⏳ |
@@ -148,7 +148,7 @@
 
 ## 里程碑
 
-- [ ] 算子线：A4 1-pass 后置收尾；B1 vec_add 已自写并通过 LeetGPU，待真实 GPU → 性能分析
+- [ ] 算子线：A4 1-pass 后置收尾；B1 Vector Add 已自写、LeetGPU、AutoDL benchmark 完成；MatMul 进行中
 - [ ] 算子线：B1-B3 完成，Triton 写出 Flash Attention 并记录性能差距
 - [ ] 模型结构：能对着 HF config 讲清一个最新模型的 GQA/MoE/位置编码
 - [ ] 算子线：C1-C4 完成，跑通 vLLM benchmark 并讲清 PagedAttention/scheduling

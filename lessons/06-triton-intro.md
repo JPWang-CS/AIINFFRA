@@ -27,7 +27,7 @@ Agent 只做 review，不代写代码。本课最后有参考答案，但要求�
 |---|---|---|---|
 | S1 环境 + vec_add | 确认环境；读 Part 0-2；自己写 `vector_add.py`，CPU 解释器验证 | `solutions/triton/vector_add.py` | 与 `torch.add` 完全一致 |
 | S2 LeetGPU 对照 | 对照 LeetGPU / 官方教程，补边界 case | 修正后的 kernel | N=1000 / N=1 / N=256 / N=257 都正确 |
-| S3 真实 GPU + 性能 | 服务器 4090 实机跑；按 Part 4 测带宽；对比 `torch.add` | README 数字行 | 带宽达到 `torch.add` 的 80% 以上（能解释差异） |
+| S3 真实 GPU + 性能 | AutoDL 实际 GPU 跑；按 Part 4 测带宽；对比 `torch.add` | README 数字行 | 带宽达到 `torch.add` 的 80% 以上（能解释差异） |
 | S4 MatMul | 读 Part 5，按三步走：单 tile → K 循环 → autotune | `matmul.py` + GFLOPS | 正确 + 数字入 README |
 
 > 每阶段完成再进下一阶段。S4 不必一次做完：先跑通单 tile 就算赢。
@@ -106,7 +106,7 @@ Triton 帮你做四件事，恰好是手写 CUDA 最花时间的四件事：
 | 环境 | 位置 | 用途 | 性能结论 |
 |---|---|---|---|
 | CPU 解释器 | 本机 venv（Windows + triton-windows + CPU torch） | 验证逻辑正确性 | ❌ 不能产生性能结论 |
-| 真实 GPU | 服务器 / 4090（CUDA torch） | 跑性能、验收 | ✅ 唯一的性能来源 |
+| 真实 GPU | AutoDL 实际 NVIDIA GPU（CUDA torch） | 跑性能、验收 | ✅ 唯一的性能来源 |
 
 ## 1.2 验证环境
 
@@ -122,7 +122,7 @@ Triton 帮你做四件事，恰好是手写 CUDA 最花时间的四件事：
 python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
 ```
 
-应输出 `True NVIDIA GeForce RTX 4090` 之类。
+应输出 `True NVIDIA GeForce RTX 3090` 之类；以本次实际租到的 GPU 型号为准。
 
 ## 1.3 CPU 解释器怎么用
 
@@ -369,7 +369,7 @@ for N in [1, 256, 257, 1000, 2**20]:
 算术强度 = 1 FLOP / 12 字节 ≈ 0.083 FLOP/B
 ```
 
-4090 的量级：
+性能量级示例（不同 GPU 以实际规格为准）：
 
 ```text
 FP32 算力 ≈ 82 TFLOPS
@@ -404,10 +404,11 @@ print(f'{bandwidth_gbps:.1f} GB/s')
 ```text
 N = 2^25 = 33,554,432
 数据量 = 3 × 33,554,432 × 4 ≈ 0.403 GB
-如果 mean_ms = 0.50 ms → 带宽 = 0.403 / 0.0005 ≈ 805 GB/s
+示例：如果 mean_ms = 0.50 ms → 带宽 = 0.403 / 0.0005 ≈ 805 GB/s
+本次 AutoDL 实测：0.479 ms → 840.1 GB/s（torch.add: 843.0 GB/s）
 ```
 
-4090 参考锚点：
+RTX 4090 教材参考锚点（本次 AutoDL RTX 3090 实测结果单独记录）：
 
 | 指标 | 数值 |
 |---|---|
@@ -426,11 +427,11 @@ N = 2^25 = 33,554,432
 把结果写进 `solutions/triton/README.md`，这是 B1 验收的一部分：
 
 ```text
-vector_add (2026-08-XX)
-- N=2^25, BLOCK_SIZE=256, RTX 4090
+vector_add (2026-08-23)
+- N=2^25, BLOCK_SIZE=256, RTX 3090 (AutoDL)
 - 正确性: assert_close OK (N=1/256/257/1000/2^20)
-- 带宽: 805 GB/s (torch.add: 820 GB/s)
-- 结论: 内存带宽瓶颈，BLOCK_SIZE=256 最优
+- 带宽: 840.1 GB/s (torch.add: 843.0 GB/s)
+- 结论: 内存带宽瓶颈，BLOCK_SIZE=256 最优；Triton 达到 torch.add 的 99.7%
 ```
 
 ---
@@ -532,11 +533,11 @@ acc += tl.dot(a, b)   # a: [BLOCK_M, BLOCK_K], b: [BLOCK_K, BLOCK_N]
 
 - 输入形状必须匹配：`[BLOCK_M, BLOCK_K] @ [BLOCK_K, BLOCK_N] → [BLOCK_M, BLOCK_N]`
 - **累加器用 fp32**：即使 a/b 是 fp16，累加也在 fp32 做，精度更好
-- 编译器看到 `tl.dot` 会生成 tensor core 指令（4090 上是 `mma.sync`），而不是普通乘加循环
+- 编译器看到 `tl.dot` 会生成 tensor core 指令（NVIDIA Ampere/Ada 上通常是 `mma.sync`），而不是普通乘加循环
 
 dtype 决定能不能用 tensor core：
 
-| dtype | 4090 行为 | 备注 |
+| dtype | NVIDIA Ampere/Ada 行为 | 备注 |
 |---|---|---|
 | fp16 / bf16 | 走 tensor core，最快 | 模型推理/训练的主流 |
 | fp32 | 默认 TF32（`tl.dot` 的 `input_precision` 控制） | 精度比真 fp32 低，性能接近 fp16 |
@@ -589,7 +590,7 @@ FLOPs = 2 × 4096³ = 137.4 GFLOP
 TFLOPS = 137.4e9 / 1.2e-3 ≈ 114 TFLOPS
 ```
 
-4090 参考锚点（fp16）：
+RTX 4090 教材参考锚点（fp16；实际 AutoDL GPU 以当前型号为准）：
 
 ```text
 理论峰值 ≈ 330 TFLOPS（fp16 dense）
@@ -643,8 +644,8 @@ torch.matmul 通常能到 250-300 TFLOPS（cuBLAS，大矩阵）
 环境与基础：
 
 - [ ] `import torch, triton` 能跑
-- [ ] vec_add 自己从空文件写完，CPU 解释器 + 真机都跑通，与 `torch.add` 对齐
-- [ ] N=1 / 256 / 257 / 1000 边界正确
+- [x] vec_add 自己从空文件写完，CPU 解释器 + 真机都跑通，与 `torch.add` 对齐
+- [x] N=1 / 256 / 257 / 1000 边界正确
 - [x] LeetGPU Triton vec_add 通过（2026-08-20）
 
 理解：
@@ -656,8 +657,8 @@ torch.matmul 通常能到 250-300 TFLOPS（cuBLAS，大矩阵）
 
 性能（B1 完成标准）：
 
-- [ ] 真实 GPU 实测，带宽数字记入 `solutions/triton/README.md`
-- [ ] 能解释你的 GB/s 和 `torch.add` 差多少、为什么
+- [x] 真实 GPU 实测，带宽数字记入 `solutions/triton/README.md`（AutoDL RTX 3090：840.1 GB/s）
+- [x] 能解释你的 GB/s 和 `torch.add` 差多少、为什么
 
 进阶（B1 之后）：
 

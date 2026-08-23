@@ -6,18 +6,21 @@
 
 ## 🔧 算子线（动手）
 
-**现在 · B1 — Triton Vector Add（自己写）→ MatMul**
+**现在 · B1 — Triton MatMul（从空文件开始）**
 
 > **课程**：[Lesson 06 — Triton 入门](./lessons/06-triton-intro.md)  
-> **代码**：[solutions/triton/vector_add.py](./solutions/triton/vector_add.py) — 1D element-wise + mask 尾块  
+> **代码**：[solutions/triton/matmul.py](./solutions/triton/matmul.py) — tiled GEMM，`tl.dot` + K 循环（待创建）
 > **前置已满足**：A5 Flash Attn 读码 ✅（[阅读笔记](./notes/cuda/flash-attn-reading.md)）
 
 **已完成**：
-- Triton Vector Add 已由你自己完成并在 LeetGPU 跑通（2026-08-20）；真实 GPU benchmark 尚未完成
+- Triton Vector Add 已由你自己完成并通过 LeetGPU（2026-08-20）
+- AutoDL RTX 3090 正确性通过；Triton 840.1 GB/s，`torch.add` 843.0 GB/s（2026-08-23）
 
-**执行纪律**：所有新算子先走 **自己从空文件写 → LeetGPU 跑通 → 服务器真实 GPU 跑通 → 性能分析**。CUDA 纯 kernel / warp shuffle / 手写 FlashAttention 后置到 Triton 主线完成后，不插队。
+**执行纪律**：所有新算子先走 **自己从空文件写 → LeetGPU 跑通 → AutoDL 实际 GPU 跑通 → 性能分析**。记录必须包含本次实际 GPU 型号；CUDA 纯 kernel / warp shuffle / 手写 FlashAttention 后置到 Triton 主线完成后，不插队。
 
-**接下来**：服务器真实 GPU 跑通 → 记录 GB/s → 再写 MatMul（`tl.dot` + K 循环）
+**接下来**：从空文件写 MatMul：先单 tile 跑通，再加入 K 循环，最后记录 GFLOPS。
+
+**今日收尾（2026-08-24）**：已开始阅读 MatMul 部分；尚未创建或编写 `solutions/triton/matmul.py`。
 
 ---
 

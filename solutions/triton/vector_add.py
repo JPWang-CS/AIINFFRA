@@ -48,7 +48,7 @@ def _verify(n: int, block_size: int = 256) -> float:
     out = vector_add(x, y, block_size)
     ref = x + y
     max_err = (out - ref).abs().max().item()
-    assert torch.equal(out, ref), f"N={n}: not equal, max_err={max_err:.3e}"
+    torch.testing.assert_close(out, ref, rtol=0, atol=0)
     return max_err
 
 
@@ -64,6 +64,7 @@ def main():
         return
 
     # 真实性能：使用 GPU tensor，并由 do_bench 负责预热与同步计时
+    gpu_name = torch.cuda.get_device_name(0)
     n = 1 << 25
     x = torch.randn(n, device="cuda")
     y = torch.randn(n, device="cuda")
@@ -74,6 +75,7 @@ def main():
     bytes_moved = 3 * n * 4  # 读 x + 读 y + 写 out
     triton_gbps = bytes_moved / (triton_ms / 1000) / 1e9
     torch_gbps = bytes_moved / (torch_ms / 1000) / 1e9
+    print(f"GPU: {gpu_name}")
     print(f"N={n}: Triton {triton_ms:.3f} ms | {triton_gbps:.1f} GB/s")
     print(f"N={n}: torch.add {torch_ms:.3f} ms | {torch_gbps:.1f} GB/s")
 

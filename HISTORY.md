@@ -7,6 +7,9 @@
 
 ## 0. 最后更新
 
+- 2026-08-24（全盘复盘并统一 B1 Vector Add 验收记录格式；纠正本次 AutoDL 实际卡型为 RTX 3090，并改为运行时动态记录 GPU 型号；修正 README、课程、路线图和恢复入口中的旧状态，当前焦点为 Triton MatMul）
+- 2026-08-24（开始阅读 Triton MatMul；尚未创建或编写 `solutions/triton/matmul.py`，本日学习到此结束）
+- 2026-08-23（AutoDL RTX 3090 完成 Triton Vector Add 真实 GPU 验收：正确性通过，Triton 840.1 GB/s，`torch.add` 843.0 GB/s；当前焦点切换到 Triton MatMul）
 - 2026-08-20：理论线完成 DeepSeek-V3.2 config + KV Cache / 权重显存 / FLOPs 三笔手算；下一步进入 FA2 → MLA → DSA。
 - 2026-08-20（全盘校准：算子主线固定为 Triton B1，统一执行顺序为“自己写 → LeetGPU → 真实 GPU → benchmark”；纯 CUDA kernel 后置；新增最新论文/模型资料快照 `notes/llm/updates/2026-08-20.md`，同步 PATH/NOW/课程与构建路线）
 - 2026-08-20（Triton Vector Add 由用户自己完成并通过 LeetGPU；B1 剩余真实 GPU 验证与 GB/s 记录）
@@ -16,7 +19,7 @@
 - 2026-08-10
 - 当前主线：PATH B Triton 实现（B1 vec_add 待用户自己写，matmul 下一步）
 - 并行强化：最新模型与算子构建能力（GQA/MLA/MoE/FlashAttention/PagedAttention 等）
-- 当前状态：A5 读码完成；Triton Vector Add 已由用户自己写完并通过 LeetGPU，待真实 GPU benchmark；softmax_1pass 仍为后置 CUDA 草稿；本机 venv 已就绪（torch CPU + triton-windows）
+- 当前状态：A5 读码完成；Triton Vector Add 已由用户自己写完、通过 LeetGPU，并在 AutoDL RTX 3090 完成 benchmark（840.1 GB/s vs `torch.add` 843.0 GB/s）；当前进入 MatMul；softmax_1pass 仍为后置 CUDA 草稿；本机 venv 已就绪（torch CPU + triton-windows）
 
 ---
 
@@ -72,7 +75,7 @@ A CUDA 打底 -> B Triton -> C 推理系统 -> D 分布式 -> E Agent
 | A4 1-pass true online | 🚧 | Agent 草稿 `softmax_1pass.cu`（2026-08-09，算法模拟+编译通过），待用户重写 |
 | A4 warp shuffle / benchmark | ⏳ | 待做 |
 | A5 Flash Attention 读码 | ✅ | 2026-08-10，逐段注释完成，[阅读笔记](./notes/cuda/flash-attn-reading.md)，发现 2 个真实 bug |
-| B1 Triton vec_add + matmul | 🚧 当前 | Vector Add 已由用户自己写完并通过 LeetGPU（2026-08-20）；真实 GPU benchmark 与 matmul 待做 |
+| B1 Triton vec_add + matmul | 🚧 当前 | Vector Add 已完成用户自写、LeetGPU、AutoDL benchmark（840.1 GB/s）；MatMul 已开始阅读，代码待做 |
 | B2-B5 Triton 实现 | ⏳ | 待做 |
 
 ### 存档：A4 Softmax 详情（2026-07-01 ~ 08-09）
@@ -166,6 +169,8 @@ roadmap/leetgpu-ladder.md        # 可选 CUDA 深钻
 
 | 日期 | 内容 |
 |------|------|
+| 2026-08-24 | 全盘复盘 B1 进度，统一 Vector Add 验收格式并清理旧的“benchmark 待做”记录；当前焦点为 Triton MatMul |
+| 2026-08-23 | Triton Vector Add 在 AutoDL RTX 3090 完成真实 GPU 正确性与带宽 benchmark；当前进入 MatMul |
 | 2026-08-14 | V4 资料入库（发布线 / CSA+HCA / mHC/Muon / MXFP4 / MegaMoE / TileLang / 磁盘 KV）；tracker、架构地图、algorithms README、NOW 同步；新增 [deepseek-v4.md](./notes/algorithms/deepseek-v4.md) 草稿 |
 | 2026-08-10 | NOW.md 瘦身：已完成单元移入 HISTORY 存档，NOW 只留当前焦点 + 历史跳转 |
 | 2026-08-10 | 校准 B 线流程：自己写 → LeetGPU → 真实 GPU → 性能分析 |
@@ -192,7 +197,7 @@ roadmap/leetgpu-ladder.md        # 可选 CUDA 深钻
 2. 读 [roadmap/ai-infra-curriculum.md](./roadmap/ai-infra-curriculum.md) 当前主线。
 3. 读 [NOW.md](./NOW.md) 和 [PATH.md](./PATH.md) 确认最新状态。
 4. 检查 `git status` 和 `git diff`，确认是否有未提交改动。
-5. 算子线从 Triton Vector Add 开始；理论线按 [NOW.md](./NOW.md) 走主线 A（DeepSeek-V3.2 → V4 增量）。
+5. 算子线从当前 [NOW.md](./NOW.md) 的 Triton MatMul 开始；理论线按主线 A（DeepSeek-V3.2 → V4 增量）。
 
 ---
 

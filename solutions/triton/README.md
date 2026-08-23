@@ -7,11 +7,23 @@
 
 | 文件 | 功能 | 验收 |
 |------|------|------|
-| `vector_add.py` | Triton Vector Add | **用户从空文件完成并通过 LeetGPU（2026-08-20）**；真实 GPU benchmark 与 GB/s 记录待做 |
+| `vector_add.py` | Triton Vector Add | **用户从空文件完成并通过 LeetGPU（2026-08-20）**；AutoDL RTX 3090 正确性通过，Triton 840.1 GB/s，`torch.add` 843.0 GB/s（2026-08-23） |
 | `matmul.py` | Triton tiled GEMM | 正确性 + GFLOPS |
 | `fused_softmax.py` | Triton Fused Softmax | 正确性 + 提速 |
 | `flash_attention.py` | Triton Flash Attention | 对比 PyTorch ref + 显存/速度 |
 | `gqa.py` / `fused_mlp.py` | 模型结构组件 | 正确性 + autotune |
+
+### Vector Add benchmark
+
+```text
+vector_add (2026-08-23)
+- N=2^25, BLOCK_SIZE=256, RTX 3090 (AutoDL)
+- 正确性: assert_close OK (N=1/256/257/1000/2^20)
+- 带宽: 840.1 GB/s (torch.add: 843.0 GB/s)
+- 结论: 内存带宽瓶颈，BLOCK_SIZE=256 最优；Triton 达到 torch.add 的 99.7%
+```
+
+> 说明：本次 benchmark 验证了 kernel 在 AutoDL 上的正确性和性能；代码归属与运行验证分开记录。
 
 ## 规则
 
