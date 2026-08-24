@@ -658,6 +658,7 @@ torch.matmul 通常能到 250-300 TFLOPS（cuBLAS，大矩阵）
 性能（B1 完成标准）：
 
 - [x] 真实 GPU 实测，带宽数字记入 `solutions/triton/README.md`（AutoDL RTX 3090：840.1 GB/s）
+
 - [x] 能解释你的 GB/s 和 `torch.add` 差多少、为什么
 
 进阶（B1 之后）：
