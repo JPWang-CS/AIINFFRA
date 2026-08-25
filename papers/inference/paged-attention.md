@@ -474,7 +474,7 @@ NVIDIA 自己也承认 vLLM 更优，后来 TRT-LLM 加了 "Paged KV Cache"，�
 - **vLLM 官方 repo**: [vllm-project/vllm](https://github.com/vllm-project/vllm)
 - **作者博客**: [vLLM: Easy, Fast, and Cheap LLM Serving](https://blog.vllm.ai/2023/06/20/vllm.html)
 - **配套课程**: C2 推理系统（算子线 C），[roadmap/vllm.md](../../roadmap/vllm.md)
-- **Flash Attention 论文**: [papers/attention/flash-attention.md](flash-attention.md)
+- **Flash Attention 论文**: [papers/attention/flash-attention.md](../attention/flash-attention.md)
 
 ---
 

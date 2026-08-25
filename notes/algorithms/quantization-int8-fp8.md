@@ -105,7 +105,7 @@ FP8 不需要 zero-point（浮点天然有符号），只需要 **scale**（把 
 - kernel 怎么调（`cutlass::gemm<int8>` vs `<half>`）
 - 精度怎么验证（对比 FP16 baseline 的困惑度）
 
-**理论线下一步**：[AWQ](awq.md)（权重量化算法，比 naive scale 更聪明）、[GPTQ](gptq.md)（另一种权重量化）
+**理论线下一步**：[AWQ](remaining-theory-primer.md#c3-awq)（权重量化算法，比 naive scale 更聪明）、[GPTQ](remaining-theory-primer.md#c2-gptq)（另一种权重量化）
 
 **[面试]** 高频题：
 - "INT8 量化怎么做？" → 对称/非对称、per-channel scale
@@ -142,4 +142,4 @@ CUDA kernel 里就是把这个逻辑融合进 GEMM（Tensor Core 直接算 INT8 
 
 ---
 
-*下一步：[AWQ](awq.md)（activation-aware 权重量化，解决"哪些层该保持高精度"）*
+*下一步：[AWQ](remaining-theory-primer.md#c3-awq)（activation-aware 权重量化，解决"哪些层该保持高精度"）*

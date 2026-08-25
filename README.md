@@ -38,7 +38,7 @@
 ### 代码
 | 区 | 内容 |
 |----|------|
-| [solutions/](./solutions/) | **我自己写的**算子（跑通才进） |
+| [solutions/](./solutions/) | 我的可执行代码与明确标记的 `WIP` 草稿；完成状态看 [PATH.md](./PATH.md) |
 | [reference/cuda/](./reference/cuda/) | CUDA 参考实现（看不抄）+ CMake + 工具库 |
 | [reference/triton/](./reference/triton/) | Triton 参考实现 |
 
@@ -55,7 +55,7 @@
 ## 当前位置
 
 进度只记在一处 → **[NOW.md](./NOW.md)**（现在 + 接下来）和 [PATH.md](./PATH.md)（全貌）。
-环境：4090（CUDA 12.4 / PyTorch 2.5.1），日常用 LeetGPU。
+环境：本地主要做 CPU/解释器排错；真实 benchmark 使用 AutoDL 当次实际分配的 NVIDIA GPU，运行时记录型号；日常用 LeetGPU。
 
 ---
 
@@ -69,8 +69,8 @@
 
 ## 规则
 
-1. **自己写** —— [reference/](./reference/) 是参考，从空文件开始，跑通后存进 [solutions/](./solutions/)
-2. **LeetGPU 为主** —— 跑通才算完成
+1. **自己写** —— [reference/](./reference/) 是参考，从空文件开始；WIP 可以保存，但必须标记，跑通并完成证据后才算完成
+2. **两章验收** —— LeetGPU 正确性与代码归档 → 服务器真实性能
 3. **一次一个焦点** —— 不并行多主题，听 [NOW.md](./NOW.md)
 4. **两条线并行** —— 算子线写代码 + 理论线补一条（[notes/algorithms/](./notes/algorithms/)）
 5. **完成一步 commit** —— `<主题>: <实际做了什么>`，回顾我来写

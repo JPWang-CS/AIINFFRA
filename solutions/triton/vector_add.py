@@ -1,4 +1,5 @@
-# B1 Triton Vector Add v1 —— 1D element-wise；关键点：program_id + arange + mask 尾块
+# B1 Triton Vector Add v1 —— 本地验证/benchmark wrapper；关键点：program_id + arange + mask 尾块
+# 注意：本文件不是单独归档的 LeetGPU 原始 solve；平台代码归档状态见 Lesson 06。
 # 说明：无 GPU 时自动切 TRITON_INTERPRET=1 走 CPU 解释器（只验正确性，不代表 GPU 性能）
 
 import os

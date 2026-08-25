@@ -284,7 +284,7 @@ def matmul_kernel(...):
 - 对比 PyTorch baseline
 
 ### B3 — Triton Flash Attention
-- 核心：Triton 的 tiling + online softmax 更新公式（[Flash Attn 论文](flash-attention.md)）
+- 核心：Triton 的 tiling + online softmax 更新公式（[Flash Attn 论文](../attention/flash-attention.md)）
 - 不用管 `__syncthreads()`（编译器自动插）
 - 代码量：Triton ~100 行 vs CUDA ~1000 行（Flash-1 官方实现）
 

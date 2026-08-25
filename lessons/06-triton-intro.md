@@ -10,11 +10,11 @@
 - [Triton 底层 CUDA 对照](../notes/cuda/triton-under-the-hood.md) — Triton 代码对应什么 CUDA
 - [Triton vs CUDA 对比](../notes/triton/triton-vs-cuda.md) — 编程模型差异
 
-🔄 **完成一个算子的标准流程**（全仓库通用）：
+🔄 **本课固定两章**：
 
 ```text
-看完 Part 0-5 原理 → 直接去 LeetGPU 题目编辑器写题并通过 → 同步本地 `solutions/triton/` → 真实 GPU benchmark → 性能分析（GB/s / GFLOPS）
-→ 数字记进 solutions/triton/README.md → 才算 ✅
+5.5 LeetGPU：正确性与代码归档
+5.6 服务器：真实性能
 ```
 
 Agent 只做 review，不代写代码。本课最后有参考答案，但要求是：**先看完原理并去 LeetGPU 写题，提交后再打开参考对照**。
@@ -25,23 +25,21 @@ Agent 只做 review，不代写代码。本课最后有参考答案，但要求�
 
 | 算子 | LeetGPU 题目 | LeetGPU 原始代码 | 本地代码 / 证据 | 当前状态 |
 |---|---|---|---|---|
-| Triton Vector Add | [LeetGPU Challenges](https://leetgpu.com/challenges)（题目入口未单独归档） | **未单独保存**；当前仓库文件不是平台原始 `solve` | [`solutions/triton/vector_add.py`](../solutions/triton/vector_add.py) · [benchmark 记录](../solutions/triton/README.md#vector-add-benchmark) | ✅ 通过并完成 AutoDL RTX 3090 验收，但 LeetGPU 原始代码归档缺失 |
+| Triton Vector Add | [LeetGPU Challenges](https://leetgpu.com/challenges)（题目入口未单独归档） | **未单独保存**；当前仓库文件不是平台原始 `solve` | [`solutions/triton/vector_add.py`](../solutions/triton/vector_add.py) · [benchmark 记录](../solutions/triton/README.md#vector-add-benchmark) | `GPU_VALIDATED`，原始代码归档缺失 |
 | Triton MatMul | [Matrix Multiplication](https://leetgpu.com/challenges/matrix-multiplication) · [题目规格](https://github.com/HaoyangPing0324/LeetGPU/blob/main/problems/02_Matrix_Multiplication.md) | 当前在 LeetGPU 编写，尚未通过，暂不能归档完成版本 | [`solutions/triton/matmul.py`](../solutions/triton/matmul.py) 是当前草稿，不代表通过版本 | 🚧 编写中 |
 
 以后新算子通过 LeetGPU 后，先补齐这一张索引和对应代码文件，再进入服务器 benchmark；如果用户只提供了平台代码但尚未同步，进度必须明确写“已通过、代码待归档”。
 
 ---
 
-## 学习计划（照这个节奏走）
+## 当前单元卡
 
 | 阶段 | 做什么 | 产出 | 验收 |
 |---|---|---|---|
-| S1 环境 + vec_add | 确认环境；读 Part 0-2；去 LeetGPU 题目编辑器写 Vector Add | LeetGPU 通过记录，之后同步本地 | 与 `torch.add` 完全一致 |
-| S2 LeetGPU 提交 | 在 LeetGPU 题目编辑器补边界 case 并提交 | 通过后的 kernel，同步到本地 | N=1000 / N=1 / N=256 / N=257 都正确 |
-| S3 真实 GPU + 性能 | **LeetGPU 通过后**，AutoDL 实际 GPU 跑；按 Part 4 测带宽；对比 `torch.add` | README 数字行 | 带宽达到 `torch.add` 的 80% 以上（能解释差异） |
-| S4 MatMul | 看完 Part 5 原理，直接去 #02 LeetGPU 题目编辑器写单 tile → K 循环；提交通过后同步 `matmul.py`，再上真实 GPU autotune | `matmul.py` + LeetGPU 记录 + GFLOPS | 先通过题目，再记录数字 |
+| LeetGPU | [5.5 LeetGPU：正确性与代码归档](#55-leetgpu正确性与代码归档) | 题目通过、原始 `solve`、本地代码、lesson 快照 | 当前 MatMul `WIP`，尚未通过 |
+| 服务器 | [5.6 服务器：真实性能](#56-服务器真实性能) | 实际 GPU 型号、正确性复核、GFLOPS、配置对比 | LeetGPU 通过后才能开始 |
 
-> 每阶段完成再进下一阶段。S4 不必一次做完：先跑通单 tile 就算赢。
+> 本课只看这两张门：LeetGPU 门没过，不进入服务器；代码没归档，不标记平台完成。
 
 ---
 
@@ -349,7 +347,7 @@ for N in [1, 256, 257, 1000, 2**20]:
 
 # Part 3：LeetGPU 对照
 
-写完、本地验证通过后，再打开参考：
+LeetGPU 通过并同步本地后，再打开参考：
 
 1. [LeetGPU](https://github.com/dsl-learn/LeetGPU) 的 Triton vec_add 题/解
 2. [dsl-learn/triton-tutorial](https://github.com/dsl-learn/triton-tutorial) 的 ex1-vector_add（项目已归档，但 vec_add 部分仍可用）
@@ -361,7 +359,7 @@ for N in [1, 256, 257, 1000, 2**20]:
 2. **mask 的 `other` 影响结果吗？为什么必须是 0.0？** —— 加法里被 mask 掉的 x/y 如果不返回 0，垃圾值会污染结果
 3. **为什么用 `torch.empty_like` 而不是 `zeros_like`？** —— kernel 会写满每个有效位置，`zeros_like` 白白多一次清零；代价是你必须保证 grid 全覆盖
 
-> 注意：LeetGPU 的题目有自己的 `solve` 函数签名（比如输入是裸指针 + N），和本地写法不同。看完本节原理后，直接打开 LeetGPU 题目编辑器，从题目模板开始写并适配 `solve` 接口；通过后再同步到本地，最后进入真实 GPU。
+> 注意：LeetGPU 的题目有自己的 `solve` 函数签名（比如输入是裸指针 + N），和本地写法不同。代码归档看 5.5，真实 GPU 看 5.6；不要把本地 wrapper 当成平台原始 `solve`。
 
 ---
 
@@ -479,7 +477,7 @@ program (pid_m=3, pid_n=5) 负责：
 
 为什么要这样分块？因为计算一个输出 tile 时，A 的行块和 B 的列块会被**反复使用**（K 维循环），分块让这些数据能留在寄存器/shared memory 里复用，而不是每次从 HBM 重读。这正是 GEMM 优化的核心：**数据复用**。
 
-## 5.2 LeetGPU 题目入口（MatMul 先做这道）
+### LeetGPU 题目入口（MatMul 先做这道）
 
 - 题目：[Matrix Multiplication](https://leetgpu.com/challenges/matrix-multiplication)
 - 题号/规格：[02_Matrix_Multiplication.md](https://github.com/HaoyangPing0324/LeetGPU/blob/main/problems/02_Matrix_Multiplication.md)
@@ -634,7 +632,7 @@ C[64, 64]：4096 个 FP32 accumulator，容量等价 16 KB
 
 ### 当前代码快照（2026-08-26，未通过）
 
-下面就是本轮正在编写的 LeetGPU MatMul 草稿；它直接放在学习计划里，便于回看。当前版本仍有边界 mask、变量名和 `tl.arange` 等问题，不能当作完成实现。
+下面就是本轮正在编写的 LeetGPU 编辑器草稿；它直接放在学习计划里，便于回看。**来源：LeetGPU 编辑器快照；当前尚未同步覆盖本地 `solutions/triton/matmul.py`。**当前版本仍有边界 mask、变量名和 `tl.arange` 等问题，不能当作完成实现。
 
 ```python
 import torch
@@ -806,6 +804,7 @@ torch.matmul 通常能到 250-300 TFLOPS（cuBLAS，大矩阵）
 - [x] vec_add 已在 LeetGPU 题目编辑器写完并通过，之后完成 CPU 解释器 + 真机验证，与 `torch.add` 对齐
 - [x] N=1 / 256 / 257 / 1000 边界正确
 - [x] LeetGPU Triton vec_add 通过（2026-08-20）
+- [ ] LeetGPU vec_add 原始 `solve` 单独归档（当前 `vector_add.py` 是 wrapper）
 
 理解：
 
@@ -824,6 +823,7 @@ torch.matmul 通常能到 250-300 TFLOPS（cuBLAS，大矩阵）
 
 - [ ] matmul 单 tile 跑通（BLOCK_K=K）
 - [ ] matmul K 循环跑通，记录 GFLOPS
+- [ ] MatMul LeetGPU 原始 `solve` 归档到 `solutions/triton/matmul.py`
 - [ ] autotune 至少给出一组调参结论（哪个 config 快、为什么）
 
 ---

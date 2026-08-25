@@ -3,8 +3,8 @@
 > 主题：CUDA 编程模型，写出 Vector Addition 并在 GPU 上跑通
 > 前置：有 Ascend C 经验，不需要从头学异构计算
 > 平台：LeetGPU（浏览器直接写），不需要真机
-> 状态：✅ 已完成（见 [PATH.md](../PATH.md)）
-> **算子验收顺序**：看完原理 → 直接在 LeetGPU 题目编辑器写题并通过 → 同步本地 → 真实 GPU benchmark → 性能分析；LeetGPU 未通过时不进入真实卡。
+> 状态：⚠️ LeetGPU 技术验收完成，但原始 `solve`/本地代码未单独归档（见 [PATH.md](../PATH.md)）
+> **本课单元卡**：LeetGPU 正确性已在下方代码快照完成；`solutions/` 归档缺失；本课不单独维护服务器性能章节。
 
 📚 **本课涉及的底层知识**（跳到对应文档看完整原理）：
 - [CUDA API 速查](../notes/cuda/cuda-cheatsheet.md) — 需要查 API 时随时看

@@ -16,7 +16,7 @@
 - Triton Vector Add 已由你自己完成并通过 LeetGPU（2026-08-20）
 - AutoDL RTX 3090 正确性通过；Triton 840.1 GB/s，`torch.add` 843.0 GB/s（2026-08-23）
 
-**执行纪律**：所有新算子先走 **看完原理 → 去 LeetGPU 题目编辑器写题并通过 → 同步本地 solutions → AutoDL 实际 GPU benchmark → 性能分析**。记录必须包含本次实际 GPU 型号；CUDA 纯 kernel / warp shuffle / 手写 FlashAttention 后置到 Triton 主线完成后，不插队。
+**执行纪律**：所有新算子只分两章：**LeetGPU 正确性与代码归档 → 服务器真实性能**。记录必须包含题目、原始 `solve`、本地代码、实际 GPU 型号和 benchmark 数字；CUDA 纯 kernel / warp shuffle / 手写 FlashAttention 后置到 Triton 主线完成后，不插队。
 
 **当前已完成**：已写出 M/K 输出 tile、FP32 accumulator、沿 N 维的 tile 循环，以及 A/B 指针计算和 `tl.dot` 累加框架。
 
@@ -52,7 +52,7 @@
 | A1-A4 CUDA 算子线 | ✅ | [HISTORY.md 存档](./HISTORY.md)（含 A4 三版 softmax 细节）· [周报 07-22](./weekly/2026-07-22-softmax-online.md) |
 | A5 Flash Attn 读码 | ✅ 2026-08-10 | [阅读笔记](./notes/cuda/flash-attn-reading.md)（3 个 `__syncthreads` + 2 个真实 bug） |
 | 理论线已掌握 | online softmax · parallel reduce · FA1 机制 | [algorithms README](./notes/algorithms/README.md) |
-| B1 当前 | Vector Add 已自己写完、通过 LeetGPU，并完成 AutoDL RTX 3090 benchmark（840.1 GB/s）；MatMul 阅读中 | [vector_add.py](./solutions/triton/vector_add.py) · [MatMul 参考](./reference/triton/matmul/matmul.py) |
+| B1 当前 | Vector Add 已通过 LeetGPU 并完成 AutoDL RTX 3090 benchmark（840.1 GB/s），但原始 LeetGPU `solve` 尚未单独归档；MatMul 正在 LeetGPU 编写 | [Lesson 06](./lessons/06-triton-intro.md) · [matmul.py](./solutions/triton/matmul.py) · [Triton README](./solutions/triton/README.md) |
 
 ---
 

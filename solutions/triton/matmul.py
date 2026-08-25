@@ -3,7 +3,7 @@ import triton
 import triton.language as tl
 
 
-# 用户从 LeetGPU 空白模板开始编写的草稿；待回家继续完成并在 LeetGPU 验证。
+# 状态：WIP。用户从 LeetGPU 空白模板开始编写的草稿；待继续完成并在 LeetGPU 验证。
 @triton.jit
 def matrix_multiplication_kernel(
     a,

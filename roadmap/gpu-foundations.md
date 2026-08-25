@@ -132,7 +132,7 @@
 
 ## 5. 每个 GPU 知识单元的统一验收
 
-中中，凡是可执行的 CUDA/Triton 算子或内核实验，统一先在 LeetGPU 完成正确性验收，再上真实 GPU 做 benchmark；LeetGPU 未通过时不进入真实卡。纯架构阅读、论文理解和 profiler 读数实验不适用 LeetGPU，但仍需保留验证证据。
+凡是可执行的 CUDA/Triton 算子或内核实验，统一分为两段：LeetGPU 正确性与代码归档，再上真实 GPU 做 benchmark；LeetGPU 未通过时不进入真实卡。纯架构阅读、论文理解和 profiler 读数实验不适用 LeetGPU，但仍需保留验证证据。
 
 | 维度 | 必须留下 |
 |------|----------|

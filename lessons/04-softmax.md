@@ -4,7 +4,7 @@
 > 前置：完成 [Lesson 03](03-gemm-tiled.md)，理解 shared memory 和 `__syncthreads`
 > 平台：LeetGPU `5_softmax`
 > 状态：🚧 优化中 — 3-pass naive 已跑通（2026-07-01）。见 [PATH.md](../PATH.md) / [NOW.md](../NOW.md)
-> **算子验收顺序**：看完原理 → 直接在 LeetGPU 题目编辑器写题并通过 → 同步本地 → 真实 GPU benchmark → 性能分析；LeetGPU 未通过时不进入真实卡。
+> **本课验收分两段**：LeetGPU 正确性与代码归档 → 真实 GPU benchmark；前一段未通过不进入后一段。不同版本的状态分别记录，不能用 Agent 草稿代替用户版本。
 
 📚 **本课涉及的底层知识**：
 - [Warp 与同步](../notes/cuda/warp-and-sync.md) — warp shuffle、`__shfl_down_sync`

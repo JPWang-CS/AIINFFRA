@@ -5,7 +5,7 @@
 > 方向：ML 系统工程师 · Triton 为主力 · CUDA 为底层 · 约 1 年
 > 密集课表与每阶段验收标准 → [roadmap/ai-infra-curriculum.md](./roadmap/ai-infra-curriculum.md)
 
-图例：✅ 完成　🚧 进行中　⏳ 待做　⭐ 可选/进阶
+图例：✅ 完成　🚧 进行中　⏳ 待做　⚠️ 证据/归档缺口　⭐ 可选/进阶
 
 ---
 
@@ -26,7 +26,7 @@
 
 ## 验收基线（每个阶段都算数）
 
-- **代码**：必须跑通并进 `solutions/`；只读参考、只有 Agent 生成的草稿不算完成。
+- **代码**：完成版本必须跑通并进 `solutions/`；允许保存明确标记为 `WIP` 的用户草稿，但它不算完成；只读参考、只有 Agent 生成的草稿不算完成。
 - **数字**：每个算子至少留一个性能/正确性数字（GB/s、GFLOPS、误差、耗时），不能只写“跑通了”。
 - **面试**：每条理论要能讲清“是什么、为什么、取舍、怎么验证”，对应 [roadmap/interviews.md](./roadmap/interviews.md)。
 
@@ -38,11 +38,11 @@
 
 | 阶段 | 课 | 自己写 | 验收 | 笔记 | 参考 | 状态 |
 |:-:|----|--------|------|------|------|:--:|
-| A1 | [01 cuda-basics](./lessons/01-cuda-basics.md) | Vector Add | LeetGPU 跑通 + 能算 bandwidth | [memory-model](./notes/cuda/memory-model.md) · [warp-and-sync](./notes/cuda/warp-and-sync.md) | [vector_add.cu](./reference/cuda/vector_add.cu) · 我的→[solutions](./solutions/) | ✅ |
+| A1 | [01 cuda-basics](./lessons/01-cuda-basics.md) | Vector Add | LeetGPU 跑通 + 能算 bandwidth；原始 LeetGPU `solve`/本地代码未单独归档 ⚠️ | [memory-model](./notes/cuda/memory-model.md) · [warp-and-sync](./notes/cuda/warp-and-sync.md) | 参考→[vector_add.cu](./reference/cuda/vector_add.cu) · 我的代码归档缺失 | ⚠️ |
 | A2 | [02 gemm-naive](./lessons/02-gemm-naive.md) | `gemm_naive` (float) | LeetGPU 跑通（2026-06-16） | [memory-model](./notes/cuda/memory-model.md) | [gemm.cu](./reference/cuda/gemm/gemm.cu) · 我的→[gemm_naive.cu](./solutions/cuda/gemm/naive_float.cu) | ✅ |
 | A2+ | — | `gemm_fp16_naive` | LeetGPU fp16 跑通（2026-06-22）·[review](./notes/cuda/code-review-gemm-fp16-naive.md) | — | 我的→[gemm_fp16_naive.cu](./solutions/cuda/gemm/naive_fp16.cu) | ✅ |
-| A3 | [03 gemm-tiled](./lessons/03-gemm-tiled.md) | `gemm_tiled` (float) | GFLOPS 比 naive ≥ 5× | [memory-model §3.3](./notes/cuda/memory-model.md) | [gemm.cu](./reference/cuda/gemm/gemm.cu) | ✅ |
-| A3+ | — | `gemm_fp16_tiled` | LeetGPU 跑通（2026-06-22）· 4090 实测 K=2048/8192 tiled 0.6x naive（L2 cache + occupancy，详见 benchmark） | — | [benchmark.cu](./solutions/cuda/gemm/benchmark.cu) | ✅ |
+| A3 | [03 gemm-tiled](./lessons/03-gemm-tiled.md) | `gemm_fp16_tiled` | LeetGPU 跑通（2026-06-22）· 4090 实测 K=2048/8192 tiled 0.6x naive（L2 cache + occupancy，详见 benchmark） | [memory-model §3.3](./notes/cuda/memory-model.md) | 我的→[tiled_fp16.cu](./solutions/cuda/gemm/tiled_fp16.cu) · 参考→[gemm.cu](./reference/cuda/gemm/gemm.cu) | ✅ |
+| A3+ | — | `gemm_tiled` (float) | 计划项，当前没有独立归档产物 | [memory-model §3.3](./notes/cuda/memory-model.md) | 参考→[gemm.cu](./reference/cuda/gemm/gemm.cu) | ⏳ |
 | A4 | [04 softmax](./lessons/04-softmax.md) | `softmax_naive` → `softmax_online` → `softmax_1pass` | 3-pass baseline ✅（2026-07-01）· 2-pass fused ✅ · 1-pass true online 待落盘 · warp shuffle/benchmark 待做 | [warp-and-sync §4](./notes/cuda/warp-and-sync.md) | [softmax.cu](./reference/cuda/softmax/softmax.cu) · 我的→[softmax_naive.cu](./solutions/cuda/softmax/softmax_naive.cu) · [softmax_online.cu](./solutions/cuda/softmax/softmax_online.cu) | 🚧 |
 | A5 | [05 flash-attn-reading](./lessons/05-flash-attn-reading.md) | 读代码（不手写） | 能标注每个 `__syncthreads` 作用（2026-08-10 ✅，[阅读笔记](./notes/cuda/flash-attn-reading.md)，发现 2 个真实 bug） | [triton-under-the-hood](./notes/cuda/triton-under-the-hood.md) | [flash_attn.cu](./reference/cuda/flash_attention/flash_attn.cu) · [论文](./papers/attention/flash-attention.md) | ✅ |
 
@@ -54,7 +54,7 @@
 
 | 阶段 | 课 | 自己写 | 验收 | 参考 | 状态 |
 |:-:|----|--------|------|------|:--:|
-| B1 | [06 triton-intro](./lessons/06-triton-intro.md) | Vector Add：用户自写 + LeetGPU + AutoDL 实际 GPU benchmark ✅（840.1 GB/s）；MatMul 已进入 LeetGPU 编写阶段，tile/累加/K 维循环草稿已写，尚未通过 | **看原理 → LeetGPU 写题并通过 → 同步本地 → 真实 GPU benchmark → 性能分析**；当前焦点为 MatMul，正在处理边界 mask、指针更新和写回，纯 CUDA kernel 深钻后置 | [matmul.py](./reference/triton/matmul/matmul.py) | 🚧 当前 |
+| B1 | [06 triton-intro](./lessons/06-triton-intro.md) | Vector Add：LeetGPU 通过 + AutoDL RTX 3090 benchmark（840.1 GB/s），但原始 LeetGPU `solve` 尚未单独归档 ⚠️；MatMul 为 `WIP`，已写输出 tile/累加/N 维循环，尚未通过 | 当前焦点：MatMul；先完成 [LeetGPU 正确性与代码归档](./lessons/06-triton-intro.md#55-leetgpu正确性与代码归档)，再进入 [服务器真实性能](./lessons/06-triton-intro.md#56-服务器真实性能)；纯 CUDA kernel 深钻后置 | 我的→[vector_add.py](./solutions/triton/vector_add.py) · 我的→[matmul.py](./solutions/triton/matmul.py) · 参考→[matmul.py](./reference/triton/matmul/matmul.py) | 🚧 当前 |
 | B2 | _按需生成_ | Triton fused softmax | 对比 PyTorch 正确 + 提速 | — | ⏳ |
 | B3 | _按需生成_ | Triton flash attention | 对比 PyTorch ref 正确 | [flash_attn.py](./reference/triton/flash_attention/flash_attn.py) | ⏳ |
 | B4 | _按需生成_ | Triton GQA / fused MLP | 正确性 + autotuning | [activations.cuh](./reference/cuda/include/activations.cuh)（料） | ⏳ |
@@ -151,7 +151,7 @@
 
 ## 里程碑
 
-- [ ] 算子线：A4 1-pass 后置收尾；B1 Vector Add 已自写、LeetGPU、AutoDL benchmark 完成；MatMul 进行中
+- [ ] 算子线：A4 1-pass 后置收尾；B1 Vector Add 技术验收完成但 LeetGPU 原始代码归档有缺口；MatMul 进行中
 - [ ] 算子线：B1-B3 完成，Triton 写出 Flash Attention 并记录性能差距
 - [ ] 模型结构：能对着 HF config 讲清一个最新模型的 GQA/MoE/位置编码
 - [ ] 算子线：C1-C4 完成，跑通 vLLM benchmark 并讲清 PagedAttention/scheduling

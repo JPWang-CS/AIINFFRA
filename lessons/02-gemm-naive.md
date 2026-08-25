@@ -4,7 +4,7 @@
 > 前置：完成 Lesson 01，能写简单 kernel + 计时
 > 平台：LeetGPU（`2_matrix_multiplication` 或 `22_gemm`）
 > 状态：✅ 已完成（2026-06-16，见 [PATH.md](../PATH.md)；我的解法在 [solutions/cuda/](../solutions/cuda/)）
-> **算子验收顺序**：看完原理 → 直接在 LeetGPU 题目编辑器写题并通过 → 同步本地 → 真实 GPU benchmark → 性能分析；LeetGPU 未通过时不进入真实卡。
+> **本课验收分两段**：LeetGPU 正确性与代码归档 → 真实 GPU benchmark；前一段未通过不进入后一段。
 
 📚 **本课涉及的底层知识**：
 - [内存层级详解](../notes/cuda/memory-model.md) — coalescing、shared memory、arithmetic intensity

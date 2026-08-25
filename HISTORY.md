@@ -7,6 +7,9 @@
 
 ## 0. 最后更新
 
+- 2026-08-26（全盘重构章节规则：统一 WIP → LEETGPU_PASS → GPU_VALIDATED → COMPLETE 状态；lesson 只保留 LeetGPU 与服务器两段；校准 A1/A3 代码产物错配、旧状态、运行环境和链接问题）
+- 2026-08-26（复盘发现 MatMul lesson 内嵌的是用户本轮 LeetGPU 编辑器快照，而 `solutions/triton/matmul.py` 仍是另一份 WIP；已在章节标明来源和未同步状态，后续通过后以原始平台版本统一归档）
+- 2026-08-26（全盘校准发现两处旧产物错配：A1 CUDA Vector Add 只有 Lesson 01 代码快照、没有本地归档；PATH 原 A3 的 float tiled 名称实际对应 fp16 文件，已改为 A3=fp16 已完成、A3+=float 计划项）
 - 2026-08-26（按反馈把当前 MatMul LeetGPU 草稿代码快照直接放进 Lesson 06 的 5.5 章节；明确标注未通过，后续修正后继续更新快照）
 - 2026-08-26（根据反馈简化 Lesson 06 MatMul 结构：删除无独立价值的“5.5 三步走”，改为“5.5 LeetGPU：正确性与代码归档”和“5.6 服务器：真实性能”两章；题目、当前代码、归档要求直接放进对应章节）
 - 2026-08-26（补齐 LeetGPU 代码归档规则：学习计划必须一眼列出题目入口、通过后的原始 `solve`/kernel、本地 `solutions/` 文件和正确性/性能证据；发现 Vector Add 当前本地文件是 wrapper，LeetGPU 原始代码未单独归档，已明确标记缺失，不再把 wrapper 当作平台版本）
@@ -79,7 +82,7 @@ A CUDA 打底 -> B Triton -> C 推理系统 -> D 分布式 -> E Agent
 | A4 1-pass true online | 🚧 | Agent 草稿 `softmax_1pass.cu`（2026-08-09，算法模拟+编译通过），待用户重写 |
 | A4 warp shuffle / benchmark | ⏳ | 待做 |
 | A5 Flash Attention 读码 | ✅ | 2026-08-10，逐段注释完成，[阅读笔记](./notes/cuda/flash-attn-reading.md)，发现 2 个真实 bug |
-| B1 Triton vec_add + matmul | 🚧 当前 | Vector Add 已完成用户自写、LeetGPU、AutoDL benchmark（840.1 GB/s）；MatMul 已开始阅读，代码待做 |
+| B1 Triton vec_add + matmul | 🚧 当前 | Vector Add 技术验收完成（840.1 GB/s），但原始 LeetGPU `solve` 归档缺失；MatMul 已进入 LeetGPU 编写，当前为 WIP |
 | B2-B5 Triton 实现 | ⏳ | 待做 |
 
 ### 存档：A4 Softmax 详情（2026-07-01 ~ 08-09）

@@ -7,6 +7,16 @@
 - 预计瓶颈：
 - 验收标准：
 
+## 代码与状态索引
+
+- 当前状态：`WIP` / `LEETGPU_PASS` / `GPU_VALIDATED` / `COMPLETE`
+- 对应 lesson：
+- LeetGPU 题目/题号/语言：
+- LeetGPU 原始 `solve`/kernel 归档：
+- 本地可执行代码：
+- reference（仅对照）：
+- 代码归属：用户 / Agent review / harness
+
 ## 环境
 
 | 项 | 值 |
@@ -19,7 +29,8 @@
 
 ## 正确性门
 
-- LeetGPU 题号或 reference：
+- LeetGPU 题号或自建 reference：
+- 平台通过日期/提交版本：
 - shape / dtype / seed：
 - atol / rtol / max error：
 - 结果：

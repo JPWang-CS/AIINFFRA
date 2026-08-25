@@ -18,8 +18,10 @@
 | 产出 | 要求 |
 |------|------|
 | 可运行代码 | CUDA 进 `solutions/cuda/`，Triton/Python 进 `solutions/triton/` |
+| 当前代码入口 | lesson 直接放当前代码快照或路径，并标明 `WIP` / 通过状态 |
 | 笔记 | 能讲清“解决什么问题、核心思路、关键数字、取舍” |
 | 验证 | 正确性对比 + 性能数字 |
+| 归档索引 | 题目/题号 → 原始 `solve` → 本地文件 → 正确性/性能证据 |
 | 面试口径 | 能用 1 分钟讲清：是什么、为什么、怎么验证 |
 
 ### 统一验收基线
@@ -34,7 +36,7 @@
 
 **现在进入 PATH B：Triton 实现阶段。**
 
-统一执行顺序：**看完原理 → 直接去 LeetGPU 题目编辑器写题并通过 → 同步本地 → 真实 GPU benchmark → 性能分析 → 记录正确性/性能/面试口径**。LeetGPU 未通过时，不进入真实卡 benchmark。纯 CUDA kernel、warp shuffle、手写 FlashAttention 等底层深钻暂不插队，放到 Triton 主线阶段性完成后。
+统一章节规则只有两段：**LeetGPU：正确性与代码归档 → 服务器：真实性能**。LeetGPU 未通过、原始 `solve` 未归档时，不进入服务器；服务器 benchmark 未完成时，不标记为完整产物。纯 CUDA kernel、warp shuffle、手写 FlashAttention 等底层深钻暂不插队，放到 Triton 主线阶段性完成后。
 
 优先级：
 ```text
@@ -242,8 +244,10 @@ def add_kernel(x_ptr, y_ptr, out_ptr, N, BLOCK_SIZE: tl.constexpr):
 ```
 
 完成定义：
-- [x] `solutions/triton/vector_add.py` 跑通（AutoDL 实际 GPU）
+- [x] LeetGPU Triton Vector Add 通过
 - [x] 和 PyTorch 对齐（`assert_close`，N=1/256/257/1000/2^20）
+- [x] AutoDL 实际 GPU benchmark：RTX 3090，840.1 GB/s
+- [ ] 原始 LeetGPU `solve` 单独归档（当前仓库只有 wrapper）
 - [ ] 能解释 mask 的作用
 
 ### B1（续）：MatMul
@@ -251,21 +255,22 @@ def add_kernel(x_ptr, y_ptr, out_ptr, N, BLOCK_SIZE: tl.constexpr):
 目标：写出 tiled GEMM。
 
 步骤：
-1. `pid_m`, `pid_n` 划分输出 tile。
-2. 循环 K 块，`acc += tl.dot(a, b)`。
+1. `pid_m`, `pid_k` 划分 C 的输出 tile。
+2. 沿 N 归约维循环，`acc += tl.dot(a, b)`。
 3. 记录 GFLOPS。
 4. 调整 `BLOCK_M/BLOCK_N/BLOCK_K`。
 
 ```python
-acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
-for k in range(0, K, BLOCK_K):
-    a = tl.load(a_ptrs)   # [BLOCK_M, BLOCK_K]
-    b = tl.load(b_ptrs)   # [BLOCK_K, BLOCK_N]
+acc = tl.zeros((BLOCK_M, BLOCK_K), dtype=tl.float32)
+for n in range(0, N, BLOCK_N):
+    a = tl.load(a_ptrs)   # [BLOCK_M, BLOCK_N]
+    b = tl.load(b_ptrs)   # [BLOCK_N, BLOCK_K]
     acc += tl.dot(a, b)
 ```
 
 完成定义：
-- [ ] `solutions/triton/matmul.py` 跑通
+- [ ] LeetGPU #02 通过并归档原始 `solve`
+- [x] `solutions/triton/matmul.py` 保存当前 `WIP` 快照
 - [ ] 和 `A @ B` 对齐
 - [ ] 记录正确性和 GFLOPS
 

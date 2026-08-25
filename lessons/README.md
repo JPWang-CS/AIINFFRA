@@ -1,20 +1,20 @@
 # Lessons — 主题课
 
 > 按主题组织的讲解内容。**不绑定"第几周"**——你走到哪学到哪，进度记在 [PATH.md](../PATH.md)。
-> 规则：先看完原理，再直接去 LeetGPU 题目编辑器写题；通过后同步到本地 `solutions/`，再对照 [reference/](../reference/)。
-> **所有可执行算子/内核实验的统一顺序**：看完原理 → 直接去 LeetGPU 题目编辑器写题并通过 → 同步本地 solutions → 真实 GPU benchmark → 性能分析。LeetGPU 未通过时不进入真实卡；纯阅读课不适用。
+> 规则：每个可执行章节固定两段：**LeetGPU：正确性与代码归档**、**服务器：真实性能**。通过前不进入服务器；`reference/` 只在自己的版本提交后对照。
+> 每课必须有一张当前单元卡：题目入口、代码快照/路径、平台状态、服务器状态、下一步；完成状态仍以 [PATH.md](../PATH.md) 为准。
 > 每课完成标准：跑通代码 + 性能/正确性数字 + 能讲清核心机制；完整课表见 [roadmap/ai-infra-curriculum.md](../roadmap/ai-infra-curriculum.md)。
 
 ## 课程列表
 
 | # | 课 | 主题 | 配套代码 | 状态 |
 |:-:|----|------|---------|------|
-| 01 | [cuda-basics](01-cuda-basics.md) | CUDA 编程模型 + Vector Add | [reference/cuda/vector_add.cu](../reference/cuda/vector_add.cu) | ✅ |
-| 02 | [gemm-naive](02-gemm-naive.md) | Naive GEMM + 瓶颈分析 | [solutions/cuda/](../solutions/cuda/) | ✅ |
-| 03 | [gemm-tiled](03-gemm-tiled.md) | Shared memory tiling + bank conflict | [reference/cuda/gemm/](../reference/cuda/gemm/gemm.cu) | ✅ |
+| 01 | [cuda-basics](01-cuda-basics.md) | CUDA 编程模型 + Vector Add | [Lesson code](01-cuda-basics.md#22-在-leetgpu-上跑推荐) · 本地归档缺失 | ⚠️ |
+| 02 | [gemm-naive](02-gemm-naive.md) | Naive GEMM + 瓶颈分析 | [Lesson](02-gemm-naive.md) · [solutions/cuda/](../solutions/cuda/) | ✅ |
+| 03 | [gemm-tiled](03-gemm-tiled.md) | Shared memory tiling + bank conflict | [Lesson](03-gemm-tiled.md) · [solutions/cuda/](../solutions/cuda/) | ✅ |
 | 04 | [softmax](04-softmax.md) | Softmax + warp shuffle reduce | [reference/cuda/softmax/](../reference/cuda/softmax/softmax.cu) | 🚧 |
 | 05 | [flash-attn-reading](05-flash-attn-reading.md) | 读懂 Flash Attention CUDA 代码 | [reference/cuda/flash_attention/](../reference/cuda/flash_attention/flash_attn.cu) | 🚧 |
-| 06 | [triton-intro](06-triton-intro.md) | 第一个 Triton kernel：vec_add → matmul（B1 当前主线） | [reference/triton/](../reference/triton/) | 🚧 |
+| 06 | [triton-intro](06-triton-intro.md) | 第一个 Triton kernel：vec_add → matmul（B1 当前主线） | [Lesson code](06-triton-intro.md#本课代码与进度索引从这里一眼查看) · [solutions/triton/](../solutions/triton/) | 🚧 |
 
 > 01-05 是 CUDA 打底阶段（"能读懂 CUDA 代码"的 B 级深度）。当前主线已切到 06 Triton 实现阶段；详细任务见 [roadmap/ai-infra-curriculum.md](../roadmap/ai-infra-curriculum.md)。
 

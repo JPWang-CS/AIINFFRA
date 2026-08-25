@@ -78,10 +78,12 @@ Triton Vector Add
 2. `NOW.md` 决定当前焦点。
 3. 不要默认修改 `PATH.md` / `NOW.md`，除非用户明确要求。
 4. `notes/llm/` 是内容聚合，不是另一条学习线。
-5. 先读完原理，再直接去 LeetGPU 题目编辑器从空题面写；LeetGPU 通过后必须把当次平台 `solve`/kernel 原样归档到 `solutions/`，并在对应 lesson、`PATH.md`、算子 README 建立“题目 → 代码 → 验证”索引，再做真实 GPU benchmark。只有 wrapper 或 reference，不算保存了 LeetGPU 版本。
-6. 每个学习单元至少留下：正确性、性能数字、可讲清的面试口径；算子/实验固定遵循“看原理 → LeetGPU 写题并通过 → 同步本地 → 真实 GPU benchmark → 性能分析”。
+5. 先读完原理，再直接去 LeetGPU 题目编辑器从空题面写；通过后必须把当次平台 `solve`/kernel 原样归档到 `solutions/`，并在对应 lesson、`PATH.md`、算子 README 建立“题目 → 代码 → 验证”索引。只有 wrapper 或 reference，不算保存了 LeetGPU 版本。
+6. 每个可执行章节固定只有两个验收段：**LeetGPU：正确性与代码归档**、**服务器：真实性能**。不要把同一流程拆成多个重复的 Step 表；性能章节必须以前一章节通过为前置条件。
 7. 一次只推进一个当前主线，不并行多个大计划。
 8. 用户定节奏，不强制跳级。
+9. 状态统一使用：`WIP`（编写中）、`LEETGPU_PASS`（平台通过且原始代码已归档）、`GPU_VALIDATED`（真实 GPU 已验证）、`COMPLETE`（所有归档与面试材料齐全）。未满足门槛不得写成完成。
+10. 每个当前可执行单元的 lesson 必须有一张可直达的单元卡：题目入口、当前代码快照/路径、LeetGPU 状态、服务器状态、下一步；lesson 里的代码必须标明来源（本地文件 / LeetGPU 编辑器快照）和是否已同步，不能把两份 WIP 混写成同一版本。
 
 ---
 
