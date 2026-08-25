@@ -7,6 +7,7 @@
 
 ## 0. 最后更新
 
+- 2026-08-26（用户继续编写 Triton MatMul LeetGPU 题：已写 M/K 输出 tile、FP32 accumulator、N 维归约循环和 `tl.dot` 框架；尚未通过。当前问题为 `offset/offs` 命名不一致、`tl.arange` 归约偏移写法、A/B load 边界 mask、C 的 masked store 与循环作用域；通过前不做本地同步或 AutoDL benchmark）
 - 2026-08-24（全盘复盘并统一 B1 Vector Add 验收记录格式；纠正本次 AutoDL 实际卡型为 RTX 3090，并改为运行时动态记录 GPU 型号；修正 README、课程、路线图和恢复入口中的旧状态，当前焦点为 Triton MatMul）
 - 2026-08-24（开始阅读 Triton MatMul；尚未创建或编写 `solutions/triton/matmul.py`，本日学习到此结束）
 - 2026-08-23（AutoDL RTX 3090 完成 Triton Vector Add 真实 GPU 验收：正确性通过，Triton 840.1 GB/s，`torch.add` 843.0 GB/s；当前焦点切换到 Triton MatMul）

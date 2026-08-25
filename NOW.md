@@ -6,10 +6,10 @@
 
 ## 🔧 算子线（动手）
 
-**现在 · B1 — Triton MatMul（从空文件开始）**
+**现在 · B1 — Triton MatMul（LeetGPU 编写中）**
 
 > **课程**：[Lesson 06 — Triton 入门](./lessons/06-triton-intro.md)  
-> **代码**：[solutions/triton/matmul.py](./solutions/triton/matmul.py) — tiled GEMM，`tl.dot` + K 循环（待创建）
+> **代码**：[solutions/triton/matmul.py](./solutions/triton/matmul.py) — 用户当前 LeetGPU 草稿：tiled GEMM、`tl.dot`、N 维归约循环；尚未通过
 > **前置已满足**：A5 Flash Attn 读码 ✅（[阅读笔记](./notes/cuda/flash-attn-reading.md)）
 
 **已完成**：
@@ -18,9 +18,13 @@
 
 **执行纪律**：所有新算子先走 **看完原理 → 去 LeetGPU 题目编辑器写题并通过 → 同步本地 solutions → AutoDL 实际 GPU benchmark → 性能分析**。记录必须包含本次实际 GPU 型号；CUDA 纯 kernel / warp shuffle / 手写 FlashAttention 后置到 Triton 主线完成后，不插队。
 
-**接下来**：先看完 Part 5 原理，直接去 [LeetGPU Matrix Multiplication](https://leetgpu.com/challenges/matrix-multiplication)（#02）写 MatMul；提交通过后同步本地，再上真实卡记录 GFLOPS。
+**当前已完成**：已写出 M/K 输出 tile、FP32 accumulator、沿 N 维的 tile 循环，以及 A/B 指针计算和 `tl.dot` 累加框架。
 
-**今日收尾（2026-08-24）**：已开始阅读 MatMul 部分；尚未创建或编写 `solutions/triton/matmul.py`。
+**当前待修正**：统一 `offset/offs` 变量名；用 `offset_n + tl.arange(0, BLOCK_N)` 生成归约 tile；为 A/B `tl.load` 添加边界 mask 和 `other=0.0`；将 C 指针和 masked `tl.store` 放到循环外。当前仍未通过 LeetGPU，不能同步为完成版本，也不能开始 AutoDL benchmark。
+
+**接下来**：在 [LeetGPU Matrix Multiplication](https://leetgpu.com/challenges/matrix-multiplication)（#02）完成边界处理并通过；通过后同步本地，再上实际分配的 GPU 记录 GFLOPS。
+
+**今日进度（2026-08-26）**：已从 LeetGPU 空模板开始编写 MatMul。当前草稿已包含输出 tile、FP32 累加器、N 维归约循环和 `tl.dot` 框架；尚未通过，下一步先补齐 mask、边界写回和变量/指针作用域。
 
 ---
 

@@ -54,7 +54,7 @@
 
 | 阶段 | 课 | 自己写 | 验收 | 参考 | 状态 |
 |:-:|----|--------|------|------|:--:|
-| B1 | [06 triton-intro](./lessons/06-triton-intro.md) | Vector Add：用户自写 + LeetGPU + AutoDL 实际 GPU benchmark ✅（840.1 GB/s）；MatMul 进行中 | **看原理 → LeetGPU 写题并通过 → 同步本地 → 真实 GPU benchmark → 性能分析**；当前焦点为 MatMul，纯 CUDA kernel 深钻后置 | [matmul.py](./reference/triton/matmul/matmul.py) | 🚧 当前 |
+| B1 | [06 triton-intro](./lessons/06-triton-intro.md) | Vector Add：用户自写 + LeetGPU + AutoDL 实际 GPU benchmark ✅（840.1 GB/s）；MatMul 已进入 LeetGPU 编写阶段，tile/累加/K 维循环草稿已写，尚未通过 | **看原理 → LeetGPU 写题并通过 → 同步本地 → 真实 GPU benchmark → 性能分析**；当前焦点为 MatMul，正在处理边界 mask、指针更新和写回，纯 CUDA kernel 深钻后置 | [matmul.py](./reference/triton/matmul/matmul.py) | 🚧 当前 |
 | B2 | _按需生成_ | Triton fused softmax | 对比 PyTorch 正确 + 提速 | — | ⏳ |
 | B3 | _按需生成_ | Triton flash attention | 对比 PyTorch ref 正确 | [flash_attn.py](./reference/triton/flash_attention/flash_attn.py) | ⏳ |
 | B4 | _按需生成_ | Triton GQA / fused MLP | 正确性 + autotuning | [activations.cuh](./reference/cuda/include/activations.cuh)（料） | ⏳ |
