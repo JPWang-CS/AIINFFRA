@@ -504,6 +504,31 @@ A 的 tile 指针（形状 [BLOCK_M, BLOCK_K]）：
 a_ptrs = A + offs_m[:, None] * K + offs_k[None, :]
 ```
 
+这行是在生成 A tile 的每一个元素地址。此处沿用本节的教材记号 `A[M, K]`：row-major 连续存储时，`A[m, k]` 的一维元素偏移是 `m * K + k`。`A + offset` 中的 `offset` 是**元素个数**，不是字节数。
+
+例如 `K=8`、`BLOCK_M=4`、`BLOCK_K=4`，且当前 program 的 `pid_m=1`、归约块从 `k=0` 开始：
+
+```text
+offs_m = [4, 5, 6, 7]
+offs_k = [0, 1, 2, 3]
+
+offs_m[:, None] * 8 =
+[[32],
+ [40],
+ [48],
+ [56]]                 # 这四个 A 行的起始地址
+
+offs_k[None, :] = [[0, 1, 2, 3]]
+
+两者广播相加 =
+[[32, 33, 34, 35],
+ [40, 41, 42, 43],
+ [48, 49, 50, 51],
+ [56, 57, 58, 59]]
+```
+
+这正是 `A[4:8, 0:4]` 这个 `[BLOCK_M, BLOCK_K] = [4, 4]` tile 的 16 个地址。`[:, None]` 把行索引变成列向量，`[None, :]` 把 K 索引变成行向量；二者才能通过广播组成二维 tile。
+
 B 的 tile 指针（形状 [BLOCK_K, BLOCK_N]）：
 
 ```python
