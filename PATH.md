@@ -54,7 +54,7 @@
 
 | 阶段 | 课 | 自己写 | 验收 | 参考 | 状态 |
 |:-:|----|--------|------|------|:--:|
-| B1 | [06 triton-intro](./lessons/06-triton-intro.md) | Vector Add：用户自写 + LeetGPU + AutoDL 实际 GPU benchmark ✅（840.1 GB/s）；MatMul 进行中 | **自己写 → LeetGPU → 真实 GPU → 性能分析**；当前焦点为 MatMul，纯 CUDA kernel 深钻后置 | [matmul.py](./reference/triton/matmul/matmul.py) | 🚧 当前 |
+| B1 | [06 triton-intro](./lessons/06-triton-intro.md) | Vector Add：用户自写 + LeetGPU + AutoDL 实际 GPU benchmark ✅（840.1 GB/s）；MatMul 进行中 | **看原理 → LeetGPU 写题并通过 → 同步本地 → 真实 GPU benchmark → 性能分析**；当前焦点为 MatMul，纯 CUDA kernel 深钻后置 | [matmul.py](./reference/triton/matmul/matmul.py) | 🚧 当前 |
 | B2 | _按需生成_ | Triton fused softmax | 对比 PyTorch 正确 + 提速 | — | ⏳ |
 | B3 | _按需生成_ | Triton flash attention | 对比 PyTorch ref 正确 | [flash_attn.py](./reference/triton/flash_attention/flash_attn.py) | ⏳ |
 | B4 | _按需生成_ | Triton GQA / fused MLP | 正确性 + autotuning | [activations.cuh](./reference/cuda/include/activations.cuh)（料） | ⏳ |
@@ -74,7 +74,7 @@
 
 | 线 | 范围 | 出口 | 计划 | 状态 |
 |:-:|------|------|------|:--:|
-| D 分布式 | DP/FSDP/TP/PP | 够面试，能画通信图 | [roadmap/distributed.md](./roadmap/distributed.md) | ⏳ |
+| D 分布式 | DP/FSDP/TP/PP/CP/EP + 多机网络 | 能跑单机/多机 baseline，画 topology/通信图并定位 NCCL/RDMA 问题 | [基础](./roadmap/distributed.md) · [多机多卡专项](./roadmap/multi-node-multi-gpu.md) | ⏳ |
 | E Agent | MCP/Tool Use/RAG | 熟悉 + 1 个 demo | [roadmap/agents.md](./roadmap/agents.md) | ⏳ |
 
 ---
@@ -143,6 +143,9 @@
 |------|------|------|
 | CUDA 深钻 | GEMM vec4 / double buffer / tensor core，各算子钻到峰值 | [roadmap/leetgpu-ladder.md](./roadmap/leetgpu-ladder.md) |
 | LeetGPU 刷题 | 75 题完整索引 + 难度分级 | [notes/cuda/leetgpu-challenges.md](./notes/cuda/leetgpu-challenges.md) |
+| 统一实验流程 | 知识→平台验收→服务器→profiler→归档 | [roadmap/execution-system.md](./roadmap/execution-system.md) |
+| 多机多卡 | NCCL、RDMA、DeviceMesh、混合并行与排障 | [roadmap/multi-node-multi-gpu.md](./roadmap/multi-node-multi-gpu.md) |
+| 论文观察 | 最新论文/官方项目筛选池 | [papers/watchlist-2026.md](./papers/watchlist-2026.md) |
 
 ---
 

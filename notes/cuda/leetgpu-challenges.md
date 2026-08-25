@@ -1,17 +1,32 @@
 # LeetGPU 题库索引
 
-> 来源：https://github.com/AlphaGPU/leetgpu-challenges
+> 来源：[LeetGPU Challenges](https://leetgpu.com/challenges)；题目规格镜像：[HaoyangPing0324/LeetGPU](https://github.com/HaoyangPing0324/LeetGPU)
 > 平台：https://leetgpu.com
-> 更新：2026-06-06
+> 更新：2026-08-25
 
 ---
 
+## 当前 B1 题目入口：Triton MatMul
+
+先做这道，不直接跳到真实卡：
+
+- 题目：[Matrix Multiplication](https://leetgpu.com/challenges/matrix-multiplication)
+- 题目规格：[02_Matrix_Multiplication.md](https://github.com/HaoyangPing0324/LeetGPU/blob/main/problems/02_Matrix_Multiplication.md)
+- 题意：FP32 矩阵 A(M×N) × B(N×K) = C(M×K)，三者 row-major。
+- 接口：保持 LeetGPU 的 `solve` 签名，结果写入 C；在题目编辑器中选择 Triton 语言后按平台模板适配。
+- 约束：1 ≤ M,N,K ≤ 8192；性能形状为 M=8192、N=6144、K=4096。
+- 验收：先提交并通过该题；通过后才上 AutoDL/真实 GPU 测 GFLOPS。
+
+更高一级的优化题是 [General Matrix Multiplication (GEMM)](https://leetgpu.com/challenges/general-matrix-multiplication-gemm)（#29），不是当前第一步。
+
+---
 ## 5 算子路线图 ↔ LeetGPU 映射
 
 ```
 我们的算子        LeetGPU 题                         文件夹                   难度
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-GEMM            General Matrix Multiplication     22_gemm                  Medium
+B1 MatMul        Matrix Multiplication           02_Matrix_Multiplication   Easy
+GEMM 优化        General Matrix Multiplication     29_General_Matrix_Multiplication Medium
   ├─ batched    Batched Matrix Multiplication     30_batched_matrix_mul    Medium
   ├─ FP16       FP16 Batched MatMul               57_fp16_batched_matmul   Medium
   ├─ INT8       INT8 Quantized MatMul             32_int8_quantized_matmul Medium

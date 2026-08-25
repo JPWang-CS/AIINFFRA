@@ -214,6 +214,8 @@ DP=4：数据复制 4 份
 ## 13. 关联材料
 
 - [分布式训练 Demo](../../roadmap/distributed.md)
+- [多机多卡专项路线](../../roadmap/multi-node-multi-gpu.md)
+- [多机多卡知识地图](../distributed/multi-node-gpu.md)
 - [剩余理论主题速览](../algorithms/remaining-theory-primer.md)
 - [ZeRO 论文](../../papers/training/zero-paper.md)
 - [PATH 执行参考](../../roadmap/ai-infra-curriculum.md)

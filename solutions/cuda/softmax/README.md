@@ -1,6 +1,6 @@
-# softmax 本地测试（LeetGPU 不可用时在服务器跑）
+# softmax 真实 GPU 测试（LeetGPU 通过后）
 
-LeetGPU 挂了 / 想看真实带宽时，在本地或服务器上验证 `solve()` 精度并测吞吐。
+LeetGPU 通过后，在本地或服务器真实 GPU 上验证 `solve()` 精度并测吞吐；LeetGPU 暂时不可用时只能用于排障，不能替代平台验收。
 
 ## 文件
 

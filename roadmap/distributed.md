@@ -2,6 +2,7 @@
 
 > 对应 PATH 算子线 D，以及大模型板块 [训练系统](../notes/llm/training-systems.md)。
 > 目标：能算显存、能画通信图、能跑最小 demo，能讲清 DDP/FSDP/ZeRO/TP/PP/EP。
+> 本页负责并行策略基础；拓扑、NCCL、InfiniBand/RoCE、GPUDirect RDMA、多节点启动、EP 通信和排障见 [多机多卡专项路线](multi-node-multi-gpu.md)。
 
 ---
 

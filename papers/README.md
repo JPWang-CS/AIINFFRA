@@ -1,7 +1,7 @@
 # 论文索引
 
-> 工作流：[process.md](./process.md) | 笔记模板：[template.md](./template.md)
-> 抓取脚本：`python ../scripts/fetch_papers.py --days 3`
+> 工作流：[process.md](./process.md) | 笔记模板：[template.md](./template.md) | [2026 观察池](watchlist-2026.md)
+> 抓取脚本：`python scripts/research_watch.py --topic distributed --days 14 --write-inbox`（从仓库根目录运行）
 
 ## 阅读规则
 
@@ -47,7 +47,16 @@
 | Efficient Large-Scale Language Model Training on GPU Clusters Using Megatron-LM | 2021 | P1 | ⏳ | |
 | PyTorch FSDP: Experiences on Scaling Fully Sharded Data Parallel | 2023 | P1 | ⏳ | |
 | GSPMD: General and Scalable Parallelization for ML Computation Graphs | 2021 | P1 | ⏳ | |
-| MegaScale: Scaling Large Language Model Training to More Than 10,000 GPUs | 2024 | P2 | ⏳ | |
+| MegaScale: Scaling Large Language Model Training to More Than 10,000 GPUs | 2024 | P0 | ⏳ | |
+
+## Communication / Multi-node
+
+| 论文 | 年份 | 优先级 | 状态 | 挂载 |
+|------|------|--------|------|------|
+| Collective Communication for Distributed LLM Systems | 2026 | P1 | ⏳ | D1–D5 taxonomy |
+| NCCL EP | 2026 | P1 | ⏳ | D5 MoE communication |
+| CommBench | 2026 | P2 | ⏳ | D1 后选题库 |
+| ByteScale | 2025 | P1 | ⏳ | D4 context/dynamic mesh |
 
 ## Compiler
 

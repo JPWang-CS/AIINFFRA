@@ -49,6 +49,17 @@ description: "进度恢复技能 - 跨电脑/新会话启动时，基于 HISTORY
 - [一个可执行任务]
 ```
 
+## 用户明确要求更新进展时
+
+1. 以 PATH.md 为权威源，先核对 HISTORY.md / NOW.md / 最近提交。
+2. 同步 PATH.md、NOW.md、HISTORY.md，并检查相关 lesson、weekly、skill、agent memory 是否有过期状态。
+3. 只把已验证的正确性、真实 GPU 型号、性能数字和代码归属写入“完成”；草稿单独标注。
+4. 更新后运行 git diff --check，由用户要求时再提交和推送。
+
+## 算子实验验收顺序
+
+所有算子或实验必须先在 LeetGPU 完成正确性与平台验收，再上 AutoDL 等真实卡做 benchmark；LeetGPU 未通过时，不得把真实卡实验作为下一步。
+
 ## 规则
 
 - 优先读 `HISTORY.md`，不要只靠对话记忆。

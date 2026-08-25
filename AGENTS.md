@@ -56,6 +56,8 @@ Triton Vector Add
 | `NOW.md` | 当前学什么 |
 | `HISTORY.md` | 跨电脑恢复、历史记录 |
 | `roadmap/` | 学习计划 |
+| `roadmap/execution-system.md` | 统一学习与实验流程 |
+| `roadmap/multi-node-multi-gpu.md` | 多机多卡专项路线 |
 | `lessons/` | 主题课 |
 | `notes/` | 知识笔记 |
 | `notes/llm/` | 大模型内容聚合板块 |
@@ -65,6 +67,7 @@ Triton Vector Add
 | `weekly/` | 回顾周报 |
 | `.claude/agents/` | Claude Agent 配置 |
 | `.claude/skills/` | Claude Skills |
+| `templates/` | 算子、系统和分布式实验记录模板 |
 | `.codex/agents/` | Codex Agent 配置 |
 
 ---
@@ -75,8 +78,8 @@ Triton Vector Add
 2. `NOW.md` 决定当前焦点。
 3. 不要默认修改 `PATH.md` / `NOW.md`，除非用户明确要求。
 4. `notes/llm/` 是内容聚合，不是另一条学习线。
-5. 代码从空文件开始写，跑通并验证后才进 `solutions/`。
-6. 每个学习单元至少留下：正确性、性能数字、可讲清的面试口径。
+5. 先读完原理，再直接去 LeetGPU 题目编辑器从空题面写；LeetGPU 通过后同步到 `solutions/`，再做真实 GPU benchmark。
+6. 每个学习单元至少留下：正确性、性能数字、可讲清的面试口径；算子/实验固定遵循“看原理 → LeetGPU 写题并通过 → 同步本地 → 真实 GPU benchmark → 性能分析”。
 7. 一次只推进一个当前主线，不并行多个大计划。
 8. 用户定节奏，不强制跳级。
 

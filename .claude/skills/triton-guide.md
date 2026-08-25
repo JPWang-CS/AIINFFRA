@@ -21,6 +21,22 @@ description: "Triton 实现指导技能 - 当前主线，从 vec add 到 flash a
 
 代码位置：`solutions/triton/`
 
+## 当前进度（2026-08-24）
+
+- Vector Add：用户自写、LeetGPU 通过、AutoDL RTX 3090 正确性通过。
+- 性能：Triton 840.1 GB/s；torch.add 843.0 GB/s。
+- 当前：开始 Triton MatMul 阅读；solutions/triton/matmul.py 尚未创建。下一验收点是先在 LeetGPU 完成 MatMul，再上真实卡。
+- 验收纪律：代码归属、正确性、真实 GPU 型号和性能数字分别记录，不能用 Agent 草稿代替用户实现。
+
+## 固定实验顺序
+
+所有 Triton 算子和实验统一按以下顺序推进：
+
+1. 先看完当前算子的原理。
+2. 直接去 LeetGPU 题目编辑器写题并提交，通过正确性和平台验收。
+3. 通过后把代码同步到本地，再在 AutoDL 等真实卡上做性能 benchmark。
+4. 记录真实 GPU 型号、正确性结果和性能数字；未通过 LeetGPU 的代码不进入真实卡 benchmark。
+
 ## 核心概念
 
 | 概念 | 一句话 | 对应 CUDA |

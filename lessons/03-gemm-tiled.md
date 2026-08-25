@@ -2,8 +2,9 @@
 
 > 主题：用 shared memory tiling 加速 GEMM，理解 `__syncthreads` 和 bank conflict
 > 前置：完成 [Lesson 02](02-gemm-naive.md)，理解 naive GEMM 的瓶颈（memory-bound）
-> 平台：LeetGPU `2_matrix_multiplication` / 本地 FP32
+> 平台：LeetGPU `2_matrix_multiplication` → 真实 GPU FP32 benchmark
 > 状态：✅ 已完成（见 [PATH.md](../PATH.md)）
+> **算子验收顺序**：看完原理 → 直接在 LeetGPU 题目编辑器写题并通过 → 同步本地 → 真实 GPU benchmark → 性能分析；LeetGPU 未通过时不进入真实卡。
 
 📚 **本课涉及的底层知识**：
 - [内存层级详解](../notes/cuda/memory-model.md) — shared memory tiling、bank conflict
@@ -239,7 +240,7 @@ __global__ void kernel(const half* A, const half* B, half* C,
 | Bank conflict 详解和解决 | [memory-model.md](../notes/cuda/memory-model.md) §3.3 |
 | `__syncthreads` 的陷阱 | [warp-and-sync.md](../notes/cuda/warp-and-sync.md) §3.2 |
 | Triton GEMM 的底层实现 | [triton-under-the-hood.md](../notes/cuda/triton-under-the-hood.md) §4 |
-| Tiled GEMM 参考实现（先自己写！） | [reference/cuda/gemm/gemm.cu](../reference/cuda/gemm/gemm.cu) |
+| Tiled GEMM 参考实现（先看原理并去 LeetGPU 写题！） | [reference/cuda/gemm/gemm.cu](../reference/cuda/gemm/gemm.cu) |
 
 ---
 

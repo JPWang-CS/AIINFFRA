@@ -1,12 +1,12 @@
 # Solutions — 我自己写的代码
 
-> 这里放**我亲手写、并在 LeetGPU（或本地）跑通**的代码。
+> 这里放**我在 LeetGPU 题目编辑器亲手写并通过验收**、再同步到本地的代码。
 > 跟 [reference/](../reference/) 的区别：reference 是预置参考实现（看不抄），solutions 是我的产物。
 
 ## 规则
 
-1. **从空文件开始自己写** —— 对着 [lessons/](../lessons/) 的框架和 TODO，不复制 reference
-2. **跑通才算数** —— LeetGPU 提交通过 / 本地对比 CPU baseline 正确
+1. **先看原理，再去 LeetGPU 写题** —— 对着 [lessons/](../lessons/) 的框架理解题意，在题目编辑器完成实现，不复制 reference
+2. **跑通才算数** —— 先在 LeetGPU 提交通过，再同步本地并做真实 GPU；本地 CPU baseline 只用于理解和排错
 3. **跑通后 commit 到这里** —— 按算子分目录，命名 `{版本}_{精度}.cu`
 4. 进度记到 [PATH.md](../PATH.md)，不在这里重复记
 

@@ -4,6 +4,7 @@
 > 前置：完成 [Lesson 03](03-gemm-tiled.md)，理解 shared memory 和 `__syncthreads`
 > 平台：LeetGPU `5_softmax`
 > 状态：🚧 优化中 — 3-pass naive 已跑通（2026-07-01）。见 [PATH.md](../PATH.md) / [NOW.md](../NOW.md)
+> **算子验收顺序**：看完原理 → 直接在 LeetGPU 题目编辑器写题并通过 → 同步本地 → 真实 GPU benchmark → 性能分析；LeetGPU 未通过时不进入真实卡。
 
 📚 **本课涉及的底层知识**：
 - [Warp 与同步](../notes/cuda/warp-and-sync.md) — warp shuffle、`__shfl_down_sync`
@@ -140,7 +141,7 @@ extern "C" void solve(const float* input, float* output, int N) {
 
 > 我自己写的，LeetGPU `5_softmax` 跑通（2026-07-01）。完整文件 → [solutions/cuda/softmax/softmax_naive.cu](../solutions/cuda/softmax/softmax_naive.cu)
 >
-> 💻 **本地/服务器测试**（LeetGPU 不可用时）：`cd solutions/cuda/softmax && ./run.sh` —— harness 调你的 `solve`、对比 CPU 双精度参考验精度、测有效带宽。见同目录 [README.md](../solutions/cuda/softmax/README.md)。
+> 💻 **本地/服务器测试**（LeetGPU 通过后）：`cd solutions/cuda/softmax && ./run.sh` —— harness 调你的 `solve`、对比 CPU 双精度参考验精度、测有效带宽。见同目录 [README.md](../solutions/cuda/softmax/README.md)。平台暂时不可用时仅用于排障，不替代 LeetGPU 验收。
 
 思路和 Part 2 的"每 block 一行"不同：这题是 **1D softmax over N（N ≤ 500,000，跨多个 block）**，所以做**两级归约**——每个 block 用 shared memory tree reduce 出局部值，再把各 block 的 partial 拷回 host 做最后一次归约。三个 kernel 串行：
 

@@ -49,6 +49,8 @@
 
 阅读原则：先读 FA2/MLA/DSA 这条主线，FA4、SageAttention3、Kascade 作为实现侧增量；论文中的硬件数字必须区分 GPU 型号、dtype、baseline 和是否包含编译/调度开销。
 
+持续更新入口：[2026 AI Infra 论文与项目观察池](../../papers/watchlist-2026.md)；自动抓取只进入 [papers/inbox](../../papers/inbox/README.md)，筛选前不进入学习计划。
+
 ---
 
 ## 精读输出模板

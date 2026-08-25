@@ -1,5 +1,25 @@
 # 论文管理工作流
 
+## 当前管道
+
+```text
+research_watch.py
+  -> papers/inbox/YYYY-MM-DD-topic.md
+  -> 每周核验/去重/P0-P2
+  -> 挂到当前或近期 PATH 节点
+  -> 精读/复现
+  -> papers 正式索引 + notes 机制笔记
+```
+
+自动抓取只负责发现，不能自动改 `PATH.md`，也不能把摘要当结论。推荐命令：
+
+```bash
+python scripts/research_watch.py --topic kernels --days 7 --write-inbox
+python scripts/research_watch.py --topic distributed --days 14 --write-inbox
+python scripts/research_watch.py --topic inference --days 7 --write-inbox
+```
+
+
 ## 节奏
 
 - **每天 5min**：扫 arxiv RSS / X / 公众号标题，有意思的存链接

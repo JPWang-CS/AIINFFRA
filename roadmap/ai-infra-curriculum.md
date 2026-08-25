@@ -34,7 +34,7 @@
 
 **现在进入 PATH B：Triton 实现阶段。**
 
-统一执行顺序：**自己从空文件写 → LeetGPU 跑通 → 真实 GPU 跑通 → 性能分析 → 记录正确性/性能/面试口径**。纯 CUDA kernel、warp shuffle、手写 FlashAttention 等底层深钻暂不插队，放到 Triton 主线阶段性完成后。
+统一执行顺序：**看完原理 → 直接去 LeetGPU 题目编辑器写题并通过 → 同步本地 → 真实 GPU benchmark → 性能分析 → 记录正确性/性能/面试口径**。LeetGPU 未通过时，不进入真实卡 benchmark。纯 CUDA kernel、warp shuffle、手写 FlashAttention 等底层深钻暂不插队，放到 Triton 主线阶段性完成后。
 
 优先级：
 ```text
@@ -148,6 +148,8 @@ A5 Flash Attention 注释笔记
 ## M1：CUDA 算子优化
 
 目标：用 CUDA 建立 kernel 底层感觉，为理解 Triton 生成代码打底。
+
+GPU 体系补强入口：[GPU 基础补强路线](gpu-foundations.md) · [GPU 架构详解](../notes/cuda/gpu-architecture-layers.md)。按当前算子 Just-in-Time 穿插：B1 MatMul 学 Ampere/SM/内存与 Tensor Core 基础，B2 Softmax 学 profiling，B3 FlashAttention 再学 Hopper TMA/cluster；Blackwell 先做增量认知，不改变当前 Triton 主线。
 
 ### 分阶段任务表
 
@@ -413,6 +415,8 @@ Fused MLP：
 ## M4：训练系统 / 分布式训练
 
 目标：能算训练显存、能画并行通信图、能跑最小 demo。
+
+执行入口：[分布式训练基础](distributed.md) → [多机多卡专项](multi-node-multi-gpu.md)；实验使用 [统一执行系统](execution-system.md) 和 [分布式记录模板](../templates/distributed-record.md)。先单机 collective/并行语义，再进入多节点 NCCL/RDMA 和混合并行，不直接从框架参数跳到大集群。
 
 ### 训练显存手算
 

@@ -4,6 +4,7 @@
 > 前置：有 Ascend C 经验，不需要从头学异构计算
 > 平台：LeetGPU（浏览器直接写），不需要真机
 > 状态：✅ 已完成（见 [PATH.md](../PATH.md)）
+> **算子验收顺序**：看完原理 → 直接在 LeetGPU 题目编辑器写题并通过 → 同步本地 → 真实 GPU benchmark → 性能分析；LeetGPU 未通过时不进入真实卡。
 
 📚 **本课涉及的底层知识**（跳到对应文档看完整原理）：
 - [CUDA API 速查](../notes/cuda/cuda-cheatsheet.md) — 需要查 API 时随时看
@@ -325,7 +326,7 @@ printf("Bandwidth: %.2f GB/s\n", gb_per_sec);
 ## ✅ 本课检验清单
 
 - [x] 能用自己的话说清 thread/block/grid/warp 四个概念
-- [x] 写出了 `vector_add_kernel`，在 LeetGPU 或本地 GPU 上跑通，结果全对
+- [x] 写出了 `vector_add_kernel`，先在 LeetGPU 上跑通，之后才在真实 GPU 上验证，结果全对
 - [x] 理解了 grid-stride loop 的写法
 - [x] 能给 kernel 加 CUDA error check + cudaEvent 计时
 - [x] 能回答：为什么 Vector Add 是 memory-bound？
@@ -345,7 +346,7 @@ printf("Bandwidth: %.2f GB/s\n", gb_per_sec);
 | NVIDIA vs Da Vinci 架构对比 | [gpu-architecture.md](../notes/cuda/gpu-architecture.md) |
 | Triton 生成的 CUDA 代码长什么样 | [triton-under-the-hood.md](../notes/cuda/triton-under-the-hood.md) |
 | LeetGPU 全部题目 | [leetgpu-challenges.md](../notes/cuda/leetgpu-challenges.md) |
-| 完整 Vector Add 参考（先自己写！） | [reference/cuda/vector_add.cu](../reference/cuda/vector_add.cu) |
+| 完整 Vector Add 参考（先看原理并去 LeetGPU 写题！） | [reference/cuda/vector_add.cu](../reference/cuda/vector_add.cu) |
 | 工具函数 | [reference/cuda/include/cuda_utils.h](../reference/cuda/include/cuda_utils.h) |
 
 ---

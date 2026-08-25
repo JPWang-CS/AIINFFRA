@@ -1,7 +1,8 @@
 # Lessons — 主题课
 
 > 按主题组织的讲解内容。**不绑定"第几周"**——你走到哪学到哪，进度记在 [PATH.md](../PATH.md)。
-> 规则：先自己写代码（从空文件开始），写完再对照 [reference/](../reference/)。
+> 规则：先看完原理，再直接去 LeetGPU 题目编辑器写题；通过后同步到本地 `solutions/`，再对照 [reference/](../reference/)。
+> **所有可执行算子/内核实验的统一顺序**：看完原理 → 直接去 LeetGPU 题目编辑器写题并通过 → 同步本地 solutions → 真实 GPU benchmark → 性能分析。LeetGPU 未通过时不进入真实卡；纯阅读课不适用。
 > 每课完成标准：跑通代码 + 性能/正确性数字 + 能讲清核心机制；完整课表见 [roadmap/ai-infra-curriculum.md](../roadmap/ai-infra-curriculum.md)。
 
 ## 课程列表

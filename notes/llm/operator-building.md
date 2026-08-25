@@ -25,7 +25,7 @@
 新组件一律按以下顺序推进：
 
 ```text
-自己从空文件写 -> LeetGPU 验证 -> 真实 GPU 验证 -> benchmark / profiler -> 记录面试口径
+看完原理 -> 直接去 LeetGPU 题目编辑器写题并通过 -> 同步本地 -> 真实 GPU benchmark -> profiler -> 记录面试口径
 ```
 
 纯 CUDA kernel 只作为后置深钻，不替代 Triton 主线；除非当前任务本身就是 CUDA 底层机制，否则不提前展开 warp shuffle、手写 FlashAttention 等内容。
