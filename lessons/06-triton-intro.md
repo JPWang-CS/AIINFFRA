@@ -19,6 +19,17 @@
 
 Agent 只做 review，不代写代码。本课最后有参考答案，但要求是：**先看完原理并去 LeetGPU 写题，提交后再打开参考对照**。
 
+## 本课代码与进度索引（从这里一眼查看）
+
+每个算子必须同时留下四个入口：LeetGPU 题目、通过后的原始 `solve`/kernel、本地 `solutions/` 文件、正确性/性能证据。LeetGPU 代码没有单独归档时，只能标为“代码缺失”，不能用 wrapper 或 reference 冒充。
+
+| 算子 | LeetGPU 题目 | LeetGPU 原始代码 | 本地代码 / 证据 | 当前状态 |
+|---|---|---|---|---|
+| Triton Vector Add | [LeetGPU Challenges](https://leetgpu.com/challenges)（题目入口未单独归档） | **未单独保存**；当前仓库文件不是平台原始 `solve` | [`solutions/triton/vector_add.py`](../solutions/triton/vector_add.py) · [benchmark 记录](../solutions/triton/README.md#vector-add-benchmark) | ✅ 通过并完成 AutoDL RTX 3090 验收，但 LeetGPU 原始代码归档缺失 |
+| Triton MatMul | [Matrix Multiplication](https://leetgpu.com/challenges/matrix-multiplication) · [题目规格](https://github.com/HaoyangPing0324/LeetGPU/blob/main/problems/02_Matrix_Multiplication.md) | 当前在 LeetGPU 编写，尚未通过，暂不能归档完成版本 | [`solutions/triton/matmul.py`](../solutions/triton/matmul.py) 是当前草稿，不代表通过版本 | 🚧 编写中 |
+
+以后新算子通过 LeetGPU 后，先补齐这一张索引和对应代码文件，再进入服务器 benchmark；如果用户只提供了平台代码但尚未同步，进度必须明确写“已通过、代码待归档”。
+
 ---
 
 ## 学习计划（照这个节奏走）

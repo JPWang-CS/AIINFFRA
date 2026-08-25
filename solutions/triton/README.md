@@ -5,10 +5,10 @@
 
 ## 当前进度
 
-| 文件 | 功能 | 验收 |
-|------|------|------|
-| `vector_add.py` | Triton Vector Add | **用户从空文件完成并通过 LeetGPU（2026-08-20）**；AutoDL RTX 3090 正确性通过，Triton 840.1 GB/s，`torch.add` 843.0 GB/s（2026-08-23） |
-| `matmul.py` | Triton tiled GEMM | 正确性 + GFLOPS |
+| 文件 | 功能 | LeetGPU 原始代码 | 验收 |
+|------|------|------|------|
+| [`vector_add.py`](./vector_add.py) | Triton Vector Add | **尚未单独归档**；当前文件是本地验证/benchmark wrapper，不等同于平台 `solve` | 用户从空文件完成并通过 LeetGPU（2026-08-20）；AutoDL RTX 3090 正确性通过，Triton 840.1 GB/s，`torch.add` 843.0 GB/s（2026-08-23） |
+| [`matmul.py`](./matmul.py) | Triton tiled GEMM | LeetGPU 编写中，尚未通过，暂无完成版 | 当前草稿；正确性 + GFLOPS 待验收 |
 | `fused_softmax.py` | Triton Fused Softmax | 正确性 + 提速 |
 | `flash_attention.py` | Triton Flash Attention | 对比 PyTorch ref + 显存/速度 |
 | `gqa.py` / `fused_mlp.py` | 模型结构组件 | 正确性 + autotune |
@@ -32,7 +32,7 @@ vector_add (2026-08-23)
 ## 规则
 
 1. 先看完原理，直接在 LeetGPU 题目编辑器从题目模板开始写，不直接复制 `reference/triton/`。
-2. 完成流程：**LeetGPU 在线判题通过 → 同步本地 → 真实 GPU benchmark → 性能分析（GB/s / GFLOPS / ncu）**。
+2. 完成流程：**LeetGPU 在线判题通过 → 原始 `solve`/kernel 归档到本地 → 在 lesson/PATH/README 建立题目到代码索引 → 真实 GPU benchmark → 性能分析（GB/s / GFLOPS / ncu）**。
 3. 每个文件开头写一行说明：算子、版本、关键优化。
 4. 跑不通、没有数字的文件不要标完成；Agent 草稿一律不算完成。
 

@@ -78,7 +78,7 @@ Triton Vector Add
 2. `NOW.md` 决定当前焦点。
 3. 不要默认修改 `PATH.md` / `NOW.md`，除非用户明确要求。
 4. `notes/llm/` 是内容聚合，不是另一条学习线。
-5. 先读完原理，再直接去 LeetGPU 题目编辑器从空题面写；LeetGPU 通过后同步到 `solutions/`，再做真实 GPU benchmark。
+5. 先读完原理，再直接去 LeetGPU 题目编辑器从空题面写；LeetGPU 通过后必须把当次平台 `solve`/kernel 原样归档到 `solutions/`，并在对应 lesson、`PATH.md`、算子 README 建立“题目 → 代码 → 验证”索引，再做真实 GPU benchmark。只有 wrapper 或 reference，不算保存了 LeetGPU 版本。
 6. 每个学习单元至少留下：正确性、性能数字、可讲清的面试口径；算子/实验固定遵循“看原理 → LeetGPU 写题并通过 → 同步本地 → 真实 GPU benchmark → 性能分析”。
 7. 一次只推进一个当前主线，不并行多个大计划。
 8. 用户定节奏，不强制跳级。

@@ -72,6 +72,16 @@ Ascend -> NVIDIA 映射：
 
 LeetGPU 适用于算子正确性和受控性能对照；不能把不支持的分布式实验硬塞进 LeetGPU。算子有对应题时，LeetGPU 未通过不进入服务器 benchmark。
 
+### LeetGPU 代码归档与学习计划索引
+
+算子通过 LeetGPU 后，必须保留当次平台提交的原始 `solve`/kernel，而不是只留下本地 wrapper 或 `reference/` 参考实现。对应 lesson、`PATH.md` 和算子 README 至少要能一眼查到：
+
+```text
+LeetGPU 题目/题号 → 原始 solve 代码 → 本地 solutions 文件 → 正确性/性能证据
+```
+
+如果题目已通过但原始代码尚未同步，状态写成“已通过、代码待归档”；如果只有 wrapper/reference，不能写成“LeetGPU 版本已保存”。
+
 ### S4：真实服务器 benchmark
 
 每次先固定环境，再记录结果：
