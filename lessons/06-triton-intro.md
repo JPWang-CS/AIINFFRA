@@ -622,31 +622,39 @@ C[64, 64]：4096 个 FP32 accumulator，容量等价 16 KB
 
 因此 `64×64` 的目的不是追求 16 block/SM，而是让 C accumulator、A/B fragment、地址和临时变量有足够余量，降低 register spill 风险。正确性通过后，再比较 `128×32×64` 与 `128×32×128`，用 A100 的 GFLOPS、registers per thread、shared memory per block 和 occupancy 选择最终配置。
 
-## 5.5 三步走：先正确，再性能
+## 5.5 LeetGPU：正确性与代码归档
 
-每个 Triton 算子都严格按这条验收链路推进：
+**题目入口**：[#02 Matrix Multiplication](https://leetgpu.com/challenges/matrix-multiplication) · [题目规格](https://github.com/HaoyangPing0324/LeetGPU/blob/main/problems/02_Matrix_Multiplication.md)。题目要求 FP32、row-major 的 `A(M×N) × B(N×K) = C(M×K)`。
 
-**本节对应题目**：[#02 Matrix Multiplication](https://leetgpu.com/challenges/matrix-multiplication) · [题目规格](https://github.com/HaoyangPing0324/LeetGPU/blob/main/problems/02_Matrix_Multiplication.md)。在题目页面选择 Triton，保持平台 `solve` 接口；题目要求 FP32、row-major 的 A(M×N) × B(N×K) = C(M×K)，性能形状为 M=8192、N=6144、K=4096。
+**当前代码入口**：
 
-先提交该题并通过，才进入下面的真实 GPU benchmark。
+- LeetGPU 原始 `solve`：当前仍在编写，尚未通过，暂未形成完成版；
+- 本地草稿：[`solutions/triton/matmul.py`](../solutions/triton/matmul.py)；
+- 参考实现：[`reference/triton/matmul/matmul.py`](../reference/triton/matmul/matmul.py)，只在自己提交后对照。
 
-```text
-看完 5.1-5.4 原理 → 直接去 LeetGPU 写题并通过 → 同步本地 → 真实 GPU benchmark → 性能分析 / 调优
-```
+这一章只做一件事：在 LeetGPU 题目编辑器里把正确性做通，并保存当次平台代码。顺序就是：
 
-**Step 1：看完原理，直接打开 LeetGPU 写题**
+1. 选择 Triton，保留平台 `solve` 接口；
+2. 先写单 tile，再加入 N 维归约循环；
+3. 覆盖非整除边界，提交并通过；
+4. 将通过的原始 `solve`/kernel 保存到 `solutions/triton/matmul.py`；
+5. 在本课索引、`PATH.md` 和 `solutions/triton/README.md` 填上题目、代码和通过状态。
 
-在 LeetGPU 题目编辑器里先写单 tile，再加入 K 循环；用题目提交结果验证 mask、边界和数值。不要先在本地 `solutions/` 开发，避免本地接口和题目 `solve` 签名漂移。
+LeetGPU 未通过时，不进入服务器性能测试，也不能把本地文件标记为完成。
 
-**Step 2：提交 LeetGPU 并通过**
+### 参考实现（提交通过后再看）
 
-覆盖边界 case 并提交平台判题；通过后再把 LeetGPU 版本同步到本地 `solutions/triton/matmul.py`。LeetGPU 未通过时，不能进入真实卡 benchmark，也不能把代码标记为完成。
+卡住后再参考 [`reference/triton/matmul/matmul.py`](../reference/triton/matmul/matmul.py)，重点对照 mask、K/N 维步进和输出写回，不直接复制成自己的完成记录。
 
-**Step 3：LeetGPU 通过后上真实卡**
+## 5.6 服务器：真实性能
 
-先在 AutoDL 等真实 NVIDIA GPU 上确认运行正确，再固定配置测性能；之后才手动试 BLOCK，最后使用 autotune。真实卡阶段记录实际 GPU 型号、耗时、GB/s 或 GFLOPS，并和 PyTorch/cuBLAS 对照。
+前置条件：LeetGPU 已通过，并且通过的原始代码已经同步到本地。服务器章节只回答一个问题：这份正确的 kernel 在实际分配的 NVIDIA GPU 上有多快，为什么。
 
-**实现细分：先固定 BLOCK_K，再加入 K 循环，最后 autotune**
+1. 同步通过版本到 AutoDL；
+2. 用 `torch.cuda.get_device_name(0)` 记录实际 GPU 型号；
+3. 先与 `torch.matmul` 对齐正确性，再测固定 shape 的耗时和 GFLOPS；
+4. 最后比较 BLOCK、`num_warps`、`num_stages`，再考虑 autotune；
+5. 把配置、GPU、耗时、GFLOPS 和 PyTorch/cuBLAS 对照写入 README。
 
 **性能调优：autotune**
 
@@ -669,9 +677,9 @@ autotune 在第一次启动时对每个 config 各跑一遍 benchmark，选最�
 - `key=['M','N','K']`：告诉 autotune 哪些运行时参数变化时需要重新调参（不同形状的最优 config 不一样）
 - 用了 autotune 后，启动 kernel **不要再传** BLOCK_M/BLOCK_N/BLOCK_K 这些 constexpr（config 会填）
 
-## 5.6 GFLOPS 怎么算
+### GFLOPS 怎么算
 
-> **前置门槛**：本节 GFLOPS 只记录 LeetGPU #02 通过之后的真实 GPU benchmark；LeetGPU 题目入口是 [Matrix Multiplication](https://leetgpu.com/challenges/matrix-multiplication)，性能形状为 M=8192、N=6144、K=4096。
+> **前置门槛**：这里只记录 LeetGPU #02 通过之后的真实 GPU benchmark；性能形状为 M=8192、N=6144、K=4096。
 
 
 ```text
@@ -691,10 +699,6 @@ torch.matmul 通常能到 250-300 TFLOPS（cuBLAS，大矩阵）
 ```
 
 先和 `torch.matmul` 比，别和自己比。如果差很多，先检查：dtype 是不是 fp16、BLOCK 是不是太小、autotune 有没有生效。
-
-## 5.7 完整 kernel
-
-先看完原理并去 LeetGPU 写题；卡住时再参考 [reference/triton/matmul/matmul.py](../reference/triton/matmul/matmul.py)。它包含 mask 处理（M/N/K 不是 BLOCK 倍数时）和 autotune。
 
 ---
 
