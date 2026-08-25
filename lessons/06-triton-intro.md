@@ -632,6 +632,69 @@ C[64, 64]：4096 个 FP32 accumulator，容量等价 16 KB
 - 本地草稿：[`solutions/triton/matmul.py`](../solutions/triton/matmul.py)；
 - 参考实现：[`reference/triton/matmul/matmul.py`](../reference/triton/matmul/matmul.py)，只在自己提交后对照。
 
+### 当前代码快照（2026-08-26，未通过）
+
+下面就是本轮正在编写的 LeetGPU MatMul 草稿；它直接放在学习计划里，便于回看。当前版本仍有边界 mask、变量名和 `tl.arange` 等问题，不能当作完成实现。
+
+```python
+import torch
+import triton
+import triton.language as tl
+
+
+@triton.jit
+def matrix_multiplication_kernel(
+    a,
+    b,
+    c,
+    M,
+    N,
+    K,
+    BLOCK_M: tl.constexpr = 64,
+    BLOCK_N: tl.constexpr = 32,
+    BLOCK_K: tl.constexpr = 64,
+):
+    pid_m = tl.program_id(0)
+    pid_k = tl.program_id(1)
+
+    offset_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+    offset_k = pid_k * BLOCK_K + tl.arange(0, BLOCK_K)
+    acc = tl.zeros((BLOCK_M, BLOCK_K), dtype=tl.float32)
+
+    # A[M, N] @ B[N, K] = C[M, K]，N 是归约维度。
+    for n in range(0, N, BLOCK_N):
+        offset_n = tl.arange(n, n + BLOCK_N)
+
+        ptr_a = a + offset_m[:, None] * N + offset_n[None, :]
+        ptr_b = b + offset_n[:, None] * K + offset_k[None, :]
+        ptr_c = c + offset_m[:, None] * K + offset_k[None, :]
+
+        mask_a = (offset_m[:, None] < M) & (offset_n[None, :] < N)
+
+        tile_a = tl.load(ptr_a)
+        tile_b = tl.load(ptr_b)
+        acc += tl.dot(tile_a, tile_b)
+
+    tl.store(ptr_c, acc)
+
+
+def solve(a: torch.Tensor, b: torch.Tensor, c: torch.Tensor,
+          M: int, N: int, K: int):
+    BLOCK_M = 64
+    BLOCK_N = 32
+    BLOCK_K = 64
+    grid = (triton.cdiv(M, BLOCK_M), triton.cdiv(K, BLOCK_K))
+
+    matrix_multiplication_kernel[grid](
+        a, b, c, M, N, K,
+        BLOCK_M=BLOCK_M,
+        BLOCK_N=BLOCK_N,
+        BLOCK_K=BLOCK_K,
+        num_warps=4,
+        num_stages=3,
+    )
+```
+
 这一章只做一件事：在 LeetGPU 题目编辑器里把正确性做通，并保存当次平台代码。顺序就是：
 
 1. 选择 Triton，保留平台 `solve` 接口；

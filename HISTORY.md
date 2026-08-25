@@ -7,6 +7,7 @@
 
 ## 0. 最后更新
 
+- 2026-08-26（按反馈把当前 MatMul LeetGPU 草稿代码快照直接放进 Lesson 06 的 5.5 章节；明确标注未通过，后续修正后继续更新快照）
 - 2026-08-26（根据反馈简化 Lesson 06 MatMul 结构：删除无独立价值的“5.5 三步走”，改为“5.5 LeetGPU：正确性与代码归档”和“5.6 服务器：真实性能”两章；题目、当前代码、归档要求直接放进对应章节）
 - 2026-08-26（补齐 LeetGPU 代码归档规则：学习计划必须一眼列出题目入口、通过后的原始 `solve`/kernel、本地 `solutions/` 文件和正确性/性能证据；发现 Vector Add 当前本地文件是 wrapper，LeetGPU 原始代码未单独归档，已明确标记缺失，不再把 wrapper 当作平台版本）
 - 2026-08-26（用户继续编写 Triton MatMul LeetGPU 题：已写 M/K 输出 tile、FP32 accumulator、N 维归约循环和 `tl.dot` 框架；尚未通过。当前问题为 `offset/offs` 命名不一致、`tl.arange` 归约偏移写法、A/B load 边界 mask、C 的 masked store 与循环作用域；通过前不做本地同步或 AutoDL benchmark）
