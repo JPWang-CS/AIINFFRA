@@ -558,6 +558,34 @@ BLOCK 尺寸注意：
 - BLOCK_K 太小（比如 8）会让 dot 退化成低效路径，还浪费 shared memory 带宽
 - 常见组合：`BLOCK_M=128, BLOCK_N=128, BLOCK_K=32/64`
 
+### A100 资源推导：先选一个可解释的初始 tile
+
+LeetGPU #02 使用 `A[M, N] @ B[N, K] = C[M, K]`。本小节约定：`BLOCK_M` 为输出行 tile，`BLOCK_N` 为归约 tile，`BLOCK_K` 为输出列 tile。先从保守配置开始：
+
+```python
+BLOCK_M = 64
+BLOCK_N = 32
+BLOCK_K = 64
+num_warps = 4
+num_stages = 3
+```
+
+`num_warps=4` 表示一个 Triton program（约等于一个 CUDA block/CTA）使用 4 个 warp，即 128 threads。A100 每个 SM 最多有 2048 threads、64 warps、65536 个 32-bit registers 和 164 KB shared memory；所以若只看 thread/warp 上限，一个 SM 最多能驻留 `2048 / 128 = 16` 个此类 block。实际数目还要受 registers 和 shared memory 限制。
+
+每个 program 的单轮归约涉及三个逻辑 tile：
+
+```text
+A[64, 32]：2048 个 FP32 值，容量等价 8 KB
+B[32, 64]：2048 个 FP32 值，容量等价 8 KB
+C[64, 64]：4096 个 FP32 accumulator，容量等价 16 KB
+```
+
+不要把上述数字相加后当作某个硬件资源池的占用。C accumulator 是跨所有 N 维循环持续存活的线程私有状态，其**最低** register 需求是 4096 个 32-bit registers/block，或在 128 threads/block 下平均 32 registers/thread。A/B 是当前轮输入；它们会以 register fragment 形式进入 `tl.dot`，编译器也可能为其分配 shared-memory pipeline/staging，精确用量不能仅由源代码推得。
+
+一份完整 A+B 输入 tile 的容量等价为 16 KB。若把 `num_stages=3` 粗略看作三份完整 A/B pipeline buffer，则 shared-memory 估算为约 48 KB/block，进而得到约 `floor(164 / 48) = 3 block/SM`、12 warp/SM、384 threads/SM。这只是帮助建立直觉的估算；Triton 的真实 shared-memory、register 与 resident-block 数必须以编译结果和 profiler 为准。
+
+因此 `64×64` 的目的不是追求 16 block/SM，而是让 C accumulator、A/B fragment、地址和临时变量有足够余量，降低 register spill 风险。正确性通过后，再比较 `128×32×64` 与 `128×32×128`，用 A100 的 GFLOPS、registers per thread、shared memory per block 和 occupancy 选择最终配置。
+
 ## 5.5 三步走：先正确，再性能
 
 每个 Triton 算子都严格按这条验收链路推进：
