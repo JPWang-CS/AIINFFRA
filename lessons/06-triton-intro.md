@@ -26,7 +26,7 @@ Agent 只做 review，不代写代码。本课最后有参考答案，但要求�
 | 算子 | LeetGPU 题目 | LeetGPU 原始代码 | 本地代码 / 证据 | 当前状态 |
 |---|---|---|---|---|
 | Triton Vector Add | [LeetGPU Challenges](https://leetgpu.com/challenges)（题目入口未单独归档） | **未单独保存**；当前仓库文件不是平台原始 `solve` | [`solutions/triton/vector_add.py`](../solutions/triton/vector_add.py) · [benchmark 记录](../solutions/triton/README.md#vector-add-benchmark) | `GPU_VALIDATED`，原始代码归档缺失 |
-| Triton MatMul | [Matrix Multiplication](https://leetgpu.com/challenges/matrix-multiplication) · [题目规格](https://github.com/HaoyangPing0324/LeetGPU/blob/main/problems/02_Matrix_Multiplication.md) | 当前在 LeetGPU 编写，尚未通过，暂不能归档完成版本 | [`solutions/triton/matmul.py`](../solutions/triton/matmul.py) 是当前草稿，不代表通过版本 | 🚧 编写中 |
+| Triton MatMul | [Matrix Multiplication](https://leetgpu.com/challenges/matrix-multiplication) · [题目规格](https://github.com/HaoyangPing0324/LeetGPU/blob/main/problems/02_Matrix_Multiplication.md) | [`matmul_leetgpu_wip.py`](../solutions/triton/matmul_leetgpu_wip.py)：LeetGPU 原始代码快照，尚未通过 | [`matmul.py`](../solutions/triton/matmul.py)：服务器验证适配版；两者不混写 | 🚧 编写中 |
 
 以后新算子通过 LeetGPU 后，先补齐这一张索引和对应代码文件，再进入服务器 benchmark；如果用户只提供了平台代码但尚未同步，进度必须明确写“已通过、代码待归档”。
 
@@ -626,13 +626,13 @@ C[64, 64]：4096 个 FP32 accumulator，容量等价 16 KB
 
 **当前代码入口**：
 
-- LeetGPU 原始 `solve`：当前仍在编写，尚未通过，暂未形成完成版；
-- 本地草稿：[`solutions/triton/matmul.py`](../solutions/triton/matmul.py)；
+- LeetGPU 原始 `solve` 快照：[`solutions/triton/matmul_leetgpu_wip.py`](../solutions/triton/matmul_leetgpu_wip.py)，回家可直接继续提交；
+- 服务器验证版：[`solutions/triton/matmul.py`](../solutions/triton/matmul.py)，包含正确性测试和 GFLOPS benchmark；
 - 参考实现：[`reference/triton/matmul/matmul.py`](../reference/triton/matmul/matmul.py)，只在自己提交后对照。
 
 ### 当前代码快照（2026-08-26，未通过）
 
-下面就是本轮正在编写的 LeetGPU 编辑器草稿；它直接放在学习计划里，便于回看。**来源：LeetGPU 编辑器快照；当前尚未同步覆盖本地 `solutions/triton/matmul.py`。**当前版本仍有边界 mask、变量名和 `tl.arange` 等问题，不能当作完成实现。
+下面就是本轮正在编写的 LeetGPU 编辑器草稿；它直接放在学习计划里，便于回看。**来源：LeetGPU 编辑器快照；原始代码已保存到 `solutions/triton/matmul_leetgpu_wip.py`，服务器适配版单独保存到 `solutions/triton/matmul.py`。**当前版本尚未通过，不能当作完成实现。
 
 ```python
 import torch
@@ -661,19 +661,21 @@ def matrix_multiplication_kernel(
 
     # A[M, N] @ B[N, K] = C[M, K]，N 是归约维度。
     for n in range(0, N, BLOCK_N):
-        offset_n = tl.arange(n, n + BLOCK_N)
+        offset_n = n + tl.arange(0, BLOCK_N)
 
         ptr_a = a + offset_m[:, None] * N + offset_n[None, :]
         ptr_b = b + offset_n[:, None] * K + offset_k[None, :]
-        ptr_c = c + offset_m[:, None] * K + offset_k[None, :]
 
         mask_a = (offset_m[:, None] < M) & (offset_n[None, :] < N)
+        mask_b = (offset_n[:, None] < N) & (offset_k[None, :] < K)
 
-        tile_a = tl.load(ptr_a)
-        tile_b = tl.load(ptr_b)
+        tile_a = tl.load(ptr_a, mask=mask_a, other=0.0)
+        tile_b = tl.load(ptr_b, mask=mask_b, other=0.0)
         acc += tl.dot(tile_a, tile_b)
 
-    tl.store(ptr_c, acc)
+    mask_c = (offset_m[:, None] < M) & (offset_k[None, :] < K)
+    ptr_c = c + offset_m[:, None] * K + offset_k[None, :]
+    tl.store(ptr_c, acc, mask=mask_c)
 
 
 def solve(a: torch.Tensor, b: torch.Tensor, c: torch.Tensor,
@@ -698,10 +700,10 @@ def solve(a: torch.Tensor, b: torch.Tensor, c: torch.Tensor,
 1. 选择 Triton，保留平台 `solve` 接口；
 2. 先写单 tile，再加入 N 维归约循环；
 3. 覆盖非整除边界，提交并通过；
-4. 将通过的原始 `solve`/kernel 保存到 `solutions/triton/matmul.py`；
+4. 未通过时保存为 `solutions/triton/matmul_leetgpu_wip.py`；通过后再将当次原始 `solve`/kernel 归档为 `solutions/triton/matmul.py`；
 5. 在本课索引、`PATH.md` 和 `solutions/triton/README.md` 填上题目、代码和通过状态。
 
-LeetGPU 未通过时，不进入服务器性能测试，也不能把本地文件标记为完成。
+默认情况下 LeetGPU 未通过时不进入服务器性能测试；如果平台暂时无法运行，可以使用单独的服务器适配版验证，但服务器结果不能替代 `LEETGPU_PASS`。
 
 ### 参考实现（提交通过后再看）
 
@@ -823,7 +825,7 @@ torch.matmul 通常能到 250-300 TFLOPS（cuBLAS，大矩阵）
 
 - [ ] matmul 单 tile 跑通（BLOCK_K=K）
 - [ ] matmul K 循环跑通，记录 GFLOPS
-- [ ] MatMul LeetGPU 原始 `solve` 归档到 `solutions/triton/matmul.py`
+- [ ] MatMul LeetGPU 原始 `solve` 通过后归档到 `solutions/triton/matmul.py`（当前 WIP 快照见 `matmul_leetgpu_wip.py`）
 - [ ] autotune 至少给出一组调参结论（哪个 config 快、为什么）
 
 ---

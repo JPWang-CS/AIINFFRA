@@ -9,7 +9,8 @@
 **现在 · B1 — Triton MatMul（LeetGPU 编写中）**
 
 > **课程**：[Lesson 06 — Triton 入门](./lessons/06-triton-intro.md)  
-> **代码**：[solutions/triton/matmul.py](./solutions/triton/matmul.py) — 用户当前 LeetGPU 草稿：tiled GEMM、`tl.dot`、N 维归约循环；尚未通过
+> **LeetGPU 代码**：[solutions/triton/matmul_leetgpu_wip.py](./solutions/triton/matmul_leetgpu_wip.py) — 用户当前平台代码快照，tiled GEMM、`tl.dot`、N 维归约循环；尚未通过
+> **服务器代码**：[solutions/triton/matmul.py](./solutions/triton/matmul.py) — 独立的正确性与 GFLOPS 验证版，不代表 LeetGPU 已通过
 > **前置已满足**：A5 Flash Attn 读码 ✅（[阅读笔记](./notes/cuda/flash-attn-reading.md)）
 
 **已完成**：
@@ -52,7 +53,7 @@
 | A1-A4 CUDA 算子线 | ✅ | [HISTORY.md 存档](./HISTORY.md)（含 A4 三版 softmax 细节）· [周报 07-22](./weekly/2026-07-22-softmax-online.md) |
 | A5 Flash Attn 读码 | ✅ 2026-08-10 | [阅读笔记](./notes/cuda/flash-attn-reading.md)（3 个 `__syncthreads` + 2 个真实 bug） |
 | 理论线已掌握 | online softmax · parallel reduce · FA1 机制 | [algorithms README](./notes/algorithms/README.md) |
-| B1 当前 | Vector Add 已通过 LeetGPU 并完成 AutoDL RTX 3090 benchmark（840.1 GB/s），但原始 LeetGPU `solve` 尚未单独归档；MatMul 正在 LeetGPU 编写 | [Lesson 06](./lessons/06-triton-intro.md) · [matmul.py](./solutions/triton/matmul.py) · [Triton README](./solutions/triton/README.md) |
+| B1 当前 | Vector Add 已通过 LeetGPU 并完成 AutoDL RTX 3090 benchmark（840.1 GB/s），但原始 LeetGPU `solve` 尚未单独归档；MatMul LeetGPU 快照已保存，平台当前无法运行，服务器版待验证 | [Lesson 06](./lessons/06-triton-intro.md) · [LeetGPU 快照](./solutions/triton/matmul_leetgpu_wip.py) · [服务器版](./solutions/triton/matmul.py) · [Triton README](./solutions/triton/README.md) |
 
 ---
 

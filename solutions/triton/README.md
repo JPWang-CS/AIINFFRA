@@ -8,7 +8,8 @@
 | 文件 | 功能 | LeetGPU 原始代码 | 验收 |
 |------|------|------|------|
 | [`vector_add.py`](./vector_add.py) | Triton Vector Add | **原始 LeetGPU `solve` 尚未单独归档**；当前文件是本地验证/benchmark wrapper | `GPU_VALIDATED`：LeetGPU 通过；AutoDL RTX 3090，Triton 840.1 GB/s，`torch.add` 843.0 GB/s |
-| [`matmul.py`](./matmul.py) | Triton tiled GEMM | `WIP`：LeetGPU 编写中，尚未通过，暂无完成版 | 正确性、GFLOPS 待验收 |
+| [`matmul_leetgpu_wip.py`](./matmul_leetgpu_wip.py) | Triton tiled GEMM：LeetGPU 原始代码快照 | `WIP`：保存平台代码，回家继续提交/验证 | 尚未通过，不能标记 `LEETGPU_PASS` |
+| [`matmul.py`](./matmul.py) | Triton tiled GEMM：服务器验证版 | 基于 LeetGPU 草稿的本地适配，不是平台原始归档 | 正确性、GFLOPS 待服务器验收 |
 | `fused_softmax.py` | Triton Fused Softmax | 正确性 + 提速 |
 | `flash_attention.py` | Triton Flash Attention | 对比 PyTorch ref + 显存/速度 |
 | `gqa.py` / `fused_mlp.py` | 模型结构组件 | 正确性 + autotune |
@@ -16,6 +17,8 @@
 ### MatMul LeetGPU 入口
 
 当前 MatMul 先做 [LeetGPU Matrix Multiplication](https://leetgpu.com/challenges/matrix-multiplication)，题目规格见 [02_Matrix_Multiplication.md](https://github.com/HaoyangPing0324/LeetGPU/blob/main/problems/02_Matrix_Multiplication.md)。要求是 FP32、row-major、A(M×N) × B(N×K) = C(M×K)，性能形状为 M=8192、N=6144、K=4096。LeetGPU 通过后，再把代码同步到本地，最后在真实 GPU 上记录 GFLOPS。
+
+当前 LeetGPU 页面无法运行，因此两份代码分开保存：[`matmul_leetgpu_wip.py`](./matmul_leetgpu_wip.py) 是回家继续提交的原始代码快照；[`matmul.py`](./matmul.py) 是服务器正确性和性能验证版。服务器结果不能替代 LeetGPU 通过状态。
 
 ### Vector Add benchmark
 
