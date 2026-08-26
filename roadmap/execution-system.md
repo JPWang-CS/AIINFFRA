@@ -121,6 +121,8 @@ correctness:
 
 一次只改变一个变量，例如 tile、`num_warps`、stages、fusion、bucket size、parallel degree。
 
+普通算子完成一次有证据的瓶颈定位即可；MatMul、Softmax/Norm、FlashAttention、Fused MLP/GQA 四类性能锚点继续执行 [P0–P8 极致性能阶梯](gpu-foundations.md#32-核心算子的极致性能阶梯)。每次改动必须记录“硬件假设 → 代码旋钮 → 预期 counter → 实测”，不能只保存 autotune 最优参数。
+
 | 场景 | 工具 | 至少回答 |
 |------|------|----------|
 | 单 kernel | Nsight Compute | throughput、occupancy、stall、memory transaction |

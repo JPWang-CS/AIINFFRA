@@ -57,9 +57,11 @@ Triton Vector Add
 | `HISTORY.md` | 跨电脑恢复、历史记录 |
 | `roadmap/` | 学习计划 |
 | `roadmap/execution-system.md` | 统一学习与实验流程 |
+| `roadmap/gpu-foundations.md` | GPU 底层架构与全栈性能优化主课 |
 | `roadmap/multi-node-multi-gpu.md` | 多机多卡专项路线 |
 | `lessons/` | 主题课 |
 | `notes/` | 知识笔记 |
+| `notes/cuda/README.md` | GPU/CUDA 底层知识入口 |
 | `notes/llm/` | 大模型内容聚合板块 |
 | `notes/llm/operator-building.md` | 最新模型与算子构建能力路线 |
 | `solutions/` | 自己写的代码 |
@@ -84,6 +86,7 @@ Triton Vector Add
 8. 用户定节奏，不强制跳级。
 9. 状态统一使用：`WIP`（编写中）、`LEETGPU_PASS`（平台通过且原始代码已归档）、`GPU_VALIDATED`（真实 GPU 已验证）、`COMPLETE`（所有归档与面试材料齐全）。未满足门槛不得写成完成。
 10. 每个当前可执行单元的 lesson 必须有一张可直达的单元卡：题目入口、当前代码快照/路径、LeetGPU 状态、服务器状态、下一步；lesson 里的代码必须标明来源（本地文件 / LeetGPU 编辑器快照）和是否已同步，不能把两份 WIP 混写成同一版本。
+11. GPU 硬件知识必须和算子优化绑定：写清“硬件机制 → 代码旋钮 → 预期 profiler 变化 → 实测”。MatMul、Softmax/Norm、FlashAttention、Fused MLP/GQA 是极致性能锚点，只有 `LEETGPU_PASS` 后才进入服务器 P0–P8 优化阶梯；不得用不同精度、单一有利 shape 或无证据的 autotune 数字冒充优化成果。
 
 ---
 

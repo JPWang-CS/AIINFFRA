@@ -151,7 +151,18 @@ A5 Flash Attention 注释笔记
 
 目标：用 CUDA 建立 kernel 底层感觉，为理解 Triton 生成代码打底。
 
-GPU 体系补强入口：[GPU 基础补强路线](gpu-foundations.md) · [GPU 架构详解](../notes/cuda/gpu-architecture-layers.md)。按当前算子 Just-in-Time 穿插：B1 MatMul 学 Ampere/SM/内存与 Tensor Core 基础，B2 Softmax 学 profiling，B3 FlashAttention 再学 Hopper TMA/cluster；Blackwell 先做增量认知，不改变当前 Triton 主线。
+GPU 体系主课入口：[GPU 底层架构与性能优化课程](gpu-foundations.md) · [GPU 架构知识图](../notes/cuda/gpu-architecture-layers.md)。它覆盖整机拓扑、执行模型、SM 微架构、存储、数值/Tensor Core、编译指令、性能模型、runtime、库与集群九层，但按当前算子 Just-in-Time 解锁，不另开第三条主线：B1 MatMul 学 Ampere/SM/内存/Tensor Core/roofline，B2 Softmax 学 reduction 与 profiling，B3 FlashAttention 学 async pipeline/Hopper，M3 学 runtime/CUDA Graph，M4 学互联和通信；Blackwell 做架构增量。
+
+### 底层能力挂载表
+
+| PATH 节点 | 同步解锁的 GPU 底层能力 | 实验证据 |
+|-----------|--------------------------|----------|
+| B1 MatMul | G1 执行、G2 SM、G3 存储、G4 数值/Tensor Core、G6 roofline | tile/warp/stage sweep；IEEE/TF32 对照；Nsight Compute |
+| B2 Softmax | divergence、reduction、SFU、register pressure、memory-bound | shared/warp reduction；GB/s；stall/traffic |
+| B3 FlashAttention | async copy、double buffer、warp specialization、Hopper TMA/WGMMA | Q/K/V 数据流；pipeline/timeline；HBM traffic |
+| B5 GQA/MLP | fusion、layout、quantized MMA | 中间张量 bytes；融合前后性能/误差 |
+| M3 推理 | launch、stream、CUDA Graph、allocator、KV cache locality | Nsight Systems；TTFT/TPOT/tokens/s |
+| M4 分布式 | PCIe/NVLink/NVSwitch/NIC、P2P、NCCL、RDMA | topology；algbw/busbw；scaling efficiency |
 
 ### 分阶段任务表
 
@@ -164,12 +175,16 @@ GPU 体系补强入口：[GPU 基础补强路线](gpu-foundations.md) · [GPU �
 | LayerNorm/RMSNorm | 读参考、写一版 | 融合 residual |
 | Profiling | Nsight Systems/Compute 能跑 | roofline 分析 |
 
+### 极致性能锚点
+
+不是每道题都无限优化。全路线固定四类锚点：MatMul、Softmax/Norm、FlashAttention、Fused MLP/GQA。它们完成 LeetGPU 正确性和原始代码归档后，在服务器阶段执行 [P0–P8 极致性能阶梯](gpu-foundations.md#32-核心算子的极致性能阶梯)：建立同语义强 baseline 与实测 roof，逐层优化 tile/layout/pipeline/instruction/fusion，并用 Nsight 和 PTX/SASS 证明原因，最后做多 shape 回归和停止判断。其余算子只要求可靠 baseline 与一次瓶颈解释，避免主线被无底洞式调参拖住。
+
 ### 分阶段完成定义
 
 每个算子都要满足：
-- [ ] 正确性：和 CPU/PyTorch 对齐
+- [ ] LeetGPU：平台正确性通过且原始 `solve`/kernel 已归档；无对应题面时使用明确的 reference gate
 - [ ] 性能：有 GFLOPS 或 GB/s
-- [ ] 瓶颈：能说清 memory-bound 还是 compute-bound
+- [ ] 瓶颈：用 workload/roofline/profiler 证据区分 launch、memory、compute、latency/resource
 - [ ] 面试：能讲 1 分钟优化过程
 
 ---
@@ -496,8 +511,8 @@ Adam v：28 GB
 | 周 | 焦点 | 最小产出 |
 |----|------|---------|
 | W1 | Triton vec add + matmul | 两个 kernel 跑通 |
-| W2 | matmul 调优 + fused softmax | BLOCK 实验 + softmax 提速 |
-| W3 | Triton Flash Attention | 正确性 + 显存 |
+| W2 | MatMul 极致调优 + fused softmax | 同精度强 baseline、roofline、BLOCK/warp/stage、Nsight 证据 |
+| W3 | Triton Flash Attention | 正确性、显存、官方强 baseline、pipeline 分析 |
 | W4 | causal + GQA/fused MLP | 正确性 + autotune |
 | W5 | Triton benchmark 复盘 | 性能数字汇总 |
 | W6 | A4/A5 背景收尾 | 1-pass 落盘或 A5 注释 |

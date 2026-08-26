@@ -21,7 +21,7 @@ A4/A5 作为背景收尾，不抢主线。
 | 文件 | 对应阶段 | 内容 |
 |------|---------|------|
 | [execution-system.md](execution-system.md) | 所有阶段 | 知识→自写→LeetGPU/reference→服务器→profiler→归档的统一流程 |
-| [gpu-foundations.md](gpu-foundations.md) | A/B 挂载 | GPU 系统/芯片/SM/指令层与架构代际补强 |
+| [gpu-foundations.md](gpu-foundations.md) | A–D 挂载 | GPU 硬件→优化动作映射、P0–P8 极致性能阶梯，以及整机/SM/存储/指令/runtime/集群课程；[知识入口](../notes/cuda/README.md) |
 | [multi-node-multi-gpu.md](multi-node-multi-gpu.md) | D 多机多卡 | topology、NCCL、RDMA、DeviceMesh、混合并行、EP 与排障 |
 | [ai-infra-curriculum.md](ai-infra-curriculum.md) | PATH 全路线 | 全阶段执行计划、任务、验收、关键数字（含 M2.5 算子构建） |
 | [vllm.md](vllm.md) | C 推理系统 | vLLM 源码深挖：PagedAttention、Scheduler、量化 |
@@ -33,7 +33,8 @@ A4/A5 作为背景收尾，不抢主线。
 ## 全景
 
 ```text
-算子线：A CUDA -> B Triton -> C 推理 -> D 分布式 -> E Agent
+算子/系统线：A CUDA -> B Triton -> C 推理 -> D 分布式 -> E Agent
+GPU 底层挂载：执行/SM/存储 -> Tensor Core/指令 -> pipeline/profiling -> runtime/互联
 理论线：GPU优化 · 量化 · 注意力 · 模型架构 · 推理技术 · 训练/并行
 ```
 

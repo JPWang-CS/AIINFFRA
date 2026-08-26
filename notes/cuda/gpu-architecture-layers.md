@@ -129,6 +129,20 @@ active blocks/SM 取以下上限的最小值：每 SM 最大 blocks/warps/thread
 
 CUDA Core 数不能单独预测性能；还取决于 dtype、指令吞吐、Tensor Core、内存、occupancy 和 workload。
 
+### GEMM 的精度路径决定计算单元
+
+“输入 tensor 的 dtype 是 `float32`”并不能单独决定走哪一种硬件路径；还要看 matmul 的内部精度策略。Ampere 上应把下面三种情况分开记录：
+
+| 路径 | 乘法输入精度 | 主要计算单元 | 累加器 | Triton / PyTorch 控制 | 适用场景 |
+|---|---|---|---|---|---|
+| IEEE FP32 | FP32，23-bit mantissa | FP32 CUDA pipelines | FP32 | `tl.dot(..., input_precision="ieee")`；PyTorch `"highest"` / 禁用 TF32 | 数值 reference、严格容差 |
+| TF32 | FP32 range、10-bit mantissa | Tensor Cores 的 TF32 MMA | FP32 | Triton 默认/TF32 路径；PyTorch `"high"` 或允许 TF32 | 多数 DL FP32 GEMM 的吞吐优先路径 |
+| FP16 / BF16 | 低精度输入 | Tensor Cores | 常用 FP32 | 输入 dtype + `tl.dot` | 训练/推理主流路径，需按模型容差验证 |
+
+TF32 不是把 tensor 存成新 dtype：FP32 tensor 保持原样，硬件在矩阵乘内部只读取 10 位 mantissa，保留 FP32 的 8-bit exponent 范围，并以 FP32 累加。它用较小的输入精度交换 Tensor Core 吞吐，因此必须同时报告误差和性能；不能把 TF32 GFLOPS 与 IEEE FP32 GFLOPS 当作同一精度成绩。
+
+对当前 Triton MatMul 的诊断顺序固定：先在 IEEE FP32 下调 tile/warp/stage，确认数据复用与资源占用；再固定最快 tile，单独开启 TF32 对照 `max_abs_error`、`max_rel_error` 和吞吐。若结果变快，先归因于“计算单元从 CUDA FP32 pipeline 转到 Tensor Core”，不能误归因给 tile 优化。
+
 ```text
 基础：load tile -> __syncthreads -> compute -> __syncthreads
 Ampere：cp.async / pipeline，让 global->shared 与计算重叠
@@ -197,7 +211,71 @@ CUDA C++ / Triton -> PTX 虚拟 ISA -> SASS 目标机器指令
 
 ---
 
-## 8. Profiling 因果链
+## 8. 底层微架构概念：学到能解释 counter
+
+| 概念 | 应理解到的深度 | 常见误区 | 对应证据 |
+|------|----------------|----------|----------|
+| latency / throughput | 单条指令延迟与流水线单位时间吞吐不是一回事 | 只背“某指令几 cycle” | dependency stall、instruction throughput |
+| ILP / TLP | 单 warp 独立指令与多 resident warp 都能隐藏延迟 | occupancy 越高一定越快 | eligible warps、issue slot、active warps |
+| scheduler / SMSP | SM 内有多个调度分区，warp 归属与资源分区依架构 | 把 SM 当作一个串行核心 | issue active、warp state |
+| scoreboarding | 数据/内存依赖未满足时 warp 不能发射下一条相关指令 | 所有 stall 都是“访存慢” | long/short scoreboard + source correlation |
+| predication/divergence | 分支可用 predication 或分路径执行，代价取决于路径与 active lanes | 看到 `if` 就等于严重 divergence | branch efficiency、active threads |
+| memory transaction/sector | warp 请求会按地址、宽度、cache/架构组成 transaction | 固定背“一次一定 128B” | requested vs transferred bytes、sectors |
+| bank conflict | shared bank 映射造成同 warp 串行，广播是例外 | 把所有 shared 慢归因于 conflict | shared wavefront/conflict metrics |
+| register allocation | 编译器按 thread 分配，block 粒度量化影响驻留；过量会 spill | 只看源码变量数量 | ptxas、registers/thread、local traffic |
+| wave / tail effect | grid 的最后一波 block 不能填满所有 SM | 只看平均 occupancy | waves per SM、grid size、timeline |
+| cache locality | L1/L2 命中既由访问模式也由并发工作集决定 | 命中率越高必然越快 | hit rate + bytes + latency + reuse distance |
+| memory consistency | barrier、fence、atomic 的同步实体/作用域/可见性不同 | `__syncthreads()` 等于全 GPU 同步 | racecheck、thread scope、happens-before |
+
+学习边界：这些概念用于建立“源码 → 指令 → pipeline → counter”的解释链，不要求背未公开的内部实现。不同架构的 scheduler 数量、吞吐和资源量必须查对应 Compute Capability 文档或实测。
+
+### 一次 kernel 的完整路径
+
+```text
+CPU launch
+-> grid blocks 排队
+-> block 取得 SM 的 register/shared/warp slots
+-> warp scheduler 选择 ready warp
+-> 指令发往 FP/INT/LDST/SFU/Tensor pipeline
+-> load 经 L1/L2 到 HBM，或访问 shared/register
+-> block 完成释放资源
+-> 最后一波 block 决定 tail
+```
+
+这条路径对应五类性能上限：launch/并行度不足、memory、compute instruction、dependency latency、resource/tail。优化前先确定属于哪一类。
+
+---
+
+## 9. 全栈优化层次
+
+```text
+数学/算法：少算、少存、允许什么误差
+    ↓
+图与算子：融合、重计算、布局、稀疏
+    ↓
+kernel：tile、warp、memory、pipeline、instruction
+    ↓
+runtime：launch、stream、graph、allocator、copy overlap
+    ↓
+单机多卡：P2P、NVLink/NVSwitch、collective
+    ↓
+多节点：NIC、PCIe/NUMA、RDMA、topology、parallel strategy
+```
+
+越靠上潜在收益通常越大，但数值和系统约束也越强；越靠下越接近硬件，收益更依赖具体架构。不能用 kernel 微优化补救错误的算法工作量，也不能用 NCCL 参数补救不合理的并行策略。
+
+| 症状 | 第一检查层 | 常见下一步 |
+|------|------------|------------|
+| 小 shape GPU 很闲 | launch/runtime | fusion、batch、CUDA Graph |
+| HBM 接近上限 | 算法/数据复用 | fusion、tiling、少读写 |
+| compute 接近上限 | 数值/指令 | Tensor Core、低精度、减少非 MMA 指令 |
+| 两者都低 | 并行/依赖/资源 | grid、stall、divergence、spill、tail |
+| 单卡快、多卡慢 | 通信/拓扑 | collective 量、overlap、rank placement |
+| 换 GPU 后退化 | 代际/资源 | 重查 CC、tile、shared/register、指令路径 |
+
+---
+
+## 10. Profiling 因果链
 
 ```text
 FLOPs/bytes -> 理论瓶颈 -> launch/tile/access
@@ -218,7 +296,7 @@ FLOPs/bytes -> 理论瓶颈 -> launch/tile/access
 
 ---
 
-## 9. 精选资料
+## 11. 精选资料
 
 官方主线：
 
@@ -234,12 +312,14 @@ GitHub：
 - [NVIDIA/cuda-samples](https://github.com/NVIDIA/cuda-samples)：`deviceQuery`、bandwidth、async copy、cooperative groups。
 - [siboehm/SGEMM_CUDA](https://github.com/siboehm/SGEMM_CUDA)：coalescing、shared/register tiling、vectorized access。
 - [NVIDIA/cutlass](https://github.com/NVIDIA/cutlass)：Hopper/Blackwell 的 hierarchy、CuTe layout、TMA/WGMMA，暂不作为入门作业。
+- [NVIDIA/cccl](https://github.com/NVIDIA/cccl)：CUB、Thrust、libcu++；归约、scan、同步与通用 primitive 的生产级参考。
+- [NVIDIA/accelerated-computing-hub](https://github.com/NVIDIA/accelerated-computing-hub)：NVIDIA 维护的 GPU 教学资源入口。
 - PMPP 第 4–6 章：compute architecture、memory architecture、performance considerations。
 
 官方文档定事实，GitHub 学实验和读码，目标 GPU benchmark 负责最终结论。
 
 ---
 
-## 10. 一分钟口径
+## 12. 一分钟口径
 
 > CUDA 的软件层次是 grid、可选 cluster、block、warp、thread，硬件核心是 SM。一个 block 驻留在一个 SM，SM 将 threads 划成 32-thread warps，通过多个 resident warps 隐藏延迟。性能同时取决于 HBM/L2/shared/register 的数据复用，以及 register/shared 对 occupancy 的限制。Ampere强化异步 global-to-shared pipeline，Hopper加入 TMA、block cluster 和 DSM，Blackwell进一步强化 Tensor Core、低精度和 TMEM。跨架构原则稳定，但最佳 tile 和资源配置必须按 Compute Capability 与真实 GPU 重新 profile。
