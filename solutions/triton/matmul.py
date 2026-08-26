@@ -9,6 +9,16 @@ import triton
 import triton.language as tl
 
 
+# 保持 IEEE FP32 不变，只比较 tile、warp 和 pipeline stage 的影响。
+BENCHMARK_CONFIGS = (
+    ("baseline-64x32x64-w4-s3", dict(block_m=64, block_n=32, block_k=64, num_warps=4, num_stages=3)),
+    ("m128-128x32x64-w4-s3", dict(block_m=128, block_n=32, block_k=64, num_warps=4, num_stages=3)),
+    ("mn128-128x32x128-w4-s3", dict(block_m=128, block_n=32, block_k=128, num_warps=4, num_stages=3)),
+    ("n64-128x64x128-w4-s3", dict(block_m=128, block_n=64, block_k=128, num_warps=4, num_stages=3)),
+    ("k256-128x32x256-w8-s3", dict(block_m=128, block_n=32, block_k=256, num_warps=8, num_stages=3)),
+)
+
+
 @triton.jit
 def matrix_multiplication_kernel(
     a,
@@ -53,7 +63,7 @@ def matrix_multiplication_kernel(
 
         tile_a = tl.load(ptr_a, mask=mask_a, other=0.0)
         tile_b = tl.load(ptr_b, mask=mask_b, other=0.0)
-        acc += tl.dot(tile_a, tile_b)
+        acc += tl.dot(tile_a, tile_b, input_precision="ieee")
 
     tl.store(ptr_c, acc, mask=mask_c)
 
@@ -65,11 +75,14 @@ def solve(
     M: int,
     N: int,
     K: int,
+    *,
+    block_m: int = 64,
+    block_n: int = 32,
+    block_k: int = 64,
+    num_warps: int = 4,
+    num_stages: int = 3,
 ):
-    """LeetGPU-compatible entry point: write c = a @ b in-place."""
-    block_m = 64
-    block_n = 32
-    block_k = 64
+    """Write c = a @ b in-place; keyword options are for server-side sweeps."""
     grid = (triton.cdiv(M, block_m), triton.cdiv(K, block_k))
 
     matrix_multiplication_kernel[grid](
@@ -82,13 +95,13 @@ def solve(
         BLOCK_M=block_m,
         BLOCK_N=block_n,
         BLOCK_K=block_k,
-        num_warps=4,
-        num_stages=3,
+        num_warps=num_warps,
+        num_stages=num_stages,
     )
 
 
-def _check_correctness() -> None:
-    """Check irregular shapes so every load/store mask is exercised."""
+def _check_correctness(name: str, config: dict[str, int]) -> bool:
+    """Check a config on irregular shapes so every load/store mask is exercised."""
     cases = [
         (1, 1, 1),
         (64, 32, 64),
@@ -96,16 +109,22 @@ def _check_correctness() -> None:
         (257, 513, 129),
     ]
 
-    for M, N, K in cases:
-        a = torch.randn((M, N), device="cuda", dtype=torch.float32)
-        b = torch.randn((N, K), device="cuda", dtype=torch.float32)
-        out = torch.empty((M, K), device="cuda", dtype=torch.float32)
-        solve(a, b, out, M, N, K)
-        torch.cuda.synchronize()
+    try:
+        for M, N, K in cases:
+            a = torch.randn((M, N), device="cuda", dtype=torch.float32)
+            b = torch.randn((N, K), device="cuda", dtype=torch.float32)
+            out = torch.empty((M, K), device="cuda", dtype=torch.float32)
+            solve(a, b, out, M, N, K, **config)
+            torch.cuda.synchronize()
 
-        expected = torch.matmul(a, b)
-        torch.testing.assert_close(out, expected, rtol=1e-2, atol=1e-2)
-        print(f"correctness M={M}, N={N}, K={K}: OK")
+            expected = torch.matmul(a, b)
+            torch.testing.assert_close(out, expected, rtol=1e-2, atol=1e-2)
+    except Exception as error:
+        print(f"{name}: correctness/compile FAILED: {error}")
+        return False
+
+    print(f"{name}: correctness OK ({len(cases)} shapes)")
+    return True
 
 
 def _time_ms(fn, warmup: int = 10, repeats: int = 50) -> float:
@@ -124,14 +143,13 @@ def _time_ms(fn, warmup: int = 10, repeats: int = 50) -> float:
 
 
 def _benchmark() -> None:
-    """Benchmark the LeetGPU performance shape and compare with torch.mm."""
+    """Sweep candidate configs on the LeetGPU shape and compare with torch.mm."""
     M, N, K = 8192, 6144, 4096
     a = torch.randn((M, N), device="cuda", dtype=torch.float32)
     b = torch.randn((N, K), device="cuda", dtype=torch.float32)
     out_triton = torch.empty((M, K), device="cuda", dtype=torch.float32)
     out_torch = torch.empty_like(out_triton)
 
-    triton_ms = _time_ms(lambda: solve(a, b, out_triton, M, N, K))
     torch_ms = _time_ms(lambda: torch.mm(a, b, out=out_torch))
     flops = 2 * M * N * K
 
@@ -140,13 +158,38 @@ def _benchmark() -> None:
 
     print(f"GPU: {torch.cuda.get_device_name(0)}")
     print(f"shape: M={M}, N={N}, K={K}")
-    print(f"Triton: {triton_ms:.3f} ms, {gflops(triton_ms):.1f} GFLOPS")
     print(f"torch.mm: {torch_ms:.3f} ms, {gflops(torch_ms):.1f} GFLOPS")
+
+    results = []
+    for name, config in BENCHMARK_CONFIGS:
+        if not _check_correctness(name, config):
+            continue
+
+        try:
+            triton_ms = _time_ms(
+                lambda config=config: solve(a, b, out_triton, M, N, K, **config)
+            )
+        except Exception as error:
+            print(f"{name}: benchmark FAILED: {error}")
+            continue
+
+        throughput = gflops(triton_ms)
+        ratio = throughput / gflops(torch_ms)
+        results.append((name, triton_ms, throughput, ratio))
+        print(f"{name}: {triton_ms:.3f} ms, {throughput:.1f} GFLOPS, {ratio:.1%} of torch.mm")
+
+    if results:
+        best_name, best_ms, best_gflops, best_ratio = min(results, key=lambda item: item[1])
+        print(
+            f"best: {best_name}, {best_ms:.3f} ms, "
+            f"{best_gflops:.1f} GFLOPS, {best_ratio:.1%} of torch.mm"
+        )
 
 
 if __name__ == "__main__":
     if not torch.cuda.is_available():
         raise SystemExit("需要在有 NVIDIA GPU 的服务器上运行此验证脚本。")
 
-    _check_correctness()
+    # 与服务器本次 IEEE FP32 benchmark 保持一致，避免 PyTorch 对照偷偷使用 TF32。
+    torch.backends.cuda.matmul.allow_tf32 = False
     _benchmark()

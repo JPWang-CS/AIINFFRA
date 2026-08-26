@@ -220,6 +220,8 @@ KV_bytes = 2 * num_kv_heads * head_dim * seq_len * num_layers * dtype_bytes
 | `tl.dot` | 矩阵乘 | 手写 GEMM |
 | `tl.constexpr` | 编译期常量 | 模板参数 |
 
+调试配套课：[Lesson 07 — Triton Debugging](../lessons/07-triton-debugging.md)。先用最小 case、interpreter、打印和断言定位正确性，再使用 `compute-sanitizer` 查 GPU 内存问题，最后才做 GFLOPS/occupancy 调优。
+
 ### B1：Vector Add
 
 目标：理解 grid、block、mask。

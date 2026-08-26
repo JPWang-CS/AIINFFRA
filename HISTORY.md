@@ -7,6 +7,7 @@
 
 ## 0. 最后更新
 
+- 2026-08-26（Triton MatMul 服务器适配版在 AutoDL RTX 3090 完成 4 组边界正确性测试；IEEE FP32 下 Triton 24.681 ms / 16,706 GFLOPS，torch.mm 17.120 ms / 24,083.3 GFLOPS，约为 69.4%；LeetGPU 页面仍无法运行，原始代码保持 WIP）
 - 2026-08-26（全盘重构章节规则：统一 WIP → LEETGPU_PASS → GPU_VALIDATED → COMPLETE 状态；lesson 只保留 LeetGPU 与服务器两段；校准 A1/A3 代码产物错配、旧状态、运行环境和链接问题）
 - 2026-08-26（复盘发现 MatMul lesson 内嵌的是用户本轮 LeetGPU 编辑器快照，而 `solutions/triton/matmul.py` 仍是另一份 WIP；已在章节标明来源和未同步状态，后续通过后以原始平台版本统一归档）
 - 2026-08-26（全盘校准发现两处旧产物错配：A1 CUDA Vector Add 只有 Lesson 01 代码快照、没有本地归档；PATH 原 A3 的 float tiled 名称实际对应 fp16 文件，已改为 A3=fp16 已完成、A3+=float 计划项）

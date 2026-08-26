@@ -10,7 +10,7 @@
 
 > **课程**：[Lesson 06 — Triton 入门](./lessons/06-triton-intro.md)  
 > **LeetGPU 代码**：[solutions/triton/matmul_leetgpu_wip.py](./solutions/triton/matmul_leetgpu_wip.py) — 用户当前平台代码快照，tiled GEMM、`tl.dot`、N 维归约循环；尚未通过
-> **服务器代码**：[solutions/triton/matmul.py](./solutions/triton/matmul.py) — 独立的正确性与 GFLOPS 验证版，不代表 LeetGPU 已通过
+> **服务器代码**：[solutions/triton/matmul.py](./solutions/triton/matmul.py) — 独立验证版，RTX 3090 正确性通过，16,706 GFLOPS；不代表 LeetGPU 已通过
 > **前置已满足**：A5 Flash Attn 读码 ✅（[阅读笔记](./notes/cuda/flash-attn-reading.md)）
 
 **已完成**：
@@ -21,9 +21,9 @@
 
 **当前已完成**：已写出 M/K 输出 tile、FP32 accumulator、沿 N 维的 tile 循环，以及 A/B 指针计算和 `tl.dot` 累加框架。
 
-**当前待修正**：统一 `offset/offs` 变量名；用 `offset_n + tl.arange(0, BLOCK_N)` 生成归约 tile；为 A/B `tl.load` 添加边界 mask 和 `other=0.0`；将 C 指针和 masked `tl.store` 放到循环外。当前仍未通过 LeetGPU，不能同步为完成版本，也不能开始 AutoDL benchmark。
+**当前状态**：服务器适配版已在 RTX 3090 通过 4 组正确性测试并达到 16,706 GFLOPS（`torch.mm` 24,083.3 GFLOPS）；LeetGPU 页面仍无法运行，原始平台代码继续保持 `WIP`，不能同步为 `LEETGPU_PASS`。
 
-**接下来**：在 [LeetGPU Matrix Multiplication](https://leetgpu.com/challenges/matrix-multiplication)（#02）完成边界处理并通过；通过后同步本地，再上实际分配的 GPU 记录 GFLOPS。
+**接下来**：回家在 [LeetGPU Matrix Multiplication](https://leetgpu.com/challenges/matrix-multiplication)（#02）继续提交 [`matmul_leetgpu_wip.py`](./solutions/triton/matmul_leetgpu_wip.py)；平台恢复后通过并归档，再对服务器版做 BLOCK/warp/stage 调优。
 
 **今日进度（2026-08-26）**：已从 LeetGPU 空模板开始编写 MatMul。当前草稿已包含输出 tile、FP32 累加器、N 维归约循环和 `tl.dot` 框架；尚未通过，下一步先补齐 mask、边界写回和变量/指针作用域。
 

@@ -9,7 +9,7 @@
 |------|------|------|------|
 | [`vector_add.py`](./vector_add.py) | Triton Vector Add | **原始 LeetGPU `solve` 尚未单独归档**；当前文件是本地验证/benchmark wrapper | `GPU_VALIDATED`：LeetGPU 通过；AutoDL RTX 3090，Triton 840.1 GB/s，`torch.add` 843.0 GB/s |
 | [`matmul_leetgpu_wip.py`](./matmul_leetgpu_wip.py) | Triton tiled GEMM：LeetGPU 原始代码快照 | `WIP`：保存平台代码，回家继续提交/验证 | 尚未通过，不能标记 `LEETGPU_PASS` |
-| [`matmul.py`](./matmul.py) | Triton tiled GEMM：服务器验证版 | 基于 LeetGPU 草稿的本地适配，不是平台原始归档 | 正确性、GFLOPS 待服务器验收 |
+| [`matmul.py`](./matmul.py) | Triton tiled GEMM：服务器验证版 | 基于 LeetGPU 草稿的本地适配，不是平台原始归档 | `GPU_VALIDATED`：RTX 3090 正确性通过，16,706 GFLOPS |
 | `fused_softmax.py` | Triton Fused Softmax | 正确性 + 提速 |
 | `flash_attention.py` | Triton Flash Attention | 对比 PyTorch ref + 显存/速度 |
 | `gqa.py` / `fused_mlp.py` | 模型结构组件 | 正确性 + autotune |
@@ -32,10 +32,26 @@ vector_add (2026-08-23)
 
 > 说明：本次 benchmark 验证了 kernel 在 AutoDL 上的正确性和性能；代码归属与运行验证分开记录。
 
+### MatMul benchmark
+
+```text
+matmul (2026-08-26)
+- GPU: NVIDIA GeForce RTX 3090 (AutoDL)
+- shape: M=8192, N=6144, K=4096
+- 正确性: M/N/K = (1,1,1), (64,32,64), (65,33,67), (257,513,129) 全部 OK
+- 精度口径: FP32，tl.dot(input_precision="ieee")，PyTorch allow_tf32=False
+- Triton: 24.681 ms，16,706.0 GFLOPS
+- torch.mm: 17.120 ms，24,083.3 GFLOPS
+- 对比: Triton 为 torch.mm 的约 69.4%，耗时约慢 1.44x
+- 结论: 服务器版正确性通过；初始 tile/config 仍有调优空间
+```
+
+> LeetGPU 页面当前无法运行，因此这组数字只将服务器适配版标记为 `GPU_VALIDATED`；LeetGPU 原始代码仍是 `WIP`，不能标记 `LEETGPU_PASS`。
+
 ## 规则
 
 1. 先看完原理，直接在 LeetGPU 题目编辑器从题目模板开始写，不直接复制 `reference/triton/`。
-2. 两个验收章节：**LeetGPU 正确性与代码归档 → 服务器真实性能**；LeetGPU 未通过或原始代码未归档时，不进入服务器。
+2. 两个验收章节：**LeetGPU 正确性与代码归档 → 服务器真实性能**；默认先过 LeetGPU，平台不可运行时允许用独立服务器适配版验证，但必须分开记录状态。
 3. 每个文件开头写一行说明：算子、版本、关键优化。
 4. 跑不通、没有数字的文件不要标完成；Agent 草稿一律不算完成。
 

@@ -54,7 +54,7 @@
 
 | 阶段 | 课 | 自己写 | 验收 | 参考 | 状态 |
 |:-:|----|--------|------|------|:--:|
-| B1 | [06 triton-intro](./lessons/06-triton-intro.md) | Vector Add：LeetGPU 通过 + AutoDL RTX 3090 benchmark（840.1 GB/s），但原始 LeetGPU `solve` 尚未单独归档 ⚠️；MatMul 为 `WIP`，LeetGPU 原始快照已保存，平台当前无法运行，服务器适配版待验证 | 当前焦点：MatMul；回家继续提交 [`matmul_leetgpu_wip.py`](./solutions/triton/matmul_leetgpu_wip.py)，服务器用 [`matmul.py`](./solutions/triton/matmul.py) 做独立验证；结果不能替代 LeetGPU 状态 | 我的→[vector_add.py](./solutions/triton/vector_add.py) · LeetGPU快照→[matmul_leetgpu_wip.py](./solutions/triton/matmul_leetgpu_wip.py) · 服务器版→[matmul.py](./solutions/triton/matmul.py) · 参考→[matmul.py](./reference/triton/matmul/matmul.py) | 🚧 当前 |
+| B1 | [06 triton-intro](./lessons/06-triton-intro.md) | Vector Add：LeetGPU 通过 + AutoDL RTX 3090 benchmark（840.1 GB/s），但原始 LeetGPU `solve` 尚未单独归档 ⚠️；MatMul LeetGPU 原始快照为 `WIP`，服务器适配版已 `GPU_VALIDATED`（RTX 3090：16,706 GFLOPS） | 当前焦点：MatMul；回家继续提交 [`matmul_leetgpu_wip.py`](./solutions/triton/matmul_leetgpu_wip.py)，服务器结果见 [`matmul.py`](./solutions/triton/matmul.py) 与 README；服务器结果不能替代 LeetGPU 状态 | 我的→[vector_add.py](./solutions/triton/vector_add.py) · LeetGPU快照→[matmul_leetgpu_wip.py](./solutions/triton/matmul_leetgpu_wip.py) · 服务器版→[matmul.py](./solutions/triton/matmul.py) · 参考→[matmul.py](./reference/triton/matmul/matmul.py) | 🚧 当前 |
 | B2 | _按需生成_ | Triton fused softmax | 对比 PyTorch 正确 + 提速 | — | ⏳ |
 | B3 | _按需生成_ | Triton flash attention | 对比 PyTorch ref 正确 | [flash_attn.py](./reference/triton/flash_attention/flash_attn.py) | ⏳ |
 | B4 | _按需生成_ | Triton GQA / fused MLP | 正确性 + autotuning | [activations.cuh](./reference/cuda/include/activations.cuh)（料） | ⏳ |
