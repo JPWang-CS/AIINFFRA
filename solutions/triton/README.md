@@ -9,7 +9,7 @@
 |------|------|------|------|
 | [`vector_add.py`](./vector_add.py) | Triton Vector Add | **原始 LeetGPU `solve` 尚未单独归档**；当前文件是本地验证/benchmark wrapper | `GPU_VALIDATED`：LeetGPU 通过；AutoDL RTX 3090，Triton 840.1 GB/s，`torch.add` 843.0 GB/s |
 | [`matmul_leetgpu_wip.py`](./matmul_leetgpu_wip.py) | Triton tiled GEMM：LeetGPU 原始代码快照 | `WIP`：保存平台代码，回家继续提交/验证 | 尚未通过，不能标记 `LEETGPU_PASS` |
-| [`matmul.py`](./matmul.py) | Triton tiled GEMM：服务器验证版 | 基于 LeetGPU 草稿的本地适配，不是平台原始归档 | `GPU_VALIDATED`：RTX 3090 正确性通过，16,706 GFLOPS |
+| [`matmul.py`](./matmul.py) | Triton tiled GEMM：服务器验证版 | 基于 LeetGPU 草稿的本地适配，不是平台原始归档 | `GPU_VALIDATED`：RTX 3090 正确性通过，最佳 18,713.5 GFLOPS |
 | `fused_softmax.py` | Triton Fused Softmax | 正确性 + 提速 |
 | `flash_attention.py` | Triton Flash Attention | 对比 PyTorch ref + 显存/速度 |
 | `gqa.py` / `fused_mlp.py` | 模型结构组件 | 正确性 + autotune |
@@ -47,6 +47,22 @@ matmul (2026-08-26)
 ```
 
 > LeetGPU 页面当前无法运行，因此这组数字只将服务器适配版标记为 `GPU_VALIDATED`；LeetGPU 原始代码仍是 `WIP`，不能标记 `LEETGPU_PASS`。
+
+### MatMul 配置 sweep（2026-08-26）
+
+固定 IEEE FP32、GPU 和 shape，只比较 tile、warp、stage：
+
+| 配置 | 结果 | 相对 `torch.mm` |
+|---|---:|---:|
+| `64×32×64, w4, s3` | 24.924 ms / 16,542.7 GFLOPS | 68.8% |
+| `128×32×64, w4, s3` | 22.298 ms / 18,491.3 GFLOPS | 76.9% |
+| `128×32×128, w4, s3` | 28.354 ms / 14,541.8 GFLOPS | 60.4% |
+| `128×64×128, w4, s3` | 编译失败：shared memory 需要 131,072 B，硬件上限 101,376 B | — |
+| `128×32×256, w8, s3` | **22.033 ms / 18,713.5 GFLOPS** | **77.8%** |
+
+结论：`BLOCK_M=128, BLOCK_N=32, BLOCK_K=256, num_warps=8, num_stages=3` 是当前测试集最佳配置；相对 baseline 64×32×64，耗时下降约 11.6%，GFLOPS 提升约 13.1%。`BLOCK_N=64` 的配置因 shared memory 超限，说明 tile 和 stages 不能只看算力，还要受片上资源约束。
+
+详细硬件机制、profiler 观察项和后续 P0–P4 优化顺序见：[MatMul 性能分析记录](../../notes/triton/matmul-performance-analysis.md)。
 
 ## 规则
 

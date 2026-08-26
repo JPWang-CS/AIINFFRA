@@ -4,6 +4,8 @@
 因此本文件只能记录服务器正确性/性能，不能标记为 LEETGPU_PASS。
 """
 
+import argparse
+
 import torch
 import triton
 import triton.language as tl
@@ -142,7 +144,7 @@ def _time_ms(fn, warmup: int = 10, repeats: int = 50) -> float:
     return start.elapsed_time(end) / repeats
 
 
-def _benchmark() -> None:
+def _benchmark(selected_config: str | None = None) -> None:
     """Sweep candidate configs on the LeetGPU shape and compare with torch.mm."""
     M, N, K = 8192, 6144, 4096
     a = torch.randn((M, N), device="cuda", dtype=torch.float32)
@@ -160,8 +162,14 @@ def _benchmark() -> None:
     print(f"shape: M={M}, N={N}, K={K}")
     print(f"torch.mm: {torch_ms:.3f} ms, {gflops(torch_ms):.1f} GFLOPS")
 
+    configs = BENCHMARK_CONFIGS
+    if selected_config is not None:
+        configs = tuple(item for item in BENCHMARK_CONFIGS if item[0] == selected_config)
+        if not configs:
+            raise ValueError(f"未知 config: {selected_config}")
+
     results = []
-    for name, config in BENCHMARK_CONFIGS:
+    for name, config in configs:
         if not _check_correctness(name, config):
             continue
 
@@ -187,9 +195,17 @@ def _benchmark() -> None:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Sweep or profile IEEE FP32 Triton MatMul configs.")
+    parser.add_argument(
+        "--config",
+        choices=[name for name, _ in BENCHMARK_CONFIGS],
+        help="只运行一个配置，便于用 Nsight Compute profile。默认 sweep 全部配置。",
+    )
+    args = parser.parse_args()
+
     if not torch.cuda.is_available():
         raise SystemExit("需要在有 NVIDIA GPU 的服务器上运行此验证脚本。")
 
     # 与服务器本次 IEEE FP32 benchmark 保持一致，避免 PyTorch 对照偷偷使用 TF32。
     torch.backends.cuda.matmul.allow_tf32 = False
-    _benchmark()
+    _benchmark(args.config)

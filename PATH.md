@@ -32,9 +32,9 @@
 
 # 算子线（动手）
 
-## A — CUDA 打底（B 级，"读得懂"）
+## A — CUDA 打底（B 级，"读得懂并能解释性能"）
 
-> 目标：能写 tiled GEMM、读懂 Flash Attn CUDA、知道 Triton 底层在干什么。**不深入 tensor core**（那是 ⭐ 可选，见底部）。
+> 目标：能写 tiled GEMM、读懂 Flash Attn CUDA、知道 Triton 底层在干什么。Tensor Core 的数值路径、tile 和 profiler 证据属于必学；手写 MMA/WGMMA/TCGen05 PTX 仍是可选深钻。
 
 | 阶段 | 课 | 自己写 | 验收 | 笔记 | 参考 | 状态 |
 |:-:|----|--------|------|------|------|:--:|
@@ -50,14 +50,16 @@
 
 ## B — Triton 算子（主力工具）
 
-> 目标：用 Triton 写常见 ML 算子，接近手写 CUDA 性能。从这里 Triton 成主力。
+> 目标：用 Triton 写常见 ML 算子，并把硬件知识转化成性能优化。MatMul、Softmax/Norm、FlashAttention、Fused MLP/GQA 是极致性能锚点；从这里 Triton 成主力。
 
 | 阶段 | 课 | 自己写 | 验收 | 参考 | 状态 |
 |:-:|----|--------|------|------|:--:|
-| B1 | [06 triton-intro](./lessons/06-triton-intro.md) | Vector Add：LeetGPU 通过 + AutoDL RTX 3090 benchmark（840.1 GB/s），但原始 LeetGPU `solve` 尚未单独归档 ⚠️；MatMul LeetGPU 原始快照为 `WIP`，服务器适配版已 `GPU_VALIDATED`（RTX 3090：16,706 GFLOPS） | 当前焦点：MatMul；回家继续提交 [`matmul_leetgpu_wip.py`](./solutions/triton/matmul_leetgpu_wip.py)，服务器结果见 [`matmul.py`](./solutions/triton/matmul.py) 与 README；服务器结果不能替代 LeetGPU 状态 | 我的→[vector_add.py](./solutions/triton/vector_add.py) · LeetGPU快照→[matmul_leetgpu_wip.py](./solutions/triton/matmul_leetgpu_wip.py) · 服务器版→[matmul.py](./solutions/triton/matmul.py) · 参考→[matmul.py](./reference/triton/matmul/matmul.py) | 🚧 当前 |
+| B1 | [06 triton-intro](./lessons/06-triton-intro.md) | Vector Add：LeetGPU 通过 + AutoDL RTX 3090 benchmark（840.1 GB/s），但原始 LeetGPU `solve` 尚未单独归档 ⚠️；MatMul LeetGPU 原始快照为 `WIP`，服务器适配版已 `GPU_VALIDATED`（RTX 3090 最佳：18,713.5 GFLOPS） | 当前焦点：MatMul；回家继续提交 [`matmul_leetgpu_wip.py`](./solutions/triton/matmul_leetgpu_wip.py)，服务器 sweep 结果见 [`matmul.py`](./solutions/triton/matmul.py) 与 README；服务器结果不能替代 LeetGPU 状态 | 我的→[vector_add.py](./solutions/triton/vector_add.py) · LeetGPU快照→[matmul_leetgpu_wip.py](./solutions/triton/matmul_leetgpu_wip.py) · 服务器版→[matmul.py](./solutions/triton/matmul.py) · 参考→[matmul.py](./reference/triton/matmul/matmul.py) | 🚧 当前 |
 | B2 | _按需生成_ | Triton fused softmax | 对比 PyTorch 正确 + 提速 | — | ⏳ |
 | B3 | _按需生成_ | Triton flash attention | 对比 PyTorch ref 正确 | [flash_attn.py](./reference/triton/flash_attention/flash_attn.py) | ⏳ |
 | B4 | _按需生成_ | Triton GQA / fused MLP | 正确性 + autotuning | [activations.cuh](./reference/cuda/include/activations.cuh)（料） | ⏳ |
+
+核心锚点通过 LeetGPU 并归档原始实现后，服务器阶段必须执行 [P0–P8 极致性能阶梯](./roadmap/gpu-foundations.md#32-核心算子的极致性能阶梯)：同语义强 baseline、roofline、Nsight、PTX/SASS、多 shape 回归和停止结论缺一不可。
 
 ## C — 推理系统
 
@@ -86,6 +88,7 @@
 ## GPU 优化算法
 | 主题 | 笔记 | 状态 |
 |------|------|:--:|
+| GPU 底层架构与全栈性能优化（G0–G8） | [课程](./roadmap/gpu-foundations.md) · [架构知识图](./notes/cuda/gpu-architecture-layers.md) | `WIP`，随当前算子挂载；B1 当前解锁 SM/内存/Tensor Core/roofline |
 | online softmax（Flash 的心脏） | [online-softmax.md](./notes/algorithms/online-softmax.md) | ✅ |
 | parallel reduce / prefix sum | [parallel-reduce.md](./notes/algorithms/parallel-reduce.md) | ✅ |
 | Norm 的 reduce 模式（LayerNorm/RMSNorm） | [速览](./notes/algorithms/remaining-theory-primer.md) · 料→[layernorm.cu](./reference/cuda/layernorm/layernorm.cu) | 🚧 |
@@ -141,7 +144,7 @@
 
 | 方向 | 内容 | 去哪 |
 |------|------|------|
-| CUDA 深钻 | GEMM vec4 / double buffer / tensor core，各算子钻到峰值 | [roadmap/leetgpu-ladder.md](./roadmap/leetgpu-ladder.md) |
+| CUDA 指令深钻 | 手写 MMA/WGMMA/TCGen05、CuTe layout；只在锚点的 Triton/CUDA 优化完成后进入 | [roadmap/leetgpu-ladder.md](./roadmap/leetgpu-ladder.md) |
 | LeetGPU 刷题 | 75 题完整索引 + 难度分级 | [notes/cuda/leetgpu-challenges.md](./notes/cuda/leetgpu-challenges.md) |
 | 统一实验流程 | 知识→平台验收→服务器→profiler→归档 | [roadmap/execution-system.md](./roadmap/execution-system.md) |
 | 多机多卡 | NCCL、RDMA、DeviceMesh、混合并行与排障 | [roadmap/multi-node-multi-gpu.md](./roadmap/multi-node-multi-gpu.md) |

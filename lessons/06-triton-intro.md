@@ -586,6 +586,25 @@ dtype 决定能不能用 tensor core：
 | fp32 | 默认 TF32（`tl.dot` 的 `input_precision` 控制） | 精度比真 fp32 低，性能接近 fp16 |
 | fp32 (ieee) | 普通 CUDA core 算 | 精度最高，最慢 |
 
+这不是只改一个 Python 参数，而是在选择不同计算单元：
+
+```text
+tl.dot(..., input_precision="ieee")
+→ FP32 CUDA pipeline
+→ 严格 FP32 基线；当前 MatMul 的 16,706 GFLOPS 属于这条路径
+
+tl.dot(..., input_precision="tf32")（或默认允许 TF32 的路径）
+→ Ampere Tensor Core 的 TF32 MMA
+→ FP32 tensor 不改存储格式，但乘法输入只保留 10-bit mantissa，FP32 累加
+```
+
+因此性能实验分两步，不能混写成绩：
+
+1. **先固定 IEEE FP32**：PyTorch 同时关闭 TF32，只 sweep `BLOCK_M/N/K`、`num_warps`、`num_stages`。这回答“代码生成和 tile 是否更好”。
+2. **再单独做 TF32 对照**：保持同一 shape 和 tile，记录相对 IEEE reference 的 `max_abs_error`、`max_rel_error`、耗时和 GFLOPS。这回答“可接受的精度损失能否换来 Tensor Core 吞吐”。
+
+若 TF32 更快，首先归因于计算路径从 CUDA FP32 pipeline 切到 Tensor Core；不能把这部分收益误写成 tile 优化。PyTorch 当前推荐用 `torch.set_float32_matmul_precision("highest" | "high" | "medium")` 控制内部精度；`highest` 是严格 FP32，`high`/`medium` 在支持的 CUDA GPU 上允许 TF32。
+
 BLOCK 尺寸注意：
 
 - `tl.dot` 一般要求每个维度 ≥ 16（tensor core 的 mma 指令最小形状）
@@ -732,7 +751,29 @@ torch.mm: 17.120 ms，24,083.3 GFLOPS
 服务器状态: GPU_VALIDATED（服务器适配版）
 ```
 
-解释：当前版本先保证 tile、边界 mask 和 FP32 语义正确；与 cuBLAS 的差距来自尚未进行 BLOCK、`num_warps`、`num_stages` 和更高效数据搬运的系统调优。
+解释：当前版本先保证 tile、边界 mask 和 FP32 语义正确；初始配置与 cuBLAS 的差距来自 tile、`num_warps`、`num_stages` 和数据搬运仍未充分调优。
+
+### 本次配置 sweep（2026-08-26）
+
+固定 IEEE FP32、RTX 3090 和 `8192×6144×4096`，结果如下：
+
+| 配置 | 结果 | 相对 `torch.mm` |
+|---|---:|---:|
+| `64×32×64, w4, s3` | 24.924 ms / 16,542.7 GFLOPS | 68.8% |
+| `128×32×64, w4, s3` | 22.298 ms / 18,491.3 GFLOPS | 76.9% |
+| `128×32×128, w4, s3` | 28.354 ms / 14,541.8 GFLOPS | 60.4% |
+| `128×64×128, w4, s3` | 编译失败：shared memory 131,072 B > 101,376 B 上限 | — |
+| `128×32×256, w8, s3` | **22.033 ms / 18,713.5 GFLOPS** | **77.8%** |
+
+当前最佳：`BLOCK_M=128, BLOCK_N=32, BLOCK_K=256, num_warps=8, num_stages=3`。相对 `64×32×64` baseline，耗时下降约 11.6%，GFLOPS 提升约 13.1%。`BLOCK_N=64` 的失败是 shared memory 资源超限，不是正确性问题。
+
+详细的硬件机制、profiler 观察项和后续优化顺序见：[MatMul 性能分析记录](../notes/triton/matmul-performance-analysis.md)。
+
+服务器端的调优顺序固定，避免把不同精度下的数字混在一起：
+
+1. 运行服务器验证版 `python solutions/triton/matmul.py`。它先以 IEEE FP32 跑边界正确性，再比较 `64×32×64`、`128×32×64`、`128×32×128`、`128×64×128`、`128×32×256`；每行都和同样关闭 TF32 的 `torch.mm` 比。
+2. 只从 IEEE sweep 中选最快配置，再记录一次 profiler：`ncu --set roofline -o matmul_ieee python solutions/triton/matmul.py --config <最快配置名>`。脚本支持 `--config` 单独运行一组，避免 profile 把 sweep 中的所有 kernel 混进报告。重点看 roofline、registers/thread、shared memory/block、active warps、L1/L2/HBM traffic；occupancy 低本身不是失败，必须和吞吐、stall/traffic 一起解释。
+3. IEEE 的最快配置归档后，复制为单独的 TF32 对照实验：保持 shape/tile 不变，只改 Triton 的 `input_precision` 和 PyTorch 的 MatMul precision，并额外报告相对 IEEE reference 的 `max_abs_error`、`max_rel_error`。TF32 对照是“精度换 Tensor Core 吞吐”，不替代 IEEE FP32 的正确性/性能记录。
 
 **性能调优：autotune**
 
@@ -839,7 +880,8 @@ torch.matmul 通常能到 250-300 TFLOPS（cuBLAS，大矩阵）
 进阶（B1 之后）：
 
 - [ ] matmul 单 tile 跑通（BLOCK_K=K）
-- [x] matmul K 循环跑通，记录 GFLOPS（RTX 3090：16,706.0 GFLOPS）
+- [x] matmul K 循环跑通，记录 GFLOPS（RTX 3090 最佳：18,713.5 GFLOPS）
+- [x] 至少一轮 tile/warp/stage sweep（最佳：128×32×256，w8，s3）
 - [ ] MatMul LeetGPU 原始 `solve` 通过后归档到 `solutions/triton/matmul.py`（当前 WIP 快照见 `matmul_leetgpu_wip.py`）
 - [ ] autotune 至少给出一组调参结论（哪个 config 快、为什么）
 
