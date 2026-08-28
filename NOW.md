@@ -6,26 +6,26 @@
 
 ## 🔧 算子线（动手）
 
-**现在 · B1 — Triton MatMul（LeetGPU 编写中）**
+**现在 · B1 — Triton MatMul（Nsight Compute / P0 性能分析）**
 
 > **课程**：[Lesson 06 — Triton 入门](./lessons/06-triton-intro.md)  
-> **LeetGPU 代码**：[solutions/triton/matmul_leetgpu_wip.py](./solutions/triton/matmul_leetgpu_wip.py) — 用户当前平台代码快照，tiled GEMM、`tl.dot`、N 维归约循环；尚未通过
-> **服务器代码**：[solutions/triton/matmul.py](./solutions/triton/matmul.py) — 独立验证版，RTX 3090 正确性通过，最佳 18,713.5 GFLOPS；不代表 LeetGPU 已通过
+> **LeetGPU 最终代码**：[solutions/triton/matmul_leetgpu.py](./solutions/triton/matmul_leetgpu.py) — 原始 `solve`/kernel 已归档，`LEETGPU_PASS`；SuccessPublicTrace：A100-80GB，2026-08-28 22:23:16，24.54 ms，55.3th percentile
+> **历史 WIP**：[solutions/triton/matmul_leetgpu_wip.py](./solutions/triton/matmul_leetgpu_wip.py) — 默认 TF32 精度失败快照；4×4 case 最大绝对误差 `0.1275177001953125`
+> **服务器代码**：[solutions/triton/matmul.py](./solutions/triton/matmul.py) — 独立验证版，RTX 3090 `GPU_VALIDATED`，最佳 22.033 ms / 18,713.5 GFLOPS；`torch.mm` 24,083.3 GFLOPS，77.8%
 > **前置已满足**：A5 Flash Attn 读码 ✅（[阅读笔记](./notes/cuda/flash-attn-reading.md)）
 
 **已完成**：
 - Triton Vector Add 已由你自己完成并通过 LeetGPU（2026-08-20）
-- AutoDL RTX 3090 正确性通过；Triton 840.1 GB/s，`torch.add` 843.0 GB/s（2026-08-23）
+- AutoDL RTX 3090 正确性通过；Triton 840.1 GB/s，`torch.add` 843.0 GB/s（2026-08-23）；原始 LeetGPU `solve` 归档缺口保持不变
+- Triton MatMul LeetGPU 通过并完成原始代码归档；IEEE 输入精度版本通过，历史默认 TF32 版本保留为失败案例
 
 **执行纪律**：所有新算子只分两章：**LeetGPU 正确性与代码归档 → 服务器真实性能**。记录必须包含题目、原始 `solve`、本地代码、实际 GPU 型号和 benchmark 数字；CUDA 纯 kernel / warp shuffle / 手写 FlashAttention 后置到 Triton 主线完成后，不插队。
 
-**当前已完成**：已写出 M/K 输出 tile、FP32 accumulator、沿 N 维的 tile 循环，以及 A/B 指针计算和 `tl.dot` 累加框架。
+**当前状态**：MatMul 单元总体为 `GPU_VALIDATED`（LeetGPU `LEETGPU_PASS` + RTX 3090 服务器适配版 `GPU_VALIDATED`），尚未 `COMPLETE`；下一步是 Nsight Compute / P0–P8 性能分析与最终口径。
 
-**当前状态**：服务器适配版已在 RTX 3090 通过 4 组正确性测试；IEEE FP32 配置 sweep 最佳为 18,713.5 GFLOPS（`torch.mm` 24,058.3 GFLOPS，77.8%）；LeetGPU 页面仍无法运行，原始平台代码继续保持 `WIP`，不能同步为 `LEETGPU_PASS`。
+**接下来**：在 [LeetGPU Matrix Multiplication](https://leetgpu.com/challenges/matrix-multiplication)（#02）的已通过版本基础上，用服务器适配版的当前最佳配置运行 Nsight Compute，按 P0–P8 记录 profiler 证据、性能变化和最终停止口径。
 
-**接下来**：回家在 [LeetGPU Matrix Multiplication](https://leetgpu.com/challenges/matrix-multiplication)（#02）继续提交 [`matmul_leetgpu_wip.py`](./solutions/triton/matmul_leetgpu_wip.py)；服务器侧下一步用 Nsight Compute 分析当前最佳配置，再决定是否继续调 tile 或进入下一算子。
-
-**今日进度（2026-08-26）**：已从 LeetGPU 空模板开始编写 MatMul。当前草稿已包含输出 tile、FP32 累加器、N 维归约循环和 `tl.dot` 框架；尚未通过，下一步先补齐 mask、边界写回和变量/指针作用域。
+**今日进度（2026-08-28）**：MatMul LeetGPU `SuccessPublicTrace` 已归档为最终版；将 `tl.dot` 指定为 `input_precision='ieee'` 后通过。服务器适配版保留 RTX 3090 既有验证与 sweep 数字，下一步转入 NCU/P0 性能分析。
 
 ---
 
@@ -55,7 +55,7 @@
 | A1-A4 CUDA 算子线 | ✅ | [HISTORY.md 存档](./HISTORY.md)（含 A4 三版 softmax 细节）· [周报 07-22](./weekly/2026-07-22-softmax-online.md) |
 | A5 Flash Attn 读码 | ✅ 2026-08-10 | [阅读笔记](./notes/cuda/flash-attn-reading.md)（3 个 `__syncthreads` + 2 个真实 bug） |
 | 理论线已掌握 | online softmax · parallel reduce · FA1 机制 | [algorithms README](./notes/algorithms/README.md) |
-| B1 当前 | Vector Add 已通过 LeetGPU 并完成 AutoDL RTX 3090 benchmark（840.1 GB/s），但原始 LeetGPU `solve` 尚未单独归档；MatMul LeetGPU 快照已保存，平台当前无法运行，服务器版已完成 IEEE FP32 sweep，最佳 18,713.5 GFLOPS | [Lesson 06](./lessons/06-triton-intro.md) · [性能分析](./notes/triton/matmul-performance-analysis.md) · [LeetGPU 快照](./solutions/triton/matmul_leetgpu_wip.py) · [服务器版](./solutions/triton/matmul.py) |
+| B1 当前 | Vector Add 已通过 LeetGPU 并完成 AutoDL RTX 3090 benchmark（840.1 GB/s），但原始 LeetGPU `solve` 尚未单独归档；MatMul LeetGPU 已 `LEETGPU_PASS`，服务器版已 `GPU_VALIDATED`，单元总体 `GPU_VALIDATED` 但尚未 `COMPLETE` | [Lesson 06](./lessons/06-triton-intro.md) · [性能分析](./notes/triton/matmul-performance-analysis.md) · [LeetGPU 最终版](./solutions/triton/matmul_leetgpu.py) · [历史 WIP](./solutions/triton/matmul_leetgpu_wip.py) · [服务器版](./solutions/triton/matmul.py) |
 
 ---
 

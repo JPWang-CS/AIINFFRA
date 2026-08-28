@@ -8,17 +8,31 @@
 | 文件 | 功能 | LeetGPU 原始代码 | 验收 |
 |------|------|------|------|
 | [`vector_add.py`](./vector_add.py) | Triton Vector Add | **原始 LeetGPU `solve` 尚未单独归档**；当前文件是本地验证/benchmark wrapper | `GPU_VALIDATED`：LeetGPU 通过；AutoDL RTX 3090，Triton 840.1 GB/s，`torch.add` 843.0 GB/s |
-| [`matmul_leetgpu_wip.py`](./matmul_leetgpu_wip.py) | Triton tiled GEMM：LeetGPU 原始代码快照 | `WIP`：保存平台代码，回家继续提交/验证 | 尚未通过，不能标记 `LEETGPU_PASS` |
-| [`matmul.py`](./matmul.py) | Triton tiled GEMM：服务器验证版 | 基于 LeetGPU 草稿的本地适配，不是平台原始归档 | `GPU_VALIDATED`：RTX 3090 正确性通过，最佳 18,713.5 GFLOPS |
+| [`matmul_leetgpu.py`](./matmul_leetgpu.py) | Triton tiled GEMM：LeetGPU 最终原始 `solve`/kernel 归档 | `LEETGPU_PASS`：LeetGPU #02，Triton，2026-08-28；SuccessPublicTrace | A100-80GB，24.54 ms，55.3th percentile |
+| [`matmul_leetgpu_wip.py`](./matmul_leetgpu_wip.py) | Triton tiled GEMM：历史平台代码快照 | 历史 `WIP`：默认 TF32 精度失败案例，保留用于复盘 | 4×4 case 最大绝对误差 `0.1275177001953125`；IEEE 版本后平台通过 |
+| [`matmul.py`](./matmul.py) | Triton tiled GEMM：服务器验证版 | 基于 MatMul 逻辑的本地适配，不是平台原始归档 | `GPU_VALIDATED`：RTX 3090 正确性通过，最佳 22.033 ms / 18,713.5 GFLOPS |
 | `fused_softmax.py` | Triton Fused Softmax | 正确性 + 提速 |
 | `flash_attention.py` | Triton Flash Attention | 对比 PyTorch ref + 显存/速度 |
 | `gqa.py` / `fused_mlp.py` | 模型结构组件 | 正确性 + autotune |
 
 ### MatMul LeetGPU 入口
 
-当前 MatMul 先做 [LeetGPU Matrix Multiplication](https://leetgpu.com/challenges/matrix-multiplication)，题目规格见 [02_Matrix_Multiplication.md](https://github.com/HaoyangPing0324/LeetGPU/blob/main/problems/02_Matrix_Multiplication.md)。要求是 FP32、row-major、A(M×N) × B(N×K) = C(M×K)，性能形状为 M=8192、N=6144、K=4096。LeetGPU 通过后，再把代码同步到本地，最后在真实 GPU 上记录 GFLOPS。
+当前 MatMul 题目是 [LeetGPU Matrix Multiplication](https://leetgpu.com/challenges/matrix-multiplication)，题目规格见 [02_Matrix_Multiplication.md](https://github.com/HaoyangPing0324/LeetGPU/blob/main/problems/02_Matrix_Multiplication.md)。要求是 FP32、row-major、A(M×N) × B(N×K) = C(M×K)，性能形状为 M=8192、N=6144、K=4096。平台原始代码已归档为 [`matmul_leetgpu.py`](./matmul_leetgpu.py)，服务器适配版继续独立记录真实性能。
 
-当前 LeetGPU 页面无法运行，因此两份代码分开保存：[`matmul_leetgpu_wip.py`](./matmul_leetgpu_wip.py) 是回家继续提交的原始代码快照；[`matmul.py`](./matmul.py) 是服务器正确性和性能验证版。服务器结果不能替代 LeetGPU 通过状态。
+LeetGPU 最终代码与服务器适配版分开保存：[`matmul_leetgpu.py`](./matmul_leetgpu.py) 是通过后原样归档的原始平台 `solve`/kernel；[`matmul.py`](./matmul.py) 是服务器正确性和性能验证版。历史 [`matmul_leetgpu_wip.py`](./matmul_leetgpu_wip.py) 保留默认 TF32 导致精度失败的过程证据。
+
+### MatMul LeetGPU 归档结果
+
+```text
+题目: #02 Matrix Multiplication
+语言: Triton
+状态: LEETGPU_PASS
+SuccessPublicTrace: A100-80GB，2026-08-28 22:23:16，24.54 ms，55.3th percentile
+精度修正: tl.dot(..., input_precision='ieee')
+失败证据: 历史 WIP 默认 TF32 在 4×4 case 的最大绝对误差为 0.1275177001953125
+```
+
+`matmul_leetgpu.py` 以 `matmul_leetgpu_wip.py` 为精确基线，仅增加归档说明，并将 `tl.dot(tile_a, tile_b)` 指定为 IEEE 输入精度；kernel 和 `solve` 逻辑没有其他变化。
 
 ### Vector Add benchmark
 
@@ -46,7 +60,7 @@ matmul (2026-08-26)
 - 结论: 服务器版正确性通过；初始 tile/config 仍有调优空间
 ```
 
-> LeetGPU 页面当前无法运行，因此这组数字只将服务器适配版标记为 `GPU_VALIDATED`；LeetGPU 原始代码仍是 `WIP`，不能标记 `LEETGPU_PASS`。
+> 这组数字属于服务器适配版，状态为 `GPU_VALIDATED`；LeetGPU 原始版本已另行归档为 `LEETGPU_PASS`。MatMul 单元总体为 `GPU_VALIDATED`，尚未 `COMPLETE`，下一步是 Nsight Compute / P0–P8 性能分析与最终口径。
 
 ### MatMul 配置 sweep（2026-08-26）
 

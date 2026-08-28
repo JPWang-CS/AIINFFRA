@@ -120,6 +120,18 @@ Triton Vector Add
 | Triton 实现指导 | 使用 `triton-guide` skill |
 | 最新算子构建 | 使用 `operator-building` skill，参考 `notes/llm/operator-building.md` |
 
+## Sol 规划、Luna Max 落地
+
+- 所有委派先读取并遵守全局 `C:\Users\yq\.codex\skills\adaptive-agent-orchestration\SKILL.md`；不限制固定Agent数量，按当前主线内的可运行任务、实际进度、写集冲突和剩余收益动态扩缩。多个Agent只能并行服务同一当前主线，不得借此并行多个大计划。
+
+- 主代理固定使用 `gpt-5.6-sol`，负责读取 `AGENTS.md` / `HISTORY.md` / `PATH.md` / `NOW.md`，完成学习路线判断、实现规划、任务拆分、技术裁决和最终验收。
+- 除纯问答、概念解释、简单状态查询和无法独立拆分的小任务外，代码编写与修改、编译、测试、benchmark、日志整理和文档落地默认委派给 `gpt-5.6-luna` 子代理，推理强度固定为 `max`。
+- Sol 给 Luna 的任务必须注明目标文件、当前基线、允许修改范围、正确性与性能验收标准；涉及 CUDA/Triton 时，先模拟编译与运行路径，再由 Luna 实施。
+- Luna 必须保留用户已有改动，完成后返回实际差异、执行命令、测试或 benchmark 结果以及未验证项。Sol 负责复核，不重复实现；验证失败时把具体问题返给 Luna 修正。
+- 原有学习规则继续优先：一次只推进一个主线；未经用户明确要求，不修改 `PATH.md` / `NOW.md`；LeetGPU 与真实 GPU 状态不得虚报。
+- 子代理不可用或连续失败时，Sol 可降级执行，但必须在最终交付中说明，不得创建用户可见的新任务冒充子代理。
+- 子代理默认使用有界上下文；CUDA/Triton编译、远程benchmark等慢任务按其阶段事件评估，不因单次等待超时直接终止。连续两次审计均无状态、产物、命令或性能输出变化时才判停滞，缩小未完成范围重试一次；结束后立即关闭Agent释放槽位。
+
 ---
 
 ## 完成任务后的动作

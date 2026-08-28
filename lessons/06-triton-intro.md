@@ -2,7 +2,7 @@
 
 > 主题：从零写第一个 Triton kernel：Vector Add → MatMul，并完成"正确性 → 性能 → 记录"闭环
 > 前置：建议先完成 [Lesson 05](05-flash-attn-reading.md)（理解 tiling 和 online softmax）；如果当前主线直接进 Triton，也可以先写 vec_add 再补 A5
-> 状态：🚧 当前主线（B1），详细任务见 [roadmap/ai-infra-curriculum.md](../roadmap/ai-infra-curriculum.md)
+> 状态：`GPU_VALIDATED` 当前主线（B1）；MatMul 尚未 `COMPLETE`，详细任务见 [roadmap/ai-infra-curriculum.md](../roadmap/ai-infra-curriculum.md)
 > 范围：本课只做 B1（vec_add + matmul）。Softmax / Flash Attention / GQA 是后面的课，不要一次学完。
 
 📚 **本课重点知识库**：
@@ -26,9 +26,9 @@ Agent 只做 review，不代写代码。本课最后有参考答案，但要求�
 | 算子 | LeetGPU 题目 | LeetGPU 原始代码 | 本地代码 / 证据 | 当前状态 |
 |---|---|---|---|---|
 | Triton Vector Add | [LeetGPU Challenges](https://leetgpu.com/challenges)（题目入口未单独归档） | **未单独保存**；当前仓库文件不是平台原始 `solve` | [`solutions/triton/vector_add.py`](../solutions/triton/vector_add.py) · [benchmark 记录](../solutions/triton/README.md#vector-add-benchmark) | `GPU_VALIDATED`，原始代码归档缺失 |
-| Triton MatMul | [Matrix Multiplication](https://leetgpu.com/challenges/matrix-multiplication) · [题目规格](https://github.com/HaoyangPing0324/LeetGPU/blob/main/problems/02_Matrix_Multiplication.md) | [`matmul_leetgpu_wip.py`](../solutions/triton/matmul_leetgpu_wip.py)：LeetGPU 原始代码快照，尚未通过 | [`matmul.py`](../solutions/triton/matmul.py)：服务器验证适配版，RTX 3090 正确性 + 16,706 GFLOPS | LeetGPU `WIP`；服务器 `GPU_VALIDATED` |
+| Triton MatMul | [Matrix Multiplication](https://leetgpu.com/challenges/matrix-multiplication) · [题目规格](https://github.com/HaoyangPing0324/LeetGPU/blob/main/problems/02_Matrix_Multiplication.md) | [`matmul_leetgpu.py`](../solutions/triton/matmul_leetgpu.py)：通过后归档的 LeetGPU 原始 `solve`/kernel；[`matmul_leetgpu_wip.py`](../solutions/triton/matmul_leetgpu_wip.py) 为历史 TF32 失败快照 | [`matmul.py`](../solutions/triton/matmul.py)：服务器验证适配版，RTX 3090 最佳 22.033 ms / 18,713.5 GFLOPS | LeetGPU `LEETGPU_PASS`；服务器 `GPU_VALIDATED`；单元总体 `GPU_VALIDATED` |
 
-以后新算子通过 LeetGPU 后，先补齐这一张索引和对应代码文件，再进入服务器 benchmark；如果平台不可运行，可以使用独立服务器适配版，但必须明确标记为“LeetGPU 未验证、服务器已验证”。
+以后新算子通过 LeetGPU 后，先补齐这一张索引和对应代码文件，再进入服务器 benchmark；平台代码与服务器适配版始终分开记录来源和状态。
 
 ---
 
@@ -36,10 +36,11 @@ Agent 只做 review，不代写代码。本课最后有参考答案，但要求�
 
 | 阶段 | 做什么 | 产出 | 验收 |
 |---|---|---|---|
-| LeetGPU | [5.5 LeetGPU：正确性与代码归档](#55-leetgpu正确性与代码归档) | 题目通过、原始 `solve`、本地代码、lesson 快照 | 当前 MatMul `WIP`，尚未通过 |
-| 服务器 | [5.6 服务器：真实性能](#56-服务器真实性能) | 实际 GPU 型号、正确性复核、GFLOPS、配置对比 | 本次平台不可运行，服务器适配版已验证 |
+| LeetGPU | [5.5 LeetGPU：正确性与代码归档](#55-leetgpu正确性与代码归档) | 题目通过、原始 `solve`、本地代码、lesson 快照 | `LEETGPU_PASS`：A100-80GB，24.54 ms，55.3th percentile |
+| 服务器 | [5.6 服务器：真实性能](#56-服务器真实性能) | 实际 GPU 型号、正确性复核、GFLOPS、配置对比 | `GPU_VALIDATED`：RTX 3090 已验证 |
+| 下一步 | Nsight Compute / P0–P8 性能分析 | profiler 证据、优化结论、最终口径 | 单元尚未 `COMPLETE` |
 
-> 本课只看这两张门：LeetGPU 门没过，不进入服务器；代码没归档，不标记平台完成。
+> 本课只看这两张门：LeetGPU 通过并归档，服务器真实 GPU 已验证；MatMul 下一步进入 Nsight Compute / P0–P8，尚未标记 `COMPLETE`。
 
 ---
 
@@ -645,13 +646,21 @@ C[64, 64]：4096 个 FP32 accumulator，容量等价 16 KB
 
 **当前代码入口**：
 
-- LeetGPU 原始 `solve` 快照：[`solutions/triton/matmul_leetgpu_wip.py`](../solutions/triton/matmul_leetgpu_wip.py)，回家可直接继续提交；
+- LeetGPU 最终原始 `solve`/kernel 归档：[`solutions/triton/matmul_leetgpu.py`](../solutions/triton/matmul_leetgpu.py)，状态 `LEETGPU_PASS`；
+- 历史 TF32 失败快照：[`solutions/triton/matmul_leetgpu_wip.py`](../solutions/triton/matmul_leetgpu_wip.py)，仅用于复盘，不能代表当前平台版本；
 - 服务器验证版：[`solutions/triton/matmul.py`](../solutions/triton/matmul.py)，包含正确性测试和 GFLOPS benchmark；
 - 参考实现：[`reference/triton/matmul/matmul.py`](../reference/triton/matmul/matmul.py)，只在自己提交后对照。
 
-### 当前代码快照（2026-08-26，未通过）
+### 当前单元卡（2026-08-28）
 
-下面就是本轮正在编写的 LeetGPU 编辑器草稿；它直接放在学习计划里，便于回看。**来源：LeetGPU 编辑器快照；原始代码已保存到 `solutions/triton/matmul_leetgpu_wip.py`，服务器适配版单独保存到 `solutions/triton/matmul.py`。**当前版本尚未通过，不能当作完成实现。
+| 项目 | 当前状态 |
+|------|------|
+| LeetGPU | `LEETGPU_PASS`：SuccessPublicTrace，A100-80GB，2026-08-28 22:23:16，24.54 ms，55.3th percentile |
+| 服务器 | `GPU_VALIDATED`：`solutions/triton/matmul.py` 已在 RTX 3090 完成正确性与性能验证 |
+| 单元总体 | `GPU_VALIDATED`，尚未 `COMPLETE` |
+| 下一步 | Nsight Compute / P0–P8 性能分析与最终口径 |
+
+下面是通过后的 LeetGPU 原始代码快照，来源为 [`solutions/triton/matmul_leetgpu.py`](../solutions/triton/matmul_leetgpu.py)，已与平台版本同步。历史 [`solutions/triton/matmul_leetgpu_wip.py`](../solutions/triton/matmul_leetgpu_wip.py) 保留默认 TF32 精度失败过程：4×4 case 最大绝对误差为 `0.1275177001953125`；指定 IEEE 输入精度后平台通过。
 
 ```python
 import torch
@@ -690,7 +699,7 @@ def matrix_multiplication_kernel(
 
         tile_a = tl.load(ptr_a, mask=mask_a, other=0.0)
         tile_b = tl.load(ptr_b, mask=mask_b, other=0.0)
-        acc += tl.dot(tile_a, tile_b)
+        acc += tl.dot(tile_a, tile_b, input_precision='ieee')
 
     mask_c = (offset_m[:, None] < M) & (offset_k[None, :] < K)
     ptr_c = c + offset_m[:, None] * K + offset_k[None, :]
@@ -714,23 +723,23 @@ def solve(a: torch.Tensor, b: torch.Tensor, c: torch.Tensor,
     )
 ```
 
-这一章只做一件事：在 LeetGPU 题目编辑器里把正确性做通，并保存当次平台代码。顺序就是：
+这一单元的 LeetGPU 正确性门已完成，最终原始代码已保存为 [`solutions/triton/matmul_leetgpu.py`](../solutions/triton/matmul_leetgpu.py)。归档口径如下：
 
 1. 选择 Triton，保留平台 `solve` 接口；
 2. 先写单 tile，再加入 N 维归约循环；
 3. 覆盖非整除边界，提交并通过；
-4. 未通过时保存为 `solutions/triton/matmul_leetgpu_wip.py`；通过后再将当次原始 `solve`/kernel 归档为 `solutions/triton/matmul.py`；
+4. 归档当次原始 `solve`/kernel 为 `solutions/triton/matmul_leetgpu.py`，只将 `tl.dot` 的输入精度指定为 IEEE；
 5. 在本课索引、`PATH.md` 和 `solutions/triton/README.md` 填上题目、代码和通过状态。
 
-默认情况下 LeetGPU 未通过时不进入服务器性能测试；如果平台暂时无法运行，可以使用单独的服务器适配版验证，但服务器结果不能替代 `LEETGPU_PASS`。
+历史 `solutions/triton/matmul_leetgpu_wip.py` 是默认 TF32 的失败快照，不覆盖、不替代最终归档；服务器结果仍与平台结果分开记录。
 
-### 参考实现（提交通过后再看）
+### 参考实现（只用于对照）
 
 卡住后再参考 [`reference/triton/matmul/matmul.py`](../reference/triton/matmul/matmul.py)，重点对照 mask、K/N 维步进和输出写回，不直接复制成自己的完成记录。
 
 ## 5.6 服务器：真实性能
 
-标准前置条件是 LeetGPU 已通过，并且通过的原始代码已经同步到本地。本次因 LeetGPU 页面无法运行，使用单独的服务器适配版做独立验证；服务器结果不替代 LeetGPU 状态。
+LeetGPU #02 已通过且原始代码已经同步到本地；服务器使用单独的适配版做真实性能验证。两条证据分别记账，MatMul 单元总体状态为 `GPU_VALIDATED`，尚未 `COMPLETE`。
 
 1. 同步通过版本到 AutoDL；
 2. 用 `torch.cuda.get_device_name(0)` 记录实际 GPU 型号；
@@ -798,7 +807,7 @@ autotune 在第一次启动时对每个 config 各跑一遍 benchmark，选最�
 
 ### GFLOPS 怎么算
 
-> **记录口径**：标准路径要求 LeetGPU #02 通过；本次因平台无法运行，明确记录为服务器适配版 benchmark。性能形状为 M=8192、N=6144、K=4096。
+> **记录口径**：LeetGPU #02 已通过并完成原始代码归档；下列性能数字明确属于服务器适配版 benchmark。性能形状为 M=8192、N=6144、K=4096。
 
 
 ```text
@@ -882,7 +891,9 @@ torch.matmul 通常能到 250-300 TFLOPS（cuBLAS，大矩阵）
 - [ ] matmul 单 tile 跑通（BLOCK_K=K）
 - [x] matmul K 循环跑通，记录 GFLOPS（RTX 3090 最佳：18,713.5 GFLOPS）
 - [x] 至少一轮 tile/warp/stage sweep（最佳：128×32×256，w8，s3）
-- [ ] MatMul LeetGPU 原始 `solve` 通过后归档到 `solutions/triton/matmul.py`（当前 WIP 快照见 `matmul_leetgpu_wip.py`）
+- [x] MatMul LeetGPU 原始 `solve`/kernel 已归档到 [`solutions/triton/matmul_leetgpu.py`](../solutions/triton/matmul_leetgpu.py)，状态 `LEETGPU_PASS`
+- [x] MatMul 服务器适配版 [`solutions/triton/matmul.py`](../solutions/triton/matmul.py) 已在 RTX 3090 `GPU_VALIDATED`
+- [ ] Nsight Compute / P0–P8 性能分析与最终口径（因此单元尚未 `COMPLETE`）
 - [ ] autotune 至少给出一组调参结论（哪个 config 快、为什么）
 
 ---

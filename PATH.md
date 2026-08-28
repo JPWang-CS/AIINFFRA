@@ -54,7 +54,7 @@
 
 | 阶段 | 课 | 自己写 | 验收 | 参考 | 状态 |
 |:-:|----|--------|------|------|:--:|
-| B1 | [06 triton-intro](./lessons/06-triton-intro.md) | Vector Add：LeetGPU 通过 + AutoDL RTX 3090 benchmark（840.1 GB/s），但原始 LeetGPU `solve` 尚未单独归档 ⚠️；MatMul LeetGPU 原始快照为 `WIP`，服务器适配版已 `GPU_VALIDATED`（RTX 3090 最佳：18,713.5 GFLOPS） | 当前焦点：MatMul；回家继续提交 [`matmul_leetgpu_wip.py`](./solutions/triton/matmul_leetgpu_wip.py)，服务器 sweep 结果见 [`matmul.py`](./solutions/triton/matmul.py) 与 README；服务器结果不能替代 LeetGPU 状态 | 我的→[vector_add.py](./solutions/triton/vector_add.py) · LeetGPU快照→[matmul_leetgpu_wip.py](./solutions/triton/matmul_leetgpu_wip.py) · 服务器版→[matmul.py](./solutions/triton/matmul.py) · 参考→[matmul.py](./reference/triton/matmul/matmul.py) | 🚧 当前 |
+| B1 | [06 triton-intro](./lessons/06-triton-intro.md) | Vector Add：LeetGPU 通过 + AutoDL RTX 3090 benchmark（840.1 GB/s），但原始 LeetGPU `solve` 尚未单独归档 ⚠️；MatMul LeetGPU 原始代码已 `LEETGPU_PASS`，服务器适配版已 `GPU_VALIDATED` | 当前主线仍为 MatMul；LeetGPU 归档为 [`matmul_leetgpu.py`](./solutions/triton/matmul_leetgpu.py)，SuccessPublicTrace（A100-80GB，2026-08-28 22:23:16，24.54 ms，55.3th percentile）；服务器 sweep 见 [`matmul.py`](./solutions/triton/matmul.py) 与 README；MatMul 单元总体 `GPU_VALIDATED`，尚未 `COMPLETE`，下一步 Nsight Compute / P0–P8 | 我的→[vector_add.py](./solutions/triton/vector_add.py) · LeetGPU最终版→[matmul_leetgpu.py](./solutions/triton/matmul_leetgpu.py) · 历史TF32失败快照→[matmul_leetgpu_wip.py](./solutions/triton/matmul_leetgpu_wip.py) · 服务器版→[matmul.py](./solutions/triton/matmul.py) · 参考→[matmul.py](./reference/triton/matmul/matmul.py) | GPU_VALIDATED 当前 |
 | B2 | _按需生成_ | Triton fused softmax | 对比 PyTorch 正确 + 提速 | — | ⏳ |
 | B3 | _按需生成_ | Triton flash attention | 对比 PyTorch ref 正确 | [flash_attn.py](./reference/triton/flash_attention/flash_attn.py) | ⏳ |
 | B4 | _按需生成_ | Triton GQA / fused MLP | 正确性 + autotuning | [activations.cuh](./reference/cuda/include/activations.cuh)（料） | ⏳ |
@@ -154,7 +154,7 @@
 
 ## 里程碑
 
-- [ ] 算子线：A4 1-pass 后置收尾；B1 Vector Add 技术验收完成但 LeetGPU 原始代码归档有缺口；MatMul 进行中
+- [ ] 算子线：A4 1-pass 后置收尾；B1 Vector Add 技术验收完成但 LeetGPU 原始代码归档有缺口；MatMul 已 `GPU_VALIDATED`，尚未 `COMPLETE`（下一步 Nsight Compute / P0–P8）
 - [ ] 算子线：B1-B3 完成，Triton 写出 Flash Attention 并记录性能差距
 - [ ] 模型结构：能对着 HF config 讲清一个最新模型的 GQA/MoE/位置编码
 - [ ] 算子线：C1-C4 完成，跑通 vLLM benchmark 并讲清 PagedAttention/scheduling

@@ -7,6 +7,7 @@
 
 ## 0. 最后更新
 
+- 2026-08-28（Triton MatMul LeetGPU `SuccessPublicTrace` 已归档：LeetGPU #02、Triton、A100-80GB、24.54 ms、55.3th percentile；最终版仅将 `tl.dot` 指定为 `input_precision='ieee'`，历史 WIP 保留默认 TF32 失败证据（4×4 最大绝对误差 0.1275177001953125）；服务器适配版已在 RTX 3090 `GPU_VALIDATED`，MatMul 单元总体 `GPU_VALIDATED` 但尚未 `COMPLETE`，下一步 Nsight Compute / P0–P8；Vector Add 原始 `solve` 归档缺口保持不变）
 - 2026-08-28（保存进度：当前主线仍为 Triton MatMul；理论侧 FlashAttention-2 统一笔记 [notes/algorithms/flash-attention-2.md](./notes/algorithms/flash-attention-2.md) 用户阅读约 50%，状态仍为 WIP/🚧，未视为已读完或已掌握；下一步继续阅读统一笔记后半部分，结合公式与 Triton/CUDA 代码映射）
 - 2026-08-26（进一步把硬件知识与算子优化绑定：确定 MatMul、Softmax/Norm、FlashAttention、Fused MLP/GQA 四类极致性能锚点，新增“硬件机制→代码旋钮→counter→实测”映射、P0–P8 优化阶梯、强 baseline/roof 与停止条件）
 - 2026-08-26（Triton MatMul IEEE FP32 配置 sweep：RTX 3090 最佳为 BLOCK_M=128、BLOCK_N=32、BLOCK_K=256、w8、s3，22.033 ms / 18,713.5 GFLOPS，为 torch.mm 的 77.8%；128×64×128 因 shared memory 131,072 B 超过 101,376 B 上限而编译失败）
@@ -88,7 +89,7 @@ A CUDA 打底 -> B Triton -> C 推理系统 -> D 分布式 -> E Agent
 | A4 1-pass true online | 🚧 | Agent 草稿 `softmax_1pass.cu`（2026-08-09，算法模拟+编译通过），待用户重写 |
 | A4 warp shuffle / benchmark | ⏳ | 待做 |
 | A5 Flash Attention 读码 | ✅ | 2026-08-10，逐段注释完成，[阅读笔记](./notes/cuda/flash-attn-reading.md)，发现 2 个真实 bug |
-| B1 Triton vec_add + matmul | 🚧 当前 | Vector Add 技术验收完成（840.1 GB/s），但原始 LeetGPU `solve` 归档缺失；MatMul 已进入 LeetGPU 编写，当前为 WIP |
+| B1 Triton vec_add + matmul | `GPU_VALIDATED` 当前 | Vector Add 技术验收完成（840.1 GB/s），但原始 LeetGPU `solve` 归档缺失；MatMul LeetGPU 已 `LEETGPU_PASS`、服务器适配版已 `GPU_VALIDATED`，单元尚未 `COMPLETE`，下一步 Nsight Compute / P0–P8 |
 | B2-B5 Triton 实现 | ⏳ | 待做 |
 
 ### 存档：A4 Softmax 详情（2026-07-01 ~ 08-09）

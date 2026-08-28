@@ -282,14 +282,17 @@ acc = tl.zeros((BLOCK_M, BLOCK_K), dtype=tl.float32)
 for n in range(0, N, BLOCK_N):
     a = tl.load(a_ptrs)   # [BLOCK_M, BLOCK_N]
     b = tl.load(b_ptrs)   # [BLOCK_N, BLOCK_K]
-    acc += tl.dot(a, b)
+    acc += tl.dot(a, b, input_precision='ieee')
 ```
 
+当前单元卡（2026-08-28）：LeetGPU #02 已通过并归档为 [`solutions/triton/matmul_leetgpu.py`](../solutions/triton/matmul_leetgpu.py)，状态 `LEETGPU_PASS`；SuccessPublicTrace 为 A100-80GB、24.54 ms、55.3th percentile。服务器适配版 [`solutions/triton/matmul.py`](../solutions/triton/matmul.py) 已在 RTX 3090 `GPU_VALIDATED`。历史 [`solutions/triton/matmul_leetgpu_wip.py`](../solutions/triton/matmul_leetgpu_wip.py) 保留默认 TF32 失败案例（4×4 最大绝对误差 `0.1275177001953125`）。MatMul 单元总体为 `GPU_VALIDATED`，尚未 `COMPLETE`；下一步是 Nsight Compute / P0–P8 性能分析与最终口径。
+
 完成定义：
-- [ ] LeetGPU #02 通过并归档原始 `solve`
-- [x] `solutions/triton/matmul.py` 保存当前 `WIP` 快照
-- [ ] 和 `A @ B` 对齐
-- [ ] 记录正确性和 GFLOPS
+- [x] LeetGPU #02 通过并归档原始 `solve`/kernel：[`solutions/triton/matmul_leetgpu.py`](../solutions/triton/matmul_leetgpu.py)，`LEETGPU_PASS`
+- [x] 和 `A @ B` 对齐：LeetGPU SuccessPublicTrace
+- [x] 服务器适配版 [`solutions/triton/matmul.py`](../solutions/triton/matmul.py) 在 RTX 3090 `GPU_VALIDATED`
+- [x] 记录正确性和 GFLOPS：最佳 22.033 ms / 18,713.5 GFLOPS；`128×64×128` 因 shared memory 131,072 B > 101,376 B 编译失败
+- [ ] Nsight Compute / P0–P8 性能分析与最终口径（完成后才可标记 `COMPLETE`）
 
 ### B3：Fused Softmax
 

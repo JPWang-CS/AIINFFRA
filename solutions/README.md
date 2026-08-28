@@ -39,8 +39,17 @@ solutions/
 | CUDA Vector Add（A1） | Lesson 01 有 LeetGPU 代码快照，但没有单独的本地 `solve` 文件 |
 | Triton Vector Add（B1） | 已有 AutoDL wrapper 和 benchmark，但没有单独的 LeetGPU 原始 `solve` 文件 |
 
-## 当前 WIP
+## 当前产物
 
 | 算子 | 文件 | 状态 |
 |------|------|------|
-| Triton MatMul | [triton/matmul.py](triton/matmul.py) | `WIP`：LeetGPU 编写中，尚未通过 |
+| Triton MatMul LeetGPU 最终版 | [triton/matmul_leetgpu.py](triton/matmul_leetgpu.py) | `LEETGPU_PASS`：LeetGPU #02，Triton，2026-08-28；SuccessPublicTrace（A100-80GB，24.54 ms，55.3th percentile） |
+| Triton MatMul 服务器适配版 | [triton/matmul.py](triton/matmul.py) | `GPU_VALIDATED`：RTX 3090 正确性与 IEEE FP32 性能已验证，最佳 22.033 ms / 18,713.5 GFLOPS |
+
+## 历史 WIP
+
+| 算子 | 文件 | 说明 |
+|------|------|------|
+| Triton MatMul | [triton/matmul_leetgpu_wip.py](triton/matmul_leetgpu_wip.py) | 历史 TF32 默认精度失败版本；4×4 case 最大绝对误差为 `0.1275177001953125`，保留用于复盘，不代表当前状态 |
+
+MatMul 单元总体为 `GPU_VALIDATED`，尚未 `COMPLETE`；下一步是 Nsight Compute / P0–P8 性能分析与最终口径。B1 仍是当前主线，Triton Vector Add 的原始 LeetGPU `solve` 归档缺口保持不变。
