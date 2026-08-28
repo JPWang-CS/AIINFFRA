@@ -106,7 +106,7 @@
 | 主题 | 笔记 | 论文 | 状态 |
 |------|------|------|:--:|
 | MHA→MQA→GQA→MLA | [速览](./notes/algorithms/remaining-theory-primer.md) + [最新模型](./notes/algorithms/latest-model-architectures.md) | [gqa.md](./papers/attention/gqa.md) | 🚧 |
-| Flash Attention 1→2→3 | [flash-attention-mechanism.md](./notes/algorithms/flash-attention-mechanism.md) · [FA2](./notes/algorithms/flash-attention-2.md) | [FA1](./papers/attention/flash-attention.md) · [FA2](./papers/attention/flash-attention-2.md) | 🚧 → FA1 ✅（2026-08-10 A5），FA2 草稿 2026-08-13，FA3 待补 |
+| Flash Attention 1→2→3 | [flash-attention-mechanism.md](./notes/algorithms/flash-attention-mechanism.md) · [FA2 统一笔记](./notes/algorithms/flash-attention-2.md) | [FA1](./papers/attention/flash-attention.md) · FA2 已并入左侧统一笔记 | 🚧 → FA1 ✅（2026-08-10 A5），FA2 🚧 用户阅读约 50%（仍未读完），FA3 待补 |
 | MLA（DeepSeek-V2/V3） | [mla-deepseek.md](./notes/algorithms/mla-deepseek.md) | DeepSeek-V2 | 🚧 |
 | FA4 / FlexAttention | [fa4-flexattention.md](./notes/algorithms/fa4-flexattention.md) | 官方博客/PR | 🚧 草稿 2026-08-13 |
 | DSA（DeepSeek-V3.2 / GLM-5） | [dsa-sparse-attention.md](./notes/algorithms/dsa-sparse-attention.md) | DeepSeek-V3.2 · GLM-5 | 🚧 草稿 2026-08-13 |

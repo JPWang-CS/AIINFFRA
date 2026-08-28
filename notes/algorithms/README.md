@@ -96,7 +96,7 @@
 | 主题 | 有论文? | 挂靠 | 状态 |
 |------|:--:|------|:--:|
 | MHA→MQA→GQA→MLA | ✔ [GQA](../../papers/attention/gqa.md) | 主线 A 第 2 步 | 🚧 [速览](remaining-theory-primer.md) |
-| [Flash Attention 机制](flash-attention-mechanism.md) | ✔ [FA1](../../papers/attention/flash-attention.md) · [FA2](../../papers/attention/flash-attention-2.md) | 主线 A 前置 · B3 | ✅ FA1 已消化（2026-08-10 A5）；[FA2](flash-attention-2.md) 🚧 草稿 2026-08-13；FA3 待补 |
+| [Flash Attention 机制](flash-attention-mechanism.md) | ✔ [FA1](../../papers/attention/flash-attention.md) · [FA2 统一笔记](flash-attention-2.md) | 主线 A 前置 · B3 | ✅ FA1 已消化（2026-08-10 A5）；FA2 🚧 用户阅读约 50%（仍未读完）；FA3 待补 |
 | [FA4 / FlexAttention](fa4-flexattention.md) | ✔ | 主线 A/B 注意力实现侧 | 🚧 草稿 2026-08-13 |
 | [DSA（DeepSeek-V3.2 / GLM-5）](dsa-sparse-attention.md) | ✔ | 主线 A 第 2 步 · 主线 B 第 3 步 | 🚧 草稿 2026-08-13 |
 | [SageAttention3 / Kascade](attention-2026-sage3-kascade.md) | ✔ SageAttention3 · Kascade | 主线 A 注意力实现侧 | 🚧 草稿 2026-08-13 |
@@ -132,4 +132,4 @@
 ## 笔记索引（按掌握度更新）
 
 - ✅ 用户已掌握：**[Online Softmax](online-softmax.md)**、**[Parallel Reduce](parallel-reduce.md)**、**FA1 机制（2026-08-10 A5）**
-- 🚧 Agent 草稿，待消化：**[Flash Attention 机制](flash-attention-mechanism.md)**、**[FA2](flash-attention-2.md)**、**[FA4/FlexAttention](fa4-flexattention.md)**、**[GDN（Qwen3.5）](gdn-linear-attention.md)**、**[DSA](dsa-sparse-attention.md)**、**[DeepSeek-V4（CSA+HCA）](deepseek-v4.md)**、**[SageAttention3/Kascade](attention-2026-sage3-kascade.md)**、**[优化器 Adam/AdamW](optimizers-adam.md)**、**[INT8 / FP8 量化基础](quantization-int8-fp8.md)**、**[MoE 推理挑战](moe-inference.md)**、**[Speculative Decoding](speculative-decoding.md)**、**[PD 分离](pd-disaggregation.md)**、**[MLA（DeepSeek）](mla-deepseek.md)**、**[最新模型与结构](latest-model-architectures.md)**、**[剩余理论主题速览](remaining-theory-primer.md)**、**[模型追踪表](model-tracker.md)**
+- 🚧 Agent 草稿，待消化：**[Flash Attention 机制](flash-attention-mechanism.md)**、**[FA2](flash-attention-2.md)（用户阅读约 50%，仍待消化）**、**[FA4/FlexAttention](fa4-flexattention.md)**、**[GDN（Qwen3.5）](gdn-linear-attention.md)**、**[DSA](dsa-sparse-attention.md)**、**[DeepSeek-V4（CSA+HCA）](deepseek-v4.md)**、**[SageAttention3/Kascade](attention-2026-sage3-kascade.md)**、**[优化器 Adam/AdamW](optimizers-adam.md)**、**[INT8 / FP8 量化基础](quantization-int8-fp8.md)**、**[MoE 推理挑战](moe-inference.md)**、**[Speculative Decoding](speculative-decoding.md)**、**[PD 分离](pd-disaggregation.md)**、**[MLA（DeepSeek）](mla-deepseek.md)**、**[最新模型与结构](latest-model-architectures.md)**、**[剩余理论主题速览](remaining-theory-primer.md)**、**[模型追踪表](model-tracker.md)**

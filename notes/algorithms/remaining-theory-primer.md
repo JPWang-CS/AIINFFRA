@@ -67,7 +67,7 @@ RMSNorm:   y = x / sqrt(mean(x^2) + eps) * gamma
 - 读 kernel 时，除了看 tiling，还要看每个 warp 负责多少行、同步点在哪。
 - 性能对比不能只看 kernel 数量，要看 tensor core 利用率和非 GEMM 开销。
 
-**最小验证**：读 [flash-attention-2.md](../../papers/attention/flash-attention-2.md)，在笔记里画 V1/V2 的 tile 和 warp 分工图。
+**最小验证**：读 [flash-attention-2.md](flash-attention-2.md)，在笔记里画 V1/V2 的 tile 和 warp 分工图。
 
 **面试口径**：“FlashAttention V1 解决 IO，V2 解决并行度和非 matmul 开销，核心是 tile 划分和工作分配。”
 

@@ -23,7 +23,7 @@
 | 论文/技术 | 对应子板块 | 仓库状态 | 学习重点 |
 |-----------|-----------|:--:|---------|
 | FlashAttention 1 | 推理 / 结构 | [已有](../../papers/attention/flash-attention.md) | tiling + online softmax |
-| FlashAttention 2 | 推理 | [已有](../../papers/attention/flash-attention-2.md) | work partitioning |
+| FlashAttention 2 | 推理 | [统一笔记](../algorithms/flash-attention-2.md) | 公式、online softmax、代码映射、work partitioning |
 | GQA | 结构 | [已有](../../papers/attention/gqa.md) | KV cache |
 | PagedAttention | 推理 | [已有](../../papers/inference/paged-attention.md) | block table |
 | ZeRO | 训练 | [已有](../../papers/training/zero-paper.md) | 显存分片 |

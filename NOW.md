@@ -33,7 +33,9 @@
 
 **现在 · 主线 A：DeepSeek-V3.2 第 2 步 — 注意力（FA2 → MLA → DSA）**
 
-当前任务：阅读 [FlashAttention-2 笔记](./notes/algorithms/flash-attention-2.md)，重点搞清 FA1 → FA2 的 work partitioning、同步/非矩阵乘开销、Q/K/V tile 分配；完成一页总结后，再进入 MLA → DSA。
+当前任务：继续阅读 [FlashAttention-2 统一笔记](./notes/algorithms/flash-attention-2.md)，用户已阅读约 50%，状态仍为 🚧 WIP；重点搞清 FA1 → FA2 的 work partitioning、同步/非矩阵乘开销、Q/K/V tile 分配。
+
+**接下来**：继续阅读统一笔记后半部分，结合公式与 Triton/CUDA 代码映射；完成并消化后再进入 MLA → DSA。
 
 第 1 步是热身：三笔账给第 2 步的 MLA/DSA 和第 3 步的 V4 增量提供数字基础。A5 读完的 FlashAttention 在第 2 步接续（FA2 → MLA → DSA）；训练侧枝干 A1（FP8 训练 → [优化器](./notes/algorithms/optimizers-adam.md) → ZeRO/FSDP）挪到 serving 之后，不插队。
 

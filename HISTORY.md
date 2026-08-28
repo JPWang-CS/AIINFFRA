@@ -7,6 +7,7 @@
 
 ## 0. 最后更新
 
+- 2026-08-28（保存进度：当前主线仍为 Triton MatMul；理论侧 FlashAttention-2 统一笔记 [notes/algorithms/flash-attention-2.md](./notes/algorithms/flash-attention-2.md) 用户阅读约 50%，状态仍为 WIP/🚧，未视为已读完或已掌握；下一步继续阅读统一笔记后半部分，结合公式与 Triton/CUDA 代码映射）
 - 2026-08-26（进一步把硬件知识与算子优化绑定：确定 MatMul、Softmax/Norm、FlashAttention、Fused MLP/GQA 四类极致性能锚点，新增“硬件机制→代码旋钮→counter→实测”映射、P0–P8 优化阶梯、强 baseline/roof 与停止条件）
 - 2026-08-26（Triton MatMul IEEE FP32 配置 sweep：RTX 3090 最佳为 BLOCK_M=128、BLOCK_N=32、BLOCK_K=256、w8、s3，22.033 ms / 18,713.5 GFLOPS，为 torch.mm 的 77.8%；128×64×128 因 shared memory 131,072 B 超过 101,376 B 上限而编译失败）
 - 2026-08-26（新增 `notes/triton/matmul-performance-analysis.md`：记录 MatMul sweep 的硬件解释、资源失败原因、Nsight Compute P0、邻域搜索、L2 排布、TF32 对照和 autotune 后续顺序）
