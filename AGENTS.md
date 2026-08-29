@@ -5,17 +5,20 @@
 
 ---
 
-## 全项目固定模型分工（强制）
+## 全项目模型与协作规则（强制）
 
 本文件是 `D:\Desktop\Code\Learn\AIINFFRA` 的根 `AGENTS.md`。本节覆盖本仓库的全部目录、所有未来对话/任务以及所有 Codex、Claude 和其他 Agent；任何子目录说明都不得降低、绕过或静默改写本节规则。
 
-1. 主 Agent 固定使用 `gpt-5.6-sol`（以下简称 Sol）。Sol 负责恢复上下文、理解目标、思考方案、拆解任务、识别风险、定义验收标准、审查执行证据、整合结果并作最终答复。
-2. 每个对话开始时必须先应用本节路由规则。只要请求包含任何实际执行动作——包括检索或读取项目资料、运行命令、编辑文件、测试、benchmark、git 操作等——Sol 必须把边界清楚、可验收的执行任务委派给当前对话内的 worker subagent；worker 固定使用 `model=gpt-5.6-luna`、`reasoning_effort=max`。
-3. 纯概念问答，或只需思考且无需工具和项目执行时，Sol 可以直接回答；这仍然算已应用本节路由规则。
-4. Luna worker 只能修改委派时明确授权的范围；必须保留用户及其他 Agent 的并发改动，不得撤销、覆盖、重置或吞并无关修改。worker 必须执行必要验证并回报可核查证据（包括涉及的路径、命令和结果）；Sol 必须复核这些证据，承担最终判断和责任，责任不得转移给 worker。
-5. 委派不得创建用户可见的新 task/thread；必须使用当前对话内的 subagent。
-6. 如果 subagent 不可用，或 `gpt-5.6-luna` 与 `reasoning_effort=max` 的组合不可用，Sol 必须在继续执行前明确说明降级原因和范围，不得静默换模型或 reasoning effort。为避免阻塞，Sol 只能做维持任务推进所必需的最小本地执行，并在最终答复中说明降级及其影响。
-7. 根 `AGENTS.md` 是本项目上述模型路由和协作边界的统一入口；进入本仓库的每个未来对话、任务和 Agent 都必须遵守它。
+1. 主 Agent 固定使用 `gpt-5.6-sol`（以下简称 Sol）。Sol 负责恢复上下文、理解目标、方案设计、任务拆解、风险判断、验收标准、执行证据审查、结果整合和最终答复。
+2. Sol 可以直接完成少量、边界明确的只读规划/复核，例如读取必要文件片段、运行 `git status`/`git diff`、核对 worker 证据；纯概念问答直接回答。只读/分析请求不授权修改。
+3. 具体实现、文件修改、测试、benchmark 以及外部/远端动作，默认委派 `gpt-5.6-luna` worker（subagent）；worker 的具体角色遵守本项目后续领域路由。`commit`/`push` 等远端写入仍需用户明确授权。
+4. `reasoning_effort` 按任务动态分级：`low` 用于简单读取、检索、status/diff、链接检查和机械验证；`medium`（默认）用于常规文档或代码修改、常规测试和普通 Git 工作流；`high` 用于多文件实现、一般调试和代码审查；`xhigh` 用于复杂性能优化、疑难 bug 和重要架构设计；最困难且质量优先的任务才使用 `reasoning_effort=max`，必须说明理由，`max` 不得作为默认值。
+5. 每个用户请求默认最多一个 worker（不是绝对上限）；同一任务优先通过 `send_input` 复用。只有任务可独立并行、写入范围互斥且能显著降低延迟时才增加 worker。
+6. 不为验证、补引用等自然后续另开 worker，由原 worker 收尾。worker 报告保持简洁，只给结论、路径、命令/测试证据和未验证项。
+7. 失败止损：连续 120–180 秒无有效进展先检查状态；不得启动重叠写范围替代 worker；最多一次有依据的重试或接管。机制不可用时，Sol 必须显式说明并做最小必要执行。
+8. 不创建用户可见的新 task/thread；项目领域专用 agent 路由继续保留，通用规则只约束模型、effort、worker 数量、复用、授权和变更保护。
+9. worker 只能修改委派时明确授权的范围，必须保留用户及其他 Agent 的并发改动；所有 worker 完成后返回可核查证据，由 Sol 复核并承担最终责任。
+10. 根 `AGENTS.md` 是本项目统一入口；worker 机制或指定模型不可用时，按第 7 条显式说明降级原因、范围和影响。
 
 ---
 
@@ -120,18 +123,6 @@ Triton Vector Add
 | Triton 实现指导 | 使用 `triton-guide` skill |
 | 最新算子构建 | 使用 `operator-building` skill，参考 `notes/llm/operator-building.md` |
 
-## Sol 规划、Luna Max 落地
-
-- 所有委派先读取并遵守全局 `C:\Users\yq\.codex\skills\adaptive-agent-orchestration\SKILL.md`；不限制固定Agent数量，按当前主线内的可运行任务、实际进度、写集冲突和剩余收益动态扩缩。多个Agent只能并行服务同一当前主线，不得借此并行多个大计划。
-
-- 主代理固定使用 `gpt-5.6-sol`，负责读取 `AGENTS.md` / `HISTORY.md` / `PATH.md` / `NOW.md`，完成学习路线判断、实现规划、任务拆分、技术裁决和最终验收。
-- 除纯问答、概念解释、简单状态查询和无法独立拆分的小任务外，代码编写与修改、编译、测试、benchmark、日志整理和文档落地默认委派给 `gpt-5.6-luna` 子代理，推理强度固定为 `max`。
-- Sol 给 Luna 的任务必须注明目标文件、当前基线、允许修改范围、正确性与性能验收标准；涉及 CUDA/Triton 时，先模拟编译与运行路径，再由 Luna 实施。
-- Luna 必须保留用户已有改动，完成后返回实际差异、执行命令、测试或 benchmark 结果以及未验证项。Sol 负责复核，不重复实现；验证失败时把具体问题返给 Luna 修正。
-- 原有学习规则继续优先：一次只推进一个主线；未经用户明确要求，不修改 `PATH.md` / `NOW.md`；LeetGPU 与真实 GPU 状态不得虚报。
-- 子代理不可用或连续失败时，Sol 可降级执行，但必须在最终交付中说明，不得创建用户可见的新任务冒充子代理。
-- 子代理默认使用有界上下文；CUDA/Triton编译、远程benchmark等慢任务按其阶段事件评估，不因单次等待超时直接终止。连续两次审计均无状态、产物、命令或性能输出变化时才判停滞，缩小未完成范围重试一次；结束后立即关闭Agent释放槽位。
-
 ---
 
 ## 完成任务后的动作
@@ -141,3 +132,10 @@ Triton Vector Add
 3. 写笔记：`notes/` 或 `notes/llm/`。
 4. 生成/更新周报：`weekly/`。
 5. 只有用户要求时才更新 `PATH.md` / `NOW.md`。
+
+### 可选 external worker 路由
+
+- Sol 无需用户点名，根据任务自动在 Luna 与 DeepSeek 中二选一：DeepSeek 用于独立、边界清楚、非敏感的长文档/代码分析或第二审查；Luna 用于原生 MCP/thread coordination、敏感上下文和远程写入。
+- 选 DeepSeek 时直接调用已安装个人 Codex plugin `deepseek-subagent` 暴露的 MCP tools：`spawn_deepseek_subagent` + `wait_deepseek_subagent`；默认只启动一个 job，并等待同一个 `job_id`。逻辑名 `cc-switch/deepseek:max` 映射为 `deepseek-v4-pro + model_reasoning_effort=high`；`flash` 仅用于明确要求的低成本任务。
+- DeepSeek 默认只读；只有用户明确授权具体文件修改时才使用 workspace-write。认证由 plugin 调用的本机 Codex CLI `--profile deepseek` 内部处理；API key 可以由该内部认证链读取，但不得暴露给 Sol、worker、prompt、command-line args、MCP 返回或日志，也不得让 worker 检查 secret/config 文件。
+- MCP tools 不可用或 provider 调用失败一次时，视为 DeepSeek 暂不可用并回退 Luna；不做外层重试。旧全局 `cc-switch-deepseek-worker` skill/launcher 仅作为该回退路径的兼容说明。
