@@ -17,6 +17,7 @@ BENCHMARK_CONFIGS = (
     ("m128-128x32x64-w4-s3", dict(block_m=128, block_n=32, block_k=64, num_warps=4, num_stages=3)),
     ("mn128-128x32x128-w4-s3", dict(block_m=128, block_n=32, block_k=128, num_warps=4, num_stages=3)),
     ("n64-128x64x128-w4-s3", dict(block_m=128, block_n=64, block_k=128, num_warps=4, num_stages=3)),
+    ("k128-128x32x128-w8-s3", dict(block_m=128, block_n=32, block_k=128, num_warps=8, num_stages=3)),
     ("k256-128x32x256-w8-s3", dict(block_m=128, block_n=32, block_k=256, num_warps=8, num_stages=3)),
     ("k256-128x32x256-w8-s2", dict(block_m=128, block_n=32, block_k=256, num_warps=8, num_stages=2)),
 )
