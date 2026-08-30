@@ -38,9 +38,10 @@ Agent 只做 review，不代写代码。本课最后有参考答案，但要求�
 |---|---|---|---|
 | LeetGPU | [5.5 LeetGPU：正确性与代码归档](#55-leetgpu正确性与代码归档) | 题目通过、原始 `solve`、本地代码、lesson 快照 | `LEETGPU_PASS`：A100-80GB，24.54 ms，55.3th percentile |
 | 服务器 | [5.6 服务器：真实性能](#56-服务器真实性能) | 实际 GPU 型号、正确性复核、GFLOPS、配置对比 | `GPU_VALIDATED`：RTX 3090 已验证 |
-| 下一步 | Nsight Compute / P0–P8 性能分析 | profiler 证据、优化结论、最终口径 | 单元尚未 `COMPLETE` |
+| P0-lite | [Nsight Systems 逐块分析](../notes/triton/matmul-nsys-p0-lite-2026-08-30.md) | timeline、launch metadata、s3/s2 单变量实验、完整 raw logs | ✅ 完成；NCU counters 被 AutoDL 权限阻塞 |
+| 下一步 | 缩小输出列 tile，验证 accumulator/register pressure | `128×32×128, w8, s3` 与当前最佳对照 | 单元尚未 `COMPLETE` |
 
-> 本课只看这两张门：LeetGPU 通过并归档，服务器真实 GPU 已验证；MatMul 下一步进入 Nsight Compute / P0–P8，尚未标记 `COMPLETE`。
+> LeetGPU 已通过并归档，服务器真实 GPU 已验证，Nsight Systems P0-lite 已完成；MatMul 尚缺 NCU counters、PTX/SASS 和后续单变量验证，因此不标记 `COMPLETE`。
 
 ---
 
@@ -658,7 +659,8 @@ C[64, 64]：4096 个 FP32 accumulator，容量等价 16 KB
 | LeetGPU | `LEETGPU_PASS`：SuccessPublicTrace，A100-80GB，2026-08-28 22:23:16，24.54 ms，55.3th percentile |
 | 服务器 | `GPU_VALIDATED`：`solutions/triton/matmul.py` 已在 RTX 3090 完成正确性与性能验证 |
 | 单元总体 | `GPU_VALIDATED`，尚未 `COMPLETE` |
-| 下一步 | Nsight Compute / P0–P8 性能分析与最终口径 |
+| P0-lite | Nsight Systems s3/s2 对照已完成；[详细分析](../notes/triton/matmul-nsys-p0-lite-2026-08-30.md) · [s3 raw](../notes/triton/logs/2026-08-29-matmul-k256-s3-nsys.txt) · [s2 raw](../notes/triton/logs/2026-08-30-matmul-k256-s2-nsys.txt) |
+| 下一步 | `128×32×128, w8, s3`：缩小 accumulator，观察 Reg/Trd 与性能 |
 
 下面是通过后的 LeetGPU 原始代码快照，来源为 [`solutions/triton/matmul_leetgpu.py`](../solutions/triton/matmul_leetgpu.py)，已与平台版本同步。历史 [`solutions/triton/matmul_leetgpu_wip.py`](../solutions/triton/matmul_leetgpu_wip.py) 保留默认 TF32 精度失败过程：4×4 case 最大绝对误差为 `0.1275177001953125`；指定 IEEE 输入精度后平台通过。
 
@@ -893,7 +895,8 @@ torch.matmul 通常能到 250-300 TFLOPS（cuBLAS，大矩阵）
 - [x] 至少一轮 tile/warp/stage sweep（最佳：128×32×256，w8，s3）
 - [x] MatMul LeetGPU 原始 `solve`/kernel 已归档到 [`solutions/triton/matmul_leetgpu.py`](../solutions/triton/matmul_leetgpu.py)，状态 `LEETGPU_PASS`
 - [x] MatMul 服务器适配版 [`solutions/triton/matmul.py`](../solutions/triton/matmul.py) 已在 RTX 3090 `GPU_VALIDATED`
-- [ ] Nsight Compute / P0–P8 性能分析与最终口径（因此单元尚未 `COMPLETE`）
+- [x] Nsight Systems P0-lite：s3/s2 timeline + launch metadata + 完整日志归档
+- [ ] NCU counters / PTX/SASS / accumulator-register 单变量实验（因此单元尚未 `COMPLETE`）
 - [ ] autotune 至少给出一组调参结论（哪个 config 快、为什么）
 
 ---

@@ -112,6 +112,8 @@ P0 固定数值语义、shape 集和强 baseline
 -> P8 多 shape 回归、跨架构复测、形成停止结论
 ```
 
+受限云容器没有 NCU counters 时，P4 可以形成 `P0-lite` 证据：保存完整 Nsight Systems raw log，按 Grid/Block 从 trace 排除 correctness 小 kernel，记录 kernel duration 分布、Reg/Trd、dynamic shared memory 与 API launch/sync。它可以支持资源假设和单变量实验，但不能替代 P5 的 achieved occupancy、warp stall、L2/DRAM counter。
+
 | 锚点 | 主指标 | 强 baseline | 极致目标的判断方式 |
 |------|----------|-------------|--------------------|
 | MatMul | GFLOPS/TFLOPS、误差 | 同精度 cuBLAS/`torch.mm` | 主流 shape 达到强 baseline 的 80% 为合格，90% 为冲刺；差距必须有 counter 解释 |

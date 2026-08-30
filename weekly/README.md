@@ -21,6 +21,7 @@
 
 | 日期 | 主题 | 对应 PATH |
 |------|------|----------|
+| [2026-08-30-triton-matmul-nsys](2026-08-30-triton-matmul-nsys.md) | Triton MatMul Nsight Systems P0-lite：s3/s2 资源与性能因果实验 | B1 |
 | [2026-08-28-triton-matmul-leetgpu](2026-08-28-triton-matmul-leetgpu.md) | Triton MatMul LeetGPU 通过归档 + RTX 3090 服务器验证复盘 | B1 |
 | [2026-08-24-triton-vector-add](2026-08-24-triton-vector-add.md) | Triton Vector Add AutoDL 验收 + B1 复盘 | B1 |
 | [2026-08-03-plan-revision](2026-08-03-plan-revision.md) | 计划补密度 + A5/A4 进度校准 | 全路线 |

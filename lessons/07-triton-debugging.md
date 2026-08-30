@@ -8,11 +8,11 @@
 
 | 项目 | 内容 |
 |---|---|
-| 调试对象 | [solutions/triton/matmul.py](../solutions/triton/matmul.py) 与 [matmul_leetgpu_wip.py](../solutions/triton/matmul_leetgpu_wip.py) |
+| 调试对象 | [solutions/triton/matmul.py](../solutions/triton/matmul.py)、[LeetGPU 最终版](../solutions/triton/matmul_leetgpu.py) 与 [历史 TF32 失败快照](../solutions/triton/matmul_leetgpu_wip.py) |
 | 目标 | 区分编译错误、逻辑错误、越界错误、数值错误和性能问题 |
-| 当前状态 | 配套教程；MatMul 服务器版 `GPU_VALIDATED`，LeetGPU 原始代码仍为 `WIP` |
+| 当前状态 | 配套教程；MatMul LeetGPU 已 `LEETGPU_PASS`，服务器版 `GPU_VALIDATED`，Nsight Systems P0-lite 已完成 |
 | 验收 | 能用正确工具定位一次错误，并留下最小复现、原因和修复证据 |
-| 下一步 | 回到 Lesson 06，继续 LeetGPU MatMul；通过后再做 BLOCK/warp/stage 调优 |
+| 下一步 | 回到 Lesson 06，缩小输出列 tile，验证 accumulator/register pressure；NCU counters 等待可用环境 |
 
 ## 1. 先判断是哪一类问题
 

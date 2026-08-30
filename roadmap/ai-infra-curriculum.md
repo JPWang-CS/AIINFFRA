@@ -157,7 +157,7 @@ GPU 体系主课入口：[GPU 底层架构与性能优化课程](gpu-foundations
 
 | PATH 节点 | 同步解锁的 GPU 底层能力 | 实验证据 |
 |-----------|--------------------------|----------|
-| B1 MatMul | G1 执行、G2 SM、G3 存储、G4 数值/Tensor Core、G6 roofline | tile/warp/stage sweep；IEEE/TF32 对照；Nsight Compute |
+| B1 MatMul | G1 执行、G2 SM、G3 存储、G4 数值/Tensor Core、G6 roofline | tile/warp/stage sweep；IEEE/TF32 对照；Nsight Systems P0-lite；有权限时补 Nsight Compute |
 | B2 Softmax | divergence、reduction、SFU、register pressure、memory-bound | shared/warp reduction；GB/s；stall/traffic |
 | B3 FlashAttention | async copy、double buffer、warp specialization、Hopper TMA/WGMMA | Q/K/V 数据流；pipeline/timeline；HBM traffic |
 | B5 GQA/MLP | fusion、layout、quantized MMA | 中间张量 bytes；融合前后性能/误差 |
@@ -285,14 +285,15 @@ for n in range(0, N, BLOCK_N):
     acc += tl.dot(a, b, input_precision='ieee')
 ```
 
-当前单元卡（2026-08-28）：LeetGPU #02 已通过并归档为 [`solutions/triton/matmul_leetgpu.py`](../solutions/triton/matmul_leetgpu.py)，状态 `LEETGPU_PASS`；SuccessPublicTrace 为 A100-80GB、24.54 ms、55.3th percentile。服务器适配版 [`solutions/triton/matmul.py`](../solutions/triton/matmul.py) 已在 RTX 3090 `GPU_VALIDATED`。历史 [`solutions/triton/matmul_leetgpu_wip.py`](../solutions/triton/matmul_leetgpu_wip.py) 保留默认 TF32 失败案例（4×4 最大绝对误差 `0.1275177001953125`）。MatMul 单元总体为 `GPU_VALIDATED`，尚未 `COMPLETE`；下一步是 Nsight Compute / P0–P8 性能分析与最终口径。
+当前单元卡（2026-08-30）：LeetGPU #02 已 `LEETGPU_PASS`，服务器适配版已 `GPU_VALIDATED`。Nsight Systems P0-lite 已完成并归档 [详细分析](../notes/triton/matmul-nsys-p0-lite-2026-08-30.md)：s3 mean 21.208 ms、255 regs/thread、0.098 MB DymSMem；s2 mean 22.362 ms、255 regs/thread、0.049 MB，慢 5.44%。MatMul 尚未 `COMPLETE`；下一步缩小输出列 tile，验证 accumulator/register pressure，NCU counters 等待具备权限的环境。
 
 完成定义：
 - [x] LeetGPU #02 通过并归档原始 `solve`/kernel：[`solutions/triton/matmul_leetgpu.py`](../solutions/triton/matmul_leetgpu.py)，`LEETGPU_PASS`
 - [x] 和 `A @ B` 对齐：LeetGPU SuccessPublicTrace
 - [x] 服务器适配版 [`solutions/triton/matmul.py`](../solutions/triton/matmul.py) 在 RTX 3090 `GPU_VALIDATED`
 - [x] 记录正确性和 GFLOPS：最佳 22.033 ms / 18,713.5 GFLOPS；`128×64×128` 因 shared memory 131,072 B > 101,376 B 编译失败
-- [ ] Nsight Compute / P0–P8 性能分析与最终口径（完成后才可标记 `COMPLETE`）
+- [x] Nsight Systems P0-lite：timeline、launch metadata、s3/s2 单变量分析与完整 raw log
+- [ ] accumulator/register 单变量实验、PTX/SASS；具备权限时补 NCU counters（完成后才可标记 `COMPLETE`）
 
 ### B3：Fused Softmax
 

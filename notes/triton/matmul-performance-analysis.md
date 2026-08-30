@@ -124,6 +124,17 @@ ncu --set roofline -o matmul_k256 \
 | DRAM/L2 throughput | 瓶颈是 HBM/L2 还是计算吞吐 |
 | warp stall 原因 | 是等待内存、依赖、barrier 还是执行单元不足 |
 
+#### 2026-08-30 P0-lite：AutoDL 无 NCU counters 时的替代证据
+
+AutoDL 宿主机设置 `RmProfilingAdminOnly=1`，容器缺少 `CAP_SYS_ADMIN/CAP_PERFMON`，因此 Nsight Compute hardware counters 无法采集。改用 Nsight Systems timeline + launch metadata，完整分析见 [P0-lite 记录](./matmul-nsys-p0-lite-2026-08-30.md)，原始日志见 [s3](./logs/2026-08-29-matmul-k256-s3-nsys.txt) 与 [s2](./logs/2026-08-30-matmul-k256-s2-nsys.txt)。
+
+| 配置 | Triton 60 次 mean / median | GFLOPS（按 mean） | Reg/Trd | DymSMem | 同次 CUTLASS mean | 相对 CUTLASS |
+|---|---:|---:|---:|---:|---:|---:|
+| `128×32×256, w8, s3` | 21.208 / 21.163 ms | 19,441.3 | 255 | 0.098 MB | 16.716 ms | 78.8% |
+| `128×32×256, w8, s2` | 22.362 / 22.317 ms | 18,438.6 | 255 | 0.049 MB | 16.682 ms | 74.6% |
+
+s2 将动态 shared memory 减半，但寄存器仍为 255/thread，按静态资源推导仍近似限制为 1 block/SM；性能反而比 s3 慢 5.44%。这说明当前配置中更深 pipeline 的收益大于减少 shared-memory staging 的收益，且降低 stages 没有解除 register bottleneck。该结论不等同于 achieved occupancy 或 stall counter 证据。
+
 ### P1：围绕最佳点做小范围搜索
 
 只扩展邻域，避免再次盲扫：
@@ -186,10 +197,11 @@ TF32 对照要额外记录 `max_abs_error`、`max_rel_error`，不能把 TF32 �
 IEEE FP32：已有 baseline + sweep
 最佳结果：18,713.5 GFLOPS，torch.mm 的 77.8%
 资源失败：已记录 shared memory 上限
-下一证据：Nsight Compute 当前最佳配置
+P0-lite：Nsight Systems timeline + launch metadata 已完成
+下一证据：缩小输出列 tile，验证 accumulator/register pressure；NCU counters 等待可用环境
 ```
 
-在 LeetGPU 仍无法运行的情况下，这些结果属于服务器适配版的 `GPU_VALIDATED` 证据，不把它提前升级成 `LEETGPU_PASS` 或 `COMPLETE`。
+LeetGPU 已通过并独立归档；这些结果属于服务器适配版的 `GPU_VALIDATED` / P0-lite 证据。由于缺少 NCU hardware counters、PTX/SASS 与多 shape 回归，仍不升级为 `COMPLETE`。
 
 ## 相关入口
 

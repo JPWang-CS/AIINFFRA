@@ -6,7 +6,7 @@
 
 ## 🔧 算子线（动手）
 
-**现在 · B1 — Triton MatMul（Nsight Compute / P0 性能分析）**
+**现在 · B1 — Triton MatMul（P0-lite 后的 register-pressure 验证）**
 
 > **课程**：[Lesson 06 — Triton 入门](./lessons/06-triton-intro.md)  
 > **LeetGPU 最终代码**：[solutions/triton/matmul_leetgpu.py](./solutions/triton/matmul_leetgpu.py) — 原始 `solve`/kernel 已归档，`LEETGPU_PASS`；SuccessPublicTrace：A100-80GB，2026-08-28 22:23:16，24.54 ms，55.3th percentile
@@ -21,11 +21,11 @@
 
 **执行纪律**：所有新算子只分两章：**LeetGPU 正确性与代码归档 → 服务器真实性能**。记录必须包含题目、原始 `solve`、本地代码、实际 GPU 型号和 benchmark 数字；CUDA 纯 kernel / warp shuffle / 手写 FlashAttention 后置到 Triton 主线完成后，不插队。
 
-**当前状态**：MatMul 单元总体为 `GPU_VALIDATED`（LeetGPU `LEETGPU_PASS` + RTX 3090 服务器适配版 `GPU_VALIDATED`），尚未 `COMPLETE`；下一步是 Nsight Compute / P0–P8 性能分析与最终口径。
+**当前状态**：MatMul 单元总体为 `GPU_VALIDATED`。Nsight Systems P0-lite 已完成：s3 为 21.208 ms / 255 regs/thread / 0.098 MB DymSMem；s2 为 22.362 ms / 255 regs/thread / 0.049 MB，慢 5.44%。降低 stages 没有解除 register bottleneck，单元尚未 `COMPLETE`。
 
-**接下来**：在 [LeetGPU Matrix Multiplication](https://leetgpu.com/challenges/matrix-multiplication)（#02）的已通过版本基础上，用服务器适配版的当前最佳配置运行 Nsight Compute，按 P0–P8 记录 profiler 证据、性能变化和最终停止口径。
+**接下来**：保持 `BLOCK_M=128, BLOCK_N=32, num_warps=8, num_stages=3`，只将输出列 tile `BLOCK_K=256→128`，验证 accumulator 缩小后 Reg/Trd 与性能是否改善。完整依据：[P0-lite 分析](./notes/triton/matmul-nsys-p0-lite-2026-08-30.md)。
 
-**今日进度（2026-08-28）**：MatMul LeetGPU `SuccessPublicTrace` 已归档为最终版；将 `tl.dot` 指定为 `input_precision='ieee'` 后通过。服务器适配版保留 RTX 3090 既有验证与 sweep 数字，下一步转入 NCU/P0 性能分析。
+**今日进度（2026-08-30）**：完整归档 s3/s2 两份 Nsight Systems raw log，并完成 timeline、kernel summary、API summary、launch metadata 逐块分析。NCU counters 因 AutoDL 权限阻塞，当前证据明确标记为 P0-lite。
 
 ---
 
