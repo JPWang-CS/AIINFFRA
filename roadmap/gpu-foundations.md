@@ -1,6 +1,6 @@
 # GPU 底层架构与性能优化课程：从 SM 到集群
 
-> 定位：补齐现有算子路线中的 GPU 体系知识，不另起第三条主线，不改变 [NOW.md](../NOW.md) 当前的 Triton MatMul。
+> 定位：补齐现有算子路线中的 GPU 体系知识，不另起第三条主线；MatMul 的延期优化在此集中接回，当前算子主线由 [NOW.md](../NOW.md) 指定。
 > 知识入口：[GPU 架构详解](../notes/cuda/gpu-architecture-layers.md)。
 > 方法：Just-in-Time 学习——当前算子遇到哪一层，就做对应最小实验。
 
@@ -45,7 +45,7 @@
 | G8 库与系统 | 高性能实现如何组织？ | cuBLAS/cuDNN、CUTLASS/CuTe、CUB/CCCL、Triton、NCCL 的分工 | library baseline + 读码 | B3、M3、M4 |
 | 代际线 | Volta→Ampere→Hopper→Blackwell 改了什么？ | Tensor Core、`cp.async`、TMA/WGMMA/cluster、TMEM/TCGen05 | capability/feature 差异表 | 随 G0–G8 挂载 |
 
-这九层不是九门并行课程。每次只从当前算子向下追到真正限制它的层，再回到代码验证。例如当前 MatMul 只打开 G1/G2/G3/G4/G6；NCCL、CUDA Graph、Blackwell 指令不会插队。
+这九层不是九门并行课程。每次只从当前算子向下追到真正限制它的层，再回到代码验证。MatMul 的基线已阶段性收口；其余极致优化见下方延期债务池，不插入当前 B2 主线。
 
 ---
 
@@ -114,6 +114,12 @@ P0 固定数值语义、shape 集和强 baseline
 
 受限云容器没有 NCU counters 时，P4 可以形成 `P0-lite` 证据：保存完整 Nsight Systems raw log，按 Grid/Block 从 trace 排除 correctness 小 kernel，记录 kernel duration 分布、Reg/Trd、dynamic shared memory 与 API launch/sync。它可以支持资源假设和单变量实验，但不能替代 P5 的 achieved occupancy、warp stall、L2/DRAM counter。
 
+### MatMul 优化债务池（Deferred backlog）
+
+MatMul 当前只收口到已验证的 baseline：LeetGPU `LEETGPU_PASS`，RTX 3090 `GPU_VALIDATED`，最佳 20.830 ms / 19,794.1 GFLOPS / `torch.mm` 80.3%，并完成 Nsight Systems P0-lite。剩余 NCU counters、PTX/SASS、spill/occupancy 实测、多 shape 回归及完整 P0–P8 闭环统一放在本节，暂不阻塞 B2 Fused Softmax。
+
+接回时直接使用现有证据，不在主线重复写：`k128-128x32-128-w8-s3` baseline、k256 s3/s2 P0-lite 对照与完整 raw log；NCU counters 仅在具备所需 AutoDL 权限或等价 profiler 环境后补采。接回顺序为：先补 P5/P6 证据，再做 accumulator/register 单变量与 spill/occupancy 验证，最后做多 shape/跨架构回归并形成停止结论。任何新实验仍需遵守“硬件假设 → 代码旋钮 → 预期 counter → 实测”，不修改当前已归档 kernel 作为文档切换的一部分。
+
 | 锚点 | 主指标 | 强 baseline | 极致目标的判断方式 |
 |------|----------|-------------|--------------------|
 | MatMul | GFLOPS/TFLOPS、误差 | 同精度 cuBLAS/`torch.mm` | 主流 shape 达到强 baseline 的 80% 为合格，90% 为冲刺；差距必须有 counter 解释 |
@@ -148,9 +154,9 @@ P0 固定数值语义、shape 集和强 baseline
 
 ---
 
-## 5. 当前执行顺序（不打断 Triton MatMul）
+## 5. 当前执行顺序（当前聚焦 B2 Fused Softmax）
 
-### 第 1 次：随 B1 MatMul，2–3 小时
+### 第 1 次：B1 MatMul 基线出口（已完成）
 
 只学当前 RTX 3090 真正会遇到的部分，并把“硬件资源 → 精度选择 → 性能证据”连成一个实验：
 
@@ -159,7 +165,7 @@ P0 固定数值语义、shape 集和强 baseline
 3. 建立 IEEE FP32 基线：Triton 用 `tl.dot(..., input_precision="ieee")`，PyTorch 关闭 TF32；固定 shape、warmup、repeats 和正确性 reference，只比较 tile/warp/stage。
 4. 对至少 3 组 `BLOCK_M/N/K`、`num_warps`、`num_stages` 记录 GFLOPS、耗时；先从 `64×32×64`，再测 `128×32×64`、`128×32×128`。选最快和最慢两组，回答差异来自数据复用、并行度、register/shared 压力还是测量噪声。
 5. 在 IEEE 基线单独归档后，才做 TF32 对照：保持 shape 和 tile 不变，分别记录 `max_abs_error`、`max_rel_error`、耗时和 GFLOPS。TF32 是另一条精度路径，**不得与 IEEE FP32 成绩混写或直接排名**。
-6. 对最快 IEEE 配置做一次 Nsight Compute：先看 roofline、occupancy、registers/thread、shared memory/block、memory workload；用 profiler 证据验证前面的推断，而不是用 occupancy 数字单独判快慢。
+6. Nsight Compute、PTX/SASS、spill/occupancy 和多 shape 回归列入上方 MatMul 优化债务池，等待具备权限的环境后再做。
 
 完成定义：
 
@@ -167,7 +173,7 @@ P0 固定数值语义、shape 集和强 baseline
 - [ ] 不再用 A100 的资源上限解释 3090；
 - [ ] 留下至少 3 组 MatMul 配置与 GFLOPS；
 - [ ] 留下一组 IEEE FP32 与 TF32 的误差—吞吐对照，能解释二者为什么不能混为同一成绩；
-- [ ] 有一份 roofline/occupancy/memory 证据，并形成 1 分钟口径：为什么更大的 tile 不一定更快。
+- [x] 已有 P0-lite/memory/resource 证据并形成阶段性口径；完整 occupancy/NCU 证据延期至 MatMul 优化债务池。
 
 ### 第 2 次：随 B2 Fused Softmax，2 小时
 

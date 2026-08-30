@@ -157,7 +157,7 @@ GPU 体系主课入口：[GPU 底层架构与性能优化课程](gpu-foundations
 
 | PATH 节点 | 同步解锁的 GPU 底层能力 | 实验证据 |
 |-----------|--------------------------|----------|
-| B1 MatMul | G1 执行、G2 SM、G3 存储、G4 数值/Tensor Core、G6 roofline | tile/warp/stage sweep；IEEE/TF32 对照；Nsight Systems P0-lite；有权限时补 Nsight Compute |
+| B1 MatMul | G1 执行、G2 SM、G3 存储、G4 数值/Tensor Core、G6 roofline | 当前基线出口：tile/warp/stage sweep；IEEE/TF32 对照；Nsight Systems P0-lite。P0–P8 深钻延期至 GPU 优化篇 |
 | B2 Softmax | divergence、reduction、SFU、register pressure、memory-bound | shared/warp reduction；GB/s；stall/traffic |
 | B3 FlashAttention | async copy、double buffer、warp specialization、Hopper TMA/WGMMA | Q/K/V 数据流；pipeline/timeline；HBM traffic |
 | B5 GQA/MLP | fusion、layout、quantized MMA | 中间张量 bytes；融合前后性能/误差 |
@@ -177,7 +177,7 @@ GPU 体系主课入口：[GPU 底层架构与性能优化课程](gpu-foundations
 
 ### 极致性能锚点
 
-不是每道题都无限优化。全路线固定四类锚点：MatMul、Softmax/Norm、FlashAttention、Fused MLP/GQA。它们完成 LeetGPU 正确性和原始代码归档后，在服务器阶段执行 [P0–P8 极致性能阶梯](gpu-foundations.md#32-核心算子的极致性能阶梯)：建立同语义强 baseline 与实测 roof，逐层优化 tile/layout/pipeline/instruction/fusion，并用 Nsight 和 PTX/SASS 证明原因，最后做多 shape 回归和停止判断。其余算子只要求可靠 baseline 与一次瓶颈解释，避免主线被无底洞式调参拖住。
+不是每道题都无限优化。全路线固定四类锚点：MatMul、Softmax/Norm、FlashAttention、Fused MLP/GQA。它们完成 LeetGPU 正确性和原始代码归档后，可在服务器阶段执行 [P0–P8 极致性能阶梯](gpu-foundations.md#32-核心算子的极致性能阶梯)；MatMul 已先完成基线出口，剩余深钻延期至 GPU 优化篇，不阻塞 B2。其余算子只要求可靠 baseline 与一次瓶颈解释，避免主线被无底洞式调参拖住。
 
 ### 分阶段完成定义
 
@@ -285,7 +285,7 @@ for n in range(0, N, BLOCK_N):
     acc += tl.dot(a, b, input_precision='ieee')
 ```
 
-当前单元卡（2026-08-30）：LeetGPU #02 已 `LEETGPU_PASS`，服务器适配版已 `GPU_VALIDATED`。Nsight Systems P0-lite 已完成并归档 [详细分析](../notes/triton/matmul-nsys-p0-lite-2026-08-30.md)：s3 mean 21.208 ms、255 regs/thread、0.098 MB DymSMem；s2 mean 22.362 ms、255 regs/thread、0.049 MB，慢 5.44%。MatMul 尚未 `COMPLETE`；下一步缩小输出列 tile，验证 accumulator/register pressure，NCU counters 等待具备权限的环境。
+当前单元卡（2026-08-30）：LeetGPU #02 已 `LEETGPU_PASS`，服务器适配版已 `GPU_VALIDATED`。Nsight Systems P0-lite 已完成并归档 [详细分析](../notes/triton/matmul-nsys-p0-lite-2026-08-30.md)：s3 mean 21.208 ms、255 regs/thread、0.098 MB DymSMem；s2 mean 22.362 ms、255 regs/thread、0.049 MB，慢 5.44%。当前 baseline 出口为 RTX 3090 最佳 20.830 ms / 19,794.1 GFLOPS / `torch.mm` 80.3%；剩余 P0–P8 优化延期至 GPU 优化篇。
 
 完成定义：
 - [x] LeetGPU #02 通过并归档原始 `solve`/kernel：[`solutions/triton/matmul_leetgpu.py`](../solutions/triton/matmul_leetgpu.py)，`LEETGPU_PASS`
@@ -293,9 +293,9 @@ for n in range(0, N, BLOCK_N):
 - [x] 服务器适配版 [`solutions/triton/matmul.py`](../solutions/triton/matmul.py) 在 RTX 3090 `GPU_VALIDATED`
 - [x] 记录正确性和 GFLOPS：最佳 22.033 ms / 18,713.5 GFLOPS；`128×64×128` 因 shared memory 131,072 B > 101,376 B 编译失败
 - [x] Nsight Systems P0-lite：timeline、launch metadata、s3/s2 单变量分析与完整 raw log
-- [ ] accumulator/register 单变量实验、PTX/SASS；具备权限时补 NCU counters（完成后才可标记 `COMPLETE`）
+- [x] 当前基线出口完成；accumulator/register、PTX/SASS、NCU counters、spill/occupancy、多 shape 回归与完整 P0–P8 闭环列入 GPU 优化篇延期项
 
-### B3：Fused Softmax
+### B2：Fused Softmax
 
 目标：把 max/exp/sum/div 合成一个 kernel。
 
@@ -312,7 +312,7 @@ y = num / denom
 - [ ] 能解释 max trick
 - [ ] 记录提速
 
-### B4：Flash Attention
+### B3：Flash Attention
 
 目标：用 Triton 实现 tiling + online softmax。
 
@@ -337,7 +337,7 @@ m = m_new
 - [ ] 记录显存和速度
 - [ ] 能解释 causal 为什么省一半
 
-### B5：GQA / Fused MLP
+### B4：GQA / Fused MLP
 
 GQA：
 - Q head 数 > KV head 数。

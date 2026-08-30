@@ -10,7 +10,7 @@
 | [`vector_add.py`](./vector_add.py) | Triton Vector Add | **原始 LeetGPU `solve` 尚未单独归档**；当前文件是本地验证/benchmark wrapper | `GPU_VALIDATED`：LeetGPU 通过；AutoDL RTX 3090，Triton 840.1 GB/s，`torch.add` 843.0 GB/s |
 | [`matmul_leetgpu.py`](./matmul_leetgpu.py) | Triton tiled GEMM：LeetGPU 最终原始 `solve`/kernel 归档 | `LEETGPU_PASS`：LeetGPU #02，Triton，2026-08-28；SuccessPublicTrace | A100-80GB，24.54 ms，55.3th percentile |
 | [`matmul_leetgpu_wip.py`](./matmul_leetgpu_wip.py) | Triton tiled GEMM：历史平台代码快照 | 历史 `WIP`：默认 TF32 精度失败案例，保留用于复盘 | 4×4 case 最大绝对误差 `0.1275177001953125`；IEEE 版本后平台通过 |
-| [`matmul.py`](./matmul.py) | Triton tiled GEMM：服务器验证版 | 基于 MatMul 逻辑的本地适配，不是平台原始归档 | `GPU_VALIDATED`：RTX 3090 正确性通过；s3/s2 Nsight Systems P0-lite 已完成 |
+| [`matmul.py`](./matmul.py) | Triton tiled GEMM：服务器验证版 | 基于 MatMul 逻辑的本地适配，不是平台原始归档 | `GPU_VALIDATED` baseline：RTX 3090 正确性通过；s3/s2 Nsight Systems P0-lite 已完成；P0–P8 deferred |
 | `fused_softmax.py` | Triton Fused Softmax | 正确性 + 提速 |
 | `flash_attention.py` | Triton Flash Attention | 对比 PyTorch ref + 显存/速度 |
 | `gqa.py` / `fused_mlp.py` | 模型结构组件 | 正确性 + autotune |
@@ -60,7 +60,7 @@ matmul (2026-08-26)
 - 结论: 服务器版正确性通过；初始 tile/config 仍有调优空间
 ```
 
-> 这组数字属于服务器适配版，状态为 `GPU_VALIDATED`；LeetGPU 原始版本已另行归档为 `LEETGPU_PASS`。MatMul 单元总体为 `GPU_VALIDATED`，尚未 `COMPLETE`，下一步是 Nsight Compute / P0–P8 性能分析与最终口径。
+> 这组数字属于服务器适配版，状态为 `GPU_VALIDATED`；LeetGPU 原始版本已另行归档为 `LEETGPU_PASS`。MatMul 当前按 baseline 阶段性收口；P0–P8 极致优化延期至 [GPU 优化篇](../../roadmap/gpu-foundations.md#matmul-优化债务池-deferred-backlog)，不改变本页既有 benchmark 数字。
 
 ### MatMul 配置 sweep（2026-08-26）
 
@@ -89,6 +89,8 @@ AutoDL 禁止 NCU hardware counters，因此使用 Nsight Systems 对同一 `128
 | s2 | 22.362 / 22.317 ms | 255 | 0.049 MB | 16.682 ms | shared memory 减半但慢 5.44% |
 
 s2 没有降低 Reg/Trd，因此静态寄存器约束仍近似为 1 block/SM；减少 pipeline stage 没有换来驻留改善，反而损失延迟隐藏。完整分析与原始证据：[P0-lite 分析](../../notes/triton/matmul-nsys-p0-lite-2026-08-30.md) · [s3 raw](../../notes/triton/logs/2026-08-29-matmul-k256-s3-nsys.txt) · [s2 raw](../../notes/triton/logs/2026-08-30-matmul-k256-s2-nsys.txt)。
+
+MatMul 当前 baseline 出口：RTX 3090 最佳 20.830 ms / 19,794.1 GFLOPS / `torch.mm` 80.3%。剩余 NCU counters、PTX/SASS、spill/occupancy、多 shape 回归和完整 P0–P8 闭环已延期至 GPU 优化篇。
 
 ## 规则
 

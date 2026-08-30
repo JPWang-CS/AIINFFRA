@@ -2,7 +2,7 @@
 
 > 主题：从零写第一个 Triton kernel：Vector Add → MatMul，并完成"正确性 → 性能 → 记录"闭环
 > 前置：建议先完成 [Lesson 05](05-flash-attn-reading.md)（理解 tiling 和 online softmax）；如果当前主线直接进 Triton，也可以先写 vec_add 再补 A5
-> 状态：`GPU_VALIDATED` 当前主线（B1）；MatMul 尚未 `COMPLETE`，详细任务见 [roadmap/ai-infra-curriculum.md](../roadmap/ai-infra-curriculum.md)
+> 状态：B1 MatMul 已阶段性完成并冻结为 `GPU_VALIDATED` baseline；当前焦点已切换 B2 Fused Softmax，详细任务见 [roadmap/ai-infra-curriculum.md](../roadmap/ai-infra-curriculum.md)
 > 范围：本课只做 B1（vec_add + matmul）。Softmax / Flash Attention / GQA 是后面的课，不要一次学完。
 
 📚 **本课重点知识库**：
@@ -39,9 +39,10 @@ Agent 只做 review，不代写代码。本课最后有参考答案，但要求�
 | LeetGPU | [5.5 LeetGPU：正确性与代码归档](#55-leetgpu正确性与代码归档) | 题目通过、原始 `solve`、本地代码、lesson 快照 | `LEETGPU_PASS`：A100-80GB，24.54 ms，55.3th percentile |
 | 服务器 | [5.6 服务器：真实性能](#56-服务器真实性能) | 实际 GPU 型号、正确性复核、GFLOPS、配置对比 | `GPU_VALIDATED`：RTX 3090 已验证 |
 | P0-lite | [Nsight Systems 逐块分析](../notes/triton/matmul-nsys-p0-lite-2026-08-30.md) | timeline、launch metadata、s3/s2 单变量实验、完整 raw logs | ✅ 完成；NCU counters 被 AutoDL 权限阻塞 |
-| 下一步 | 缩小输出列 tile，验证 accumulator/register pressure | `128×32×128, w8, s3` 与当前最佳对照 | 单元尚未 `COMPLETE` |
+| 收口 | 阶段性冻结 MatMul baseline；剩余 P0–P8 转入 [GPU 优化篇](../roadmap/gpu-foundations.md#matmul-优化债务池-deferred-backlog) | 当前最佳 20.830 ms / 19,794.1 GFLOPS / `torch.mm` 80.3% | `GPU_VALIDATED` |
+| 下一课 | B2 Triton Fused Softmax | [路线图](../roadmap/ai-infra-curriculum.md#b2-fused-softmax) | 当前焦点 |
 
-> LeetGPU 已通过并归档，服务器真实 GPU 已验证，Nsight Systems P0-lite 已完成；MatMul 尚缺 NCU counters、PTX/SASS 和后续单变量验证，因此不标记 `COMPLETE`。
+> LeetGPU 已通过并归档，服务器真实 GPU 已验证，Nsight Systems P0-lite 已完成；MatMul 的 NCU counters、PTX/SASS、spill/occupancy、多 shape 回归和完整 P0–P8 闭环作为优化债务延期至 GPU 优化篇，不再阻塞 B2。
 
 ---
 
@@ -658,9 +659,9 @@ C[64, 64]：4096 个 FP32 accumulator，容量等价 16 KB
 |------|------|
 | LeetGPU | `LEETGPU_PASS`：SuccessPublicTrace，A100-80GB，2026-08-28 22:23:16，24.54 ms，55.3th percentile |
 | 服务器 | `GPU_VALIDATED`：`solutions/triton/matmul.py` 已在 RTX 3090 完成正确性与性能验证 |
-| 单元总体 | `GPU_VALIDATED`，尚未 `COMPLETE` |
+| 单元总体 | `GPU_VALIDATED`，阶段性完成/冻结 |
 | P0-lite | Nsight Systems s3/s2 对照已完成；[详细分析](../notes/triton/matmul-nsys-p0-lite-2026-08-30.md) · [s3 raw](../notes/triton/logs/2026-08-29-matmul-k256-s3-nsys.txt) · [s2 raw](../notes/triton/logs/2026-08-30-matmul-k256-s2-nsys.txt) |
-| 下一步 | `128×32×128, w8, s3`：缩小 accumulator，观察 Reg/Trd 与性能 |
+| 下一步 | B2 Triton Fused Softmax；MatMul 优化债务转入 GPU 优化篇 |
 
 下面是通过后的 LeetGPU 原始代码快照，来源为 [`solutions/triton/matmul_leetgpu.py`](../solutions/triton/matmul_leetgpu.py)，已与平台版本同步。历史 [`solutions/triton/matmul_leetgpu_wip.py`](../solutions/triton/matmul_leetgpu_wip.py) 保留默认 TF32 精度失败过程：4×4 case 最大绝对误差为 `0.1275177001953125`；指定 IEEE 输入精度后平台通过。
 
@@ -741,7 +742,7 @@ def solve(a: torch.Tensor, b: torch.Tensor, c: torch.Tensor,
 
 ## 5.6 服务器：真实性能
 
-LeetGPU #02 已通过且原始代码已经同步到本地；服务器使用单独的适配版做真实性能验证。两条证据分别记账，MatMul 单元总体状态为 `GPU_VALIDATED`，尚未 `COMPLETE`。
+LeetGPU #02 已通过且原始代码已经同步到本地；服务器使用单独的适配版做真实性能验证。两条证据分别记账，MatMul 当前 baseline 状态为 `GPU_VALIDATED`，已阶段性收口；剩余极致优化转入 GPU 优化篇。
 
 1. 同步通过版本到 AutoDL；
 2. 用 `torch.cuda.get_device_name(0)` 记录实际 GPU 型号；
@@ -896,8 +897,8 @@ torch.matmul 通常能到 250-300 TFLOPS（cuBLAS，大矩阵）
 - [x] MatMul LeetGPU 原始 `solve`/kernel 已归档到 [`solutions/triton/matmul_leetgpu.py`](../solutions/triton/matmul_leetgpu.py)，状态 `LEETGPU_PASS`
 - [x] MatMul 服务器适配版 [`solutions/triton/matmul.py`](../solutions/triton/matmul.py) 已在 RTX 3090 `GPU_VALIDATED`
 - [x] Nsight Systems P0-lite：s3/s2 timeline + launch metadata + 完整日志归档
-- [ ] NCU counters / PTX/SASS / accumulator-register 单变量实验（因此单元尚未 `COMPLETE`）
-- [ ] autotune 至少给出一组调参结论（哪个 config 快、为什么）
+- [x] MatMul baseline 阶段性收口为 `GPU_VALIDATED`；剩余 NCU counters / PTX/SASS / spill/occupancy / 多 shape 回归转入 GPU 优化篇
+- [x] 当前主线切换到 B2 Triton Fused Softmax
 
 ---
 

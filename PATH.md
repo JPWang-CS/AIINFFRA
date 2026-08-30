@@ -54,12 +54,12 @@
 
 | 阶段 | 课 | 自己写 | 验收 | 参考 | 状态 |
 |:-:|----|--------|------|------|:--:|
-| B1 | [06 triton-intro](./lessons/06-triton-intro.md) | Vector Add：LeetGPU 通过 + AutoDL RTX 3090 benchmark（840.1 GB/s），但原始 LeetGPU `solve` 尚未单独归档 ⚠️；MatMul LeetGPU 原始代码已 `LEETGPU_PASS`，服务器适配版已 `GPU_VALIDATED` | MatMul 已完成 Nsight Systems P0-lite：[s3/s2 详细分析](./notes/triton/matmul-nsys-p0-lite-2026-08-30.md) 与完整 raw logs 已归档；s2 将 DymSMem 0.098→0.049 MB，但 Reg/Trd 保持 255，性能慢 5.44%。单元仍未 `COMPLETE`；下一步缩小输出列 tile，验证 accumulator/register pressure | 我的→[vector_add.py](./solutions/triton/vector_add.py) · LeetGPU最终版→[matmul_leetgpu.py](./solutions/triton/matmul_leetgpu.py) · 服务器版→[matmul.py](./solutions/triton/matmul.py) · P0-lite→[分析](./notes/triton/matmul-nsys-p0-lite-2026-08-30.md) · 参考→[matmul.py](./reference/triton/matmul/matmul.py) | GPU_VALIDATED 当前 |
-| B2 | _按需生成_ | Triton fused softmax | 对比 PyTorch 正确 + 提速 | — | ⏳ |
+| B1 | [06 triton-intro](./lessons/06-triton-intro.md) | Vector Add：LeetGPU 通过 + AutoDL RTX 3090 benchmark（840.1 GB/s），但原始 LeetGPU `solve` 尚未单独归档 ⚠️；MatMul LeetGPU 原始代码已 `LEETGPU_PASS`，服务器适配版已 `GPU_VALIDATED` | MatMul 当前基线出口已完成：RTX 3090 最佳 20.830 ms / 19,794.1 GFLOPS / `torch.mm` 80.3%；Nsight Systems P0-lite：[s3/s2 详细分析](./notes/triton/matmul-nsys-p0-lite-2026-08-30.md) 与完整 raw logs 已归档。剩余 P0–P8 极致优化延期至 [GPU 优化篇](./roadmap/gpu-foundations.md#matmul-优化债务-deferred-backlog)，不再阻塞 B2 | 我的→[vector_add.py](./solutions/triton/vector_add.py) · LeetGPU最终版→[matmul_leetgpu.py](./solutions/triton/matmul_leetgpu.py) · 服务器版→[matmul.py](./solutions/triton/matmul.py) · P0-lite→[分析](./notes/triton/matmul-nsys-p0-lite-2026-08-30.md) · 参考→[matmul.py](./reference/triton/matmul/matmul.py) | GPU_VALIDATED |
+| B2 | _按需生成_ | Triton fused softmax | 对比 PyTorch 正确 + 提速 | — | WIP 当前 |
 | B3 | _按需生成_ | Triton flash attention | 对比 PyTorch ref 正确 | [flash_attn.py](./reference/triton/flash_attention/flash_attn.py) | ⏳ |
 | B4 | _按需生成_ | Triton GQA / fused MLP | 正确性 + autotuning | [activations.cuh](./reference/cuda/include/activations.cuh)（料） | ⏳ |
 
-核心锚点通过 LeetGPU 并归档原始实现后，服务器阶段必须执行 [P0–P8 极致性能阶梯](./roadmap/gpu-foundations.md#32-核心算子的极致性能阶梯)：同语义强 baseline、roofline、Nsight、PTX/SASS、多 shape 回归和停止结论缺一不可。
+核心锚点通过 LeetGPU 并归档原始实现后，服务器阶段可按需执行 [P0–P8 极致性能阶梯](./roadmap/gpu-foundations.md#32-核心算子的极致性能阶梯)；当前 MatMul 已完成基线出口，剩余极致优化延期至 GPU 优化篇，不阻塞算子主线。
 
 ## C — 推理系统
 
@@ -154,7 +154,7 @@
 
 ## 里程碑
 
-- [ ] 算子线：A4 1-pass 后置收尾；B1 Vector Add 技术验收完成但 LeetGPU 原始代码归档有缺口；MatMul 已完成 P0-lite，尚未 `COMPLETE`（下一步 accumulator/register 单变量实验）
+- [ ] 算子线：A4 1-pass 后置收尾；B1 Vector Add 技术验收完成但 LeetGPU 原始代码归档有缺口；MatMul 当前基线已 `GPU_VALIDATED` 并阶段性冻结，剩余 P0–P8 优化延期至 GPU 优化篇
 - [ ] 算子线：B1-B3 完成，Triton 写出 Flash Attention 并记录性能差距
 - [ ] 模型结构：能对着 HF config 讲清一个最新模型的 GQA/MoE/位置编码
 - [ ] 算子线：C1-C4 完成，跑通 vLLM benchmark 并讲清 PagedAttention/scheduling

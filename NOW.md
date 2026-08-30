@@ -6,12 +6,12 @@
 
 ## 🔧 算子线（动手）
 
-**现在 · B1 — Triton MatMul（P0-lite 后的 register-pressure 验证）**
+**现在 · B2 — Triton Fused Softmax**
 
 > **课程**：[Lesson 06 — Triton 入门](./lessons/06-triton-intro.md)  
 > **LeetGPU 最终代码**：[solutions/triton/matmul_leetgpu.py](./solutions/triton/matmul_leetgpu.py) — 原始 `solve`/kernel 已归档，`LEETGPU_PASS`；SuccessPublicTrace：A100-80GB，2026-08-28 22:23:16，24.54 ms，55.3th percentile
 > **历史 WIP**：[solutions/triton/matmul_leetgpu_wip.py](./solutions/triton/matmul_leetgpu_wip.py) — 默认 TF32 精度失败快照；4×4 case 最大绝对误差 `0.1275177001953125`
-> **服务器代码**：[solutions/triton/matmul.py](./solutions/triton/matmul.py) — 独立验证版，RTX 3090 `GPU_VALIDATED`，最佳 22.033 ms / 18,713.5 GFLOPS；`torch.mm` 24,083.3 GFLOPS，77.8%
+> **服务器代码**：[solutions/triton/matmul.py](./solutions/triton/matmul.py) — 独立验证版，RTX 3090 `GPU_VALIDATED`；当前 baseline 最佳 20.830 ms / 19,794.1 GFLOPS，`torch.mm` 80.3%
 > **前置已满足**：A5 Flash Attn 读码 ✅（[阅读笔记](./notes/cuda/flash-attn-reading.md)）
 
 **已完成**：
@@ -21,9 +21,9 @@
 
 **执行纪律**：所有新算子只分两章：**LeetGPU 正确性与代码归档 → 服务器真实性能**。记录必须包含题目、原始 `solve`、本地代码、实际 GPU 型号和 benchmark 数字；CUDA 纯 kernel / warp shuffle / 手写 FlashAttention 后置到 Triton 主线完成后，不插队。
 
-**当前状态**：MatMul 单元总体为 `GPU_VALIDATED`。Nsight Systems P0-lite 已完成：s3 为 21.208 ms / 255 regs/thread / 0.098 MB DymSMem；s2 为 22.362 ms / 255 regs/thread / 0.049 MB，慢 5.44%。降低 stages 没有解除 register bottleneck，单元尚未 `COMPLETE`。
+**当前状态**：MatMul 已阶段性收口为 `GPU_VALIDATED` baseline。Nsight Systems P0-lite 已完成：s3 为 21.208 ms / 255 regs/thread / 0.098 MB DymSMem；s2 为 22.362 ms / 255 regs/thread / 0.049 MB，慢 5.44%。剩余 NCU counters、PTX/SASS、spill/occupancy、多 shape 回归和完整 P0–P8 闭环，统一延期至 [GPU 优化篇](./roadmap/gpu-foundations.md#matmul-优化债务池-deferred-backlog)。
 
-**接下来**：保持 `BLOCK_M=128, BLOCK_N=32, num_warps=8, num_stages=3`，只将输出列 tile `BLOCK_K=256→128`，验证 accumulator 缩小后 Reg/Trd 与性能是否改善。完整依据：[P0-lite 分析](./notes/triton/matmul-nsys-p0-lite-2026-08-30.md)。
+**接下来**：进入 B2 Triton Fused Softmax；MatMul 后续只在 GPU 优化篇接回时继续，不在当前主线重复展开。
 
 **今日进度（2026-08-30）**：完整归档 s3/s2 两份 Nsight Systems raw log，并完成 timeline、kernel summary、API summary、launch metadata 逐块分析。NCU counters 因 AutoDL 权限阻塞，当前证据明确标记为 P0-lite。
 
@@ -55,7 +55,8 @@
 | A1-A4 CUDA 算子线 | ✅ | [HISTORY.md 存档](./HISTORY.md)（含 A4 三版 softmax 细节）· [周报 07-22](./weekly/2026-07-22-softmax-online.md) |
 | A5 Flash Attn 读码 | ✅ 2026-08-10 | [阅读笔记](./notes/cuda/flash-attn-reading.md)（3 个 `__syncthreads` + 2 个真实 bug） |
 | 理论线已掌握 | online softmax · parallel reduce · FA1 机制 | [algorithms README](./notes/algorithms/README.md) |
-| B1 当前 | Vector Add 已通过 LeetGPU 并完成 AutoDL RTX 3090 benchmark（840.1 GB/s），但原始 LeetGPU `solve` 尚未单独归档；MatMul LeetGPU 已 `LEETGPU_PASS`，服务器版已 `GPU_VALIDATED`，单元总体 `GPU_VALIDATED` 但尚未 `COMPLETE` | [Lesson 06](./lessons/06-triton-intro.md) · [性能分析](./notes/triton/matmul-performance-analysis.md) · [LeetGPU 最终版](./solutions/triton/matmul_leetgpu.py) · [历史 WIP](./solutions/triton/matmul_leetgpu_wip.py) · [服务器版](./solutions/triton/matmul.py) |
+| B1 已阶段性收口 | Vector Add 已通过 LeetGPU 并完成 AutoDL RTX 3090 benchmark（840.1 GB/s），但原始 LeetGPU `solve` 尚未单独归档；MatMul LeetGPU 已 `LEETGPU_PASS`，服务器版已 `GPU_VALIDATED`，剩余极致优化延期至 GPU 优化篇 | [Lesson 06](./lessons/06-triton-intro.md) · [性能分析](./notes/triton/matmul-performance-analysis.md) · [LeetGPU 最终版](./solutions/triton/matmul_leetgpu.py) · [历史 WIP](./solutions/triton/matmul_leetgpu_wip.py) · [服务器版](./solutions/triton/matmul.py) |
+| B2 当前 | Triton Fused Softmax | [PATH B2](./PATH.md) · [GPU 优化篇](./roadmap/gpu-foundations.md) |
 
 ---
 
