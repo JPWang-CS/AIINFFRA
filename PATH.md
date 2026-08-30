@@ -55,7 +55,7 @@
 | 阶段 | 课 | 自己写 | 验收 | 参考 | 状态 |
 |:-:|----|--------|------|------|:--:|
 | B1 | [06 triton-intro](./lessons/06-triton-intro.md) | Vector Add：LeetGPU 通过 + AutoDL RTX 3090 benchmark（840.1 GB/s），但原始 LeetGPU `solve` 尚未单独归档 ⚠️；MatMul LeetGPU 原始代码已 `LEETGPU_PASS`，服务器适配版已 `GPU_VALIDATED` | MatMul 当前基线出口已完成：RTX 3090 最佳 20.830 ms / 19,794.1 GFLOPS / `torch.mm` 80.3%；Nsight Systems P0-lite：[s3/s2 详细分析](./notes/triton/matmul-nsys-p0-lite-2026-08-30.md) 与完整 raw logs 已归档。剩余 P0–P8 极致优化延期至 [GPU 优化篇](./roadmap/gpu-foundations.md#matmul-优化债务-deferred-backlog)，不再阻塞 B2 | 我的→[vector_add.py](./solutions/triton/vector_add.py) · LeetGPU最终版→[matmul_leetgpu.py](./solutions/triton/matmul_leetgpu.py) · 服务器版→[matmul.py](./solutions/triton/matmul.py) · P0-lite→[分析](./notes/triton/matmul-nsys-p0-lite-2026-08-30.md) · 参考→[matmul.py](./reference/triton/matmul/matmul.py) | GPU_VALIDATED |
-| B2 | [08 triton-fused-softmax](./lessons/08-triton-fused-softmax.md) | Triton fused softmax：当前无用户代码 | **LeetGPU #5 正确性与原始代码归档 → 服务器 row-wise softmax 对齐 PyTorch并记录 ms/GB/s** | [CUDA Softmax](./lessons/04-softmax.md) · [Online Softmax](./notes/algorithms/online-softmax.md) | WIP 当前 |
+| B2 | [08 triton-fused-softmax](./lessons/08-triton-fused-softmax.md) | Triton fused softmax：当前无用户代码 | **LeetGPU #5 正确性与原始代码归档 → 服务器 row-wise softmax 对齐 PyTorch并记录 ms/GB/s** | [CUDA Softmax](./lessons/04-softmax.md) · [Online Softmax](./notes/algorithms/online-softmax.md) · [Lesson 07 调试](./lessons/07-triton-debugging.md) | WIP 当前 |
 | B3 | _按需生成_ | Triton flash attention | 对比 PyTorch ref 正确 | [flash_attn.py](./reference/triton/flash_attention/flash_attn.py) | ⏳ |
 | B4 | _按需生成_ | Triton GQA / fused MLP | 正确性 + autotuning | [activations.cuh](./reference/cuda/include/activations.cuh)（料） | ⏳ |
 

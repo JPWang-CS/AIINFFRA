@@ -14,6 +14,7 @@
 | 服务器代码 | 尚未创建；必须在 LeetGPU 通过后开始 |
 | 当前状态 | `WIP` |
 | 今天从哪里开始 | 读完 Part 0–4，然后打开 LeetGPU #5，从平台模板写第一版 |
+| 调试手册 | 遇到编译、mask、越界或数值错误时查 [Lesson 07 — Triton Debugging](07-triton-debugging.md) |
 | 完成门槛 | `LEETGPU_PASS` → `GPU_VALIDATED`；没有正确性和性能证据不标 `COMPLETE` |
 
 本课固定只有两个验收段：

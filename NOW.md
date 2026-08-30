@@ -9,6 +9,7 @@
 **现在 · B2 — Triton Fused Softmax**
 
 > **当前课程**：[Lesson 08 — Triton Fused Softmax](./lessons/08-triton-fused-softmax.md)
+> **调试入口**：[Lesson 07 — Triton Debugging](./lessons/07-triton-debugging.md) — 遇到编译、mask、越界或数值错误时查
 > **当前代码**：尚未创建；先在 LeetGPU #5 从题目模板编写，通过后归档到 `solutions/triton/fused_softmax.py`
 > **LeetGPU 最终代码**：[solutions/triton/matmul_leetgpu.py](./solutions/triton/matmul_leetgpu.py) — 原始 `solve`/kernel 已归档，`LEETGPU_PASS`；SuccessPublicTrace：A100-80GB，2026-08-28 22:23:16，24.54 ms，55.3th percentile
 > **历史 WIP**：[solutions/triton/matmul_leetgpu_wip.py](./solutions/triton/matmul_leetgpu_wip.py) — 默认 TF32 精度失败快照；4×4 case 最大绝对误差 `0.1275177001953125`
