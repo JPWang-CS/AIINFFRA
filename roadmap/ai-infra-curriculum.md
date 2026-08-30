@@ -295,9 +295,11 @@ for n in range(0, N, BLOCK_N):
 - [x] Nsight Systems P0-lite：timeline、launch metadata、s3/s2 单变量分析与完整 raw log
 - [x] 当前基线出口完成；accumulator/register、PTX/SASS、NCU counters、spill/occupancy、多 shape 回归与完整 P0–P8 闭环列入 GPU 优化篇延期项
 
-### B2：Fused Softmax
+### B2：[Fused Softmax](../lessons/08-triton-fused-softmax.md)
 
 目标：把 max/exp/sum/div 合成一个 kernel。
+
+当前入口：先读 [Lesson 08 Part 0–4](../lessons/08-triton-fused-softmax.md)，再到 LeetGPU #5 从平台模板写；平台通过并归档原始代码后，才进入服务器二维 row-wise benchmark。
 
 ```python
 x = tl.load(x_ptr + offsets, mask=mask, other=-float('inf'))

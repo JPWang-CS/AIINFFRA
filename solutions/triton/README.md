@@ -11,7 +11,7 @@
 | [`matmul_leetgpu.py`](./matmul_leetgpu.py) | Triton tiled GEMM：LeetGPU 最终原始 `solve`/kernel 归档 | `LEETGPU_PASS`：LeetGPU #02，Triton，2026-08-28；SuccessPublicTrace | A100-80GB，24.54 ms，55.3th percentile |
 | [`matmul_leetgpu_wip.py`](./matmul_leetgpu_wip.py) | Triton tiled GEMM：历史平台代码快照 | 历史 `WIP`：默认 TF32 精度失败案例，保留用于复盘 | 4×4 case 最大绝对误差 `0.1275177001953125`；IEEE 版本后平台通过 |
 | [`matmul.py`](./matmul.py) | Triton tiled GEMM：服务器验证版 | 基于 MatMul 逻辑的本地适配，不是平台原始归档 | `GPU_VALIDATED` baseline：RTX 3090 正确性通过；s3/s2 Nsight Systems P0-lite 已完成；P0–P8 deferred |
-| `fused_softmax.py` | Triton Fused Softmax | 正确性 + 提速 |
+| `fused_softmax.py`（尚未创建） | Triton Fused Softmax | `WIP`：当前课程 [Lesson 08](../../lessons/08-triton-fused-softmax.md)；先 LeetGPU #5，通过后归档原始代码，再做服务器正确性/性能 |
 | `flash_attention.py` | Triton Flash Attention | 对比 PyTorch ref + 显存/速度 |
 | `gqa.py` / `fused_mlp.py` | 模型结构组件 | 正确性 + autotune |
 

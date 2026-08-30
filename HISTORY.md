@@ -7,6 +7,7 @@
 
 ## 0. 最后更新
 
+- 2026-08-30（补齐 B2 正式课程 [`lessons/08-triton-fused-softmax.md`](./lessons/08-triton-fused-softmax.md)：当前单元卡、稳定公式、Triton row/program 映射、mask/`other=-inf`、starter TODO、LeetGPU #5 正确性归档、服务器 row-wise benchmark、资源边界和验收清单；当前状态 `WIP`，尚无用户代码，今天从 Part 0–4 开始）
 - 2026-08-30（用户决定 MatMul 先阶段性收口：LeetGPU `LEETGPU_PASS`、RTX 3090 `GPU_VALIDATED` baseline 已完成，当前最佳 20.830 ms / 19,794.1 GFLOPS / `torch.mm` 80.3%；Nsight Systems P0-lite 已归档。剩余 NCU counters、PTX/SASS、spill/occupancy、多 shape 回归和完整 P0–P8 极致优化转入 GPU 优化篇，不再阻塞主线；当前焦点切换为 B2 Triton Fused Softmax）
 - 2026-08-30（Triton MatMul Nsight Systems P0-lite：完整归档 s3/s2 两份 raw log，并按 Grid=64×16、Block=256 从 trace 剔除 4 次 correctness，重算 60 次大 shape。s3 mean 21.208 ms、255 regs/thread、0.098 MB DymSMem；s2 mean 22.362 ms、255 regs/thread、0.049 MB，慢 5.44%。结论：降低 stages 虽将 shared memory 减半，但未解除 register bottleneck，pipeline 变浅反而退化；下一步缩小输出列 tile 验证 accumulator/register pressure。NCU counters 因 AutoDL 权限阻塞，证据边界保持 P0-lite）
 - 2026-08-28（Triton MatMul LeetGPU `SuccessPublicTrace` 已归档：LeetGPU #02、Triton、A100-80GB、24.54 ms、55.3th percentile；最终版仅将 `tl.dot` 指定为 `input_precision='ieee'`，历史 WIP 保留默认 TF32 失败证据（4×4 最大绝对误差 0.1275177001953125）；服务器适配版已在 RTX 3090 `GPU_VALIDATED`，MatMul 单元总体 `GPU_VALIDATED` 但尚未 `COMPLETE`，下一步 Nsight Compute / P0–P8；Vector Add 原始 `solve` 归档缺口保持不变）

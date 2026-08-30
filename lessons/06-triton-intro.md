@@ -40,7 +40,7 @@ Agent 只做 review，不代写代码。本课最后有参考答案，但要求�
 | 服务器 | [5.6 服务器：真实性能](#56-服务器真实性能) | 实际 GPU 型号、正确性复核、GFLOPS、配置对比 | `GPU_VALIDATED`：RTX 3090 已验证 |
 | P0-lite | [Nsight Systems 逐块分析](../notes/triton/matmul-nsys-p0-lite-2026-08-30.md) | timeline、launch metadata、s3/s2 单变量实验、完整 raw logs | ✅ 完成；NCU counters 被 AutoDL 权限阻塞 |
 | 收口 | 阶段性冻结 MatMul baseline；剩余 P0–P8 转入 [GPU 优化篇](../roadmap/gpu-foundations.md#matmul-优化债务池-deferred-backlog) | 当前最佳 20.830 ms / 19,794.1 GFLOPS / `torch.mm` 80.3% | `GPU_VALIDATED` |
-| 下一课 | B2 Triton Fused Softmax | [路线图](../roadmap/ai-infra-curriculum.md#b2-fused-softmax) | 当前焦点 |
+| 下一课 | [Lesson 08 — Triton Fused Softmax](08-triton-fused-softmax.md) | 先读 Part 0–4，再去 LeetGPU #5 | 当前焦点 |
 
 > LeetGPU 已通过并归档，服务器真实 GPU 已验证，Nsight Systems P0-lite 已完成；MatMul 的 NCU counters、PTX/SASS、spill/occupancy、多 shape 回归和完整 P0–P8 闭环作为优化债务延期至 GPU 优化篇，不再阻塞 B2。
 
@@ -661,7 +661,7 @@ C[64, 64]：4096 个 FP32 accumulator，容量等价 16 KB
 | 服务器 | `GPU_VALIDATED`：`solutions/triton/matmul.py` 已在 RTX 3090 完成正确性与性能验证 |
 | 单元总体 | `GPU_VALIDATED`，阶段性完成/冻结 |
 | P0-lite | Nsight Systems s3/s2 对照已完成；[详细分析](../notes/triton/matmul-nsys-p0-lite-2026-08-30.md) · [s3 raw](../notes/triton/logs/2026-08-29-matmul-k256-s3-nsys.txt) · [s2 raw](../notes/triton/logs/2026-08-30-matmul-k256-s2-nsys.txt) |
-| 下一步 | B2 Triton Fused Softmax；MatMul 优化债务转入 GPU 优化篇 |
+| 下一步 | [Lesson 08 — Triton Fused Softmax](08-triton-fused-softmax.md)；MatMul 优化债务转入 GPU 优化篇 |
 
 下面是通过后的 LeetGPU 原始代码快照，来源为 [`solutions/triton/matmul_leetgpu.py`](../solutions/triton/matmul_leetgpu.py)，已与平台版本同步。历史 [`solutions/triton/matmul_leetgpu_wip.py`](../solutions/triton/matmul_leetgpu_wip.py) 保留默认 TF32 精度失败过程：4×4 case 最大绝对误差为 `0.1275177001953125`；指定 IEEE 输入精度后平台通过。
 
@@ -913,7 +913,7 @@ torch.matmul 通常能到 250-300 TFLOPS（cuBLAS，大矩阵）
 | Triton 中文教程（已归档） | https://github.com/dsl-learn/triton-tutorial —— vec_add/转置部分可用 |
 | LeetGPU | https://github.com/dsl-learn/LeetGPU |
 | CUDA-MODE 中文笔记 | https://github.com/BBuf/how-to-optim-algorithm-in-cuda |
-| 下一课 | B2 Triton Fused Softmax（Lesson 按需生成；前置：online softmax 已掌握 + CUDA-MODE L9） |
+| 下一课 | [Lesson 08 — Triton Fused Softmax](08-triton-fused-softmax.md)（前置：online softmax 已掌握 + CUDA-MODE L9） |
 
 # 知识库索引
 
@@ -924,7 +924,7 @@ torch.matmul 通常能到 250-300 TFLOPS（cuBLAS，大矩阵）
 | Triton vs CUDA 编程模型 | [triton-vs-cuda.md](../notes/triton/triton-vs-cuda.md) |
 | Triton MatMul 参考实现 | [reference/triton/matmul/matmul.py](../reference/triton/matmul/matmul.py) |
 | Triton 调试方法 | [Lesson 07 — Triton Debugging](07-triton-debugging.md) |
-| 接下来去哪 | [PATH.md](../PATH.md) — B2 Triton Fused Softmax |
+| 接下来去哪 | [Lesson 08 — Triton Fused Softmax](08-triton-fused-softmax.md) |
 
 ---
 

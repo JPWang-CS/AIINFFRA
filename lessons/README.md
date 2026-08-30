@@ -14,10 +14,11 @@
 | 03 | [gemm-tiled](03-gemm-tiled.md) | Shared memory tiling + bank conflict | [Lesson](03-gemm-tiled.md) · [solutions/cuda/](../solutions/cuda/) | ✅ |
 | 04 | [softmax](04-softmax.md) | Softmax + warp shuffle reduce | [reference/cuda/softmax/](../reference/cuda/softmax/softmax.cu) | 🚧 |
 | 05 | [flash-attn-reading](05-flash-attn-reading.md) | 读懂 Flash Attention CUDA 代码 | [reference/cuda/flash_attention/](../reference/cuda/flash_attention/flash_attn.cu) | 🚧 |
-| 06 | [triton-intro](06-triton-intro.md) | 第一个 Triton kernel：vec_add → matmul（B1 当前主线） | [Lesson code](06-triton-intro.md#本课代码与进度索引从这里一眼查看) · [solutions/triton/](../solutions/triton/) | 🚧 |
+| 06 | [triton-intro](06-triton-intro.md) | Triton Vector Add → MatMul（B1 baseline 已收口） | [Lesson code](06-triton-intro.md#本课代码与进度索引从这里一眼查看) · [solutions/triton/](../solutions/triton/) | ✅ 阶段性 |
 | 07 | [triton-debugging](07-triton-debugging.md) | Triton 调试：interpreter、打印、断言、sanitizer、数值误差 | [Lesson 06 MatMul](06-triton-intro.md#56-服务器真实性能) · [Triton Debugging](07-triton-debugging.md) | 配套 |
+| 08 | [triton-fused-softmax](08-triton-fused-softmax.md) | Triton Fused Softmax（B2 当前主线） | LeetGPU #5 → `solutions/triton/fused_softmax.py`（通过后归档） | 🚧 当前 |
 
-> 01-05 是 CUDA 打底阶段（"能读懂 CUDA 代码"的 B 级深度）。当前主线已切到 06 Triton 实现阶段；详细任务见 [roadmap/ai-infra-curriculum.md](../roadmap/ai-infra-curriculum.md)。
+> 01-05 是 CUDA 打底阶段；06-08 进入 Triton 实现阶段。当前主线是 Lesson 08 Fused Softmax，详细任务见 [roadmap/ai-infra-curriculum.md](../roadmap/ai-infra-curriculum.md)。
 
 ## 这些课怎么来的
 
