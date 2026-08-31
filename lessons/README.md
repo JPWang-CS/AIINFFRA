@@ -16,7 +16,7 @@
 | 05 | [flash-attn-reading](05-flash-attn-reading.md) | 读懂 Flash Attention CUDA 代码 | [reference/cuda/flash_attention/](../reference/cuda/flash_attention/flash_attn.cu) | ✅ 读码完成 |
 | 06 | [triton-intro](06-triton-intro.md) | Triton Vector Add → MatMul（B1 baseline 已收口） | [Lesson code](06-triton-intro.md#本课代码与进度索引从这里一眼查看) · [solutions/triton/](../solutions/triton/) | ✅ 阶段性 |
 | 07 | [triton-debugging](07-triton-debugging.md) | Triton 调试：interpreter、打印、断言、sanitizer、数值误差 | [Lesson 06 MatMul](06-triton-intro.md#56-服务器真实性能) · [Triton Debugging](07-triton-debugging.md) | 配套 |
-| 08 | [triton-softmax 迁移](08-triton-fused-softmax.md) | CUDA → Triton 映射检查点（B2） | LeetGPU #5 → `solutions/triton/fused_softmax.py`（通过后归档）→ RTX 3090 row-wise baseline | 🚧 当前 |
+| 08 | [triton-softmax 迁移](08-triton-fused-softmax.md) | CUDA → Triton 映射检查点（B2） | LeetGPU #5 → [`solutions/triton/fused_softmax.py`](../solutions/triton/fused_softmax.py) 已归档 → RTX 3090 row-wise baseline | `LEETGPU_PASS`；服务器待做 |
 
 > 01-05 是 CUDA 打底阶段；06-08 进入 Triton 实现阶段。Softmax 原理已在 Lesson 04 掌握；当前只做 Lesson 08 的 CUDA → Triton 迁移、LeetGPU #5 和 RTX 3090 baseline，完成后进入 B3；通用调试入口是 Lesson 07，详细任务见 [roadmap/ai-infra-curriculum.md](../roadmap/ai-infra-curriculum.md)。
 

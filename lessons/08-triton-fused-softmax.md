@@ -2,7 +2,7 @@
 
 > 当前主线：B2 Triton Softmax 语言迁移
 > 前置：Softmax 理论与 CUDA 实现已掌握；Triton Vector Add / MatMul 已完成阶段性基线
-> 状态：`WIP`；尚无用户编写的 Triton 版本
+> 状态：`LEETGPU_PASS`；用户通过版已原样归档
 > 本课目的：用一个小检查点把 CUDA 的地址、mask、reduce 心智迁移到 Triton，然后立即进入 B3 FlashAttention
 
 ## 当前单元卡
@@ -10,13 +10,13 @@
 | 项目 | 当前状态 |
 |---|---|
 | 题目 | [LeetGPU Softmax](https://leetgpu.com/challenges/softmax) · 题库 #5 |
-| 当前代码 | 尚未编写；必须从 LeetGPU 题面提供的模板开始 |
-| LeetGPU 归档 | 通过后原样保存平台 `solve`/kernel 到 `solutions/triton/fused_softmax.py` |
+| 当前代码 | [fused_softmax.py](../solutions/triton/fused_softmax.py)（LeetGPU 原始通过版） |
+| LeetGPU 归档 | 已原样保存平台 `solve`/kernel 到 [fused_softmax.py](../solutions/triton/fused_softmax.py) |
 | 服务器版本 | 尚未创建；不能覆盖上面的原始平台归档 |
-| LeetGPU 状态 | `WIP` |
+| LeetGPU 状态 | `LEETGPU_PASS` |
 | 服务器状态 | 未开始 |
-| 现在做什么 | 先做 10 分钟 CUDA → Triton 映射，再打开 LeetGPU #5 写题 |
-| 下一站 | LeetGPU 通过并完成 RTX 3090 row-wise baseline 后，立即进入 B3 FlashAttention |
+| 现在做什么 | 保留一维 LeetGPU 通过归档；准备服务器二维 row-wise baseline |
+| 下一站 | RTX 3090 二维 row-wise baseline |
 | 调试入口 | 遇到编译、mask、越界或数值错误时查 [Lesson 07 — Triton Debugging](07-triton-debugging.md) |
 
 ## 已掌握：本课不重新教学
@@ -30,6 +30,69 @@
 - [Triton 入门与 MatMul](06-triton-intro.md)
 
 旧 CUDA 1-pass 重写、三版 benchmark、warp-shuffle 深钻和 Softmax P0–P8 都是可选优化债务，不是 B2 的前置条件。
+
+## LeetGPU最终代码快照（用户通过版）
+
+以下是用户在 LeetGPU #5 通过的原始代码归档，不是 Agent starter。该题是一维输入；服务器阶段另做二维 `[rows, cols]` row-wise baseline，不能把两者混为同一实现或状态。
+
+```python
+import torch
+import triton
+import triton.language as tl
+
+
+@triton.jit
+def softmax_partial(input: torch.Tensor, partial_max: torch.Tensor, partial_sum: torch.Tensor, N, BLOCK_SIZE: tl.constexpr):
+    input = input.to(tl.pointer_type(tl.float32))
+    pid = tl.program_id(0)
+    offset = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+    mask = offset < N
+    x = tl.load(input + offset, mask=mask, other=-float("inf"))
+    tmpMax = tl.max(x, axis=0)
+    tmpSum = tl.sum(tl.exp(x - tmpMax), axis=0)
+    tl.store(partial_max + pid, tmpMax)
+    tl.store(partial_sum + pid, tmpSum)
+
+
+@triton.jit
+def softmax_reduce(global_max: torch.Tensor, global_sum: torch.Tensor, partial_max: torch.Tensor, partial_sum: torch.Tensor, num_blocks: tl.constexpr, REDUCE_SIZE: tl.constexpr):
+    offset = tl.arange(0, REDUCE_SIZE)
+    mask = offset < num_blocks
+    local_sum = tl.load(partial_sum + offset, mask=mask, other=float(0))
+    local_max = tl.load(partial_max + offset, mask=mask, other=-float("inf"))
+    tmp_max = tl.max(local_max, axis=0)
+    local_sum *= tl.exp(local_max - tmp_max)
+    tmp_sum = tl.sum(local_sum, axis=0)
+    tl.store(global_max, tmp_max)
+    tl.store(global_sum, tmp_sum)
+
+
+@triton.jit
+def softmax_sum(global_max, global_sum, input, output, N, BLOCK_SIZE: tl.constexpr):
+    input = input.to(tl.pointer_type(tl.float32))
+    output = output.to(tl.pointer_type(tl.float32))
+    pid = tl.program_id(0)
+    offset = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+    mask = offset < N
+    x = tl.load(input + offset, mask=mask, other=-float("inf"))
+    gm = tl.load(global_max)
+    gs = tl.load(global_sum)
+    tmp_res = tl.exp(x - gm) / gs
+    tl.store(output + offset, tmp_res, mask=mask)
+
+
+def solve(input: torch.Tensor, output: torch.Tensor, N: int):
+    BLOCK_SIZE = 256
+    num_blocks = triton.cdiv(N, BLOCK_SIZE)
+    REDUCE_SIZE = triton.next_power_of_2(num_blocks)
+    partial_sum = torch.empty(num_blocks, dtype=torch.float32, device=input.device)
+    partial_max = torch.empty(num_blocks, dtype=torch.float32, device=input.device)
+    global_sum = torch.empty(1, dtype=torch.float32, device=input.device)
+    global_max = torch.empty(1, dtype=torch.float32, device=input.device)
+    softmax_partial[(num_blocks,)](input, partial_max, partial_sum, N, BLOCK_SIZE=BLOCK_SIZE)
+    softmax_reduce[(1,)](global_max, global_sum, partial_max, partial_sum, num_blocks, REDUCE_SIZE=REDUCE_SIZE)
+    softmax_sum[(num_blocks,)](global_max, global_sum, input, output, N, BLOCK_SIZE=BLOCK_SIZE)
+```
 
 ## 唯一新增：10 分钟 CUDA → Triton 映射
 
@@ -62,7 +125,7 @@
 5. 先用最小输入、非 2 次幂长度、全负数、极端值和相等输入排查；以平台判题作为最终正确性证据。
 6. 只有平台通过后，才把当次原始 `solve`/kernel 原样归档到 `solutions/triton/fused_softmax.py`，并记录题号、语言、日期和平台结果。
 
-状态规则：平台未通过或原始代码未归档时保持 `WIP`；平台通过且原始代码归档后才改为 `LEETGPU_PASS`。平台通过不等于服务器已验证，也不等于 `COMPLETE`。
+状态规则：平台通过且原始代码归档后为 `LEETGPU_PASS`；服务器仍未开始，因此不标记 `GPU_VALIDATED` 或 `COMPLETE`。
 
 ## 服务器：真实性能
 

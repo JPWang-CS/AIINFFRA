@@ -6,7 +6,7 @@
 
 ## 🔧 算子线：当前唯一动作
 
-**B2 Triton Softmax 迁移检查点 · `WIP`**
+**B2 Triton Softmax 迁移检查点 · `LEETGPU_PASS`**
 
 Softmax 定义、数值稳定性、Online Softmax、Parallel Reduce 和 CUDA Softmax 已掌握，本单元不重学原理。现在只做：
 
@@ -20,12 +20,12 @@ Softmax 定义、数值稳定性、Online Softmax、Parallel Reduce 和 CUDA Sof
 
 - 当前课：[Lesson 08 — Triton Softmax 迁移实战 / 检查点](./lessons/08-triton-fused-softmax.md)
 - 题目入口：[LeetGPU Softmax #5](https://leetgpu.com/challenges/softmax)
-- 当前代码：尚无用户 Triton 代码；从平台题面模板开始，不把 reference 或 Agent 草稿算作完成
-- 归档目标：平台通过后原样保存到 `solutions/triton/fused_softmax.py`
-- 当前服务器状态：未开始；平台通过并归档后，做二维 row-wise softmax 的 RTX 3090 正确性与 baseline
+- 当前代码：[solutions/triton/fused_softmax.py](solutions/triton/fused_softmax.py)，LeetGPU 原始通过版已归档
+- LeetGPU 结果：`SuccessPublicTrace`，2026-09-01 00:37:33，0.29 ms，47.0th percentile
+- 当前服务器状态：未开始；下一步做二维 row-wise softmax 的 RTX 3090 正确性与 baseline
 - 调试入口：[Lesson 07 — Triton Debugging](./lessons/07-triton-debugging.md)
 
-**状态门槛**：当前 `WIP`；平台通过 + 原始代码归档才是 `LEETGPU_PASS`；RTX 3090 row-wise 正确性和 ms/GB/s 证据齐全才是 `GPU_VALIDATED`。没有这些证据不写 `COMPLETE`。
+**状态门槛**：当前 `LEETGPU_PASS`；RTX 3090 row-wise 正确性和 ms/GB/s 证据齐全才是 `GPU_VALIDATED`。服务器未开始，没有这些证据不写 `COMPLETE`。
 
 **明确不阻塞当前动作**：旧 CUDA `softmax_1pass` 用户重写、三版 benchmark、warp-shuffle 深钻，以及 Softmax P0–P8 极致优化，全部放入 PATH 的可选优化债务池。
 
@@ -51,6 +51,6 @@ FA1 机制、online 更新公式和 merge 结合律已掌握；FA2 统一笔记�
 | A1-A4 CUDA 算子线 | A4 知识 ✅；旧实现债务 ⭐ | [Lesson 04](./lessons/04-softmax.md) · [HISTORY.md](./HISTORY.md) |
 | A5 Flash Attn 读码 | ✅ 2026-08-10 | [阅读笔记](./notes/cuda/flash-attn-reading.md) |
 | B1 Triton Vector Add / MatMul | 阶段性收口 | [Lesson 06](./lessons/06-triton-intro.md) · [PATH.md](./PATH.md) |
-| B2 Triton Softmax | `WIP` 当前 | [Lesson 08](./lessons/08-triton-fused-softmax.md) · [PATH B2](./PATH.md) |
+| B2 Triton Softmax | `LEETGPU_PASS` 当前；服务器待做 | [Lesson 08](./lessons/08-triton-fused-softmax.md) · [PATH B2](./PATH.md) · [代码](./solutions/triton/fused_softmax.py) |
 
 *想换方向或调节奏，直接说。*

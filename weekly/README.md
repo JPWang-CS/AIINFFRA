@@ -23,6 +23,7 @@
 |------|------|----------|
 | [2026-08-30-triton-matmul-nsys](2026-08-30-triton-matmul-nsys.md) | Triton MatMul Nsight Systems P0-lite：s3/s2 资源与性能因果实验 | B1 |
 | [2026-08-28-triton-matmul-leetgpu](2026-08-28-triton-matmul-leetgpu.md) | Triton MatMul LeetGPU 通过归档 + RTX 3090 服务器验证复盘 | B1 |
+| [2026-09-01-triton-softmax-leetgpu](2026-09-01-triton-softmax-leetgpu.md) | Triton Softmax LeetGPU 原始代码归档与通过结果复盘；服务器 baseline 待做 | B2 |
 | [2026-08-24-triton-vector-add](2026-08-24-triton-vector-add.md) | Triton Vector Add AutoDL 验收 + B1 复盘 | B1 |
 | [2026-08-03-plan-revision](2026-08-03-plan-revision.md) | 计划补密度 + A5/A4 进度校准 | 全路线 |
 | [2026-07-22-softmax-online](2026-07-22-softmax-online.md) | Softmax 优化深挖（3-pass→2-pass online）+ A5 准备 | A4 优化 / A5 准备 |

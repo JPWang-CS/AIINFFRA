@@ -272,9 +272,9 @@ for n in range(0, N, BLOCK_N):
 5. 完成服务器 baseline 后立即进入 B3；M0.1/M0.2、warp-shuffle 和 Softmax P0–P8 不得阻塞。
 
 完成定义：
-- [ ] LeetGPU #5 通过且原始代码已归档
-- [ ] RTX 3090 row-wise 正确性和 baseline 数字已记录
-- [ ] 下一单元切换为 B3 FlashAttention
+- [x] LeetGPU #5 通过且原始代码已归档：[`solutions/triton/fused_softmax.py`](../solutions/triton/fused_softmax.py)，`LEETGPU_PASS`
+- [ ] RTX 3090 row-wise 正确性和 baseline 数字已记录（服务器待做）
+- [ ] 下一单元切换为 B3 FlashAttention（服务器 baseline 完成后）
 
 ### B3：Flash Attention（B2 完成后立即进入）
 

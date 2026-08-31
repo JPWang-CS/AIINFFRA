@@ -7,6 +7,7 @@
 
 ## 0. 最后更新
 
+- 2026-09-01（Triton Softmax LeetGPU #5 用户通过版已原样归档至 [`solutions/triton/fused_softmax.py`](./solutions/triton/fused_softmax.py)；`SuccessPublicTrace`，2026-09-01 00:37:33，0.29 ms，47.0th percentile。B2 状态更新为 `LEETGPU_PASS`；服务器二维 row-wise baseline 尚未开始，未标记 `GPU_VALIDATED`/`COMPLETE`）
 - 2026-08-31（按用户裁决重规划课程：Softmax 定义、稳定性、Online Softmax、Parallel Reduce 和 CUDA Softmax 视为已掌握；B2 缩为 10 分钟 CUDA → Triton 映射 → LeetGPU #5 原始 solve/kernel 归档 → RTX 3090 row-wise baseline，完成后立即 B3 FlashAttention。旧 1-pass 重写、三版 benchmark、warp-shuffle 深钻和 Softmax P0–P8 全部降为可选优化债务；Lesson08 重写为精简迁移检查点，当前仍为 `WIP`）
 - 2026-08-30（补齐 B2 正式课程 [`lessons/08-triton-fused-softmax.md`](./lessons/08-triton-fused-softmax.md)：曾包含当前单元卡、稳定公式、Triton row/program 映射、mask/`other=-inf`、starter TODO、LeetGPU #5 正确性归档、服务器 row-wise benchmark、资源边界和验收清单；当时状态 `WIP`，尚无用户代码，后由 2026-08-31 重规划为迁移检查点）
 - 2026-08-30（用户决定 MatMul 先阶段性收口：LeetGPU `LEETGPU_PASS`、RTX 3090 `GPU_VALIDATED` baseline 已完成，当前最佳 20.830 ms / 19,794.1 GFLOPS / `torch.mm` 80.3%；Nsight Systems P0-lite 已归档。剩余 NCU counters、PTX/SASS、spill/occupancy、多 shape 回归和完整 P0–P8 极致优化转入 GPU 优化篇，不再阻塞主线；随后切换为 B2 Triton Softmax 迁移检查点）
