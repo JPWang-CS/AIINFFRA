@@ -1,6 +1,6 @@
 # Triton 实现
 
-> 位置：这里保存用户的可执行版本和明确标记的 `WIP` 快照；当前单元的题目、代码快照和验收入口见 [Lesson 06](../../lessons/06-triton-intro.md)。
+> 位置：这里保存用户的可执行版本和明确标记的 `WIP` 快照；当前单元的题目、代码快照和验收入口见 [Lesson 08](../../lessons/08-triton-fused-softmax.md)。
 > 计划入口：[roadmap/ai-infra-curriculum.md](../../roadmap/ai-infra-curriculum.md) M2
 
 ## 当前进度
@@ -11,8 +11,8 @@
 | [`matmul_leetgpu.py`](./matmul_leetgpu.py) | Triton tiled GEMM：LeetGPU 最终原始 `solve`/kernel 归档 | `LEETGPU_PASS`：LeetGPU #02，Triton，2026-08-28；SuccessPublicTrace | A100-80GB，24.54 ms，55.3th percentile |
 | [`matmul_leetgpu_wip.py`](./matmul_leetgpu_wip.py) | Triton tiled GEMM：历史平台代码快照 | 历史 `WIP`：默认 TF32 精度失败案例，保留用于复盘 | 4×4 case 最大绝对误差 `0.1275177001953125`；IEEE 版本后平台通过 |
 | [`matmul.py`](./matmul.py) | Triton tiled GEMM：服务器验证版 | 基于 MatMul 逻辑的本地适配，不是平台原始归档 | `GPU_VALIDATED` baseline：RTX 3090 正确性通过；s3/s2 Nsight Systems P0-lite 已完成；P0–P8 deferred |
-| `fused_softmax.py`（尚未创建） | Triton Fused Softmax | `WIP`：当前课程 [Lesson 08](../../lessons/08-triton-fused-softmax.md)；先 LeetGPU #5，通过后归档原始代码，再做服务器正确性/性能 |
-| `flash_attention.py` | Triton Flash Attention | 对比 PyTorch ref + 显存/速度 |
+| `fused_softmax.py`（尚未创建） | Triton Softmax 迁移检查点 | `WIP`：当前课程 [Lesson 08](../../lessons/08-triton-fused-softmax.md)；10 分钟 CUDA → Triton 映射后先 LeetGPU #5，通过后归档原始代码，再做 RTX 3090 row-wise baseline |
+| `flash_attention.py` | Triton Flash Attention | B2 完成后立即进入；对比 PyTorch ref + 显存/速度，FA2 理论约 50% WIP |
 | `gqa.py` / `fused_mlp.py` | 模型结构组件 | 正确性 + autotune |
 
 ### MatMul LeetGPU 入口
@@ -104,7 +104,7 @@ MatMul 当前 baseline 出口：RTX 3090 最佳 20.830 ms / 19,794.1 GFLOPS / `t
 ```bash
 python vector_add.py
 python matmul.py
-python fused_softmax.py
+# fused_softmax.py：LeetGPU #5 通过并归档后再做服务器验证
 python flash_attention.py
 ```
 

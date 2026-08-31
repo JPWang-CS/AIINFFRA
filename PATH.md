@@ -43,7 +43,7 @@
 | A2+ | — | `gemm_fp16_naive` | LeetGPU fp16 跑通（2026-06-22）·[review](./notes/cuda/code-review-gemm-fp16-naive.md) | — | 我的→[gemm_fp16_naive.cu](./solutions/cuda/gemm/naive_fp16.cu) | ✅ |
 | A3 | [03 gemm-tiled](./lessons/03-gemm-tiled.md) | `gemm_fp16_tiled` | LeetGPU 跑通（2026-06-22）· 4090 实测 K=2048/8192 tiled 0.6x naive（L2 cache + occupancy，详见 benchmark） | [memory-model §3.3](./notes/cuda/memory-model.md) | 我的→[tiled_fp16.cu](./solutions/cuda/gemm/tiled_fp16.cu) · 参考→[gemm.cu](./reference/cuda/gemm/gemm.cu) | ✅ |
 | A3+ | — | `gemm_tiled` (float) | 计划项，当前没有独立归档产物 | [memory-model §3.3](./notes/cuda/memory-model.md) | 参考→[gemm.cu](./reference/cuda/gemm/gemm.cu) | ⏳ |
-| A4 | [04 softmax](./lessons/04-softmax.md) | `softmax_naive` → `softmax_online` → `softmax_1pass` | 3-pass baseline ✅（2026-07-01）· 2-pass fused ✅ · 1-pass true online 待落盘 · warp shuffle/benchmark 待做 | [warp-and-sync §4](./notes/cuda/warp-and-sync.md) | [softmax.cu](./reference/cuda/softmax/softmax.cu) · 我的→[softmax_naive.cu](./solutions/cuda/softmax/softmax_naive.cu) · [softmax_online.cu](./solutions/cuda/softmax/softmax_online.cu) | 🚧 |
+| A4 | [04 softmax](./lessons/04-softmax.md) | Softmax 定义、数值稳定性、Online Softmax、Parallel Reduce、CUDA Softmax | **知识 ✅**：定义、稳定性、online、parallel reduce 和 CUDA 版本已掌握；旧 1-pass 重写、三版 benchmark、warp-shuffle 深钻均降为可选债务，不阻塞 Triton | [online-softmax](./notes/algorithms/online-softmax.md) · [parallel-reduce](./notes/algorithms/parallel-reduce.md) | [softmax.cu](./reference/cuda/softmax/softmax.cu) · 历史实现→[solutions/cuda/softmax/](./solutions/cuda/softmax/) | 知识 ✅ · 债务 ⭐ |
 | A5 | [05 flash-attn-reading](./lessons/05-flash-attn-reading.md) | 读代码（不手写） | 能标注每个 `__syncthreads` 作用（2026-08-10 ✅，[阅读笔记](./notes/cuda/flash-attn-reading.md)，发现 2 个真实 bug） | [triton-under-the-hood](./notes/cuda/triton-under-the-hood.md) | [flash_attn.cu](./reference/cuda/flash_attention/flash_attn.cu) · [论文](./papers/attention/flash-attention.md) | ✅ |
 
 **阶段出口**：A5 完成 = CUDA B 级达成，切 B 线。
@@ -55,11 +55,17 @@
 | 阶段 | 课 | 自己写 | 验收 | 参考 | 状态 |
 |:-:|----|--------|------|------|:--:|
 | B1 | [06 triton-intro](./lessons/06-triton-intro.md) | Vector Add：LeetGPU 通过 + AutoDL RTX 3090 benchmark（840.1 GB/s），但原始 LeetGPU `solve` 尚未单独归档 ⚠️；MatMul LeetGPU 原始代码已 `LEETGPU_PASS`，服务器适配版已 `GPU_VALIDATED` | MatMul 当前基线出口已完成：RTX 3090 最佳 20.830 ms / 19,794.1 GFLOPS / `torch.mm` 80.3%；Nsight Systems P0-lite：[s3/s2 详细分析](./notes/triton/matmul-nsys-p0-lite-2026-08-30.md) 与完整 raw logs 已归档。剩余 P0–P8 极致优化延期至 [GPU 优化篇](./roadmap/gpu-foundations.md#matmul-优化债务-deferred-backlog)，不再阻塞 B2 | 我的→[vector_add.py](./solutions/triton/vector_add.py) · LeetGPU最终版→[matmul_leetgpu.py](./solutions/triton/matmul_leetgpu.py) · 服务器版→[matmul.py](./solutions/triton/matmul.py) · P0-lite→[分析](./notes/triton/matmul-nsys-p0-lite-2026-08-30.md) · 参考→[matmul.py](./reference/triton/matmul/matmul.py) | GPU_VALIDATED |
-| B2 | [08 triton-fused-softmax](./lessons/08-triton-fused-softmax.md) | Triton fused softmax：当前无用户代码 | **LeetGPU #5 正确性与原始代码归档 → 服务器 row-wise softmax 对齐 PyTorch并记录 ms/GB/s** | [CUDA Softmax](./lessons/04-softmax.md) · [Online Softmax](./notes/algorithms/online-softmax.md) · [Lesson 07 调试](./lessons/07-triton-debugging.md) | WIP 当前 |
+| B2 | [08 triton-softmax 迁移检查点](./lessons/08-triton-fused-softmax.md) | Triton Softmax：只做 CUDA → Triton 语言迁移，当前无用户代码 | **10 分钟映射 → LeetGPU #5 从题面写 → 原始 solve/kernel 归档 → RTX 3090 row-wise baseline；完成后立即 B3** | [Lesson 04](./lessons/04-softmax.md) · [Lesson 07 调试](./lessons/07-triton-debugging.md) | WIP 当前 |
 | B3 | _按需生成_ | Triton flash attention | 对比 PyTorch ref 正确 | [flash_attn.py](./reference/triton/flash_attention/flash_attn.py) | ⏳ |
 | B4 | _按需生成_ | Triton GQA / fused MLP | 正确性 + autotuning | [activations.cuh](./reference/cuda/include/activations.cuh)（料） | ⏳ |
 
-核心锚点通过 LeetGPU 并归档原始实现后，服务器阶段可按需执行 [P0–P8 极致性能阶梯](./roadmap/gpu-foundations.md#32-核心算子的极致性能阶梯)；当前 MatMul 已完成基线出口，剩余极致优化延期至 GPU 优化篇，不阻塞算子主线。
+核心锚点通过 LeetGPU 并归档原始实现后，服务器阶段可按需执行 [P0–P8 极致性能阶梯](./roadmap/gpu-foundations.md#32-核心算子的极致性能阶梯)；当前 MatMul 已完成基线出口，Softmax 的旧 CUDA 深钻与 P0–P8 同样进入可选债务池，不阻塞 B2 → B3。
+
+### Softmax 旧实现债务（可选，不阻塞主线）
+
+- `softmax_1pass.cu`：保留为 Agent 草稿/历史证据，用户重写不再是 B2 前置。
+- `softmax_opt.cu`：warp-shuffle 版本仍是可选深钻，不进入当前验收。
+- 3-pass / online / warp-shuffle 横向 benchmark：可在有明确目标 GPU 和 profiler 证据时补做，不改变 B2 状态。
 
 ## C — 推理系统
 
@@ -154,7 +160,7 @@
 
 ## 里程碑
 
-- [ ] 算子线：A4 1-pass 后置收尾；B1 Vector Add 技术验收完成但 LeetGPU 原始代码归档有缺口；MatMul 当前基线已 `GPU_VALIDATED` 并阶段性冻结，剩余 P0–P8 优化延期至 GPU 优化篇
+- [ ] 算子线：A4 Softmax 知识已完成；旧 1-pass/benchmark/warp-shuffle 为可选债务；B1 Vector Add 技术验收完成但 LeetGPU 原始代码归档有缺口；MatMul 当前基线已 `GPU_VALIDATED` 并阶段性冻结
 - [ ] 算子线：B1-B3 完成，Triton 写出 Flash Attention 并记录性能差距
 - [ ] 模型结构：能对着 HF config 讲清一个最新模型的 GQA/MoE/位置编码
 - [ ] 算子线：C1-C4 完成，跑通 vLLM benchmark 并讲清 PagedAttention/scheduling

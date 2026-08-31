@@ -43,11 +43,11 @@
 Triton vec add -> matmul -> fused softmax -> flash attention -> GQA/fused MLP
 ```
 
-A4/A5 不再作为当前主线，只作为背景收尾：
+A4/A5 不再作为当前主线：A4 的知识出口已完成，旧 CUDA 实现缺口只保留为可选债务；A5 读码作为已完成背景，B2 完成后直接进入 B3：
 ```text
-A4 1-pass true online 落盘
-A4 warp shuffle + benchmark
-A5 Flash Attention 注释笔记
+A4 旧实现债务（可选）
+A5 Flash Attention 读码（已完成）
+B2 Triton Softmax 迁移 -> B3 Triton FlashAttention
 ```
 
 ---
@@ -95,55 +95,19 @@ A5 Flash Attention 注释笔记
 
 ---
 
-## M0：A4/A5 背景收尾
+## M0：Softmax 背景与可选债务
 
-目标：把 Softmax 优化和 Flash Attention 阅读收完，但不抢 Triton 主线时间。
+目标：不再把已掌握的 Softmax 理论当成课程任务；保留旧代码和实验作为可追溯债务，但不阻塞 B2 → B3。
 
-### M0.1 Softmax 1-pass true online 落盘
+### M0.1 / M0.2：旧 Softmax 项（可选优化债务）
 
-任务：
-- 把 LeetGPU 上实践过的 `maxSumkernel` 落盘为 `solutions/cuda/softmax/softmax_1pass.cu`。
-- 保持 `extern "C" void solve(const float*, float*, int)` 签名。
+- `M0.1`：用户重写 CUDA true online 1-pass，并补齐真实验证；现有 `softmax_1pass.cu` 只算历史 Agent 草稿/证据，不算用户完成。
+- `M0.2`：按明确目标 GPU 对比 3-pass、online、warp-shuffle 版本的耗时、误差和有效 GB/s；不作为 B2 或 B3 的前置。
+- warp-shuffle 深钻、跨 block 归约改造和 Softmax/Norm P0–P8 统一进入 [GPU 优化篇](gpu-foundations.md) 的可选债务池。
 
-步骤：
-1. 每个线程串行扫一段元素，维护 `(m, s)`。
-2. block 内 tree reduce 合并 `(m, s)`。
-3. 空线程用 `-INFINITY` 哨兵，避免 `exp(NaN)`。
-4. 用 `normalize_kernel` 多 block 并行归一化。
-5. 用 `KERNEL=softmax_1pass.cu ./run.sh` 验证。
+### M0.3：A5 Flash Attention 读码
 
-完成定义：
-- [ ] 代码在仓库
-- [ ] 精度误差 < 1e-4
-- [ ] 记录耗时或带宽
-
-### M0.2 Softmax 三版 benchmark
-
-任务：
-- 对比 `softmax_naive`、`softmax_online`、`softmax_opt`。
-- 分别记录耗时、有效带宽 GB/s、误差。
-
-关键公式：
-```text
-有效带宽 = 实际读写字节 / 耗时
-3-pass: 3 次读 input + 1 次写 output
-2-pass fused: 2 次读 input + 1 次写 output
-```
-
-完成定义：
-- [ ] 三个版本都有数字
-- [ ] 能解释为什么 online 比 3-pass 少读一次
-
-### M0.3 A5 Flash Attention 注释
-
-任务：
-- 读 `reference/cuda/flash_attention/flash_attn.cu`。
-- 标注每个 `__syncthreads` 的作用。
-- 解释 Q/K/V tile、online softmax、register accumulator。
-
-完成定义：
-- [ ] 生成注释版笔记
-- [ ] 能画出 `Br x Bc` tile 的数据流
+A5 读码已完成（2026-08-10）；其阅读笔记继续作为 B3 的背景入口，不在 B2 重复安排。
 
 ---
 
@@ -151,14 +115,14 @@ A5 Flash Attention 注释笔记
 
 目标：用 CUDA 建立 kernel 底层感觉，为理解 Triton 生成代码打底。
 
-GPU 体系主课入口：[GPU 底层架构与性能优化课程](gpu-foundations.md) · [GPU 架构知识图](../notes/cuda/gpu-architecture-layers.md)。它覆盖整机拓扑、执行模型、SM 微架构、存储、数值/Tensor Core、编译指令、性能模型、runtime、库与集群九层，但按当前算子 Just-in-Time 解锁，不另开第三条主线：B1 MatMul 学 Ampere/SM/内存/Tensor Core/roofline，B2 Softmax 学 reduction 与 profiling，B3 FlashAttention 学 async pipeline/Hopper，M3 学 runtime/CUDA Graph，M4 学互联和通信；Blackwell 做架构增量。
+GPU 体系主课入口：[GPU 底层架构与性能优化课程](gpu-foundations.md) · [GPU 架构知识图](../notes/cuda/gpu-architecture-layers.md)。它覆盖整机拓扑、执行模型、SM 微架构、存储、数值/Tensor Core、编译指令、性能模型、runtime、库与集群九层，但按当前算子 Just-in-Time 解锁，不另开第三条主线：B1 MatMul 学 Ampere/SM/内存/Tensor Core/roofline，B2 只做 CUDA → Triton 迁移检查点和 row-wise baseline，B3 FlashAttention 学 async pipeline/Hopper，M3 学 runtime/CUDA Graph，M4 学互联和通信；Blackwell 做架构增量。
 
 ### 底层能力挂载表
 
 | PATH 节点 | 同步解锁的 GPU 底层能力 | 实验证据 |
 |-----------|--------------------------|----------|
 | B1 MatMul | G1 执行、G2 SM、G3 存储、G4 数值/Tensor Core、G6 roofline | 当前基线出口：tile/warp/stage sweep；IEEE/TF32 对照；Nsight Systems P0-lite。P0–P8 深钻延期至 GPU 优化篇 |
-| B2 Softmax | divergence、reduction、SFU、register pressure、memory-bound | shared/warp reduction；GB/s；stall/traffic |
+| B2 Softmax | CUDA → Triton 映射、mask、program 与 row-wise baseline | LeetGPU 原始归档；RTX 3090 正确性、ms/GB/s |
 | B3 FlashAttention | async copy、double buffer、warp specialization、Hopper TMA/WGMMA | Q/K/V 数据流；pipeline/timeline；HBM traffic |
 | B5 GQA/MLP | fusion、layout、quantized MMA | 中间张量 bytes；融合前后性能/误差 |
 | M3 推理 | launch、stream、CUDA Graph、allocator、KV cache locality | Nsight Systems；TTFT/TPOT/tokens/s |
@@ -170,14 +134,14 @@ GPU 体系主课入口：[GPU 底层架构与性能优化课程](gpu-foundations
 |------|---------|---------|
 | Reduce | shared memory tree reduce、warp shuffle | grid-wide reduce |
 | GEMM | naive、tiled、fp16 | vec4、double buffer、tensor core |
-| Softmax | 3-pass、2-pass fused、1-pass online | benchmark |
+| Softmax | 理论与 CUDA 版本已掌握；B2 做 Triton 迁移 | 旧 1-pass、三版 benchmark、P0–P8 为可选债务 |
 | Flash Attention | 读 CUDA、对照论文 | 手写简化版 |
 | LayerNorm/RMSNorm | 读参考、写一版 | 融合 residual |
 | Profiling | Nsight Systems/Compute 能跑 | roofline 分析 |
 
 ### 极致性能锚点
 
-不是每道题都无限优化。全路线固定四类锚点：MatMul、Softmax/Norm、FlashAttention、Fused MLP/GQA。它们完成 LeetGPU 正确性和原始代码归档后，可在服务器阶段执行 [P0–P8 极致性能阶梯](gpu-foundations.md#32-核心算子的极致性能阶梯)；MatMul 已先完成基线出口，剩余深钻延期至 GPU 优化篇，不阻塞 B2。其余算子只要求可靠 baseline 与一次瓶颈解释，避免主线被无底洞式调参拖住。
+不是每道题都无限优化。全路线固定四类锚点：MatMul、Softmax/Norm、FlashAttention、Fused MLP/GQA。它们完成 LeetGPU 正确性和原始代码归档后，原则上可在服务器阶段执行 [P0–P8 极致性能阶梯](gpu-foundations.md#32-核心算子的极致性能阶梯)；MatMul 已先完成基线出口，Softmax 的旧 CUDA 深钻和 P0–P8 也明确延期为可选债务，不阻塞 B2 → B3。其余算子只要求可靠 baseline 与一次瓶颈解释，避免主线被无底洞式调参拖住。
 
 ### 分阶段完成定义
 
@@ -295,26 +259,24 @@ for n in range(0, N, BLOCK_N):
 - [x] Nsight Systems P0-lite：timeline、launch metadata、s3/s2 单变量分析与完整 raw log
 - [x] 当前基线出口完成；accumulator/register、PTX/SASS、NCU counters、spill/occupancy、多 shape 回归与完整 P0–P8 闭环列入 GPU 优化篇延期项
 
-### B2：[Fused Softmax](../lessons/08-triton-fused-softmax.md)
+### B2：[Triton Softmax 迁移检查点](../lessons/08-triton-fused-softmax.md)
 
-目标：把 max/exp/sum/div 合成一个 kernel。
+目标：完成 10 分钟 CUDA → Triton 语言映射；不重学 Softmax 定义、稳定性、Online Softmax、Parallel Reduce 或 CUDA 实现。
 
-当前入口：先读 [Lesson 08 Part 0–4](../lessons/08-triton-fused-softmax.md)，再到 LeetGPU #5 从平台模板写；平台通过并归档原始代码后，才进入服务器二维 row-wise benchmark。
+执行卡：
 
-```python
-x = tl.load(x_ptr + offsets, mask=mask, other=-float('inf'))
-x_max = tl.max(x, axis=0)
-num = tl.exp(x - x_max)
-denom = tl.sum(num, axis=0)
-y = num / denom
-```
+1. 用 `tl.program_id`、`tl.arange`、element offset、mask、reduce axis、grid 和 `tl.constexpr` 对照 CUDA 心智。
+2. 打开 [LeetGPU Softmax #5](https://leetgpu.com/challenges/softmax)，从真实题面和平台模板写 Triton，不复制 reference，不使用课程 skeleton。
+3. 平台通过后把原始 `solve`/kernel 原样归档到 `solutions/triton/fused_softmax.py`，状态改为 `LEETGPU_PASS`。
+4. 归档后在 RTX 3090 做二维 row-wise correctness + baseline，记录 GPU、shape、dtype、ms、相对 `torch.softmax` 速度和理想 effective GB/s。
+5. 完成服务器 baseline 后立即进入 B3；M0.1/M0.2、warp-shuffle 和 Softmax P0–P8 不得阻塞。
 
 完成定义：
-- [ ] 和 `torch.softmax` 对齐
-- [ ] 能解释 max trick
-- [ ] 记录提速
+- [ ] LeetGPU #5 通过且原始代码已归档
+- [ ] RTX 3090 row-wise 正确性和 baseline 数字已记录
+- [ ] 下一单元切换为 B3 FlashAttention
 
-### B3：Flash Attention
+### B3：Flash Attention（B2 完成后立即进入）
 
 目标：用 Triton 实现 tiling + online softmax。
 

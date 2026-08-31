@@ -35,13 +35,13 @@
 | 单元 | 核心问题 | 必须掌握 | 最小实验 | 挂载点 |
 |------|----------|----------|----------|--------|
 | G0 整机与拓扑 | CPU、GPU、显存、PCIe/NVLink/NIC 如何连接？ | NUMA、P2P、链路带宽与 HBM 带宽的区别 | topology + H2D/D2H/P2P | B1、M4 |
-| G1 编程与执行 | Grid/Cluster/Block/Warp/Thread 如何执行？ | SIMT、ITS、divergence、同步作用域、atomics | block size/divergence microbench | B1、B2 |
+| G1 编程与执行 | Grid/Cluster/Block/Warp/Thread 如何执行？ | SIMT、ITS、divergence、同步作用域、atomics | block size/divergence microbench | B1；B2 只做迁移映射 |
 | G2 SM 微架构 | block 如何驻留，warp 如何发射？ | scheduler、pipeline、latency/throughput、ILP/TLP、occupancy | block/warp/寄存器 sweep | B1 |
-| G3 存储系统 | register/shared/L1/L2/HBM 如何搬数据？ | coalescing、alignment、sector、bank conflict、spill、cache reuse | stride/copy/tiled GEMM | B1、B2 |
+| G3 存储系统 | register/shared/L1/L2/HBM 如何搬数据？ | coalescing、alignment、sector、bank conflict、spill、cache reuse | stride/copy/tiled GEMM | B1；B2 只记录 baseline 所需数据 |
 | G4 计算与数值 | CUDA Core、SFU、Tensor Core 做什么？ | FP32/TF32/FP16/BF16/FP8/FP4、累加精度、MMA tile | 精度—误差—吞吐对照 | B1、B3、量化 |
 | G5 指令与编译 | CUDA/Triton 如何变成机器指令？ | CUDA→PTX→SASS；Triton→MLIR→PTX；load/MMA/barrier 指令族 | PTX/SASS 对照 | B1、B3 |
 | G6 性能模型 | 为什么慢，优化上限在哪里？ | workload、arithmetic intensity、roofline、SOL、stall、tail effect | 手算 + Nsight 证据 | 所有算子 |
-| G7 Runtime 与并发 | kernel 之外还有哪些瓶颈？ | launch、stream、event、async copy、CUDA Graph、pinned/managed memory | overlap/launch microbench | B2、M3 |
+| G7 Runtime 与并发 | kernel 之外还有哪些瓶颈？ | launch、stream、event、async copy、CUDA Graph、pinned/managed memory | overlap/launch microbench | M3 |
 | G8 库与系统 | 高性能实现如何组织？ | cuBLAS/cuDNN、CUTLASS/CuTe、CUB/CCCL、Triton、NCCL 的分工 | library baseline + 读码 | B3、M3、M4 |
 | 代际线 | Volta→Ampere→Hopper→Blackwell 改了什么？ | Tensor Core、`cp.async`、TMA/WGMMA/cluster、TMEM/TCGen05 | capability/feature 差异表 | 随 G0–G8 挂载 |
 
@@ -96,7 +96,7 @@
 
 ### 3.2 核心算子的极致性能阶梯
 
-极致性能不是所有题都无限打磨。只选择四类锚点：`MatMul`、`Softmax/Norm`、`FlashAttention`、`Fused MLP/GQA`；其他算子完成正确性、服务器 baseline 和一次性能解释即可。
+极致性能不是所有题都无限打磨。只选择四类锚点：`MatMul`、`Softmax/Norm`、`FlashAttention`、`Fused MLP/GQA`；其他算子完成正确性、服务器 baseline 和一次性能解释即可。当前 Softmax 只做迁移检查点和 row-wise baseline，旧 CUDA 深钻与 P0–P8 延后为可选债务。
 
 核心锚点在 `LEETGPU_PASS` 后，服务器章节按下面的内部阶梯迭代；lesson 仍然只显示“LeetGPU”和“服务器”两个验收段，不新增重复章节。
 
@@ -116,7 +116,7 @@ P0 固定数值语义、shape 集和强 baseline
 
 ### MatMul 优化债务池（Deferred backlog）
 
-MatMul 当前只收口到已验证的 baseline：LeetGPU `LEETGPU_PASS`，RTX 3090 `GPU_VALIDATED`，最佳 20.830 ms / 19,794.1 GFLOPS / `torch.mm` 80.3%，并完成 Nsight Systems P0-lite。剩余 NCU counters、PTX/SASS、spill/occupancy 实测、多 shape 回归及完整 P0–P8 闭环统一放在本节，暂不阻塞 B2 Fused Softmax。
+MatMul 当前只收口到已验证的 baseline：LeetGPU `LEETGPU_PASS`，RTX 3090 `GPU_VALIDATED`，最佳 20.830 ms / 19,794.1 GFLOPS / `torch.mm` 80.3%，并完成 Nsight Systems P0-lite。剩余 NCU counters、PTX/SASS、spill/occupancy 实测、多 shape 回归及完整 P0–P8 闭环统一放在本节，暂不阻塞 B2 Triton Softmax 迁移。
 
 接回时直接使用现有证据，不在主线重复写：`k128-128x32-128-w8-s3` baseline、k256 s3/s2 P0-lite 对照与完整 raw log；NCU counters 仅在具备所需 AutoDL 权限或等价 profiler 环境后补采。接回顺序为：先补 P5/P6 证据，再做 accumulator/register 单变量与 spill/occupancy 验证，最后做多 shape/跨架构回归并形成停止结论。任何新实验仍需遵守“硬件假设 → 代码旋钮 → 预期 counter → 实测”，不修改当前已归档 kernel 作为文档切换的一部分。
 
@@ -126,6 +126,15 @@ MatMul 当前只收口到已验证的 baseline：LeetGPU `LEETGPU_PASS`，RTX 30
 | Softmax/Norm | 有效 GB/s、µs | PyTorch + Triton/库强实现 | 接近实测 copy roof，且在目标行宽稳定胜过 unfused baseline |
 | FlashAttention | TFLOPS、HBM bytes、显存、误差 | 官方 FA/Triton 实现 | 多序列长度比较，不只看单 shape；解释 pipeline 与非 MMA 开销 |
 | Fused MLP/GQA | tokens/s、µs、HBM bytes | unfused PyTorch/框架 kernel | 融合后减少真实 traffic/launch，并在目标 serving shape 获益 |
+
+### Softmax/Norm 优化债务（可选，不阻塞 B2 → B3）
+
+Softmax 的定义、数值稳定性、Online Softmax、Parallel Reduce 和 CUDA 实现已经是知识完成项。以下未完成内容只在用户明确回收债务、具备目标 GPU 和 profiler 证据时执行：
+
+- 用户重写 CUDA true online 1-pass；现有 Agent 草稿不计用户完成。
+- 3-pass / online / warp-shuffle 三版 benchmark 与带宽分析。
+- warp-shuffle、跨 block reduce、register/occupancy、SFU/stall 等深钻。
+- Softmax/Norm 的 P0–P8 阶梯；不作为 Triton B2 或 B3 的前置。
 
 这些百分比是工程门槛，不是硬件定律。若 shape 太小、数值语义不同、库使用了不可用的架构特化路径，就记录原因并换成同语义 reference。禁止用 TF32 成绩冒充 IEEE FP32 优化，也禁止只挑一个有利 shape。
 
@@ -139,12 +148,12 @@ MatMul 当前只收口到已验证的 baseline：LeetGPU `LEETGPU_PASS`，RTX 30
 |---:|------|--------------|----------|--------|
 | L0 | `deviceQuery` + topology + bandwidth | GPU/链路 | CC、SM、cache/shared、3 类带宽 | 当前服务器首次使用 |
 | L1 | Vector Add contiguous/stride/unaligned | 地址模式 | GB/s + transaction 差异 | B1 已有代码增量 |
-| L2 | 分支与同步 microbench | divergence/sync | warp efficiency/stall | B2 前 |
-| L3 | Reduction：shared→warp shuffle | reduction 层次 | latency、sync、bank conflict | B2 Softmax |
+| L2 | 分支与同步 microbench | divergence/sync | warp efficiency/stall | 可选；不作为 B2 前置 |
+| L3 | Reduction：shared→warp shuffle | reduction 层次 | latency、sync、bank conflict | 可选债务；不作为 B2 前置 |
 | L4 | MatMul：naive→tile→register tile | tile/复用 | GFLOPS、traffic、resource | 当前 B1 |
 | L5 | MatMul：IEEE→TF32→FP16/BF16 | 数值路径 | error + instruction + throughput | 当前 B1 后半 |
 | L6 | async pipeline | stage/copy path | overlap、stall、shared/register | B3 前 |
-| L7 | Fused Softmax / Norm | fusion/row mapping | bytes、occupancy、GB/s | B2/B5 |
+| L7 | Fused Softmax / Norm | fusion/row mapping | bytes、occupancy、GB/s | B2 baseline 后按需；极致优化延期 |
 | L8 | FlashAttention | work partition/pipeline | HBM traffic、TFLOPS、占用 | B3 |
 | L9 | CUDA Graph / multi-stream | launch/overlap | Nsight Systems timeline | M3 |
 | L10 | P2P + NCCL collectives | message size/topology | algbw/busbw/latency | M4 |
@@ -154,7 +163,7 @@ MatMul 当前只收口到已验证的 baseline：LeetGPU `LEETGPU_PASS`，RTX 30
 
 ---
 
-## 5. 当前执行顺序（当前聚焦 B2 Fused Softmax）
+## 5. 当前执行顺序（B2 迁移检查点 → B3）
 
 ### 第 1 次：B1 MatMul 基线出口（已完成）
 
@@ -175,18 +184,21 @@ MatMul 当前只收口到已验证的 baseline：LeetGPU `LEETGPU_PASS`，RTX 30
 - [ ] 留下一组 IEEE FP32 与 TF32 的误差—吞吐对照，能解释二者为什么不能混为同一成绩；
 - [x] 已有 P0-lite/memory/resource 证据并形成阶段性口径；完整 occupancy/NCU 证据延期至 MatMul 优化债务池。
 
-### 第 2 次：随 B2 Fused Softmax，2 小时
+### 第 2 次：B2 Triton Softmax 迁移检查点
 
-1. 用 arithmetic intensity 预测 softmax 是 memory-bound 还是 compute/SFU-bound。
-2. 比较一行一个 program 时，行宽改变对 occupancy、register 和访存的影响。
-3. 用 Nsight Compute 或 Triton profiler 记录至少一组 memory throughput、SM utilization；有条件再看 spills/stalls。
-4. 把结果与 Vector Add 的 840.1 GB/s 基线比较，解释为什么两个 memory-heavy kernel 的有效带宽不必相同。
+B2 不安排 Softmax 理论复习，也不安排 Softmax profiler/P0–P8 优化。只执行下面的最小闭环：
+
+1. 用 10 分钟完成 `tl.program_id`、`tl.arange`、element offset、mask、reduce axis、grid 和 `tl.constexpr` 的 CUDA → Triton 映射。
+2. 打开 [LeetGPU Softmax #5](https://leetgpu.com/challenges/softmax)，从真实题面和平台模板写 Triton；不复制 reference，不领取完整 kernel。
+3. 平台通过后把原始 `solve`/kernel 原样归档到 `solutions/triton/fused_softmax.py`，才标记 `LEETGPU_PASS`。
+4. 归档后在 RTX 3090 做二维 row-wise correctness + baseline，记录 GPU、shape、dtype、ms、相对 `torch.softmax` 速度和理想 effective GB/s。
+5. 服务器 baseline 有证据后立即退出 B2，进入 B3 FlashAttention；旧 CUDA Softmax 项留在上面的可选债务池。
 
 完成定义：
 
-- [ ] 一张 roofline 手算；
-- [ ] 一组 profiler 证据；
-- [ ] 能区分 occupancy、utilization、efficiency。
+- [ ] LeetGPU #5 通过且原始代码已归档
+- [ ] RTX 3090 row-wise 正确性和 baseline 数字已记录（`GPU_VALIDATED`）
+- [ ] B3 FlashAttention 成为下一单元
 
 ### 第 3 次：随 B3 FlashAttention，半天
 
@@ -319,7 +331,7 @@ PMPP 用作体系教材：线程/内存/性能、卷积、reduction、scan 对�
 ```text
 当前 B1 Triton MatMul
   + G0/G1/G2/G4 的 Ampere 最小实验
-      -> B2 Fused Softmax + G2/G3 profiling
+      -> B2 Triton Softmax 迁移 + RTX 3090 baseline
           -> B3 FlashAttention + G3/G5 Hopper
               -> M3/M4 系统与分布式 + interconnect/topology
 ```

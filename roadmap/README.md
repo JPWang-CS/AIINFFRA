@@ -12,7 +12,7 @@ PATH B：Triton 实现阶段
 vec add -> matmul -> fused softmax -> flash attention -> GQA/fused MLP
 ```
 
-A4/A5 作为背景收尾，不抢主线。
+A4 Softmax 理论与 A5 读码作为已完成背景；旧 CUDA Softmax 实现/benchmark 是可选债务，不抢 B2 → B3 主线。
 
 并行强化：最新模型与算子构建能力（GQA/MLA/MoE/FlashAttention/PagedAttention 等）。
 
@@ -21,7 +21,7 @@ A4/A5 作为背景收尾，不抢主线。
 | 文件 | 对应阶段 | 内容 |
 |------|---------|------|
 | [execution-system.md](execution-system.md) | 所有阶段 | 知识→自写→LeetGPU/reference→服务器→profiler→归档的统一流程 |
-| [gpu-foundations.md](gpu-foundations.md) | A–D 挂载 | GPU 硬件→优化动作映射、P0–P8 极致性能阶梯，以及整机/SM/存储/指令/runtime/集群课程；[知识入口](../notes/cuda/README.md) |
+| [gpu-foundations.md](gpu-foundations.md) | A–D 挂载 | GPU 硬件→优化动作映射、P0–P8 极致性能阶梯，以及整机/SM/存储/指令/runtime/集群课程；Softmax P0–P8 延期为可选债务；[知识入口](../notes/cuda/README.md) |
 | [multi-node-multi-gpu.md](multi-node-multi-gpu.md) | D 多机多卡 | topology、NCCL、RDMA、DeviceMesh、混合并行、EP 与排障 |
 | [ai-infra-curriculum.md](ai-infra-curriculum.md) | PATH 全路线 | 全阶段执行计划、任务、验收、关键数字（含 M2.5 算子构建） |
 | [vllm.md](vllm.md) | C 推理系统 | vLLM 源码深挖：PagedAttention、Scheduler、量化 |

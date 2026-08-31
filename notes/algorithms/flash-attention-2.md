@@ -79,7 +79,7 @@ $$
 $$
 O_r =
 \frac{
-\sum_{s=1}^{N}\left(\exp(S_{rs})V_s\right)
+\sum_{s=1}^{N}\left(\exp(S_{rs})\,V_s\right)
 }{
 \sum_{s=1}^{N}\exp(S_{rs})
 }.
