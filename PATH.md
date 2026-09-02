@@ -95,6 +95,7 @@
 | 主题 | 笔记 | 状态 |
 |------|------|:--:|
 | GPU 底层架构与全栈性能优化（G0–G8） | [课程](./roadmap/gpu-foundations.md) · [架构知识图](./notes/cuda/gpu-architecture-layers.md) | `WIP`，随当前算子挂载；B1 当前解锁 SM/内存/Tensor Core/roofline |
+| 独立 GPU 结构课程 | 待编写 lesson；覆盖 GPU/GPC/TPC/SM、CTA/Warp/Thread、CUDA Core/Tensor Core、内存层级、调度/occupancy、PTX/SASS、Triton 映射 | `WIP`（待编写 lesson） |
 | online softmax（Flash 的心脏） | [online-softmax.md](./notes/algorithms/online-softmax.md) | ✅ |
 | parallel reduce / prefix sum | [parallel-reduce.md](./notes/algorithms/parallel-reduce.md) | ✅ |
 | Norm 的 reduce 模式（LayerNorm/RMSNorm） | [速览](./notes/algorithms/remaining-theory-primer.md) · 料→[layernorm.cu](./reference/cuda/layernorm/layernorm.cu) | 🚧 |
@@ -112,8 +113,8 @@
 | 主题 | 笔记 | 论文 | 状态 |
 |------|------|------|:--:|
 | MHA→MQA→GQA→MLA | [速览](./notes/algorithms/remaining-theory-primer.md) + [最新模型](./notes/algorithms/latest-model-architectures.md) | [gqa.md](./papers/attention/gqa.md) | 🚧 |
-| Flash Attention 1→2→3 | [flash-attention-mechanism.md](./notes/algorithms/flash-attention-mechanism.md) · [FA2 统一笔记](./notes/algorithms/flash-attention-2.md) | [FA1](./papers/attention/flash-attention.md) · FA2 已并入左侧统一笔记 | 🚧 → FA1 ✅（2026-08-10 A5），FA2 🚧 用户阅读约 50%（仍未读完），FA3 待补 |
-| MLA（DeepSeek-V2/V3） | [mla-deepseek.md](./notes/algorithms/mla-deepseek.md) | DeepSeek-V2 | 🚧 |
+| Flash Attention 1→2→3 | [flash-attention-mechanism.md](./notes/algorithms/flash-attention-mechanism.md) · [FA2 统一笔记](./notes/algorithms/flash-attention-2.md) | [FA1](./papers/attention/flash-attention.md) · FA2 已并入左侧统一笔记 | 🚧 → FA1 ✅（2026-08-10 A5），FA2 阅读完成（2026-09-02；仅表示笔记阅读完成，不代表 Triton 实现或 LeetGPU/服务器验证），FA3 待补 |
+| MLA（DeepSeek-V2/V3） | [mla-deepseek.md](./notes/algorithms/mla-deepseek.md) | DeepSeek-V2 | 🚧；下一理论节（FA2 阅读完成后） |
 | FA4 / FlexAttention | [fa4-flexattention.md](./notes/algorithms/fa4-flexattention.md) | 官方博客/PR | 🚧 草稿 2026-08-13 |
 | DSA（DeepSeek-V3.2 / GLM-5） | [dsa-sparse-attention.md](./notes/algorithms/dsa-sparse-attention.md) | DeepSeek-V3.2 · GLM-5 | 🚧 草稿 2026-08-13 |
 | SageAttention3 / Kascade | [attention-2026-sage3-kascade.md](./notes/algorithms/attention-2026-sage3-kascade.md) | SageAttention3 · Kascade | 🚧 草稿 2026-08-13 |

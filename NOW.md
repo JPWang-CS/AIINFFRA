@@ -31,16 +31,25 @@ Softmax 定义、数值稳定性、Online Softmax、Parallel Reduce 和 CUDA Sof
 
 **MatMul**：已阶段性收口为 RTX 3090 `GPU_VALIDATED` baseline；剩余深钻留在 [GPU 优化篇](./roadmap/gpu-foundations.md#matmul-优化债务池-deferred-backlog)，不回头插入 B2。
 
+- 待办：独立 GPU 结构课程（GPU/GPC/TPC/SM、CTA/Warp/Thread、CUDA Core/Tensor Core、内存层级、调度/occupancy、PTX/SASS、Triton 映射），待编写 lesson；不改变当前 B2 → B3 算子线顺序。
+
+### 官方入口
+
+- Triton：[Triton language API](https://triton-lang.org/main/python-api/triton.language.html)
+- GPU架构：[CUDA Programming Guide — Programming Model](https://docs.nvidia.com/cuda/cuda-programming-guide/01-introduction/programming-model.html) · [Compute Capabilities](https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/compute-capabilities.html)
+- NVIDIA Ampere：[Ampere Tuning Guide](https://docs.nvidia.com/cuda/ampere-tuning-guide/index.html)
+- NVIDIA Hopper：[Hopper Tuning Guide](https://docs.nvidia.com/cuda/hopper-tuning-guide/index.html)
+
 ---
 
 ## 🧠 理论线
 
-**主线 A：DeepSeek-V3.2 第 2 步 — 注意力（FA2 → MLA → DSA）**
+**主线 A：DeepSeek-V3.2 第 2 步 — 注意力（MLA → DSA）**
 
-FA1 机制、online 更新公式和 merge 结合律已掌握；FA2 统一笔记用户已读约 50%，仍为 `WIP`。理论线继续围绕 FA2 的 work partitioning、同步/非矩阵乘开销和 Q/K/V tile 分配推进，但不改变算子线先完成 B2 再进 B3 的顺序。
+FA1 机制、online 更新公式和 merge 结合律已掌握；FA2 理论阅读已完成（2026-09-02）。当前进入 MLA（DeepSeek-V2/V3），重点是 latent KV compression、低秩投影、KV cache 取舍；不改变算子线先完成 B2 再进 B3 的顺序。
 
-- 当前笔记：[FlashAttention-2 统一笔记](./notes/algorithms/flash-attention-2.md)
-- 接下来：在 B3 Triton FlashAttention 中继续消化 FA2 → MLA → DSA，不回头补 Softmax 旧债务
+- 当前笔记：[MLA（DeepSeek-V2/V3）](./notes/algorithms/mla-deepseek.md)
+- 下一理论节：DSA（DeepSeek-V3.2）；算子线仍先完成 B2，再进入 B3 Triton FlashAttention，不回头补 Softmax 旧债务
 
 ---
 
@@ -50,6 +59,7 @@ FA1 机制、online 更新公式和 merge 结合律已掌握；FA2 统一笔记�
 |---|---|---|
 | A1-A4 CUDA 算子线 | A4 知识 ✅；旧实现债务 ⭐ | [Lesson 04](./lessons/04-softmax.md) · [HISTORY.md](./HISTORY.md) |
 | A5 Flash Attn 读码 | ✅ 2026-08-10 | [阅读笔记](./notes/cuda/flash-attn-reading.md) |
+| FA2 理论阅读 | ✅ 2026-09-02 | [上一节：FlashAttention-2 统一笔记](./notes/algorithms/flash-attention-2.md) |
 | B1 Triton Vector Add / MatMul | 阶段性收口 | [Lesson 06](./lessons/06-triton-intro.md) · [PATH.md](./PATH.md) |
 | B2 Triton Softmax | `LEETGPU_PASS` 当前；服务器待做 | [Lesson 08](./lessons/08-triton-fused-softmax.md) · [PATH B2](./PATH.md) · [代码](./solutions/triton/fused_softmax.py) |
 

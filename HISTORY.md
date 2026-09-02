@@ -7,7 +7,9 @@
 
 ## 0. 最后更新
 
+- 2026-09-02（用户确认 FA2 统一笔记已阅读完成；下一理论节为 MLA（DeepSeek-V2/V3）。该状态仅代表阅读完成，不代表 Triton 实现或 LeetGPU/服务器验证完成。独立 GPU 结构课程进入待办，待编写 lesson，覆盖 GPU/GPC/TPC/SM、CTA/Warp/Thread、CUDA Core/Tensor Core、内存层级、调度/occupancy、PTX/SASS 与 Triton 映射；不改变当前 B2 → B3 算子线顺序）
 - 2026-09-01（Triton Softmax LeetGPU #5 用户通过版已原样归档至 [`solutions/triton/fused_softmax.py`](./solutions/triton/fused_softmax.py)；`SuccessPublicTrace`，2026-09-01 00:37:33，0.29 ms，47.0th percentile。B2 状态更新为 `LEETGPU_PASS`；服务器二维 row-wise baseline 尚未开始，未标记 `GPU_VALIDATED`/`COMPLETE`）
+- 2026-09-01（FA2 行展开澄清：`r` 是 score/output 的 Query 行，`s` 是 score 矩阵的列索引即第 `s` 个 Key/Value token，`c` 是 V/O 的特征列；分子是对 `s` 的 `exp(S_rs) * V_s` 加权求和，分母是该行 exp(score) 的归一化和。FA2 统一笔记仍约 50% WIP，未视为学完）
 - 2026-08-31（按用户裁决重规划课程：Softmax 定义、稳定性、Online Softmax、Parallel Reduce 和 CUDA Softmax 视为已掌握；B2 缩为 10 分钟 CUDA → Triton 映射 → LeetGPU #5 原始 solve/kernel 归档 → RTX 3090 row-wise baseline，完成后立即 B3 FlashAttention。旧 1-pass 重写、三版 benchmark、warp-shuffle 深钻和 Softmax P0–P8 全部降为可选优化债务；Lesson08 重写为精简迁移检查点，当前仍为 `WIP`）
 - 2026-08-30（补齐 B2 正式课程 [`lessons/08-triton-fused-softmax.md`](./lessons/08-triton-fused-softmax.md)：曾包含当前单元卡、稳定公式、Triton row/program 映射、mask/`other=-inf`、starter TODO、LeetGPU #5 正确性归档、服务器 row-wise benchmark、资源边界和验收清单；当时状态 `WIP`，尚无用户代码，后由 2026-08-31 重规划为迁移检查点）
 - 2026-08-30（用户决定 MatMul 先阶段性收口：LeetGPU `LEETGPU_PASS`、RTX 3090 `GPU_VALIDATED` baseline 已完成，当前最佳 20.830 ms / 19,794.1 GFLOPS / `torch.mm` 80.3%；Nsight Systems P0-lite 已归档。剩余 NCU counters、PTX/SASS、spill/occupancy、多 shape 回归和完整 P0–P8 极致优化转入 GPU 优化篇，不再阻塞主线；随后切换为 B2 Triton Softmax 迁移检查点）
@@ -127,15 +129,15 @@ LeetGPU `5_softmax` 贴 `solve()` 提交；服务器 `KERNEL=xxx.cu ./run.sh` �
 |------|:--:|------|
 | Online Softmax | ✅ 已掌握 | 能推公式，能讲 HBM 优化 |
 | Parallel Reduce | ✅ 已掌握 | 树状 reduce + warp shuffle |
-| Flash Attention 机制 | ✅ FA1 已消化 | 2026-08-10 经 A5 读码 + 问答消化；FA2/3 待补 |
+| Flash Attention 机制 | ✅ FA1 已消化；FA2 阅读完成 | FA1 于 2026-08-10 经 A5 读码 + 问答消化；FA2 统一笔记于 2026-09-02 阅读完成，但尚未进行 Triton 实现或 LeetGPU/服务器验证；FA3 待补 |
 | INT8/FP8 量化 | 🚧 草稿 | 待消化 |
 | MoE 推理 | 🚧 草稿 | 待消化 |
 | Speculative Decoding | 🚧 草稿 | 待消化 |
 | PD 分离 | 🚧 草稿 | 待消化 |
-| MLA / DeepSeek | 🚧（DeepSeek-V3.2 config + 三笔手算 ✅ 2026-08-20；FA2 / MLA / DSA 待学） | 下一步：注意力主线 |
+| MLA / DeepSeek | 🚧（DeepSeek-V3.2 config + 三笔手算 ✅ 2026-08-20；MLA / DSA 待学） | FA2 统一笔记已于 2026-09-02 阅读完成；下一理论节为 MLA（DeepSeek-V2/V3） |
 | 最新模型结构 | 🚧 草稿 | 已补全详细内容 |
 | 剩余理论速览 | 🚧 草稿 | 已分类补全 |
-| FA2 / FA4 / GDN / DSA / SageAttention3 | 🚧 草稿 2026-08-13 | 随主线步骤消化，不单独排队 |
+| FA2 / FA4 / GDN / DSA / SageAttention3 | FA2 阅读完成；其余 🚧 草稿 | FA2 统一笔记 2026-09-02 阅读完成；FA3/FA4/GDN/DSA/SageAttention3 随主线步骤消化，不单独排队 |
 | 优化器 Adam/AdamW | 🚧 草稿 2026-08-13 | 枝干 A1 第 1 段（主线 A serving 之后） |
 | DeepSeek-V4（CSA+HCA） | 🚧 草稿 2026-08-14 | 主线 A 第 3 步：CSA/HCA → mHC/Muon → MXFP4/混合精度 |
 

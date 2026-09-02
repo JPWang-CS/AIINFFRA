@@ -285,18 +285,24 @@ conclusion and next single-variable experiment:
 
 ## 8. 精选资料，而不是资料堆积
 
+### GPU 结构官方参考
+
+- [CUDA Programming Guide — Programming Model](https://docs.nvidia.com/cuda/cuda-programming-guide/01-introduction/programming-model.html)
+- [Compute Capabilities](https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/compute-capabilities.html)
+- [Ampere Tuning Guide](https://docs.nvidia.com/cuda/ampere-tuning-guide/)
+- [Hopper Tuning Guide](https://docs.nvidia.com/cuda/hopper-tuning-guide/)
+
+按目标 GPU 查 CC/SM/资源，再用 Nsight 验证；不把 A100 数字套 3090。
+
 ### 主线必读
 
-- [CUDA Programming Guide](https://docs.nvidia.com/cuda/cuda-programming-guide/01-introduction/programming-model.html)：逻辑层级、SIMT、memory hierarchy、cluster 的语义权威源。
 - [CUDA C++ Memory Model](https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/cuda-cpp-memory-model.html)：thread scope、atomic、barrier、fence 和 happens-before。
 - [CUDA Best Practices Guide](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/)：优化原则与验证方法。
-- [Ampere Tuning Guide](https://docs.nvidia.com/cuda/ampere-tuning-guide/)：当前 3090/A100 的代际基线，注意 SM80 与 SM86 差异。
 - [Triton Matrix Multiplication Tutorial](https://triton-lang.org/main/getting-started/tutorials/03-matrix-multiplication.html)：tile、`tl.dot`、program ordering 与 autotune 的官方实现路线；只用于提交后的对照。
 - [PyTorch FP32 MatMul Precision](https://docs.pytorch.org/docs/main/generated/torch.set_float32_matmul_precision.html)：`highest` / `high` / `medium` 的精度与 TF32 语义；每次 Torch 对照都要记录该设置。
 - [Nsight Compute Profiling Guide](https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html)：roofline、memory workload、occupancy 的指标解释；用它验证而不是猜测瓶颈。
 - [PTX ISA](https://docs.nvidia.com/cuda/parallel-thread-execution/)：只在 G5 对照 load/store、MMA、barrier 和 async 指令，不从头背 ISA。
 - [Nsight Systems User Guide](https://docs.nvidia.com/nsight-systems/UserGuide/index.html)：G7/M3 观察 CPU launch、stream、copy、graph 和多 GPU timeline。
-- [Hopper Tuning Guide](https://docs.nvidia.com/cuda/hopper-tuning-guide/)：TMA、cluster/DSM 与现代 pipeline。
 - [Blackwell Tuning Guide](https://docs.nvidia.com/cuda/blackwell-tuning-guide/)：只读增量与兼容性章节。
 
 ### GitHub 路由

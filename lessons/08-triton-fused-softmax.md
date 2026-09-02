@@ -112,6 +112,14 @@ def solve(input: torch.Tensor, output: torch.Tensor, N: int):
 
 迁移完成的判断很窄：能把题面中的输入、输出、长度/stride 和平台签名映射到上表，并能指出一个尾部元素如何经过 mask 到达 load、reduce、store。到此就开始写题，不再增加理论章节。
 
+本次 B2 只需记住的 Triton API：
+
+- [`tl.maximum`](https://triton-lang.org/main/python-api/generated/triton.language.maximum.html)：逐元素比较/广播，输出同形状。
+- [`tl.max`](https://triton-lang.org/main/python-api/generated/triton.language.max.html)：沿 `axis` 归约；`axis=None` 归约全部。
+- Online 更新的一行写法：`m_new = tl.maximum(m_i, tl.max(scores, axis=1))`。
+- 区别：`maximum` 做逐元素二元比较，`max` 做指定轴归约。
+- [Triton language API](https://triton-lang.org/main/python-api/triton.language.html)
+
 ## LeetGPU：正确性与代码归档
 
 入口：[LeetGPU Softmax](https://leetgpu.com/challenges/softmax)（#5）。这是本课的唯一实现入口；平台当前题面、参数和 `solve` 签名优先于仓库中的旧 CUDA 描述。
