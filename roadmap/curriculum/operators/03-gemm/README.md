@@ -1804,6 +1804,173 @@ def grouped_tile_map(groups, bm: int, bk: int):
 
 平台归档记录的文件头包含 A100-80GB、24.54ms 的成绩和测量信息；这组采样与 RTX 3090 的服务器优化表分开比较。重提交时，从题面空白编辑器核对接口，覆盖小形状、非整除 `65×33×67` 和题面性能形状，并按题面容差检查结果；通过后原样保存当次平台 `solve`/kernel。
 
+**早期 CUDA GEMM 实验的复用证据：** 下面补回 `solutions/README.md` 和 [2026-06-25 weekly](../../../../weekly/2026-06-25-gemm-done.md) 中已经完成、但此前没有在本章集中呈现的 A2/A3 记录。`naive_float.cu` 的 FP32 LeetGPU `2_matrix_multiplication` 通过（solutions 表记录 2026-06-16），以及 `naive_fp16.cu`、`tiled_fp16.cu` 的 FP16 LeetGPU `22_gemm` 通过（solutions 表记录 2026-06-22、2026-06-25），都是正确性/代码归档门；它们不因当前从第一章重学而清零，也不把旧课中未经证据支持的“必然 10×”当作结论。
+
+`naive_fp16.cu` 的平台合同是 FP16 A/B/C、`C = alpha * A @ B + beta * C`，其原始 kernel 与 launcher 如下：
+
+<!-- source-check: solutions/cuda/gemm/naive_fp16.cu -->
+~~~cpp
+__global__ void kernel(const half* A, const half* B, half* C,
+                       int M, int N, int K, float alpha, float beta) {
+    int m = blockDim.x * blockIdx.x + threadIdx.x;
+    int n = blockDim.y * blockIdx.y + threadIdx.y;
+    int idx = m * N + n;
+    if ((n < N) && (m < M)) {
+        float sum = (beta == 0.0f) ? 0 : __half2float(C[idx]);
+        sum = sum * beta;
+        for (int k = 0; k < K; k++) {
+            sum += alpha * (__half2float(A[m * K + k]) *
+                            __half2float(B[k * N + n]));
+        }
+        C[idx] = sum;  // implicit float→half，better: __float2half_rn(sum)
+    }
+}
+
+// A, B, and C are device pointers
+extern "C" void solve(const half* A, const half* B, half* C,
+                       int M, int N, int K, float alpha, float beta) {
+    dim3 blockDim(16, 16);
+    dim3 gridDim((M + 15) / 16, (N + 15) / 16);
+    kernel<<<gridDim, blockDim>>>(A, B, C, M, N, K, alpha, beta);
+    cudaDeviceSynchronize();
+}
+~~~
+
+FP16 tiled 的原始 `tiled_fp16.cu` 已在本章前面的分块段逐字摘录，因此不重复；它的两次 `__syncthreads()` 和 TILE=32 只说明该实现的同步/布局合同，不说明在任何 GPU 上必然快于 naive。`solutions/README.md` 记录的日期是 FP16 naive：2026-06-22、FP16 tiled：2026-06-25；weekly 汇总曾将 tiled 的 LeetGPU 运行写为 2026-06-22，日期差异保留为历史记录，未通过新提交擅自裁决。
+
+同一轮 AutoDL RTX 4090 真实性能实验使用 `solutions/cuda/gemm/benchmark.cu`，输入/输出为 FP16、累加器为 FP32，主 shape 为 `M=N=2048`，对比 `block=(16,16)` 的 naive 与 TILE=16/32 的 shared-memory tiled；先做 `256×256×256` correctness，再用 CUDA events 在已分配 buffer 上重复计时。计时 helper 的原样实现如下：
+
+<!-- source-check: solutions/cuda/gemm/benchmark.cu -->
+~~~cpp
+// ====== Test runner ======
+template<int TILE>
+void run_tiled(const half* dA, const half* dB, half* dC, int M, int N, int K, int iters, float* ms_out) {
+    dim3 tb(TILE, TILE), tg((M+TILE-1)/TILE, (N+TILE-1)/TILE);
+    cudaEvent_t st, en; cudaEventCreate(&st); cudaEventCreate(&en);
+    cudaEventRecord(st);
+    for (int i = 0; i < iters; i++) tiled_k<TILE><<<tg, tb>>>(dA, dB, dC, M, N, K);
+    cudaEventRecord(en); cudaEventSynchronize(en);
+    cudaEventElapsedTime(ms_out, st, en); *ms_out /= iters;
+    cudaEventDestroy(st); cudaEventDestroy(en);
+}
+~~~
+
+K=2048 的配置和 naive/TILE=32 对照确实是以下这段；`10` 次重复和 GFLOPS 换算边界不能省略：
+
+<!-- source-check: solutions/cuda/gemm/benchmark.cu -->
+~~~cpp
+    // ---- K=2048 baseline ----
+    {
+        int M = 2048, N = 2048, K = 2048;
+        size_t sA = M * K * 2, sB = K * N * 2, sC = M * N * 2;
+        printf("\n=== GEMM K=%d ===\n", K);
+        half *hA = (half*)malloc(sA), *hB = (half*)malloc(sB);
+        srand(42);
+        for (int i = 0; i < M*K; i++) hA[i] = __float2half_rn((float)rand()/RAND_MAX-.5f);
+        for (int i = 0; i < K*N; i++) hB[i] = __float2half_rn((float)rand()/RAND_MAX-.5f);
+        half *dA2, *dB2, *dC2;
+        CUDA_CHECK(cudaMalloc(&dA2, sA)); CUDA_CHECK(cudaMalloc(&dB2, sB)); CUDA_CHECK(cudaMalloc(&dC2, sC));
+        CUDA_CHECK(cudaMemcpy(dA2, hA, sA, cudaMemcpyHostToDevice)); CUDA_CHECK(cudaMemcpy(dB2, hB, sB, cudaMemcpyHostToDevice));
+
+        dim3 ng2((N+15)/16, (M+15)/16);
+        cudaEvent_t st, en; cudaEventCreate(&st); cudaEventCreate(&en);
+
+        CUDA_CHECK(cudaMemset(dC2, 0, sC)); CUDA_CHECK(cudaDeviceSynchronize());
+        cudaEventRecord(st); for(int i=0;i<10;i++) naive_k<<<ng2,nb>>>(dA2,dB2,dC2,M,N,K);
+        cudaEventRecord(en); cudaEventSynchronize(en);
+        float mn; cudaEventElapsedTime(&mn, st, en); mn/=10;
+        float gn = 2.0f * M * N * K / (mn / 1000) / 1e9;
+        printf("Naive(256):   %.2f ms  %.0f GFLOPS\n", mn, gn);
+
+        float mt; run_tiled<32>(dA2,dB2,dC2,M,N,K,10,&mt);
+        float gt = 2.0f * M * N * K / (mt / 1000) / 1e9;
+        printf("Tiled(32):   %.2f ms  %.0f GFLOPS\n", mt, gt);
+        printf("Speedup: %.1fx\n", gt/gn);
+
+        cudaFree(dA2); cudaFree(dB2); cudaFree(dC2); free(hA); free(hB);
+    }
+~~~
+
+K=8192 的 sweep 同样固定 `M=N=2048`，但用 5 次 naive/TILE=16/TILE=32 的 event 计时；源码只保留这一段关键配置/计时入口，不把未保存的精确输出补写成新成绩：
+
+<!-- source-check: solutions/cuda/gemm/benchmark.cu -->
+~~~cpp
+    // ---- Tile size comparison K=8192 ----
+    {
+        int M=2048,N=2048,K=8192;
+        size_t sA=M*K*2,sB=K*N*2,sC=M*N*2;
+        printf("\n=== GEMM K=%d (A+B=%dMB) Tile size sweep ===\n",K,(int)((M*K+K*N)*2/1e6));
+        half *hA=(half*)malloc(sA),*hB=(half*)malloc(sB);
+        srand(42);for(int i=0;i<M*K;i++)hA[i]=__float2half_rn((float)rand()/RAND_MAX-.5f);
+        for(int i=0;i<K*N;i++)hB[i]=__float2half_rn((float)rand()/RAND_MAX-.5f);
+        half *dA,*dB,*dC;
+        CUDA_CHECK(cudaMalloc(&dA,sA));CUDA_CHECK(cudaMalloc(&dB,sB));CUDA_CHECK(cudaMalloc(&dC,sC));
+        CUDA_CHECK(cudaMemcpy(dA,hA,sA,cudaMemcpyHostToDevice));CUDA_CHECK(cudaMemcpy(dB,hB,sB,cudaMemcpyHostToDevice));
+        dim3 ng2((N+15)/16,(M+15)/16);
+
+        cudaEvent_t st,en;cudaEventCreate(&st);cudaEventCreate(&en);
+        CUDA_CHECK(cudaMemset(dC,0,sC));CUDA_CHECK(cudaDeviceSynchronize());
+        cudaEventRecord(st);for(int i=0;i<5;i++)naive_k<<<ng2,nb>>>(dA,dB,dC,M,N,K);cudaEventRecord(en);cudaEventSynchronize(en);
+        float mn;cudaEventElapsedTime(&mn,st,en);mn/=5;
+        printf("Naive(256):     %.1f ms\n",mn);
+
+        float m16,m32;
+        CUDA_CHECK(cudaMemset(dC,0,sC));run_tiled<16>(dA,dB,dC,M,N,K,5,&m16);
+        printf("Tiled(16,256th): %.1f ms\n",m16);
+        CUDA_CHECK(cudaMemset(dC,0,sC));run_tiled<32>(dA,dB,dC,M,N,K,5,&m32);
+        printf("Tiled(32,1024th): %.1f ms\n",m32);
+        printf("T16 vs naive: %.1fx  T32 vs naive: %.1fx\n",mn/m16,mn/m32);
+
+        cudaFree(dA);cudaFree(dB);cudaFree(dC);free(hA);free(hB);
+    }
+~~~
+
+weekly/lesson 的 RTX 4090 结果是：K=2048 naive `5033 GFLOPS`、TILE=32 tiled `3118 GFLOPS`，约 `0.6×`；K=8192 方向相同（tiled 未加速），但该记录没有在当前仓库保存 K=8192 的精确 GFLOPS/毫秒，故这里只保留“未加速”这一有证据的边界。这个对照是该实现、该 shape、该 RTX 4090 和该 event 计时口径下的历史结果，不是 cuBLAS、Tensor Core 或所有矩阵形状的基线。L2 命中、同步开销和 1024-thread block 导致的 occupancy 下降只能作为当时的假设/诊断方向；没有 profiler counter，不能写成已证明的因果。K=32768 的代码路径在 benchmark 文件中存在，但当前没有对应结果记录，本章不把它升级为已完成实测。
+
+下面是在平台验收位置直接引用的原始 LeetGPU kernel；它来自 `solutions/triton/matmul_leetgpu.py`，不是服务器 sweep 的包装代码。`input_precision='ieee'` 是这次平台精度修正的一部分，历史默认 TF32 失败快照（4×4 最大绝对误差 `0.1275177001953125`）仍只作为失败证据。
+
+<!-- source-check: solutions/triton/matmul_leetgpu.py -->
+~~~python
+@triton.jit
+def matrix_multiplication_kernel(
+    a,
+    b,
+    c,
+    M,
+    N,
+    K,
+    BLOCK_M: tl.constexpr = 64,
+    BLOCK_N: tl.constexpr = 32,
+    BLOCK_K: tl.constexpr = 64,
+):
+    pid_m = tl.program_id(0)
+    pid_k = tl.program_id(1)
+
+    offset_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+    offset_k = pid_k * BLOCK_K + tl.arange(0, BLOCK_K)
+    acc = tl.zeros((BLOCK_M, BLOCK_K), dtype=tl.float32)
+
+    # A[M, N] @ B[N, K] = C[M, K]，N 是归约维度。
+    for n in range(0, N, BLOCK_N):
+        offset_n = n + tl.arange(0, BLOCK_N)
+
+        ptr_a = a + offset_m[:, None] * N + offset_n[None, :]
+        ptr_b = b + offset_n[:, None] * K + offset_k[None, :]
+
+        mask_a = (offset_m[:, None] < M) & (offset_n[None, :] < N)
+        mask_b = (offset_n[:, None] < N) & (offset_k[None, :] < K)
+
+        tile_a = tl.load(ptr_a, mask=mask_a, other=0.0)
+        tile_b = tl.load(ptr_b, mask=mask_b, other=0.0)
+        acc += tl.dot(tile_a, tile_b, input_precision='ieee')
+
+    mask_c = (offset_m[:, None] < M) & (offset_k[None, :] < K)
+    ptr_c = c + offset_m[:, None] * K + offset_k[None, :]
+    tl.store(ptr_c, acc, mask=mask_c)
+~~~
+
+该片段与 `solve(a,b,c,M,N,K)` 的平台接口和 `BLOCK_M=64, BLOCK_N=32, BLOCK_K=64, num_warps=4, num_stages=3` 配置一起构成 A100 的 `24.54 ms / 55.3th percentile` 证据；不能将它与下方 RTX 3090 服务器适配版的 `1e-2` correctness 容差、tile sweep 或 Nsys 时间线混成同一个样本。LeetGPU 证据不需要重跑；剩余 GEMM 缺口是 RTX 3090 的 NCU、PTX/SASS、spill/occupancy、低精度与多 shape 优化，不是重新提交已经归档的题目。
+
 ### 服务器：真实性能
 
 服务器适配版实际 CLI 参数是 `--config`，从仓库根目录可用下面命令运行一个已有配置：

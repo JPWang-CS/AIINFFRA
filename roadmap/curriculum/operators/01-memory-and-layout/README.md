@@ -322,6 +322,32 @@ $$
 
 已保存的 Vector Add 测量使用 N=2^25、BLOCK_SIZE=256、RTX3090：Triton有效带宽840.1GB/s，torch.add为843.0GB/s。它说明在当时条件下两个实现很接近，不能单凭接近torch就证明DRAM饱和，更不能把这个数字当成不同GPU的目标。
 
+**已有实验的代码与证据：** 下面的 kernel 是 `solutions/triton/vector_add.py` 中的原样片段；该文件明确是本地验证/benchmark wrapper，不是单独归档的 LeetGPU 原始 `solve`。
+
+<!-- source-check: solutions/triton/vector_add.py -->
+~~~python
+@triton.jit
+def vector_add_kernel(
+    x_ptr,
+    y_ptr,
+    out_ptr,
+    n_elements,
+    BLOCK_SIZE: tl.constexpr,
+):
+    # 每个 program（block）负责一段连续元素
+    pid = tl.program_id(0)
+    offsets = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+
+    # 尾块越界保护：越界位置不参与计算
+    mask = offsets < n_elements
+
+    x = tl.load(x_ptr + offsets, mask=mask, other=0.0)
+    y = tl.load(y_ptr + offsets, mask=mask, other=0.0)
+    tl.store(out_ptr + offsets, x + y, mask=mask)
+~~~
+
+复算入口是 `python solutions/triton/vector_add.py`；GPU段用 CUDA tensor 和 `triton.testing.do_bench`（含预热与同步计时），正确性覆盖 `N=1/256/257/1000/2^20`。weekly 记录的 GPU 证据为 [2026-08-24](../../../../weekly/2026-08-24-triton-vector-add.md)：AutoDL RTX 3090、`N=2^25`、FP32、`BLOCK_SIZE=256`，Triton `0.479 ms / 840.1 GB/s`，`torch.add` `0.478 ms / 843.0 GB/s`，按 `3N×4`（两次输入读取加一次输出写入）计算有效带宽。该结果只支持这台 RTX 3090、这个 shape、这个计时口径下的 GPU_VALIDATED baseline；不能外推到其他 GPU、任意 stride 或证明 DRAM 已达峰值。当前剩余缺口是单独归档 LeetGPU 原始 `solve`，不是重跑这次已经有证据的 benchmark。
+
 Vector Add每元素需要两个输入读取和一个输出写入，FP32算法流量为12N；纯copy与transpose是8N。比较两类算子时先统一流量口径，不能直接把同样的GB/s看成相同总工作量。
 
 “不同thread会重复读一行”的讨论在这里继续变得具体：先展开同一条warp指令的地址，再区分请求合并、cache复用和显式shared复用。已有 MatMul平台源码 中的广播地址表达式给出逻辑tile，不直接规定每个thread读哪些位置；进入性能分析还需要看编译布局和生成指令。

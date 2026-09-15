@@ -257,6 +257,88 @@ def softmax_sum(
 
 这份 Triton 代码的结构是“GPU partial 统计 → GPU merge → GPU normalize”。三个 kernel 都在 device 上执行：`softmax_partial` 写 partial 数组，`softmax_reduce` 读取 partial 并写 global scalar，`softmax_sum` 重新读取输入完成归一化。它是 1D global Softmax：所有 program 在同一个线性 `N` 上协作；本章后面的 row-wise Softmax 是每个 program 独立处理一行，统计量不会跨行混合。两者都使用 max subtraction，但并行域、scratch 形状和归约位置不同。
 
+**已有 #5 平台证据：** `solutions/triton/fused_softmax.py` 是 LeetGPU Softmax #5 的原始通过版，weekly 的 [2026-09-01 归档](../../../../weekly/2026-09-01-triton-softmax-leetgpu.md) 记录 `SuccessPublicTrace`：2026-09-01 00:37:33，`0.29 ms`，`47.0th percentile`，状态为 `LEETGPU_PASS`。其 `solve` 调度也属于原始代码的一部分：固定 `BLOCK_SIZE=256`，按 `N` 计算 `num_blocks` 和 `REDUCE_SIZE`，分配 device-side partial/global scratch，再按三阶段 kernel 顺序提交。
+
+<!-- source-check: solutions/triton/fused_softmax.py -->
+~~~python
+def solve(input: torch.Tensor, output: torch.Tensor, N: int):
+    BLOCK_SIZE = 256
+    num_blocks = triton.cdiv(N, BLOCK_SIZE)
+    REDUCE_SIZE = triton.next_power_of_2(num_blocks)
+    partial_sum = torch.empty(num_blocks, dtype=torch.float32, device=input.device)
+    partial_max = torch.empty(num_blocks, dtype=torch.float32, device=input.device)
+    global_sum = torch.empty(1, dtype=torch.float32, device=input.device)
+    global_max = torch.empty(1, dtype=torch.float32, device=input.device)
+
+    softmax_partial[(num_blocks,)](input, partial_max, partial_sum, N, BLOCK_SIZE=BLOCK_SIZE)
+    softmax_reduce[(1,)](
+        global_max,
+        global_sum,
+        partial_max,
+        partial_sum,
+        num_blocks,
+        REDUCE_SIZE=REDUCE_SIZE,
+    )
+    softmax_sum[(num_blocks,)](global_max, global_sum, input, output, N, BLOCK_SIZE=BLOCK_SIZE)
+~~~
+
+这项成绩只证明 LeetGPU 的 1D `input/output/N` 合同和当次平台测量，不证明本章 `[R,D]` row-wise 教学 kernel 已通过，也不产生 RTX 3090 服务器数字；后者仍需在对应服务器验收段单独做 correctness、ms 和 effective GB/s。原始实现的 OOB store 修复（最终 store 使用与 load 相同的 `mask`）保留在上述三个 source-check 片段中，不把 CPU 语义检查或未执行的服务器命令写成实测。
+
+**早期 CUDA A4 复用边界：** HISTORY 与 [2026-07-22 weekly](../../../../weekly/2026-07-22-softmax-online.md) 记录 `solutions/cuda/softmax/softmax_naive.cu` 在 2026-07-01 通过 LeetGPU `5_softmax`，是 1D、FP32、3-pass（`findMax → countSum → normalize`）的 `LEETGPU_PASS` baseline；课程不把它改写成当前二维 row-wise 服务器验证。下面只摘录原始跨 block kernel 的连续片段，证明三阶段各自的归约与 masked tail 语义：
+
+<!-- source-check: solutions/cuda/softmax/softmax_naive.cu -->
+~~~cpp
+__global__ void findMax_kernel(const float* input, float* partial_max, int N) {
+    int tid = threadIdx.x;
+    int idx = blockIdx.x * blockDim.x + tid;
+
+    __shared__ float inputMax[256];
+    inputMax[tid] = (idx < N) ? input[idx] : -INFINITY;
+    __syncthreads();
+
+    for (int s = blockDim.x / 2; s > 0; s >>= 1) {
+        if (tid < s) {
+            inputMax[tid] = fmaxf(inputMax[tid], inputMax[tid + s]);
+        }
+        __syncthreads();
+    }
+
+    if (tid == 0) {
+        partial_max[blockIdx.x] = inputMax[0];
+    }
+}
+
+__global__ void countSum_kernel(const float* input, float* partial_sum, float global_max, int N) {
+    int tid = threadIdx.x;
+    int idx = blockIdx.x * blockDim.x + tid;
+
+    __shared__ float inputSum[256];
+    float val = (idx < N) ? expf(input[idx] - global_max) : 0.0f;
+    inputSum[tid] = val;
+    __syncthreads();
+
+    for (int s = blockDim.x / 2; s > 0; s >>= 1) {
+        if (tid < s) {
+            inputSum[tid] += inputSum[tid + s];
+        }
+        __syncthreads();
+    }
+
+    if (tid == 0) {
+        partial_sum[blockIdx.x] = inputSum[0];
+    }
+}
+
+__global__ void softmax_kernel(const float* input, float* output, float global_max, float global_sum, int N) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < N) {
+        output[idx] = expf(input[idx] - global_max) / global_sum;
+    }
+}
+~~~
+
+该版本的题面接口是 `extern "C" void solve(const float*, float*, int)`，线程块固定 256，跨 block partial 在 host 合并；weekly 只给出约百万元素的约 1 ms baseline，不提供可与后续 Triton/RTX3090 数字直接比较的完整同条件表。它证明的是平台 1D 正确性，不是服务器 `GPU_VALIDATED`；后续 `softmax_online.cu` 虽保存了 2-pass 设计，但 weekly 明确未做本地/服务器横向 benchmark，且当前 host launcher 有未定义 `threadsPerGrid` 笔误，所以仍按未验证历史路径处理，不把“省一次读/launch”写成实测收益。
+
 原始归档旁边的 CUDA 历史文件可以用来理解另一路径，但 `softmax_online.cu` 的 host `solve` 中有一处笔误：`blocksPerGrid = (N + threadsPerBlock - 1) / threadsPerGrid` 使用了未定义的 `threadsPerGrid`。因此本章只引用它的核函数结构和 host merge 公式，不把它说成可直接编译或已验证，也不修改旧文件。那条旧 CUDA 路径是 GPU partial → host D2H merge → normalize kernel；host 计算出的两个 scalar 作为 kernel 参数传回，不等于把 partial 数组显式 H2D 搬回。无论如何，分块统计后重新 normalize 都意味着输入至少被读取两遍、输出写一遍，即理想 3N 个元素，再叠加 partial scratch、host 往返和 kernel launch 成本；不能把这种路径写成天然只有 2N 元素流量。
 
 ## 5. 把 1D 经验改成 row-wise Triton Softmax

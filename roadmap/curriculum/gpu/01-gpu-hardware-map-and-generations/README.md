@@ -592,6 +592,53 @@ nvidia-smi 帮助确认设备、驱动与运行状态，其中 CUDA Version 表�
 
 题面入口：[Vector Addition](https://leetgpu.com/challenges/vector-addition)、[Matrix Multiplication](https://leetgpu.com/challenges/matrix-multiplication)。MatMul 平台源码保存在 matmul_leetgpu.py；Vector Add 的本地案例保存在 vector_add.py。平台题目中的 `solve`/kernel 与本地 wrapper 应分别保存，不能互相替代。
 
+早期 A1 CUDA Vector Add 已在 LeetGPU 跑通（HISTORY/weekly 记录 2026-06-16），但当前仓库只有 [Lesson 01 的代码快照](../../../../lessons/01-cuda-basics.md)，没有独立的 `solutions/cuda` 原始 `solve` 文件。为便于重学时直接复盘，这里保留该快照；它不是 `source-check` 摘录，也不把快照伪称为原始归档：
+
+~~~cpp
+// LeetGPU 的 starter 模板：
+#include <cuda_runtime.h>
+
+__global__ void vector_add(const float* A, const float* B, float* C, int N) {
+    // TODO: 你来写
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < N) {
+        C[idx] = A[idx] + B[idx];
+    }
+}
+
+extern "C" void solve(const float* A, const float* B, float* C, int N) {
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (N + threadsPerBlock - 1) / threadsPerBlock;
+    vector_add<<<blocksPerGrid, threadsPerBlock>>>(A, B, C, N);
+    cudaDeviceSynchronize();
+}
+~~~
+
+这份快照的技术正确性已完成：题面 `solve` 接收 device pointer，固定 256 threads/block，按 `N` 覆盖尾部并写出 `A[i]+B[i]`；因此不需要为了重新进入模块化课程而重做 A1。归档门槛仍未满足：没有平台原始提交的独立本地文件，故 PATH 中保持“平台正确性已完成、归档缺口”的状态，只有取得原始 `solve` 后才补归档，不将本段升级为 `LEETGPU_PASS`。
+
+同一 A1 周报还记录了 2026-06-16 前后在本地 RTX 4090 的真实性能运行：1M FP32 elements、256 threads/block，`696 GB/s`、`0 error`。Lesson 01 保存的计时/带宽快照如下；它只是教学快照，不是独立 `solutions` 原始文件，也没有可据此还原的完整原始日志：
+
+~~~cpp
+cudaEvent_t start, stop;
+cudaEventCreate(&start);
+cudaEventCreate(&stop);
+
+cudaEventRecord(start);
+vector_add_kernel<<<blocks, threads>>>(d_A, d_B, d_C, N);
+cudaEventRecord(stop);
+cudaEventSynchronize(stop);
+
+float ms;
+cudaEventElapsedTime(&ms, start, stop);
+printf("Kernel time: %.3f ms\n", ms);
+
+// 算 bandwidth
+float gb_per_sec = (3.0f * N * sizeof(float)) / (ms / 1000.0f) / 1e9f;
+printf("Bandwidth: %.2f GB/s\n", gb_per_sec);
+~~~
+
+这组 `696 GB/s / 0 error` 只支持该 RTX 4090、该 1M FP32 shape、该快照计时口径下的 A1 记录；它与 Triton Vector Add 在 RTX 3090 的 `840.1 GB/s vs torch.add 843.0 GB/s` 不是同一次实验，不能互相比较或合并成单一基线。当前没有保存该次运行的完整 shape/精确计时原始日志，因此不补猜毫秒、warmup 或理论带宽利用率；A1 不需要为重学而重跑，后续只在取得平台原始 `solve` 或需要补齐测量元数据时处理。
+
 本章 `vector_add_walkthrough.cu` 是独立 CUDA 教学案例，没有平台题目的 `solve` 接口。阅读时把它与 Triton 的 program、tile、mask 对照，不需要把两个接口混为一谈。
 
 ### 服务器：真实性能

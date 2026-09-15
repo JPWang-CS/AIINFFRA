@@ -97,7 +97,7 @@ function prepare(text, paper, repo) {
   }
   if(paper.id===25) {
     const file='roadmap/curriculum/papers/examples/attention_checks.py';
-    const code=fs.readFileSync(path.join(repo,file),'utf8').match(/def mla_content[\s\S]*?(?=\n\ndef selected_attention)/)[0].trim();
+    const code=fs.readFileSync(path.join(repo,file),'utf8').replace(/\r\n/g,'\n').match(/def mla_content[\s\S]*?(?=\n\ndef selected_attention)/)[0].trim();
     text += '\n\n## 把吸收公式与代码逐项对齐\n\n'
       + '这里只检查 content 分支与 Value 的线性重排，暂不加入 RoPE。q[h,d] 是当前 Query，latent[t,c] 是历史低维缓存，wk[h,c,d] 将 latent 映射到完整 Key；wv[h,c,v] 映射到 Value。\n\n'
       + '$$\nK_h=CW_h^K,\\qquad q_hK_h^T=(q_h(W_h^K)^T)C^T,\n$$\n\n'

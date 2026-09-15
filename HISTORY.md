@@ -7,6 +7,8 @@
 
 ## 0. 最后更新
 
+- 2026-09-15（用户决定从模块化课程第一篇第一章重新学习；本次将既有 CUDA/Triton Vector Add、早期 CUDA GEMM（FP32/FP16 LeetGPU 归档与 RTX4090 大 K 对照）、Triton MatMul、Softmax 实验、原始代码与测量证据融入访存/归约/GEMM对应课程章节，课程经过时直接复盘或跳过，不清零、不降级。A1 CUDA Vector Add 的 LeetGPU 技术正确性已完成，Lesson 01/weekly 还记录本地 RTX4090 `696 GB/s / 0 error`（1M FP32、256 threads/block），但仅有 Lesson 01 快照、无独立原始 `solve` 归档，PATH 保持 `WIP（平台正确性已完成，归档缺口）`，不伪称 `LEETGPU_PASS`；该结果与 Triton RTX3090 840.1/843.0 GB/s 不是同一次实验。保留 CUDA GEMM RTX4090 K=2048 naive 5033 vs tiled 3118 GFLOPS（约0.6x，K=8192方向相同）、MatMul 的 A100 LeetGPU 24.54 ms/55.3th 与 RTX3090 GPU_VALIDATED/Nsys、Softmax #5 的 0.29 ms/47.0th；未产生新的 GPU 成绩，Softmax RTX3090 服务器验证仍待补，论文线继续 MLA。）
+
 - 2026-09-14（按“除现场实际实验外其余补齐”更新课程正文：CUDA Python/cuTile/C++/日志/Driver Entry Points，GreenCtx/CLC/EGM/CDP/interop/VMM/pool IPC和高级提交语义；GEMM/FA2/FA3作者路径；本地Llama选择性W4完整流程；V4.1视觉/Engram/DSpark/mHC、预训练配置与rollout状态流、盘古来源/部署安全边界。复核修正API样例、GreenCtx复制依赖、child错误、mHC形状与comb转置、Engram门控和量化重载指标；清理正文维护跳转、保留旧锚点。五组互斥worker与主agent集成，最后一组停止后保留已写收尾文件。覆盖表按实际正文更新，不是仅改状态；现场实卡实验与不可得源码/数据边界单列。PATH/NOW、原PDF和原始实践不变，未commit/push。详细验收见 `.codex/course-completion-audit-2026-09-14.md`。）
 
 - 2026-09-14（修正PDF覆盖维护记录：Graph高级节点、swizzle/WGMMA固定版集成、DSM/multicast、Attention lookahead、Mini Decoder量化流程及V4.1公开评估/作者代码不再重复列为未写。剩余项分为教材未写、已有内容需深入、现场设备验证和不可获得证据；保留77个主题状态及原PDF身份，不把部分覆盖升级成全面完成。只修改后台覆盖表、验收记录与HISTORY；PATH/NOW、课程正文、网页和原始代码未改，未commit/push。复用Luna未交回产物后停止，由主agent完成最小记录修正。）
