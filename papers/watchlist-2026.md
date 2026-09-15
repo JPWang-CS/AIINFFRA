@@ -1,16 +1,16 @@
 # 2026 AI Infra 论文与项目观察池
 
 > 核对日期：2026-08-25。这里维护“值得观察的增量”，不维护学习进度。
-> P0/P1 仍按当前 PATH 挂载；最新不等于当前必须读。
+> 论文线独立于实践线；优先级表示阅读价值，不表示必须等某个算子或系统阶段。最新不等于当前必须读。
 
-## 当前主线直接相关
+## Attention与模型当前序列
 
-| 条目 | 日期 | 类型 | 优先级 | 为什么值得看 | 何时读 |
+| 条目 | 日期 | 类型 | 优先级 | 为什么值得看 | 阅读关系 |
 |------|------|------|:--:|----------------|--------|
-| [FlashAttention-4](https://arxiv.org/abs/2603.05451) | 2026-03 | paper | P1 | Blackwell 非对称流水、异步 MMA、2-CTA/TMEM、CuTe DSL | Triton FA 完成后 |
-| [DeepSeek-V3.2](https://arxiv.org/abs/2512.02556) | 2025-12 | paper | P0 | DSA indexer、稀疏 attention 与 serving 影响 | FA2→MLA 后 |
-| [SageAttention3](https://arxiv.org/abs/2505.11594) | 2025-05 | paper | P1 | FP4/低比特 attention 与精度取舍 | 量化枝干 |
-| [Kascade](https://arxiv.org/abs/2512.16391) | 2025-12 | paper | P1 | 跨层 top-k 复用与稀疏 attention | DSA 后 |
+| [FlashAttention-4](https://arxiv.org/abs/2603.05451) | 2026-03 | paper | P1 | Blackwell 非对称流水、异步 MMA、2-CTA/TMEM、CuTe DSL | FA1/2经典主干后的架构增量 |
+| [DeepSeek-V3.2](https://arxiv.org/abs/2512.02556) | 2025-12 | paper | P0 | DSA indexer、稀疏 attention 与 serving 影响 | 当前MLA之后的下一篇 |
+| [SageAttention3](https://arxiv.org/abs/2505.11594) | 2025-05 | paper | P1 | FP4/低比特 attention 与精度取舍 | Attention与量化交叉专题 |
+| [Kascade](https://arxiv.org/abs/2512.16391) | 2025-12 | paper | P1 | 跨层 top-k 复用与稀疏 attention | DSA之后的稀疏Attention扩展 |
 
 ## 多机多卡与网络
 
@@ -33,12 +33,12 @@
 | [Megatron-LM](https://github.com/NVIDIA/Megatron-LM) | TP/PP/CP/EP、distributed optimizer、overlap | D4 |
 | [DeepEP](https://github.com/deepseek-ai/DeepEP) | EP V2、NCCL Gin、low-SM/zero-SM、NVLink+RDMA | D5 |
 | [DeepSeek profile-data](https://github.com/deepseek-ai/profile-data) | V3/R1 prefill/decode communication-compute overlap | D5 |
-| [vLLM EP deployment](https://github.com/vllm-project/vllm/blob/main/docs/serving/expert_parallel_deployment.md) | 多节点 EP backend 与部署参数 | M3 serving |
+| [vLLM EP deployment](https://github.com/vllm-project/vllm/blob/main/docs/serving/expert_parallel_deployment.md) | 多节点 EP backend 与部署参数 | EP/分布式推理论文专题参考 |
 
 ## 筛选规则
 
-- P0：基础系统论文，必须产出完整笔记或复现实验。
-- P1：与近期 PATH 节点直接相关，到挂载点再读。
-- P2：只读 abstract/conclusion，除非实验遇到相同问题。
+- P0：论文线核心，至少精读+作者关键代码；不默认要求复现实验。
+- P1：重要扩展，至少精读；有高价值作者代码时升级为精读+代码。
+- P2：观察项，先速读；若改变当前认知或被用户选中再升级。
 - 项目 README/博客的性能数字不能替代论文、官方文档或目标集群实测。
 - 新条目先进入 [inbox](inbox/README.md)，核验后才进入本页。

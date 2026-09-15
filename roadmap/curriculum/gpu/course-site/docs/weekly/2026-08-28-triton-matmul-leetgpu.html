@@ -1,0 +1,14 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>2026-08-28 — Triton MatMul LeetGPU 归档复盘 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · weekly/2026-08-28-triton-matmul-leetgpu.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E6%9C%AC%E6%AC%A1%E5%AE%8C%E6%88%90">本次完成</a></li><li><a href="#%E5%85%B3%E9%94%AE%E5%A4%8D%E7%9B%98">关键复盘</a></li><li><a href="#%E5%BD%93%E5%89%8D%E5%8F%A3%E5%BE%84">当前口径</a></li></ol></nav><div class="markdown-body"><h1 id="2026-08-28--triton-matmul-leetgpu-归档复盘">2026-08-28 — Triton MatMul LeetGPU 归档复盘<a class="heading-anchor" href="#2026-08-28--triton-matmul-leetgpu-%E5%BD%92%E6%A1%A3%E5%A4%8D%E7%9B%98" aria-label="链接到2026-08-28 — Triton MatMul LeetGPU 归档复盘">#</a></h1>
+<blockquote><p>对应 PATH：B1 · 代码：<a href="../solutions/triton/matmul_leetgpu.py">LeetGPU 最终版</a> · <a href="../solutions/triton/matmul.py">服务器适配版</a></p>
+</blockquote><h2 id="本次完成">本次完成<a class="heading-anchor" href="#%E6%9C%AC%E6%AC%A1%E5%AE%8C%E6%88%90" aria-label="链接到本次完成">#</a></h2>
+<ul>
+<li>LeetGPU #02 Matrix Multiplication 的原始 Triton <code>solve</code>/kernel 已归档，状态为 <code>LEETGPU_PASS</code>。</li>
+<li>平台证据：<code>SuccessPublicTrace</code>，A100-80GB，2026-08-28 22:23:16，24.54 ms，55.3th percentile。</li>
+<li>最终归档以 <code>matmul_leetgpu_wip.py</code> 为精确基线，只把 <code>tl.dot(tile_a, tile_b)</code> 改为 <code>tl.dot(tile_a, tile_b, input_precision=&#39;ieee&#39;)</code>；WIP 保留为历史 TF32 失败案例。</li>
+</ul>
+<h2 id="关键复盘">关键复盘<a class="heading-anchor" href="#%E5%85%B3%E9%94%AE%E5%A4%8D%E7%9B%98" aria-label="链接到关键复盘">#</a></h2>
+<p>默认 TF32 在 4×4 case 的最大绝对误差为 <code>0.1275177001953125</code>，不能满足平台精度要求；指定 IEEE 输入精度后通过。这个修正是数值语义修正，不是 tile 或性能优化。</p>
+<p>服务器适配版的既有 RTX 3090 记录保持不变：FP32 <code>8192×6144×4096</code> 最佳 <code>22.033 ms / 18,713.5 GFLOPS</code>，<code>torch.mm</code> 为 <code>24,083.3 GFLOPS</code>，相对性能 <code>77.8%</code>；初版为 <code>24.681 ms / 16,706.0 GFLOPS</code>。<code>128×64×128</code> 因 shared memory <code>131072B &gt; 101376B</code> 编译失败。</p>
+<h2 id="当前口径">当前口径<a class="heading-anchor" href="#%E5%BD%93%E5%89%8D%E5%8F%A3%E5%BE%84" aria-label="链接到当前口径">#</a></h2>
+<p>MatMul 单元总体为 <code>GPU_VALIDATED</code>，不是 <code>COMPLETE</code>。B1 仍是当前主线；下一步用 Nsight Compute 按 P0–P8 补 profiler 证据、优化结论和最终口径。Vector Add 原始 LeetGPU <code>solve</code> 的归档缺口保持不变。</p>
+</div></main><script src="../../reader.js"></script></body></html>

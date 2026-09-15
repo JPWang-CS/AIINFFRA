@@ -26,12 +26,12 @@
 
 | 子板块 | 学什么 | 对应 PATH 阶段 | 在哪个执行阶段学 |
 |--------|--------|----------------|------------------|
-| [模型结构](architectures.md) | Transformer、GQA/MoE/SSM、HF config、KV cache | 理论线·模型架构 | PATH 执行参考 M1.5 |
-| [推理系统](inference-systems.md) | Prefill/Decode、PagedAttention、batching、量化、投机解码 | 算子线 C + 理论线·推理技术 | PATH 执行参考 M3 |
-| [训练系统](training-systems.md) | 显存账本、混合精度、ZeRO/FSDP、TP/PP/EP | 算子线 D + 理论线·训练/并行 | PATH 执行参考 M4 |
-| [面试](interview.md) | 高频题、系统设计、Ascend→GPU 叙事 | 求职冲刺 | PATH 执行参考 M5 |
-| [论文](papers.md) | 精读顺序和清单 | 随各阶段滚动 | PATH 执行参考 M1.5/M3/M4 |
-| [算子构建](operator-building.md) | 从读模型升级到构建最新组件/算子 | 理论线 + 算子线 | PATH 执行参考 M2/M2.5/M3 |
+| [模型结构](architectures.md) | Transformer、GQA/MoE/SSM、HF config、KV cache | 论文线与模型GPU分析参考 | 第五篇 |
+| [推理系统](inference-systems.md) | Prefill/Decode、PagedAttention、batching、量化、投机解码 | 实践落地参考 | 第五/第六篇 |
+| [训练系统](training-systems.md) | 显存账本、混合精度、ZeRO/FSDP、TP/PP/EP | 分布式扩展参考 | 第六篇 |
+| [面试](interview.md) | 高频题、系统设计、Ascend→GPU 叙事 | 能力复盘 | 全线贯穿 |
+| [论文](papers.md) | 精读顺序和清单 | 独立论文线 | 不与实践互设前置 |
+| [算子构建](operator-building.md) | 模型组件到GPU算子的构建地图 | 实践线内容索引 | 第二到第五篇 |
 
 > 学习顺序不是板块内部单独排序，而是由 PATH 执行参考的阶段推进。
 

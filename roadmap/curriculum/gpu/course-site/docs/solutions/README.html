@@ -1,0 +1,113 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Solutions — 我的代码与 WIP 草稿 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · solutions/README.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E8%A7%84%E5%88%99">规则</a></li><li><a href="#%E7%9B%AE%E5%BD%95">目录</a></li><li><a href="#%E5%B7%B2%E5%AE%8C%E6%88%90">已完成</a></li><li><a href="#%E5%B7%B2%E7%9F%A5%E5%BD%92%E6%A1%A3%E7%BC%BA%E5%8F%A3">已知归档缺口</a></li><li><a href="#%E5%BD%93%E5%89%8D%E4%BA%A7%E7%89%A9">当前产物</a></li><li><a href="#%E5%8E%86%E5%8F%B2-wip">历史 WIP</a></li></ol></nav><div class="markdown-body"><h1 id="solutions--我的代码与-wip-草稿">Solutions — 我的代码与 WIP 草稿<a class="heading-anchor" href="#solutions--%E6%88%91%E7%9A%84%E4%BB%A3%E7%A0%81%E4%B8%8E-wip-%E8%8D%89%E7%A8%BF" aria-label="链接到Solutions — 我的代码与 WIP 草稿">#</a></h1>
+<blockquote><p>这里放我的可执行代码，以及明确标记为 <code>WIP</code> 的当前草稿。只有通过正确性门并完成所需证据的版本，才算完成产物。
+跟 <a href="../../../../../../reference/">reference/</a> 的区别：reference 是预置参考实现（看不抄），solutions 是我的产物。</p>
+</blockquote><h2 id="规则">规则<a class="heading-anchor" href="#%E8%A7%84%E5%88%99" aria-label="链接到规则">#</a></h2>
+<ol>
+<li><strong>先看原理，再去 LeetGPU 写题</strong> —— 对着 <a href="../lessons/README.html">lessons/</a> 的框架理解题意，在题目编辑器完成实现，不复制 reference</li>
+<li><strong>状态分层</strong> —— <code>WIP</code> 可以保存进展但不算完成；<code>LEETGPU_PASS</code> 必须有题号、语言、日期和原始 <code>solve</code>；<code>GPU_VALIDATED</code> 还必须有真实 GPU 正确性/性能证据</li>
+<li><strong>跑通后 commit 到这里</strong> —— 按算子分目录，命名 <code>{版本}_{精度}.cu</code></li>
+<li>进度记到 PATH.md；每个当前单元的代码入口、快照和验收证据同时在对应 lesson 一眼可见</li>
+</ol>
+<h2 id="目录">目录<a class="heading-anchor" href="#%E7%9B%AE%E5%BD%95" aria-label="链接到目录">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">solutions/</span>
+<span class="code-line" data-line="2">├── cuda/</span>
+<span class="code-line" data-line="3">│   └── gemm/             GEMM 系列</span>
+<span class="code-line" data-line="4">│       ├── naive_float.cu    浮点 naive</span>
+<span class="code-line" data-line="5">│       ├── naive_fp16.cu     fp16 naive + alpha/beta</span>
+<span class="code-line" data-line="6">│       ├── tiled_fp16.cu     fp16 shared memory tiling (TILE=32)</span>
+<span class="code-line" data-line="7">│       └── benchmark.cu      naive vs tiled 性能对比 (CPU验证 + GPU计时)</span>
+<span class="code-line" data-line="8">└── triton/               Triton 算子（写到 B 线时生长）</span></code></pre></div>
+<h2 id="已完成">已完成<a class="heading-anchor" href="#%E5%B7%B2%E5%AE%8C%E6%88%90" aria-label="链接到已完成">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>算子</th>
+<th>文件</th>
+<th>平台</th>
+<th>日期</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>GEMM naive (float)</td>
+<td><a href="cuda/gemm/naive_float.cu">cuda/gemm/naive_float.cu</a></td>
+<td>LeetGPU <code>2_matrix_multiplication</code></td>
+<td>2026-06-16</td>
+<td>2D grid 16×16</td>
+</tr>
+<tr>
+<td>GEMM fp16 naive</td>
+<td><a href="cuda/gemm/naive_fp16.cu">cuda/gemm/naive_fp16.cu</a></td>
+<td>LeetGPU <code>22_gemm</code></td>
+<td>2026-06-22</td>
+<td>alpha/beta BLAS</td>
+</tr>
+<tr>
+<td>GEMM fp16 tiled</td>
+<td><a href="cuda/gemm/tiled_fp16.cu">cuda/gemm/tiled_fp16.cu</a></td>
+<td>LeetGPU <code>22_gemm</code></td>
+<td>2026-06-25</td>
+<td>TILE=32 shared mem</td>
+</tr>
+<tr>
+<td>GEMM benchmark</td>
+<td><a href="cuda/gemm/benchmark.cu">cuda/gemm/benchmark.cu</a></td>
+<td>RTX 4090 (AutoDL)</td>
+<td>2026-06-25</td>
+<td>K=2048/8192 naive vs tiled</td>
+</tr>
+</tbody></table>
+<h2 id="已知归档缺口">已知归档缺口<a class="heading-anchor" href="#%E5%B7%B2%E7%9F%A5%E5%BD%92%E6%A1%A3%E7%BC%BA%E5%8F%A3" aria-label="链接到已知归档缺口">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>单元</th>
+<th>现状</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>CUDA Vector Add（A1）</td>
+<td>Lesson 01 有 LeetGPU 代码快照，但没有单独的本地 <code>solve</code> 文件</td>
+</tr>
+<tr>
+<td>Triton Vector Add（B1）</td>
+<td>已有 AutoDL wrapper 和 benchmark，但没有单独的 LeetGPU 原始 <code>solve</code> 文件</td>
+</tr>
+</tbody></table>
+<h2 id="当前产物">当前产物<a class="heading-anchor" href="#%E5%BD%93%E5%89%8D%E4%BA%A7%E7%89%A9" aria-label="链接到当前产物">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>算子</th>
+<th>文件</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Triton MatMul LeetGPU 最终版</td>
+<td><a href="triton/matmul_leetgpu.py">triton/matmul_leetgpu.py</a></td>
+<td><code>LEETGPU_PASS</code>：LeetGPU #02，Triton，2026-08-28；SuccessPublicTrace（A100-80GB，24.54 ms，55.3th percentile）</td>
+</tr>
+<tr>
+<td>Triton MatMul服务器适配版</td>
+<td><a href="triton/matmul.py">triton/matmul.py</a></td>
+<td><code>GPU_VALIDATED</code>：RTX3090 IEEE FP32当前最佳20.830 ms / 19,794.1 GFLOPS / <code>torch.mm</code> 80.3%；22.033 ms为早期sweep历史结果</td>
+</tr>
+</tbody></table>
+<h2 id="历史-wip">历史 WIP<a class="heading-anchor" href="#%E5%8E%86%E5%8F%B2-wip" aria-label="链接到历史 WIP">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>算子</th>
+<th>文件</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Triton MatMul</td>
+<td><a href="triton/matmul_leetgpu_wip.py">triton/matmul_leetgpu_wip.py</a></td>
+<td>历史 TF32 默认精度失败版本；4×4 case 最大绝对误差为 <code>0.1275177001953125</code>，保留用于复盘，不代表当前状态</td>
+</tr>
+</tbody></table>
+<p>MatMul单元总体为<code>GPU_VALIDATED</code>，尚未<code>COMPLETE</code>；现有数字保留，后续按<a href="../roadmap/curriculum/performance/README.html">第三篇极致性能课程</a>补Nsight Compute、PTX/SASS、低精度和多shape。当前实践动作是Triton Softmax服务器闭环；Vector Add原始LeetGPU <code>solve</code>归档缺口保持不变。</p>
+</div></main><script src="../../reader.js"></script></body></html>

@@ -1,0 +1,64 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Week 1 — CUDA 基础 + Vector Add · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · weekly/2026-06-16-week1-cuda-basics.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E5%81%9A%E4%BA%86%E4%BB%80%E4%B9%88">做了什么</a></li><li><a href="#%E7%90%86%E8%AE%BA%E5%AD%A6%E4%B9%A0">理论学习</a></li><li><a href="#%E5%8A%A8%E6%89%8B%E5%86%99%E4%BB%A3%E7%A0%81">动手写代码</a></li><li><a href="#%E7%8E%AF%E5%A2%83%E6%90%AD%E5%BB%BA">环境搭建</a></li><li><a href="#%E5%85%B3%E9%94%AE%E6%95%B0%E6%8D%AE">关键数据</a></li><li><a href="#%E5%8D%A1%E7%82%B9--%E6%80%8E%E4%B9%88%E8%A7%A3%E5%86%B3%E7%9A%84">卡点 / 怎么解决的</a></li><li><a href="#%E9%9D%A2%E8%AF%95%E5%8F%AF%E7%94%A8%E7%82%B9">面试可用点</a></li><li><a href="#%E4%BA%A7%E5%87%BA%E7%89%A9">产出物</a></li></ol></nav><div class="markdown-body"><h1 id="week-1--cuda-基础--vector-add">Week 1 — CUDA 基础 + Vector Add<a class="heading-anchor" href="#week-1--cuda-%E5%9F%BA%E7%A1%80--vector-add" aria-label="链接到Week 1 — CUDA 基础 + Vector Add">#</a></h1>
+<blockquote><p>2026-06-16 前后 · 算子线 A1 · 平台：LeetGPU</p>
+</blockquote><h2 id="做了什么">做了什么<a class="heading-anchor" href="#%E5%81%9A%E4%BA%86%E4%BB%80%E4%B9%88" aria-label="链接到做了什么">#</a></h2>
+<h3 id="理论学习">理论学习<a class="heading-anchor" href="#%E7%90%86%E8%AE%BA%E5%AD%A6%E4%B9%A0" aria-label="链接到理论学习">#</a></h3>
+<ul>
+<li>理解了 CUDA 编程模型：thread → warp → block → grid 层次</li>
+<li>理解了 Ascend vs CUDA 的核心差异：硬件控制数据搬运 vs 你告诉每个线程算哪个元素</li>
+<li>掌握了 GPU 内存层级：Register → Shared Memory → L2 → Global Memory (HBM)</li>
+<li>理解了 warp 概念（CUDA 独有的 32-thread 执行单元）和 warp divergence</li>
+<li>能用 Ascend 对应关系解释 CUDA 概念（L1 Buffer ≈ Shared Memory, Cube ≈ Tensor Core）</li>
+</ul>
+<h3 id="动手写代码">动手写代码<a class="heading-anchor" href="#%E5%8A%A8%E6%89%8B%E5%86%99%E4%BB%A3%E7%A0%81" aria-label="链接到动手写代码">#</a></h3>
+<ul>
+<li><strong>Vector Add kernel</strong>：在 LeetGPU 上跑通，<code>C[i] = A[i] + B[i]</code></li>
+<li>掌握了 grid-stride loop：<code>for (int i = idx; i &lt; N; i += stride)</code> 处理 N &gt; grid 的情况</li>
+<li>加了 CUDA Error Check（<code>CUDA_CHECK</code> 宏）</li>
+<li>用 <code>cudaEvent</code> 计时 + 算 bandwidth</li>
+</ul>
+<h3 id="环境搭建">环境搭建<a class="heading-anchor" href="#%E7%8E%AF%E5%A2%83%E6%90%AD%E5%BB%BA" aria-label="链接到环境搭建">#</a></h3>
+<ul>
+<li>购买 4090 GPU + 配置 CUDA 12.4 + PyTorch 2.5.1</li>
+<li>Vector Add 本地跑通：<strong>696 GB/s bandwidth, 0 error</strong></li>
+<li>⚠️ SSH 被公司防火墙拦截 → 改用 Jupyter Web Terminal 操作</li>
+</ul>
+<h2 id="关键数据">关键数据<a class="heading-anchor" href="#%E5%85%B3%E9%94%AE%E6%95%B0%E6%8D%AE" aria-label="链接到关键数据">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>值</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Vector Add Bandwidth (4090)</td>
+<td>696 GB/s</td>
+</tr>
+<tr>
+<td>线程配置</td>
+<td>256 threads/block</td>
+</tr>
+<tr>
+<td>数据量</td>
+<td>1M elements (FP32)</td>
+</tr>
+</tbody></table>
+<h2 id="卡点--怎么解决的">卡点 / 怎么解决的<a class="heading-anchor" href="#%E5%8D%A1%E7%82%B9--%E6%80%8E%E4%B9%88%E8%A7%A3%E5%86%B3%E7%9A%84" aria-label="链接到卡点 / 怎么解决的">#</a></h2>
+<ul>
+<li><strong>SSH 被公司防火墙拦截</strong>：SSH 端口被封 → 用 Jupyter Web Terminal（浏览器操作，不需要 SSH）</li>
+<li><strong>理解 warp divergence</strong>：这是 CUDA 独有的概念，Ascend 没有 → 通过对比 Ascend Vector Unit 的 SIMD 宽度和 CUDA 的分支代价来理解</li>
+</ul>
+<h2 id="面试可用点">面试可用点<a class="heading-anchor" href="#%E9%9D%A2%E8%AF%95%E5%8F%AF%E7%94%A8%E7%82%B9" aria-label="链接到面试可用点">#</a></h2>
+<ul>
+<li>能说清 thread/block/grid/warp 四个概念</li>
+<li>能解释为什么 Vector Add 是 memory-bound（3N float 读写 ÷ 耗时 = bandwidth）</li>
+<li>能说 Ascend 和 CUDA 编程模型的 3 个关键差异</li>
+<li>Warp divergence 的原理（面试高频题）</li>
+</ul>
+<h2 id="产出物">产出物<a class="heading-anchor" href="#%E4%BA%A7%E5%87%BA%E7%89%A9" aria-label="链接到产出物">#</a></h2>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> LeetGPU Vector Addition 跑通</li>
+<li><input checked="" disabled="" type="checkbox"> 4090 本地 vector_add 跑通，696 GB/s</li>
+<li><input checked="" disabled="" type="checkbox"> 笔记：GPU 架构对比、内存模型、CUDA API 速查</li>
+</ul>
+</div></main><script src="../../reader.js"></script></body></html>

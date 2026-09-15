@@ -1,0 +1,902 @@
+{
+  "version": 1,
+  "five_directions_delivery": {
+    "date": "2026-09-14",
+    "gemm": "Swizzle coordinate/bank model plus fixed CUTLASS3.8.0 example49 integration and producer/consumer collective explanation; author library supplies WGMMA kernel, not a handwritten replacement.",
+    "attention": "Independent FP32 one-tile lookahead Triton kernel with solve, CPU recurrence tests, same-precision SDPA math comparison; actual scheduling/overlap remains device-dependent.",
+    "quantization": "Two-layer NumPy decoder, shared-consumer scale folding, calibration/clipping, packed checkpoint roundtrip and heldout NLL/logits. Untrained model and materialized dequantized inference are explicitly labeled.",
+    "cluster": "Two-CTA DSM histogram/CPU ownership and fixed CUTLASS4.6.3 SM100 multicast integration with TMA/MMA completion accounting.",
+    "runtime": "Driver/PTX primary-context sample, lazy loading, VMM, Linux IPC, PDL/domains and separate child/conditional/device Graph modes.",
+    "author_code": [
+      "https://github.com/NVIDIA/cutlass/blob/v3.8.0/examples/49_hopper_gemm_with_collective_builder/49_collective_builder.cu",
+      "https://github.com/NVIDIA/cutlass/blob/v3.8.0/include/cutlass/gemm/collective/sm90_mma_tma_gmma_ss_warpspecialized.hpp",
+      "https://github.com/NVIDIA/cutlass/blob/v3.8.0/include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized.hpp",
+      "https://github.com/NVIDIA/cutlass/blob/v4.6.3/examples/cute/tutorial/blackwell/03_mma_tma_multicast_sm100.cu"
+    ],
+    "baseline_preservation": "Worker temporarily added lookahead symbols to untracked prefill_fp32.py, then restored its initially read135-line content and placed new implementation in prefill_pipeline.py. No pre-change byte hash exists; do not claim byte-level proof.",
+    "safety_review": "Fixed exclusive-create error handler that could unlink existing checkpoint, format labels validation, Driver API/PTX signatures and pageable async-copy misuse. Existing-output guard test passes.",
+    "validation": "Swizzle4 unit tests, cluster ownership8 shapes, Attention recurrence/tails/CLI, model quantization9 unit tests and demo passed. Build125 excerpts, 108 HTML artifacts, 5320 local href/src targets and4127 fragments audited; navigation/editorial/font checks passed. Bash launcher syntax checked, no CUTLASS build executed.",
+    "device_status": "No nvcc/device execution; source checks and CPU results are not GPU or performance validation."
+  },
+  "five_directions_source_review": {
+    "checked_on": "2026-09-14",
+    "source": "downloads/cuda-programming-guide.pdf",
+    "reviewed_pdf_pages": "69-72,180-186,239-245,292-294,316-317,380-388,404-408,409-416,419-421",
+    "visual_pdf_checks": "384 swizzle Figure52;412 VMM Figure55",
+    "official_sources": [
+      "https://docs.nvidia.com/cutlass/latest/media/docs/cpp/gemm_api_3x.html",
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/programmatic-dependent-launch.html",
+      "https://triton-lang.org/main/python-api/generated/triton.language.range.html",
+      "https://raw.githubusercontent.com/mit-han-lab/llm-awq/main/awq/quantize/auto_clip.py",
+      "https://raw.githubusercontent.com/mit-han-lab/smoothquant/main/smoothquant/smooth.py"
+    ],
+    "review_notes": "16-byte swizzle chunks; int4 is not INT4; DSM and VMM multicast differ; PDL trigger is not data-ready; map does not grant access; all shared-input branches need folding. Current official API declarations take precedence over stale shorthand snippets in local manual.",
+    "boundary": "Source review is separate from implementation acceptance and GPU validation."
+  },
+  "tma_wmma_increment": {
+    "checked_on": "2026-09-14",
+    "source": "downloads/cuda-programming-guide.pdf",
+    "reviewed_pdf_pages": "331,372,375,624",
+    "visual_pdf_check": "Reader page375: tensor copy, explicit transaction arrival and token wait",
+    "references": ["https://nvidia.github.io/cccl/unstable/libcudacxx/extended_api/synchronization_primitives/barrier/barrier_arrive_tx.html", "https://docs.nvidia.com/cuda/cuda-driver-api/group__CUDA__TENSOR__MEMORY.html"],
+    "example": "roadmap/curriculum/operators/03-gemm/examples/tma_wmma_pipeline.cu",
+    "scope": "Two FP16 tensor maps, paired1024-byte transaction, per-slot arrival token, one/two-stage synchronous-WMMA GEMM, padded reference/guard and optional event timing",
+    "boundary": "No nvcc or GPU execution, no swizzle/WGMMA/warp specialization or measured speedup; CPU protocol models are not hardware-counter emulation"
+  },
+  "wmma_double_buffer_review": {
+    "source": "downloads/cuda-programming-guide.pdf",
+    "reviewed_pdf_pages": "348-352,624-625",
+    "visual_pdf_check": "Reader page624: warp participation, 256-bit pointer alignment and ldm units",
+    "official_reference": "https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/async-copies.html",
+    "scope": "Per-thread async-copy completion plus warp communication, four-byte half pairs, serial versus double-buffer submission order, same FP16-input FP32-output WMMA math",
+    "boundary": "Not WGMMA or TMA, not warp specialization, no measured speedup; CPU schedule checks cannot validate GPU instructions."
+  },
+  "tensor_map_increment": {
+    "checked_on": "2026-09-14",
+    "source": "downloads/cuda-programming-guide.pdf",
+    "reviewed_pdf_pages": "369-376",
+    "visual_pdf_check": "Reader page376 Table23 and negative/OOB discussion",
+    "references": [
+      "https://docs.nvidia.com/cuda/cuda-driver-api/group__CUDA__TENSOR__MEMORY.html",
+      "https://nvidia.github.io/cccl/unstable/libcudacxx/ptx/instructions/cp_async_bulk_tensor.html"
+    ],
+    "scope": "Unswizzled 2D INT32 tensor map, fastest-first coordinates, byte pitch, logical OOB zero fill, explicit tx accounting, complete CUDA host/kernel/checks and CPU coordinate reference.",
+    "correction": "Local prose says sizes greater than one, but Table23 and Driver API specify nonzero. Include1x1; no zero-sized descriptor.",
+    "boundary": "No CUDA compilation/GPU execution; not a pipelined GEMM or swizzled/multicast implementation."
+  },
+  "tma_pipeline_review": {
+    "checked_on": "2026-09-11",
+    "source": "downloads/cuda-programming-guide.pdf",
+    "reviewed_pdf_pages": "331-334,340-342,363-368",
+    "visual_pdf_check": "Reader page368: source-read completion, issuing-thread scope and Table21 alignment",
+    "official_references": [
+      "https://nvidia.github.io/cccl/unstable/libcudacxx/ptx/instructions/cp_async_bulk.html",
+      "https://nvidia.github.io/cccl/unstable/libcudacxx/ptx/instructions/cp_async_bulk_wait_group.html",
+      "https://docs.nvidia.com/cuda/parallel-thread-execution/index.html",
+      "https://docs.nvidia.com/cutlass/latest/media/docs/cpp/pipeline.html",
+      "https://arxiv.org/abs/2407.08608"
+    ],
+    "scope": "Bulk TMA versus non-bulk async groups; automatic tx accounting in memcpy_async; source-read wait and CTA reuse; aligned WGMMA warpgroup and sm_90a distinction; full/empty pipeline and Attention state dependencies.",
+    "boundary": "Source contract review, not compiled kernel or measured optimization; current online CCCL unstable documentation kept distinct from local Toolkit13.3 baseline."
+  },
+  "graph_and_tile_increment": {
+    "checked_on": "2026-09-11",
+    "source": "downloads/cuda-programming-guide.pdf",
+    "reviewed_pdf_pages": "88-116,228-232,235-239,247-255",
+    "visual_pdf_check": "Tile partition coordinates, Figure 19 on reader page95",
+    "official_api_checks": [
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/writing-tile-kernels.html",
+      "https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__GRAPH.html"
+    ],
+    "version_boundary": "Local guide13.3 used as baseline; current online chapter numbering differs. Tile C++13.3+, Graph examples target Runtime12+, Python stack support must be checked on-device.",
+    "tutorials": [
+      "roadmap/curriculum/gpu/02-cuda-execution-and-scheduling/README.md",
+      "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/README.md"
+    ],
+    "examples": ["tile_vector_add.py", "graph_replay.cu", "graph_memory.cu"],
+    "validation_boundary": "Source/API review, Python syntax/CLI and site checks only; CUDA/cuTile device execution deferred to the corresponding lesson. No new learning or performance status."
+  },
+  "quantization_and_editorial": {
+    "checked_on": "2026-09-11",
+    "tutorial": "roadmap/curriculum/operators/07-quantized-operators/README.md",
+    "sources": [
+      "https://github.com/mit-han-lab/smoothquant/blob/main/smoothquant/smooth.py",
+      "https://github.com/mit-han-lab/llm-awq/blob/main/awq/quantize/auto_scale.py",
+      "https://github.com/IST-DASLab/gptq/blob/main/gptq.py",
+      "https://arxiv.org/abs/2211.10438",
+      "https://arxiv.org/abs/2306.00978",
+      "https://arxiv.org/abs/2210.17323",
+      "https://docs.pytorch.org/docs/2.14/notes/numerical_accuracy.html"
+    ],
+    "source_scope": "Read author scaling and inverse-Hessian update paths; short original excerpts are distinguished from independent NumPy implementations. Main-branch source snapshot, not a complete author-library reproduction.",
+    "examples": ["quantization_lab.py", "w8a8_reference.py", "packed_int4_gpu.py"],
+    "cpu": "12 lab tests, W8A8 checks, original scalar semantics and odd G=3 byte/group boundary",
+    "gpu": "Prepared for on-lesson execution, no GPU pass or speed claim",
+    "editorial_scope": "18 core introductions rewritten; 21 paper publication introductions and retired planning phrases cleaned. Original notes/solutions preserved; not a new full scientific review of every paper.",
+    "corrections": "Total weight capacity is not per-token MoE traffic; AdamW does not eliminate Adam state buffers."
+  },
+  "gemm_pipeline_depth": {
+    "cuda_source": "downloads/cuda-programming-guide.pdf",
+    "reviewed_pdf_pages": "339-349,363-367,577,623-627",
+    "visual_pdf_check": "WMMA load/store/mma contract on page 624",
+    "ptx_source": "https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#warp-level-matrix-fragment-mma-16816-float",
+    "ptx_scope": "PTX ISA 9.4 dense m16n8k16 FP16 inputs and FP32 C/D coordinates; not WMMA fragment ABI",
+    "examples": [
+      "roadmap/curriculum/operators/03-gemm/examples/wmma_padded.cu",
+      "roadmap/curriculum/operators/03-gemm/examples/mma_layout_checks.py",
+      "roadmap/curriculum/operators/03-gemm/examples/tile_pipeline_model.py",
+      "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/examples/cp_async_ring.cu"
+    ],
+    "boundary": "CUDA source only; no compiler/device validation. CPU models do not predict hardware performance."
+  },
+  "coverage_registry": ".codex/pdf-coverage.json",
+  "pdf_continuation": {
+    "roadmap/curriculum/papers/deepseek-v41.md": {
+      "source": "downloads/DeepSeek_V41_Tech_Report.pdf",
+      "reviewed_pdf_pages": "7-37,48-51",
+      "visual_checks": "Figure 5 on page 11; Algorithm 1 on page 16; Table 1 on page 24; Figure 9 and Table 4 on page 35",
+      "teaching_code": "roadmap/curriculum/papers/examples/v41_checks.py",
+      "author_source": {
+        "repository": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash",
+        "revision": "dba1be0a40aa45a94ad051997016db3960a90277",
+        "files": ["inference/config.json", "inference/model.py", "inference/kernel.py", "inference/README.md", "encoding/encoding.py", "evaluation/README.md"],
+        "reviewed_paths": ["Compressor.forward", "Indexer.forward", "Attention", "SharedAttentionRuntime", "fp4_act_quant"],
+        "important_boundaries": ["Indexer performs full-domain einsum before candidate masking in this reference", "inplace FP4 quantization writes dequantized values back; not proof of packed physical KV memory", "kernel.py uses TileLang; minimal inference is not the production serving engine"]
+      },
+      "boundary": "Author reference read, not executed; no author kernel reproduction, model quality or GPU benchmark claim; aggregate comparisons are not per-component ablations"
+    },
+    "roadmap/curriculum/papers/inference-workloads.md": {
+      "source": "downloads/大模型推理实践.pdf",
+      "topics": "3/6/14/15/16: scaling, RL, long tasks, rollout, adaptive speculation",
+      "teaching_code": "roadmap/curriculum/papers/examples/workload_checks.py",
+      "boundary": "Do not adopt unverified framework timing tables, stale-KV guarantees or zero-cost speculation claims"
+    },
+    "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/README.md": {
+      "source": "downloads/cuda-programming-guide.pdf",
+      "reviewed_pdf_pages": "272-276,281-284",
+      "teaching_code": "examples/stream_ordered_lifetime.cu",
+      "boundary": "nvcc unavailable locally; source review only, not GPU validation"
+    }
+  },
+  "paper_reader": {
+    "catalog": "roadmap/curriculum/gpu/course-site/paper-catalog.cjs",
+    "entry": "roadmap/curriculum/gpu/course-site/index.html?chapter=25",
+    "publication_override": {
+      "notes/algorithms/dsa-sparse-attention.md": "roadmap/curriculum/papers/dsa.md"
+    },
+    "formula_check": "roadmap/curriculum/papers/examples/attention_checks.py",
+    "verification_scope": "NumPy checks of MLA content/value absorption and selected-set attention; not GPU execution or full literature review",
+    "dsa_sources": [
+      "https://arxiv.org/abs/2512.02556",
+      "https://github.com/deepseek-ai/DeepSeek-V3.2-Exp/blob/main/inference/model.py",
+      "https://github.com/deepseek-ai/DeepSeek-V3.2-Exp/blob/main/inference/config_671B_v3.2.json"
+    ]
+  },
+  "resolution": "Relative targets are resolved from the corresponding lesson directory, not from this index.",
+  "purpose": "Exact source locations kept for maintenance; published lessons show inline code and concise references.",
+  "non_experiment_completion_sources": {
+    "cuda_execution": ".codex/completion-evidence-cuda-execution.json",
+    "cuda_runtime": ".codex/completion-evidence-cuda-runtime.json",
+    "gemm_attention": ".codex/completion-evidence-operators.json",
+    "local_llama_quantization": ".codex/completion-evidence-quantization.json",
+    "v41_and_systems": ".codex/completion-evidence-papers-systems.json",
+    "integration_review": ".codex/completion-evidence-integration.json",
+    "v41_training_increment": {
+      "source": "downloads/DeepSeek_V41_Tech_Report.pdf",
+      "pdf_pages": [15, 20, 21, 22, 23],
+      "tutorial": "roadmap/curriculum/papers/deepseek-v41.md",
+      "code": "roadmap/curriculum/papers/examples/v41_training_contracts.py",
+      "scope": "Data filtering/deduplication, token ratio, packed-sample isolation, optimizer groups and reported learning-rate schedule; CPU arithmetic only."
+    },
+    "advanced_api_integration": {
+      "source": "downloads/cuda-programming-guide.pdf",
+      "pdf_pages": [151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 192, 193, 194, 195, 196],
+      "targets": ["roadmap/curriculum/gpu/03-registers-and-memory-system/README.md", "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/README.md", "roadmap/curriculum/gpu/05-performance-analysis-and-optimization/README.md"],
+      "scope": "Launch/cluster units and fallback, streams/events/priority/connections, batched-copy source lifetimes, and feature mechanisms distributed into existing lessons rather than a new overview chapter."
+    }
+  },
+  "continuous_reading_source_archive": {
+    "roadmap/curriculum/operators/03-gemm/README.md": ["notes/triton/matmul-performance-analysis.md", "notes/triton/logs/2026-08-29-matmul-k256-s3-nsys.txt", "notes/triton/logs/2026-08-30-matmul-k256-s2-nsys.txt", "solutions/triton/README.md", "solutions/triton/matmul.py", "solutions/triton/matmul_leetgpu.py"],
+    "roadmap/curriculum/gpu/01-gpu-hardware-map-and-generations/README.md": ["solutions/triton/README.md", "solutions/triton/matmul_leetgpu.py"],
+    "roadmap/curriculum/gpu/05-performance-analysis-and-optimization/README.md": ["notes/triton/matmul-performance-analysis.md", "notes/triton/matmul-nsys-p0-lite-2026-08-30.md", "solutions/triton/README.md", "solutions/triton/matmul.py", "lessons/07-triton-debugging.md", "roadmap/curriculum/gpu/05-resource-model-occupancy-and-roofline/README.md"],
+    "roadmap/curriculum/operators/01-memory-and-layout/README.md": ["solutions/triton/README.md"]
+  },
+  "lessons": {
+    "roadmap/curriculum/gpu/01-gpu-hardware-map-and-generations/README.md": {
+      "references": [
+        {
+          "label": "CUDA Programming Guide 13.3",
+          "target": "../../../../downloads/cuda-programming-guide.pdf"
+        },
+        {
+          "label": "3 / 19",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=19"
+        },
+        {
+          "label": "5–7 / 21–23",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=21"
+        },
+        {
+          "label": "7–13 / 23–29",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=23"
+        },
+        {
+          "label": "13–14 / 29–30",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=29"
+        },
+        {
+          "label": "15–18 / 31–34",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=31"
+        },
+        {
+          "label": "19–26 / 35–42",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=35"
+        },
+        {
+          "label": "26–34 / 42–50",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=42"
+        },
+        {
+          "label": "现有 Vector Add 文件",
+          "target": "../../../../solutions/triton/vector_add.py"
+        },
+        {
+          "label": "vector_add_walkthrough.cu",
+          "target": "examples/vector_add_walkthrough.cu"
+        },
+        {
+          "label": "MatMul LeetGPU 实现",
+          "target": "../../../../solutions/triton/matmul_leetgpu.py"
+        },
+        {
+          "label": "matmul_leetgpu.py",
+          "target": "../../../../solutions/triton/matmul_leetgpu.py"
+        },
+        {
+          "label": "vector_add.py",
+          "target": "../../../../solutions/triton/vector_add.py"
+        }
+      ],
+      "referenceParagraphs": [
+        "本章以仓库中的 [CUDA Programming Guide 13.3](../../../../downloads/cuda-programming-guide.pdf) 为主教材，共 698 个 PDF 页面。“书内页码”是页脚印出的数字，“PDF 页”是阅读器从封面计数的位置；本文件正文的 PDF 页 = 书内页码 + 16。下面的链接直接指向对应页面；阅读器不支持页码跳转时，可以按章节号查找。",
+        "| 本章内容 | 手册章节 | 书内页码 / PDF 页 |\n|---|---|---|\n| CPU 与 GPU 的设计目标 | §1.1.1–1.1.2 | [3 / 19](../../../../downloads/cuda-programming-guide.pdf#page=19) |\n| Host、Device、SM 与线程块 | §1.2.1–1.2.2.1 | [5–7 / 21–23](../../../../downloads/cuda-programming-guide.pdf#page=21) |\n| warp、SIMT 与 tile 编程 | §1.2.2.2–1.2.2.3 | [7–13 / 23–29](../../../../downloads/cuda-programming-guide.pdf#page=23) |\n| 显存、片上存储与统一内存 | §1.2.3 | [13–14 / 29–30](../../../../downloads/cuda-programming-guide.pdf#page=29) |\n| 计算能力、软件平台和兼容性 | §1.3 | [15–18 / 31–34](../../../../downloads/cuda-programming-guide.pdf#page=31) |\n| kernel 启动、索引与显式内存管理 | §2.1.1–2.1.4 | [19–26 / 35–42](../../../../downloads/cuda-programming-guide.pdf#page=35) |\n| 完整程序、初始化与错误处理 | §2.1.5–2.1.7 | [26–34 / 42–50](../../../../downloads/cuda-programming-guide.pdf#page=42) |"
+      ]
+    },
+    "roadmap/curriculum/gpu/02-cuda-execution-and-scheduling/README.md": {
+      "references": [
+        {
+          "label": "examples/execution_and_scheduling.cu",
+          "target": "examples/execution_and_scheduling.cu"
+        },
+        {
+          "label": "solutions/triton/matmul_leetgpu.py",
+          "target": "../../../../solutions/triton/matmul_leetgpu.py"
+        },
+        {
+          "label": "PDF 页 61",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=61"
+        },
+        {
+          "label": "PDF 页 163",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=163"
+        },
+        {
+          "label": "solutions/triton/matmul_leetgpu.py",
+          "target": "../../../../solutions/triton/matmul_leetgpu.py"
+        },
+        {
+          "label": "execution_and_scheduling.cu",
+          "target": "examples/execution_and_scheduling.cu"
+        },
+        {
+          "label": "solutions/triton/matmul.py",
+          "target": "../../../../solutions/triton/matmul.py"
+        },
+        {
+          "label": "solutions/triton/matmul_leetgpu.py",
+          "target": "../../../../solutions/triton/matmul_leetgpu.py"
+        },
+        {
+          "label": "solutions/triton/matmul_leetgpu.py",
+          "target": "../../../../solutions/triton/matmul_leetgpu.py"
+        },
+        {
+          "label": "PDF",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=61"
+        },
+        {
+          "label": "PDF",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=163"
+        },
+        {
+          "label": "PDF",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=623"
+        },
+        {
+          "label": "PDF",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=142"
+        },
+        {
+          "label": "solutions/triton/matmul_leetgpu.py",
+          "target": "../../../../solutions/triton/matmul_leetgpu.py"
+        }
+      ],
+      "referenceParagraphs": [
+        "CUDA Programming Guide 13.3 的 SIMT 章节在打印页 45–46（PDF 页 61–62）定义 warp 和线程层级；Independent Thread Scheduling 位于打印页 147（PDF 页 163），hardware multithreading 位于打印页 148（PDF 页 164）。对应的本地手册入口是 [PDF 页 61](../../../../downloads/cuda-programming-guide.pdf#page=61)。",
+        "CUDA Programming Guide 13.3 在打印页 147（PDF 页 163）说明 CC 7.0 以前的共享 program counter 与 active mask；打印页 148（PDF 页 164）说明 ITS 可能破坏既有代码依赖的隐式 warp-synchronous 行为，并建议显式 `__syncwarp()`。对应的本地手册段落是 [PDF 页 163](../../../../downloads/cuda-programming-guide.pdf#page=163)。",
+        "| 本章主题 | 本地依据 |\n|---|---|\n| thread hierarchy、warp、SIMT、occupancy | CUDA Programming Guide §2.3.1–2.3.2，打印页45–46 / PDF61–62；§2.3.7，打印页70 / PDF86；[PDF](../../../../downloads/cuda-programming-guide.pdf#page=61) |\n| Independent Thread Scheduling、hardware multithreading | ITS 打印页 147（PDF 页 163），hardware multithreading 打印页 148（PDF 页 164）；[PDF](../../../../downloads/cuda-programming-guide.pdf#page=163) |\n| Tensor Core/warp matrix 与浮点语义 | §5.4.11 Warp Matrix Functions，打印页607 / PDF623起；§5.5浮点计算按目录继续；[PDF](../../../../downloads/cuda-programming-guide.pdf#page=623) |\n| NVCC、PTX、cubin 和目标架构 | NVCC §2.7 打印页 126（PDF 页 142）起；Using PTX 打印页 146（PDF 页 162）起；[PDF](../../../../downloads/cuda-programming-guide.pdf#page=142) |\n| GEMM、Softmax、Triton 调试和 MatMul 来源 | [lessons/02](../../../../lessons/02-gemm-naive.md)、[lessons/03](../../../../lessons/03-gemm-tiled.md)、[lessons/04](../../../../lessons/04-softmax.md)、[lessons/07](../../../../lessons/07-triton-debugging.md)、[solutions/triton/matmul_leetgpu.py](../../../../solutions/triton/matmul_leetgpu.py) |"
+      ]
+    },
+    "roadmap/curriculum/gpu/03-registers-and-memory-system/README.md": {
+      "references": [
+        {
+          "label": "examples/transpose_tiled.cu",
+          "target": "examples/transpose_tiled.cu"
+        },
+        {
+          "label": "本地手册",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=67"
+        },
+        {
+          "label": "register_spill_probe.cu",
+          "target": "examples/register_spill_probe.cu"
+        },
+        {
+          "label": "solutions/triton/matmul_leetgpu.py",
+          "target": "../../../../solutions/triton/matmul_leetgpu.py"
+        },
+        {
+          "label": "solutions/triton/matmul.py",
+          "target": "../../../../solutions/triton/matmul.py"
+        },
+        {
+          "label": "solutions/triton/matmul_leetgpu.py",
+          "target": "../../../../solutions/triton/matmul_leetgpu.py"
+        },
+        {
+          "label": "PDF 页 142",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=142"
+        },
+        {
+          "label": "solutions/triton/matmul_leetgpu.py",
+          "target": "../../../../solutions/triton/matmul_leetgpu.py"
+        },
+        {
+          "label": "solutions/triton/matmul.py",
+          "target": "../../../../solutions/triton/matmul.py"
+        },
+        {
+          "label": "§2.6，印刷页116 / PDF132",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=132"
+        },
+        {
+          "label": "§2.6.2.2.1，PDF137",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=137"
+        },
+        {
+          "label": "solutions/triton/matmul_leetgpu.py",
+          "target": "../../../../solutions/triton/matmul_leetgpu.py"
+        },
+        {
+          "label": "examples/transpose_tiled.cu",
+          "target": "examples/transpose_tiled.cu"
+        },
+        {
+          "label": "PDF",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=67"
+        },
+        {
+          "label": "PDF",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=72"
+        },
+        {
+          "label": "PDF",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=163"
+        },
+        {
+          "label": "PDF",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=142"
+        }
+      ],
+      "referenceParagraphs": [
+        "CUDA Programming Guide 13.3 在“GPU Device Memory Spaces”中把寄存器描述为线程私有、片上且生命周期与线程相关的存储，把 local memory 描述为线程私有但可能位于设备内存路径的地址空间；寄存器、shared memory 和 block/warp 的调度资源又会共同限制驻留量。对应的手册打印页为 51（PDF 页 67）和 52（PDF 页 68），可从 [本地手册](../../../../downloads/cuda-programming-guide.pdf#page=67) 打开。这里的“local”是 CUDA 地址空间名称，不是“低延迟”的同义词。",
+        "CUDA Programming Guide 13.3 的 NVCC 章节位于打印页 126–133（PDF 页 142–149）；其中还说明 PTX 适合为未来设备保留可重新编译的虚拟表示，而 cubin 是架构相关的二进制。对应的本地入口是 [PDF 页 142](../../../../downloads/cuda-programming-guide.pdf#page=142)。",
+        "本节依据本地 CUDA Programming Guide 13.3 的 [§2.6，印刷页116 / PDF132](../../../../downloads/cuda-programming-guide.pdf#page=132)。在线手册可能已经更新；以下章节编号以本地版本为准，查询 API 的签名和支持条件以实际 Toolkit 为准。",
+        "特别注意：即使系统支持硬件一致性，也不能据此从 CPU 直接解引用任意 cudaMalloc 分配。手册在 [§2.6.2.2.1，PDF137](../../../../downloads/cuda-programming-guide.pdf#page=137) 明确区分了受管理分配与 GPU-only 分配。",
+        "| 本章主题 | 本地依据 |\n|---|---|\n| 寄存器、local memory、occupancy 资源 | CUDA Programming Guide 13.3 打印页 51–56、70–72，PDF 页 67–72、86–88；[PDF](../../../../downloads/cuda-programming-guide.pdf#page=67) |\n| global coalescing、转置、shared bank | §2.3.4，打印页56–67 / PDF72–83；[PDF](../../../../downloads/cuda-programming-guide.pdf#page=72) |\n| Independent Thread Scheduling 与 warp 行为 | ITS 打印页 147（PDF 页 163），hardware multithreading 打印页 148（PDF 页 164）；[PDF](../../../../downloads/cuda-programming-guide.pdf#page=163) |\n| NVCC、PTX、cubin、SASS 检查 | 打印页 126–133，PDF 页 142–149；[PDF](../../../../downloads/cuda-programming-guide.pdf#page=142) |\n| GEMM/Softmax/Triton 访问与调试材料 | [lessons/02](../../../../lessons/02-gemm-naive.md)、[lessons/03](../../../../lessons/03-gemm-tiled.md)、[lessons/04](../../../../lessons/04-softmax.md)、[lessons/07](../../../../lessons/07-triton-debugging.md)、[solutions/triton](../../../../solutions/triton/) |"
+      ]
+    },
+    "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/README.md": {
+      "references": [
+        {
+          "label": "`downloads/cuda-programming-guide.pdf`",
+          "target": "../../../../downloads/cuda-programming-guide.pdf"
+        },
+        {
+          "label": "`solutions/triton/fused_softmax.py`",
+          "target": "../../../../solutions/triton/fused_softmax.py"
+        },
+        {
+          "label": "`solutions/triton/matmul.py`",
+          "target": "../../../../solutions/triton/matmul.py"
+        }
+      ],
+      "referenceParagraphs": [
+        "本章沿 CUDA Programming Guide 13.3 展开。手册目录中的印刷页脚与 PDF 页相差 16 页，例如印刷页 271 对应 PDF 第 287 页。相关原文位置是：§2.5 Asynchronous Execution（印刷页 101–115，PDF 117–131）、§4.4 Cooperative Groups（271–275，PDF 287–291）、§4.9 Asynchronous Barriers（304–320，PDF 320–336）、§4.10 Pipelines（323–329，PDF 339–345）、§4.11 Asynchronous Data Copies（331–372，PDF 347–388）、§4.14 Memory Synchronization Domains（388–389，PDF 404–405）以及 §5.7 CUDA C++ Memory Model（671–675，PDF 687–691）。本地手册入口为 [`downloads/cuda-programming-guide.pdf`](../../../../downloads/cuda-programming-guide.pdf)。"
+      ]
+    },
+    "roadmap/curriculum/gpu/05-performance-analysis-and-optimization/README.md": {
+      "references": [
+        {
+          "label": "`examples/occupancy_budget.py`",
+          "target": "./examples/occupancy_budget.py"
+        },
+        {
+          "label": "Triton MatMul 源码",
+          "target": "../../../../solutions/triton/matmul.py"
+        },
+        {
+          "label": "§2.3.7，印刷页 70 / PDF 页 86",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=86"
+        },
+        {
+          "label": "§2.5.3 CUDA Events，印刷页 106 / PDF 页 122",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=122"
+        },
+        {
+          "label": "`examples/collect_cuda_tools.sh`",
+          "target": "./examples/collect_cuda_tools.sh"
+        },
+        {
+          "label": "`solutions/triton/matmul_leetgpu.py`",
+          "target": "../../../../solutions/triton/matmul_leetgpu.py"
+        },
+        {
+          "label": "`solutions/triton/matmul.py`",
+          "target": "../../../../solutions/triton/matmul.py"
+        },
+        {
+          "label": "性能指标章节",
+          "target": "../../../../downloads/大模型推理实践.pdf#page=8"
+        },
+        {
+          "label": "整网瓶颈章节",
+          "target": "../../../../downloads/大模型推理实践.pdf#page=62"
+        },
+        {
+          "label": "`solutions/triton/matmul.py`",
+          "target": "../../../../solutions/triton/matmul.py"
+        }
+      ],
+      "referenceParagraphs": [
+        "官方工具手册入口：[Nsight Systems User Guide](https://docs.nvidia.com/nsight-systems/UserGuide/index.html) · [Nsight Compute Documentation](https://docs.nvidia.com/nsight-compute/)。CUDA Programming Guide 的本地对照页为 [§2.3.7，印刷页 70 / PDF 页 86](../../../../downloads/cuda-programming-guide.pdf#page=86)，以及 [§2.5.3 CUDA Events，印刷页 106 / PDF 页 122](../../../../downloads/cuda-programming-guide.pdf#page=122)；后者的 event record、同步和 elapsed-time 顺序正是本章 benchmark 时序的依据。",
+        "《大模型推理实践》的[性能指标章节](../../../../downloads/大模型推理实践.pdf#page=8)和[整网瓶颈章节](../../../../downloads/大模型推理实践.pdf#page=62)适合作为模型级分析的起点。这里把指标落实到时间戳和可检验的假设，而不把业务延迟要求当作所有模型通用的常数。"
+      ]
+    },
+    "roadmap/curriculum/operators/01-memory-and-layout/README.md": {
+      "references": [
+        {
+          "label": "copy_alignment.cu",
+          "target": "examples/copy_alignment.cu"
+        },
+        {
+          "label": "完整转置程序",
+          "target": "../../gpu/03-registers-and-memory-system/examples/transpose_tiled.cu"
+        },
+        {
+          "label": "MatMul平台源码",
+          "target": "../../../../solutions/triton/matmul_leetgpu.py"
+        },
+        {
+          "label": "CUDA Programming Guide 13.3",
+          "target": "../../../../downloads/cuda-programming-guide.pdf"
+        }
+      ],
+      "referenceParagraphs": [
+        "本章的 CUDA 依据是本地 [CUDA Programming Guide 13.3](../../../../downloads/cuda-programming-guide.pdf)：§2.3.3.3 的寄存器与 local memory 位于打印页 51 / PDF 页 67，§2.3.4.1 的 global memory coalescing 从打印页 56 / PDF 页 72 开始，§2.3.4.2 的 shared memory 访问模式位于打印页 60 / PDF 页 76；§2.6 关于 Unified Virtual Address Space、Unified Memory 和系统内存位于打印页 116 / PDF 页 132。对应的官方 [CUDA C++ Best Practices Guide](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html) 重点是 §10.2.1、§10.2.3.1、§10.2.3.2 和 §10.2.3.3。路线结构参考 [AIInfraGuide 学习路线正文](https://caomaolufei.github.io/AIInfraGuide/guides/ai-infra%E5%AD%A6%E4%B9%A0%E8%B7%AF%E7%BA%BF/)。本地章节编号固定为13.3；在线参考可能更新，按主题标题核对，不将它默认视为同一版本。"
+      ]
+    },
+    "roadmap/curriculum/operators/02-reduction-and-norm/README.md": {
+      "references": [
+        {
+          "label": "row_sum.cu",
+          "target": "examples/row_sum.cu"
+        },
+        {
+          "label": "solutions/triton/fused_softmax.py",
+          "target": "../../../../solutions/triton/fused_softmax.py"
+        },
+        {
+          "label": "rowwise_softmax.py",
+          "target": "examples/rowwise_softmax.py"
+        },
+        {
+          "label": "rowwise_norms.py",
+          "target": "examples/rowwise_norms.py"
+        },
+        {
+          "label": "cpu_semantics.py",
+          "target": "examples/cpu_semantics.py"
+        },
+        {
+          "label": "CUDA Programming Guide 13.3",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=600"
+        }
+      ],
+      "referenceParagraphs": [
+        "本章引用的本地依据是 [CUDA Programming Guide 13.3](../../../../downloads/cuda-programming-guide.pdf#page=600)。其中 §5.4.4.1 位于 PDF 第 577 页（打印页 561），说明 `__syncthreads()` 要等待所有未退出线程并提供排序；§5.4.6.4 位于 PDF 第 599–600 页（打印页 583–584），`__reduce_add_sync` 支持 Compute Capability 8.x 及以上且类型为整数；§5.4.6.5 位于 PDF 第 600–602 页（打印页 584–586），说明 shuffle 支持 float、源 lane 必须参与、`width` 只能取 1/2/4/8/16/32，并且不提供 memory ordering。Triton 的相应概念可对照 [fused softmax tutorial](https://triton-lang.org/main/getting-started/tutorials/02-fused-softmax.html) 和 [layer norm tutorial](https://triton-lang.org/main/getting-started/tutorials/05-layer-norm.html)，本章代码固定处理 contiguous row-major `[R,D]` 输入，并给出独立的教学实现。"
+      ]
+    },
+    "roadmap/curriculum/operators/03-gemm/README.md": {
+      "references": [
+        {
+          "label": "cpu_gemm_checks.py",
+          "target": "examples/cpu_gemm_checks.py"
+        },
+        {
+          "label": "solutions/cuda/gemm/naive_float.cu",
+          "target": "../../../../solutions/cuda/gemm/naive_float.cu"
+        },
+        {
+          "label": "solutions/triton/matmul.py",
+          "target": "../../../../solutions/triton/matmul.py"
+        },
+        {
+          "label": "solutions/cuda/gemm/tiled_fp16.cu",
+          "target": "../../../../solutions/cuda/gemm/tiled_fp16.cu"
+        },
+        {
+          "label": "Triton MatMul",
+          "target": "../../../../solutions/triton/matmul.py"
+        },
+        {
+          "label": "matmul_leetgpu.py",
+          "target": "../../../../solutions/triton/matmul_leetgpu.py"
+        },
+        {
+          "label": "matmul_leetgpu.py",
+          "target": "../../../../solutions/triton/matmul_leetgpu.py"
+        },
+        {
+          "label": "PDF 第623页",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=623"
+        },
+        {
+          "label": "PDF 第624页",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=624"
+        },
+        {
+          "label": "PDF 第625页",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=625"
+        },
+        {
+          "label": "PDF 第627页",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=627"
+        },
+        {
+          "label": "PDF 第363页",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=363"
+        }
+      ],
+      "referenceParagraphs": [
+        "本章使用的本地 CUDA Programming Guide 13.3 页码为：WMMA（Warp Matrix Multiply-Accumulate，线程束矩阵乘加）§5.4.11 的 [PDF 第623页](../../../../downloads/cuda-programming-guide.pdf#page=623)，fragment load/store 的对齐和 leading dimension 约束见 [PDF 第624页](../../../../downloads/cuda-programming-guide.pdf#page=624)，TF32（TensorFloat-32）WMMA 说明见 [PDF 第625页](../../../../downloads/cuda-programming-guide.pdf#page=625)，跨编译架构传递 fragment 的 ABI 边界见 [PDF 第627页](../../../../downloads/cuda-programming-guide.pdf#page=627)，TMA（Tensor Memory Accelerator，张量内存加速器）§4.11.2 见 [PDF 第363页](../../../../downloads/cuda-programming-guide.pdf#page=363)。在线 Triton 对照使用官方 [Matrix Multiplication 教程](https://triton-lang.org/main/getting-started/tutorials/03-matrix-multiplication.html) 和 [`tl.dot` API](https://triton-lang.org/main/python-api/generated/triton.language.dot.html)；在线页面的惯例是 `M,N` 为输出维度、`K` 为归约维度，其中的归约轴 K 对应本章的 N，输出列 N 对应本章的 K。"
+      ]
+    },
+    "roadmap/curriculum/operators/04-activation-and-fusion/README.md": {
+      "references": [
+        {
+          "label": "Hugging Face LlamaMLP",
+          "target": "https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/modeling_llama.py"
+        },
+        {
+          "label": "reference/cuda/include/activations.cuh",
+          "target": "../../../../reference/cuda/include/activations.cuh"
+        },
+        {
+          "label": "examples/fused_swiglu.py",
+          "target": "examples/fused_swiglu.py"
+        },
+        {
+          "label": "Qwen3 modeling_qwen3.py",
+          "target": "https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen3/modeling_qwen3.py"
+        },
+        {
+          "label": "solutions/cuda/gemm/naive_float.cu",
+          "target": "../../../../solutions/cuda/gemm/naive_float.cu"
+        },
+        {
+          "label": "PDF 第 67 页，印刷第 51 页",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=67"
+        },
+        {
+          "label": "PDF 第 67 页，印刷第 51 页",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=67"
+        },
+        {
+          "label": "PDF 第 655 页，印刷第 639 页",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=655"
+        },
+        {
+          "label": "PDF 第 656 页，印刷第 640 页",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=656"
+        },
+        {
+          "label": "DeepSeek-V4.1-Flash 报告 §2.4.1，第 12–13 页",
+          "target": "../../../../downloads/DeepSeek_V41_Tech_Report.pdf#page=12"
+        },
+        {
+          "label": "本地 PDF 第 67 页",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=67"
+        },
+        {
+          "label": "cpu_semantics.py",
+          "target": "examples/cpu_semantics.py"
+        },
+        {
+          "label": "rope_qknorm_reference.py",
+          "target": "examples/rope_qknorm_reference.py"
+        },
+        {
+          "label": "fused_swiglu.py",
+          "target": "examples/fused_swiglu.py"
+        }
+      ],
+      "referenceParagraphs": [
+        "该 header 的 `sigmoid` 直接调用 `expf(-x)`，所以本章使用稳定表达式的 Triton 示例不能被倒推为“旧 reference 已经处理全部溢出边界”。本地 CUDA Programming Guide 13.3 对实现边界还有三处重要提醒：寄存器由编译器管理，约束上限可能导致 spill（[PDF 第 67 页，印刷第 51 页](../../../../downloads/cuda-programming-guide.pdf#page=67)，§2.3.3.3）；local memory 在作用域上是 thread-local，但不代表低延迟物理片上存储（[PDF 第 67 页，印刷第 51 页](../../../../downloads/cuda-programming-guide.pdf#page=67)，§2.3.3.4）；intrinsics 的误差来自测试、不是精度保证，且 `--use_fast_math` 会替换部分 API 为 intrinsic，可能改变精度和特殊值语义（[PDF 第 655 页，印刷第 639 页](../../../../downloads/cuda-programming-guide.pdf#page=655)、[PDF 第 656 页，印刷第 640 页](../../../../downloads/cuda-programming-guide.pdf#page=656)，§5.5.9.3）。",
+        "前面的 SwiGLU 融合保持数学计算不变，只调整中间值的存放位置。另一类优化需要先改变模型的数据依赖，才能让 kernel 少遍历一次张量。这两种情况必须分开验证。[DeepSeek-V4.1-Flash 报告 §2.4.1，第 12–13 页](../../../../downloads/DeepSeek_V41_Tech_Report.pdf#page=12)提供了一个具体案例。",
+        "实际优化仍按“依赖图 → 可保留的数据 → 编译资源 → profiler”检查：预期减少的是对应激活的遍历和中间存储；如果融合后 spill 增多、occupancy 下降或 launch 已不是瓶颈，时间收益可能小于流量收益。寄存器与 local memory 的物理含义继续对照 CUDA Programming Guide 13.3 的[本地 PDF 第 67 页](../../../../downloads/cuda-programming-guide.pdf#page=67)。"
+      ]
+    },
+    "roadmap/curriculum/operators/05-prefill-attention/README.md": {
+      "references": [
+        {
+          "label": "FlashAttention-2 §3.2",
+          "target": "https://tridao.me/publications/flash2/flash2.pdf"
+        },
+        {
+          "label": "PDF 第67页、印刷第51页",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=67"
+        },
+        {
+          "label": "PDF 第577页、印刷第561页",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=577"
+        }
+      ],
+      "referenceParagraphs": [
+        "FlashAttention 初版的并行组织首先沿 batch/head 分工；论文 [FlashAttention-2 §3.2](https://tridao.me/publications/flash2/flash2.pdf) 说明 FA2 forward 又把 Q 的 row tiles 分给 CTA，循环结构可以读成 outer-Q、inner-KV。这里的“Q tile”是算法/程序组织，不等于旧 CUDA 教学例子中一个 `blockIdx.x` 就完整代表 FA1 原始实现。",
+        "与 CUDA Programming Guide 13.3 对照时，寄存器/local memory 见 [PDF 第67页、印刷第51页](../../../../downloads/cuda-programming-guide.pdf#page=67)；barrier 的等待未退出线程与 memory ordering 见 [PDF 第577页、印刷第561页](../../../../downloads/cuda-programming-guide.pdf#page=577)。旧例子 tail Q 线程退出后，主要问题是它们原本应参与 cooperative KV tile load 的 lane 不再写入，其他线程随后读取未初始化的 shared 数据；不要把这件事泛化成“任何提前 exit 都必定死锁”，CUDA 同步语义对 exited thread 有专门规则，具体风险取决于剩余控制流和协作数据是否完整。"
+      ]
+    },
+    "roadmap/curriculum/operators/06-decode-paged-attention/README.md": {
+      "references": [
+        {
+          "label": "显存与 KV Cache 章节",
+          "target": "../../../../downloads/大模型推理实践.pdf#page=49"
+        },
+        {
+          "label": "讲义的量化章节",
+          "target": "../../../../downloads/大模型推理实践.pdf#page=54"
+        },
+        {
+          "label": "寄存器与 local memory，PDF 第 67 页",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=67"
+        },
+        {
+          "label": "block 同步，PDF 第 577 页",
+          "target": "../../../../downloads/cuda-programming-guide.pdf#page=577"
+        },
+        {
+          "label": "本地报告第 9 页",
+          "target": "../../../../downloads/DeepSeek_V41_Tech_Report.pdf#page=9"
+        },
+        {
+          "label": "第 10 页",
+          "target": "../../../../downloads/DeepSeek_V41_Tech_Report.pdf#page=10"
+        },
+        {
+          "label": "第 11 页",
+          "target": "../../../../downloads/DeepSeek_V41_Tech_Report.pdf#page=11"
+        },
+        {
+          "label": "第 14 页",
+          "target": "../../../../downloads/DeepSeek_V41_Tech_Report.pdf#page=14"
+        },
+        {
+          "label": "第 19–20 页",
+          "target": "../../../../downloads/DeepSeek_V41_Tech_Report.pdf#page=19"
+        },
+        {
+          "label": "模型配置第 22 页",
+          "target": "../../../../downloads/DeepSeek_V41_Tech_Report.pdf#page=22"
+        },
+        {
+          "label": "DeepSeek-V3 inference/model.py",
+          "target": "https://github.com/deepseek-ai/DeepSeek-V3/blob/main/inference/model.py#L411-L453"
+        },
+        {
+          "label": "cache_accounting.py",
+          "target": "examples/cache_accounting.py"
+        },
+        {
+          "label": "cpu_paged_decode_checks.py",
+          "target": "examples/cpu_paged_decode_checks.py"
+        },
+        {
+          "label": "paged_decode_host.py",
+          "target": "examples/paged_decode_host.py"
+        },
+        {
+          "label": "host_validation_checks.py",
+          "target": "examples/host_validation_checks.py"
+        },
+        {
+          "label": "paged_decode_fp32.py",
+          "target": "examples/paged_decode_fp32.py"
+        },
+        {
+          "label": "validate_paged_decode.py",
+          "target": "examples/validate_paged_decode.py"
+        }
+      ],
+      "referenceParagraphs": [
+        "《大模型推理实践》的[显存与 KV Cache 章节](../../../../downloads/大模型推理实践.pdf#page=49)把“缓存容量限制并发”作为分析起点。具体预算应从张量形状计算，而不是先假设 KV 一定是显存最大的组成项。对普通 MHA/GQA，若各层头数、维度和 dtype 相同、请求之间不共享前缀，L 层的有效 KV 数据为",
+        "[讲义的量化章节](../../../../downloads/大模型推理实践.pdf#page=54)同时讨论了权重与 KV 量化。它们缩小的是不同组成项，整模型容量要分别缩放后相加。假设原权重 40 GiB、KV 20 GiB、其他 4 GiB；权重变成原来的 1/4，KV 变成 1/2，则总量为 10+10+4=24 GiB，不是把原来的 64 GiB 直接除以 8。实际还要加 scale、zero point、padding 以及反量化 workspace。",
+        "CUDA Programming Guide 13.3 的[寄存器与 local memory，PDF 第 67 页](../../../../downloads/cuda-programming-guide.pdf#page=67)说明，寄存器分配由编译器决定，local memory 的“local”指线程作用域，并不表示物理片上存储。本 kernel 长期保留 q 和 D 维的 u，还同时处理 K/V tile；增大 BLOCK_T 或把更多 Query head 放进一个 program，会增加活跃数据量。预期收益是减少重复 KV 读取，代价可能是 spill 与驻留 CTA 数下降。需要对照编译资源、local load/store、L2/DRAM 流量验证，不把 Python 中的变量名直接当作寄存器分配结果。",
+        "同手册的[block 同步，PDF 第 577 页](../../../../downloads/cuda-programming-guide.pdf#page=577)限定了 block 内同步的参与范围。一个 CTA 内的 barrier 不能替代两个独立 kernel 或不同 stream 之间的依赖管理。因此本例把 append 与读取放在同一设备的 current stream；split-KV 的跨 CTA 合并若实现为独立 kernel，也需要明确它与 partial 写入的顺序。如果生产者与消费者处于不同 stream，应由生产者记录 event，消费者在读取前等待该 event；主机回收或复用页时还要等待最后一个读者完成。软件页表本身不提供这些同步保证。完整 API 说明可在文末资料中查阅。",
+        "DeepSeek-V4.1-Flash 报告可作为这个三维分解的一个数据模型案例，而不是本章 kernel 的当前 backend。报告页码入口见[本地报告第 9 页](../../../../downloads/DeepSeek_V41_Tech_Report.pdf#page=9)、[第 10 页](../../../../downloads/DeepSeek_V41_Tech_Report.pdf#page=10)、[第 11 页](../../../../downloads/DeepSeek_V41_Tech_Report.pdf#page=11)、[第 14 页](../../../../downloads/DeepSeek_V41_Tech_Report.pdf#page=14)、[第 19–20 页](../../../../downloads/DeepSeek_V41_Tech_Report.pdf#page=19)和[模型配置第 22 页](../../../../downloads/DeepSeek_V41_Tech_Report.pdf#page=22)。CED 是 Causal Encoder-Decoder（因果编码器-解码器），CSA2 是 Compressed Sparse Attention 2（压缩稀疏注意力第二版），SWA 是 Sliding-Window Attention（滑动窗口注意力）。阅读时要保留这些机制边界："
+      ]
+    },
+    "roadmap/curriculum/operators/07-quantized-operators/README.md": {
+      "inline_symbols": [
+        "quantize_affine",
+        "pack_int4",
+        "block_scale_kernel"
+      ],
+      "backend_code_directory": "examples/",
+      "references": [
+        {
+          "target": "https://docs.nvidia.com/deeplearning/tensorrt/latest/inference-library/quantized-types-schemes.html"
+        },
+        {
+          "target": "https://arxiv.org/abs/2211.10438"
+        },
+        {
+          "target": "https://arxiv.org/abs/2306.00978"
+        },
+        {
+          "target": "https://arxiv.org/abs/2210.17323"
+        }
+      ],
+      "platform_snapshot": "dff541e5856ddaee4c93e23c0d7489c125fd6ea3",
+      "problem_sources": [
+        "https://github.com/AlphaGPU/leetgpu-challenges/blob/dff541e5856ddaee4c93e23c0d7489c125fd6ea3/challenges/medium/64_weight_dequantization/challenge.py",
+        "https://github.com/AlphaGPU/leetgpu-challenges/blob/dff541e5856ddaee4c93e23c0d7489c125fd6ea3/challenges/medium/32_int8_quantized_matmul/challenge.py"
+      ],
+      "verification": "CPU semantics and Python syntax checked locally; GPU baselines and platform submissions not validated."
+    },
+    "roadmap/curriculum/operators/08-moe/README.md": {
+      "inline_symbols": [
+        "route_topk",
+        "group_routes",
+        "grouped_execute",
+        "gate_kernel"
+      ],
+      "backend_code_directory": "examples/",
+      "references": [
+        {
+          "target": "https://triton-lang.org/main/getting-started/tutorials/08-grouped-gemm.html"
+        },
+        {
+          "target": "../../../../downloads/DeepSeek_V41_Tech_Report.pdf"
+        }
+      ],
+      "platform_snapshot": "dff541e5856ddaee4c93e23c0d7489c125fd6ea3",
+      "problem_sources": [
+        "https://github.com/AlphaGPU/leetgpu-challenges/blob/dff541e5856ddaee4c93e23c0d7489c125fd6ea3/challenges/medium/67_moe_topk_gating/challenge.py"
+      ],
+      "verification": "CPU semantics and Python syntax checked locally; GPU baselines and platform submissions not validated."
+    },
+    "roadmap/curriculum/operators/09-sampling-kv/README.md": {
+      "inline_symbols": [
+        "nucleus",
+        "inverse_cdf",
+        "argmax_partial",
+        "argmax_finish",
+        "commit_speculation"
+      ],
+      "backend_code_directory": "examples/",
+      "references": [
+        {
+          "target": "https://arxiv.org/abs/2211.17192"
+        },
+        {
+          "target": "../../../../downloads/DeepSeek_V41_Tech_Report.pdf"
+        }
+      ],
+      "platform_snapshot": "dff541e5856ddaee4c93e23c0d7489c125fd6ea3",
+      "problem_sources": [
+        "https://github.com/AlphaGPU/leetgpu-challenges/blob/dff541e5856ddaee4c93e23c0d7489c125fd6ea3/challenges/medium/29_top_k_selection/challenge.py",
+        "https://github.com/AlphaGPU/leetgpu-challenges/blob/dff541e5856ddaee4c93e23c0d7489c125fd6ea3/challenges/medium/60_top_p_sampling/challenge.py"
+      ],
+      "verification": "CPU semantics and Python syntax checked locally; GPU baselines and platform submissions not validated."
+    },
+    "roadmap/curriculum/model-analysis/README.md": {
+      "references": [
+        {
+          "target": "examples/ledger.py"
+        }
+      ],
+      "verification": "NumPy/CPU semantics checked; PyTorch/CUDA, vLLM serving and NCCL not run locally."
+    },
+    "roadmap/curriculum/model-analysis/mini-transformer/README.md": {
+      "references": [
+        {
+          "target": "../examples/mini_transformer.py"
+        },
+        {
+          "target": "../examples/torch_reference.py"
+        }
+      ],
+      "verification": "NumPy/CPU semantics checked; PyTorch/CUDA, vLLM serving and NCCL not run locally."
+    },
+    "roadmap/curriculum/systems/README.md": {
+      "pangu_case": {
+        "model_config": "D:/Desktop/Code/整网/盘古/pangu-7B/openPangu-Embedded-7B-V1.1/config.json",
+        "config_sha256": "1F1124C339C014111A425F5A8BCCA0165C5C8CA0AF2F9F0141303A9FA5FC9C6E",
+        "adapter_repository": "D:/Desktop/Code/整网/vllm-ascend-pangu-v023",
+        "adapter_head": "7a30d4e13aa1921895ac5a194639d208ec6c5d52",
+        "adapter_file": "vllm_ascend/models/open_pangu.py",
+        "adapter_sha256": "983D8D04B6D99FCC528B9F2A7346974DCEB8875904843E2523181215879CDF26",
+        "inline_excerpt_lines": "184-191 (common indentation removed)",
+        "smoke_log": "D:/Desktop/Code/CC4Ascend/projects/pangu-7B整网分析/logs/2026-08-21-pangu-embedded-7b-tp1-success-tail.log",
+        "smoke_log_sha256": "B3FE23C4889810CD954D6C1E2FAB9E012A96D1B3C19BB1C79414FB7BBE22C09D",
+        "paper_source": "downloads/大模型推理实践.pdf",
+        "reviewed_pages": "14-19,64-68",
+        "public_configuration_sources": ["https://huggingface.co/openpangu/openPangu-2.0-Flash/tree/main", "https://huggingface.co/openpangu/openPangu-2.0-Pro/tree/main"],
+        "teaching_code": "examples/pangu_embedded7b_ledger.py",
+        "boundary": "Read-only external snapshots. The older v0.9.2rc1 directory is not a Git repository. TP1 generated-text tail is functional evidence, not an exact current-HEAD reproduction or kernel trace; old TP4 analysis is static. Embedded-7B is not the 2.0 Flash/Pro architecture."
+      },
+      "references": [
+        {
+          "target": "examples/scheduler_reference.py"
+        },
+        {
+          "target": "https://docs.vllm.ai/en/latest/cli/serve/"
+        },
+        {
+          "target": "https://docs.vllm.ai/en/latest/cli/bench/serve/"
+        },
+        {
+          "target": "https://docs.vllm.ai/en/latest/features/automatic_prefix_caching/"
+        }
+      ],
+      "verification": "NumPy/CPU semantics checked; PyTorch/CUDA, vLLM serving and NCCL not run locally.",
+      "vllm_source_snapshot": {
+        "commit": "84030bbe3d74d99bad477a3d2e37a973ccd8865c",
+        "verified_methods": [
+          "vllm/v1/core/sched/scheduler.py:Scheduler.schedule,update_from_output",
+          "vllm/v1/engine/core.py:EngineCore.step",
+          "vllm/v1/worker/gpu_model_runner.py:execute_model"
+        ],
+        "note": "Public source identity only, not the user's installed runtime. CLI options independently checked in current official docs."
+      }
+    },
+    "roadmap/curriculum/systems/multi-gpu/README.md": {
+      "references": [
+        {
+          "target": "../examples/parallel_reference.py"
+        },
+        {
+          "target": "../examples/allreduce_probe.py"
+        },
+        {
+          "target": "https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/usage/collectives.html"
+        },
+        {
+          "target": "https://docs.nvidia.com/megatron-core/developer-guide/latest/user-guide/parallelism-guide.html"
+        }
+      ],
+      "verification": "NumPy/CPU semantics checked; PyTorch/CUDA, vLLM serving and NCCL not run locally."
+    }
+  }
+}

@@ -1,0 +1,28 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>2026-08-20：学习计划与最新资料更新 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · notes/llm/updates/2026-08-20.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E8%AE%A1%E5%88%92%E7%BB%93%E8%AE%BA">计划结论</a></li><li><a href="#%E8%B5%84%E6%96%99%E5%BF%AB%E7%85%A7">资料快照</a></li><li><a href="#flashattention-4">FlashAttention-4</a></li><li><a href="#deepseek-v32--dsa">DeepSeek-V3.2 / DSA</a></li><li><a href="#sageattention3--kascade">SageAttention3 / Kascade</a></li><li><a href="#deepseek-v4">DeepSeek-V4</a></li><li><a href="#%E5%AF%B9%E5%BD%93%E5%89%8D%E5%AD%A6%E4%B9%A0%E7%9A%84%E7%9B%B4%E6%8E%A5%E5%BD%B1%E5%93%8D">对当前学习的直接影响</a></li></ol></nav><div class="markdown-body"><h1 id="2026-08-20学习计划与最新资料更新">2026-08-20：学习计划与最新资料更新<a class="heading-anchor" href="#2026-08-20%E5%AD%A6%E4%B9%A0%E8%AE%A1%E5%88%92%E4%B8%8E%E6%9C%80%E6%96%B0%E8%B5%84%E6%96%99%E6%9B%B4%E6%96%B0" aria-label="链接到2026-08-20：学习计划与最新资料更新">#</a></h1>
+<h2 id="计划结论">计划结论<a class="heading-anchor" href="#%E8%AE%A1%E5%88%92%E7%BB%93%E8%AE%BA" aria-label="链接到计划结论">#</a></h2>
+<ul>
+<li>算子主线已经切到 <strong>Triton B1</strong>：Vector Add → MatMul → Fused Softmax → Flash Attention → GQA/Fused MLP。</li>
+<li>每个任务固定走：<strong>看完原理 → 直接去 LeetGPU 题目编辑器写题并通过 → 同步本地 → 真实 GPU benchmark → profiler</strong>；LeetGPU 未通过时不进入真实卡。</li>
+<li>CUDA 纯 kernel 练习后置，不再为了“补齐 CUDA”打断 Triton 主线；只在 Triton 代码需要解释底层行为时回看 CUDA。</li>
+<li>理论主线继续按 DeepSeek-V3.2 → V4 推进：先完成 V3.2 config + 手算，再进入 FA2 → MLA → DSA，随后看 V4 的 CSA/HCA、mHC/Muon、MXFP4。</li>
+</ul>
+<h2 id="资料快照">资料快照<a class="heading-anchor" href="#%E8%B5%84%E6%96%99%E5%BF%AB%E7%85%A7" aria-label="链接到资料快照">#</a></h2>
+<h3 id="flashattention-4">FlashAttention-4<a class="heading-anchor" href="#flashattention-4" aria-label="链接到FlashAttention-4">#</a></h3>
+<p>论文：<a href="https://arxiv.org/abs/2603.05451">FlashAttention-4: Algorithm and Kernel Pipelining Co-Design for Asymmetric Hardware Scaling</a>。核心不是重新定义 attention，而是针对 Blackwell 的硬件不对称：Tensor Core 增长快于 shared-memory / exp 等非矩阵单元，因此使用异步 MMA、更大 tile、软件近似指数/softmax rescaling、2-CTA MMA 和 Tensor Memory 降低非 MMA 开销。论文还展示了 CuTe-DSL 实现，说明后续“高性能 CUDA”会越来越靠近 Python 驱动的 DSL，而不是只靠大型 C++ 模板。</p>
+<h3 id="deepseek-v32--dsa">DeepSeek-V3.2 / DSA<a class="heading-anchor" href="#deepseek-v32--dsa" aria-label="链接到DeepSeek-V3.2 / DSA">#</a></h3>
+<p>论文：<a href="https://arxiv.org/abs/2512.02556">DeepSeek-V3.2</a>。DSA 的学习价值在于：把“完整 attention 的 IO/计算开销”转化为 indexer + 稀疏 token 选择问题。先掌握 MLA 和 FA2，再看 DSA 的 indexer、top-k 选择及其对 prefill/decode 的影响。</p>
+<h3 id="sageattention3--kascade">SageAttention3 / Kascade<a class="heading-anchor" href="#sageattention3--kascade" aria-label="链接到SageAttention3 / Kascade">#</a></h3>
+<ul>
+<li><a href="https://arxiv.org/abs/2505.11594">SageAttention3</a>：面向 Blackwell FP4 Tensor Core 的 attention，同时探索训练态 8-bit attention；要重点区分 inference-only 低比特和训练收敛问题。</li>
+<li><a href="https://arxiv.org/abs/2512.16391">Kascade</a>：训练无关的跨层稀疏 attention，通过 anchor layer 计算 top-k 并在相邻层复用，适合挂在 DSA 后理解“稀疏选择如何落到 serving”。</li>
+</ul>
+<h3 id="deepseek-v4">DeepSeek-V4<a class="heading-anchor" href="#deepseek-v4" aria-label="链接到DeepSeek-V4">#</a></h3>
+<p>官方入口：<a href="https://huggingface.co/collections/deepseek-ai/deepseek-v4">模型集合</a> 和 <a href="https://arxiv.org/abs/2606.19348">V4-Pro 技术报告</a>。当前仓库把 V4 作为 V3.2 的增量学习，不切换主线：先用 V3.2 建立完整基线，再比较 CSA/HCA、mHC/Muon、MXFP4 和 1M context 下的 KV/FLOPs 账。第三方转载或社区仓库只作为线索，不能作为模型结构和性能数字的唯一来源。</p>
+<h2 id="对当前学习的直接影响">对当前学习的直接影响<a class="heading-anchor" href="#%E5%AF%B9%E5%BD%93%E5%89%8D%E5%AD%A6%E4%B9%A0%E7%9A%84%E7%9B%B4%E6%8E%A5%E5%BD%B1%E5%93%8D" aria-label="链接到对当前学习的直接影响">#</a></h2>
+<ol>
+<li>现在先写 Triton Vector Add，不提前读 FA4 实现细节。</li>
+<li>B1 完成后写 Triton MatMul；先在 LeetGPU 完成接口和正确性闭环，再上真实 GPU 做性能记录。</li>
+<li>B2/B3 进入 Fused Softmax / Flash Attention 时，再把 FA2、DSA 和 FA4 的差异挂到对应实现点。</li>
+<li>CUDA softmax 的 warp shuffle、手写 FlashAttention 留作后置深钻，不作为当前阻塞项。</li>
+</ol>
+</div></main><script src="../../../../reader.js"></script></body></html>

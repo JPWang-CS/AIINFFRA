@@ -1,0 +1,230 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Triton MatMul 性能分析记录 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · notes/triton/matmul-performance-analysis.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#1-%E5%AE%9E%E9%AA%8C%E5%8F%A3%E5%BE%84">1. 实验口径</a></li><li><a href="#2-%E9%85%8D%E7%BD%AE-sweep">2. 配置 sweep</a></li><li><a href="#3-%E7%BB%93%E6%9E%9C%E8%A7%A3%E9%87%8A">3. 结果解释</a></li><li><a href="#31-%E4%B8%BA%E4%BB%80%E4%B9%88-blockm128-%E6%9C%89%E6%94%B6%E7%9B%8A">3.1 为什么 BLOCKM=128 有收益</a></li><li><a href="#32-%E4%B8%BA%E4%BB%80%E4%B9%88-blockk128-%E6%B2%A1%E6%9C%89%E7%BB%A7%E7%BB%AD%E5%8F%98%E5%BF%AB">3.2 为什么 BLOCKK=128 没有继续变快</a></li><li><a href="#33-%E4%B8%BA%E4%BB%80%E4%B9%88-blockn64-%E7%BC%96%E8%AF%91%E5%A4%B1%E8%B4%A5">3.3 为什么 BLOCKN=64 编译失败</a></li><li><a href="#34-%E4%B8%BA%E4%BB%80%E4%B9%88-blockk256-w8-%E5%BD%93%E5%89%8D%E6%9C%80%E5%A5%BD">3.4 为什么 BLOCKK=256, w8 当前最好</a></li><li><a href="#4-%E5%90%8E%E7%BB%AD%E4%BC%98%E5%8C%96%E9%A1%BA%E5%BA%8F">4. 后续优化顺序</a></li><li><a href="#p0%E5%85%88-profile-%E5%BD%93%E5%89%8D%E6%9C%80%E4%BD%B3%E9%85%8D%E7%BD%AE">P0：先 profile 当前最佳配置</a></li><li><a href="#p1%E5%9B%B4%E7%BB%95%E6%9C%80%E4%BD%B3%E7%82%B9%E5%81%9A%E5%B0%8F%E8%8C%83%E5%9B%B4%E6%90%9C%E7%B4%A2">P1：围绕最佳点做小范围搜索</a></li><li><a href="#p2%E6%A3%80%E6%9F%A5-program-%E6%8E%92%E5%B8%83%E5%92%8C-l2-%E5%A4%8D%E7%94%A8">P2：检查 program 排布和 L2 复用</a></li><li><a href="#p3%E5%8D%95%E7%8B%AC%E5%81%9A-tf32-%E5%AF%B9%E7%85%A7">P3：单独做 TF32 对照</a></li><li><a href="#p4%E5%86%8D%E8%80%83%E8%99%91-autotune">P4：再考虑 autotune</a></li><li><a href="#5-%E5%BD%93%E5%89%8D%E5%81%9C%E6%AD%A2%E6%9D%A1%E4%BB%B6">5. 当前停止条件</a></li><li><a href="#%E7%9B%B8%E5%85%B3%E5%85%A5%E5%8F%A3">相关入口</a></li></ol></nav><div class="markdown-body"><h1 id="triton-matmul-性能分析记录">Triton MatMul 性能分析记录<a class="heading-anchor" href="#triton-matmul-%E6%80%A7%E8%83%BD%E5%88%86%E6%9E%90%E8%AE%B0%E5%BD%95" aria-label="链接到Triton MatMul 性能分析记录">#</a></h1>
+<blockquote><p>日期：2026-08-26
+对象：<code>solutions/triton/matmul.py</code> 服务器验证版
+状态：服务器 <code>GPU_VALIDATED</code>；LeetGPU 原始代码仍为 <code>WIP</code></p>
+</blockquote><h2 id="1-实验口径">1. 实验口径<a class="heading-anchor" href="#1-%E5%AE%9E%E9%AA%8C%E5%8F%A3%E5%BE%84" aria-label="链接到1. 实验口径">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">GPU: NVIDIA GeForce RTX 3090</span>
+<span class="code-line" data-line="2">shape: M=8192, N=6144, K=4096</span>
+<span class="code-line" data-line="3">dtype: FP32</span>
+<span class="code-line" data-line="4">tl.dot: input_precision=&quot;ieee&quot;</span>
+<span class="code-line" data-line="5">PyTorch 对照: torch.backends.cuda.matmul.allow_tf32 = False</span>
+<span class="code-line" data-line="6">正确性: (1,1,1), (64,32,64), (65,33,67), (257,513,129) 全部通过</span></code></pre></div>
+<p>FLOPs 统一按：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">2 × M × N × K</span></code></pre></div>
+<p>本次 <code>torch.mm</code> 为 17.138 ms / 24,058.3 GFLOPS。不同运行的 cuBLAS 时间有轻微波动，比较时以同一次 sweep 中的 PyTorch 对照为准。</p>
+<h2 id="2-配置-sweep">2. 配置 sweep<a class="heading-anchor" href="#2-%E9%85%8D%E7%BD%AE-sweep" aria-label="链接到2. 配置 sweep">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>配置</th>
+<th align="right">耗时</th>
+<th align="right">GFLOPS</th>
+<th align="right">torch.mm 比例</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>64×32×64, w4, s3</code></td>
+<td align="right">24.924 ms</td>
+<td align="right">16,542.7</td>
+<td align="right">68.8%</td>
+<td>baseline</td>
+</tr>
+<tr>
+<td><code>128×32×64, w4, s3</code></td>
+<td align="right">22.298 ms</td>
+<td align="right">18,491.3</td>
+<td align="right">76.9%</td>
+<td>当前测试中明显更好</td>
+</tr>
+<tr>
+<td><code>128×32×128, w4, s3</code></td>
+<td align="right">28.354 ms</td>
+<td align="right">14,541.8</td>
+<td align="right">60.4%</td>
+<td><code>BLOCK_K</code> 增大后反而变慢</td>
+</tr>
+<tr>
+<td><code>128×64×128, w4, s3</code></td>
+<td align="right">编译失败</td>
+<td align="right">—</td>
+<td align="right">—</td>
+<td>shared memory 超限</td>
+</tr>
+<tr>
+<td><code>128×32×256, w8, s3</code></td>
+<td align="right"><strong>22.033 ms</strong></td>
+<td align="right"><strong>18,713.5</strong></td>
+<td align="right"><strong>77.8%</strong></td>
+<td>当前最佳</td>
+</tr>
+</tbody></table>
+<p>最佳配置：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">BLOCK_M=128, BLOCK_N=32, BLOCK_K=256</span>
+<span class="code-line" data-line="2">num_warps=8, num_stages=3</span></code></pre></div>
+<p>相对 baseline：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">耗时：24.924 → 22.033 ms，下降约 11.6%</span>
+<span class="code-line" data-line="2">GFLOPS：16,542.7 → 18,713.5，提升约 13.1%</span></code></pre></div>
+<h2 id="3-结果解释">3. 结果解释<a class="heading-anchor" href="#3-%E7%BB%93%E6%9E%9C%E8%A7%A3%E9%87%8A" aria-label="链接到3. 结果解释">#</a></h2>
+<h3 id="31-为什么-blockm128-有收益">3.1 为什么 <code>BLOCK_M=128</code> 有收益<a class="heading-anchor" href="#31-%E4%B8%BA%E4%BB%80%E4%B9%88-blockm128-%E6%9C%89%E6%94%B6%E7%9B%8A" aria-label="链接到3.1 为什么 BLOCKM=128 有收益">#</a></h3>
+<p><code>BLOCK_M</code> 增大后，一个 program 负责更多输出行：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">C tile: [BLOCK_M, BLOCK_K]</span></code></pre></div>
+<p>在相同归约循环下，A/B tile 的加载和地址计算更容易被更多 FMA 摊薄，所以 <code>128×32×64</code> 比 <code>64×32×64</code> 快。</p>
+<p>但这不是“tile 越大越好”。输出 accumulator 也随 <code>BLOCK_M × BLOCK_K</code> 增长，会增加寄存器压力，可能降低 resident blocks 或触发 spill。</p>
+<h3 id="32-为什么-blockk128-没有继续变快">3.2 为什么 <code>BLOCK_K=128</code> 没有继续变快<a class="heading-anchor" href="#32-%E4%B8%BA%E4%BB%80%E4%B9%88-blockk128-%E6%B2%A1%E6%9C%89%E7%BB%A7%E7%BB%AD%E5%8F%98%E5%BF%AB" aria-label="链接到3.2 为什么 BLOCKK=128 没有继续变快">#</a></h3>
+<p>当前命名中：</p>
+<ul>
+<li><code>BLOCK_N</code> 是归约维度 tile；</li>
+<li><code>BLOCK_K</code> 是 C 的输出列 tile。</li>
+</ul>
+<p><code>BLOCK_K</code> 从 64 增到 128，会让 accumulator 从 <code>128×64</code> 变成 <code>128×128</code>。这可能带来：</p>
+<ul>
+<li>更多寄存器占用；</li>
+<li>更低 occupancy；</li>
+<li>更大的 tile 传输和布局压力；</li>
+<li>编译器选择不同的 MMA/加载路径。</li>
+</ul>
+<p>因此 <code>128×32×128</code> 的 14,541.8 GFLOPS 说明当前配置已经受到资源或执行路径影响，不能只按“数据复用更多”推断性能。</p>
+<h3 id="33-为什么-blockn64-编译失败">3.3 为什么 <code>BLOCK_N=64</code> 编译失败<a class="heading-anchor" href="#33-%E4%B8%BA%E4%BB%80%E4%B9%88-blockn64-%E7%BC%96%E8%AF%91%E5%A4%B1%E8%B4%A5" aria-label="链接到3.3 为什么 BLOCKN=64 编译失败">#</a></h3>
+<p><code>128×64×128, w4, s3</code> 报告：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">Required shared memory: 131,072 B</span>
+<span class="code-line" data-line="2">Hardware limit: 101,376 B</span></code></pre></div>
+<p><code>num_stages=3</code> 会增加 A/B pipeline staging；<code>BLOCK_N</code> 增大又扩大了每轮归约 tile。两者叠加后超过 RTX 3090 的单个 SM shared-memory 上限。</p>
+<p>这个失败是资源约束，不是 kernel 逻辑错误。降低 <code>BLOCK_N</code>、降低 <code>num_stages</code> 或缩小 tile 才能继续编译。</p>
+<h3 id="34-为什么-blockk256-w8-当前最好">3.4 为什么 <code>BLOCK_K=256, w8</code> 当前最好<a class="heading-anchor" href="#34-%E4%B8%BA%E4%BB%80%E4%B9%88-blockk256-w8-%E5%BD%93%E5%89%8D%E6%9C%80%E5%A5%BD" aria-label="链接到3.4 为什么 BLOCKK=256, w8 当前最好">#</a></h3>
+<p><code>128×32×256, w8, s3</code> 在本次固定 shape 上达到 18,713.5 GFLOPS，可能同时获得了：</p>
+<ul>
+<li>更大的输出 tile，摊薄 program 启动和地址计算；</li>
+<li>8 warps 对更大的 accumulator 提供更高并行度；</li>
+<li>归约循环次数相对减少。</li>
+</ul>
+<p>但现在只能说它是<strong>当前 shape 和当前候选集的最佳</strong>，不能直接断言是全局最优。必须用 profiler 确认是否有 register spill、occupancy 下降或 memory stall。</p>
+<h2 id="4-后续优化顺序">4. 后续优化顺序<a class="heading-anchor" href="#4-%E5%90%8E%E7%BB%AD%E4%BC%98%E5%8C%96%E9%A1%BA%E5%BA%8F" aria-label="链接到4. 后续优化顺序">#</a></h2>
+<h3 id="p0先-profile-当前最佳配置">P0：先 profile 当前最佳配置<a class="heading-anchor" href="#p0%E5%85%88-profile-%E5%BD%93%E5%89%8D%E6%9C%80%E4%BD%B3%E9%85%8D%E7%BD%AE" aria-label="链接到P0：先 profile 当前最佳配置">#</a></h3>
+<p>先不要继续盲扫 tile，针对当前最佳配置单独运行 Nsight Compute：</p>
+<div class="code-panel"><div class="code-caption"><span>BASH</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-bash"><span class="code-line" data-line="1">ncu --<span class="hljs-built_in">set</span> roofline -o matmul_k256 \</span>
+<span class="code-line" data-line="2">  python solutions/triton/matmul.py \</span>
+<span class="code-line" data-line="3">  --config k256-128x32x256-w8-s3</span></code></pre></div>
+<p>重点记录：</p>
+<table>
+<thead>
+<tr>
+<th>观察项</th>
+<th>要回答的问题</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>registers/thread</td>
+<td><code>BLOCK_K=256</code> 是否造成寄存器压力</td>
+</tr>
+<tr>
+<td>local memory / spill</td>
+<td>是否把 accumulator 溢出到 local memory</td>
+</tr>
+<tr>
+<td>shared memory/block</td>
+<td>哪些 stage/tile 组合接近上限</td>
+</tr>
+<tr>
+<td>achieved occupancy</td>
+<td>是否因为资源占用无法驻留足够多 block</td>
+</tr>
+<tr>
+<td>Tensor Core/MMA 指令</td>
+<td>IEEE FP32 是否走 CUDA Core，而不是 TF32 Tensor Core</td>
+</tr>
+<tr>
+<td>DRAM/L2 throughput</td>
+<td>瓶颈是 HBM/L2 还是计算吞吐</td>
+</tr>
+<tr>
+<td>warp stall 原因</td>
+<td>是等待内存、依赖、barrier 还是执行单元不足</td>
+</tr>
+</tbody></table>
+<h4 id="2026-08-30-p0-liteautodl-无-ncu-counters-时的替代证据">2026-08-30 P0-lite：AutoDL 无 NCU counters 时的替代证据<a class="heading-anchor" href="#2026-08-30-p0-liteautodl-%E6%97%A0-ncu-counters-%E6%97%B6%E7%9A%84%E6%9B%BF%E4%BB%A3%E8%AF%81%E6%8D%AE" aria-label="链接到2026-08-30 P0-lite：AutoDL 无 NCU counters 时的替代证据">#</a></h4>
+<p>AutoDL 宿主机设置 <code>RmProfilingAdminOnly=1</code>，容器缺少 <code>CAP_SYS_ADMIN/CAP_PERFMON</code>，因此 Nsight Compute hardware counters 无法采集。改用 Nsight Systems timeline + launch metadata，完整分析见 <a href="matmul-nsys-p0-lite-2026-08-30.html">P0-lite 记录</a>，原始日志见 <a href="logs/2026-08-29-matmul-k256-s3-nsys.txt">s3</a> 与 <a href="logs/2026-08-30-matmul-k256-s2-nsys.txt">s2</a>。</p>
+<table>
+<thead>
+<tr>
+<th>配置</th>
+<th align="right">Triton 60 次 mean / median</th>
+<th align="right">GFLOPS（按 mean）</th>
+<th align="right">Reg/Trd</th>
+<th align="right">DymSMem</th>
+<th align="right">同次 CUTLASS mean</th>
+<th align="right">相对 CUTLASS</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>128×32×256, w8, s3</code></td>
+<td align="right">21.208 / 21.163 ms</td>
+<td align="right">19,441.3</td>
+<td align="right">255</td>
+<td align="right">0.098 MB</td>
+<td align="right">16.716 ms</td>
+<td align="right">78.8%</td>
+</tr>
+<tr>
+<td><code>128×32×256, w8, s2</code></td>
+<td align="right">22.362 / 22.317 ms</td>
+<td align="right">18,438.6</td>
+<td align="right">255</td>
+<td align="right">0.049 MB</td>
+<td align="right">16.682 ms</td>
+<td align="right">74.6%</td>
+</tr>
+</tbody></table>
+<p>s2 将动态 shared memory 减半，但寄存器仍为 255/thread，按静态资源推导仍近似限制为 1 block/SM；性能反而比 s3 慢 5.44%。这说明当前配置中更深 pipeline 的收益大于减少 shared-memory staging 的收益，且降低 stages 没有解除 register bottleneck。该结论不等同于 achieved occupancy 或 stall counter 证据。</p>
+<h3 id="p1围绕最佳点做小范围搜索">P1：围绕最佳点做小范围搜索<a class="heading-anchor" href="#p1%E5%9B%B4%E7%BB%95%E6%9C%80%E4%BD%B3%E7%82%B9%E5%81%9A%E5%B0%8F%E8%8C%83%E5%9B%B4%E6%90%9C%E7%B4%A2" aria-label="链接到P1：围绕最佳点做小范围搜索">#</a></h3>
+<p>只扩展邻域，避免再次盲扫：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">BLOCK_M: 128</span>
+<span class="code-line" data-line="2">BLOCK_N: 16 / 32</span>
+<span class="code-line" data-line="3">BLOCK_K: 128 / 256</span>
+<span class="code-line" data-line="4">num_warps: 4 / 8</span>
+<span class="code-line" data-line="5">num_stages: 2 / 3</span></code></pre></div>
+<p>优先测试：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">128×32×256, w8, s2</span>
+<span class="code-line" data-line="2">128×16×256, w8, s3</span>
+<span class="code-line" data-line="3">128×32×128, w8, s3</span>
+<span class="code-line" data-line="4">128×32×256, w4, s3</span></code></pre></div>
+<p>每个候选必须先跑 4 组 correctness，再记录耗时；不能只用性能 shape 测出一个数字就标成完成。</p>
+<h3 id="p2检查-program-排布和-l2-复用">P2：检查 program 排布和 L2 复用<a class="heading-anchor" href="#p2%E6%A3%80%E6%9F%A5-program-%E6%8E%92%E5%B8%83%E5%92%8C-l2-%E5%A4%8D%E7%94%A8" aria-label="链接到P2：检查 program 排布和 L2 复用">#</a></h3>
+<p>当前 <code>pid_m / pid_k</code> 是简单二维映射。下一步可以测试 grouped ordering，让相邻 program 更长时间复用同一批 A 行块或 B 列块，观察：</p>
+<ul>
+<li>L2 hit rate 是否上升；</li>
+<li>global load throughput 是否下降；</li>
+<li>总耗时是否真的下降。</li>
+</ul>
+<p>如果 L2 已经命中率很高，继续改排布可能没有收益，应停止这条分支。</p>
+<h3 id="p3单独做-tf32-对照">P3：单独做 TF32 对照<a class="heading-anchor" href="#p3%E5%8D%95%E7%8B%AC%E5%81%9A-tf32-%E5%AF%B9%E7%85%A7" aria-label="链接到P3：单独做 TF32 对照">#</a></h3>
+<p>IEEE FP32 和 TF32 必须分成两张成绩单：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">IEEE：回答严格 FP32 kernel 有多快</span>
+<span class="code-line" data-line="2">TF32：回答允许精度损失后 Tensor Core 能换来多少吞吐</span></code></pre></div>
+<p>TF32 对照要额外记录 <code>max_abs_error</code>、<code>max_rel_error</code>，不能把 TF32 的速度提升归因于 tile 优化。</p>
+<h3 id="p4再考虑-autotune">P4：再考虑 autotune<a class="heading-anchor" href="#p4%E5%86%8D%E8%80%83%E8%99%91-autotune" aria-label="链接到P4：再考虑 autotune">#</a></h3>
+<p>当前已经有手动 sweep，下一步可以把经过 profiler 筛选的少量候选放进 <code>triton.autotune</code>。autotune 不是替代分析：</p>
+<ul>
+<li>先删除会编译失败或明显 spill 的配置；</li>
+<li>保留不同资源/性能路径的代表配置；</li>
+<li>用 <code>key=[&quot;M&quot;, &quot;N&quot;, &quot;K&quot;]</code> 覆盖多个 shape；</li>
+<li>记录 autotune 选择结果，而不是只记录最终最快数字。</li>
+</ul>
+<h2 id="5-当前停止条件">5. 当前停止条件<a class="heading-anchor" href="#5-%E5%BD%93%E5%89%8D%E5%81%9C%E6%AD%A2%E6%9D%A1%E4%BB%B6" aria-label="链接到5. 当前停止条件">#</a></h2>
+<p>当前先停在：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">正确性：通过</span>
+<span class="code-line" data-line="2">IEEE FP32：已有 baseline + sweep</span>
+<span class="code-line" data-line="3">最佳结果：18,713.5 GFLOPS，torch.mm 的 77.8%</span>
+<span class="code-line" data-line="4">资源失败：已记录 shared memory 上限</span>
+<span class="code-line" data-line="5">P0-lite：Nsight Systems timeline + launch metadata 已完成</span>
+<span class="code-line" data-line="6">下一证据：缩小输出列 tile，验证 accumulator/register pressure；NCU counters 等待可用环境</span></code></pre></div>
+<p>LeetGPU 已通过并独立归档；这些结果属于服务器适配版的 <code>GPU_VALIDATED</code> / P0-lite 证据。由于缺少 NCU hardware counters、PTX/SASS 与多 shape 回归，仍不升级为 <code>COMPLETE</code>。</p>
+<h2 id="相关入口">相关入口<a class="heading-anchor" href="#%E7%9B%B8%E5%85%B3%E5%85%A5%E5%8F%A3" aria-label="链接到相关入口">#</a></h2>
+<ul>
+<li><a href="../../lessons/06-triton-intro.html#56-%E6%9C%8D%E5%8A%A1%E5%99%A8%E7%9C%9F%E5%AE%9E%E6%80%A7%E8%83%BD">Lesson 06 Triton MatMul</a></li>
+<li><a href="../../lessons/07-triton-debugging.html">Lesson 07 Triton Debugging</a></li>
+<li><a href="../../solutions/triton/matmul.py">服务器验证代码</a></li>
+<li><a href="../../solutions/triton/README.html">Triton 代码 README</a></li>
+<li><a href="../../roadmap/gpu-foundations.html">GPU 底层架构与优化路线</a></li>
+</ul>
+</div></main><script src="../../../reader.js"></script></body></html>

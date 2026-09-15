@@ -44,7 +44,7 @@ solutions/
 | 算子 | 文件 | 状态 |
 |------|------|------|
 | Triton MatMul LeetGPU 最终版 | [triton/matmul_leetgpu.py](triton/matmul_leetgpu.py) | `LEETGPU_PASS`：LeetGPU #02，Triton，2026-08-28；SuccessPublicTrace（A100-80GB，24.54 ms，55.3th percentile） |
-| Triton MatMul 服务器适配版 | [triton/matmul.py](triton/matmul.py) | `GPU_VALIDATED`：RTX 3090 正确性与 IEEE FP32 性能已验证，最佳 22.033 ms / 18,713.5 GFLOPS |
+| Triton MatMul服务器适配版 | [triton/matmul.py](triton/matmul.py) | `GPU_VALIDATED`：RTX3090 IEEE FP32当前最佳20.830 ms / 19,794.1 GFLOPS / `torch.mm` 80.3%；22.033 ms为早期sweep历史结果 |
 
 ## 历史 WIP
 
@@ -52,4 +52,4 @@ solutions/
 |------|------|------|
 | Triton MatMul | [triton/matmul_leetgpu_wip.py](triton/matmul_leetgpu_wip.py) | 历史 TF32 默认精度失败版本；4×4 case 最大绝对误差为 `0.1275177001953125`，保留用于复盘，不代表当前状态 |
 
-MatMul 单元总体为 `GPU_VALIDATED`，尚未 `COMPLETE`；下一步是 Nsight Compute / P0–P8 性能分析与最终口径。B1 仍是当前主线，Triton Vector Add 的原始 LeetGPU `solve` 归档缺口保持不变。
+MatMul单元总体为`GPU_VALIDATED`，尚未`COMPLETE`；现有数字保留，后续按[第三篇极致性能课程](../roadmap/curriculum/performance/README.md)补Nsight Compute、PTX/SASS、低精度和多shape。当前实践动作是Triton Softmax服务器闭环；Vector Add原始LeetGPU `solve`归档缺口保持不变。

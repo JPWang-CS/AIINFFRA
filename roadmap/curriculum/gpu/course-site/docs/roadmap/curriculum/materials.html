@@ -1,0 +1,238 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>本地课程资料 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · roadmap/curriculum/materials.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E8%B5%84%E6%96%99%E8%AF%B4%E6%98%8E">资料说明</a></li><li><a href="#%E5%A4%A7%E6%A8%A1%E5%9E%8B%E6%8E%A8%E7%90%86%E5%AE%9E%E8%B7%B516-%E7%AB%A0%E4%B8%BB%E9%A2%98%E5%AF%BC%E8%88%AA">《大模型推理实践》：16 章主题导航</a></li><li><a href="#%E8%9E%8D%E5%90%88%E9%A1%BA%E5%BA%8F%E4%B8%8E%E4%BA%8B%E5%AE%9E%E8%BE%B9%E7%95%8C">融合顺序与事实边界</a></li><li><a href="#deepseek-v41-flashkv-cache-compression">DeepSeek-V4.1-Flash：KV Cache Compression</a></li><li><a href="#%E5%A6%82%E4%BD%95%E7%BB%93%E5%90%88%E8%AF%BE%E7%A8%8B%E9%98%85%E8%AF%BB">如何结合课程阅读</a></li><li><a href="#%E7%9B%B8%E5%85%B3%E8%AF%BE%E7%A8%8B%E5%85%A5%E5%8F%A3">相关课程入口</a></li></ol></nav><div class="markdown-body"><h1 id="本地课程资料">本地课程资料<a class="heading-anchor" href="#%E6%9C%AC%E5%9C%B0%E8%AF%BE%E7%A8%8B%E8%B5%84%E6%96%99" aria-label="链接到本地课程资料">#</a></h1>
+<p>本页按主题整理两份本地 PDF，提供页码直达入口，并说明它们与课程主体和论文线的关系。</p>
+<h2 id="资料说明">资料说明<a class="heading-anchor" href="#%E8%B5%84%E6%96%99%E8%AF%B4%E6%98%8E" aria-label="链接到资料说明">#</a></h2>
+<ul>
+<li><a href="../../../../../../../downloads/cuda-programming-guide.pdf">CUDA C++ Programming Guide（本地 PDF）</a> 是 NVIDIA GPU 硬件、CUDA 编程模型和 API 行为的依据；相关课程章节同时提供<a href="https://docs.nvidia.com/cuda/cuda-programming-guide/">在线官方文档</a>入口。</li>
+<li><a href="../../../../../../../downloads/%E5%A4%A7%E6%A8%A1%E5%9E%8B%E6%8E%A8%E7%90%86%E5%AE%9E%E8%B7%B5.pdf">大模型推理实践（本地讲义）</a> 共 84 页，封面标题为“大模型推理实践”；作者和正式出版版本未注明。</li>
+<li><a href="../../../../../../../downloads/DeepSeek_V41_Tech_Report.pdf">DeepSeek-V4.1-Flash: Pushing the Limits of KV Cache Compression（本地技术报告）</a> 共 51 页；封面署名 DeepSeek-AI。</li>
+<li>讲义中的昇腾系统、盘古案例和相关部署内容属于对应平台案例；与 NVIDIA CUDA 课程内容对照阅读时，应分开平台边界。Prefill 更偏计算受限、Decode 更偏带宽受限只能作为给定模型、形状、并发、缓存和硬件条件下的经验假设，需要实测确认。</li>
+</ul>
+<h2 id="大模型推理实践16-章主题导航">《大模型推理实践》：16 章主题导航<a class="heading-anchor" href="#%E5%A4%A7%E6%A8%A1%E5%9E%8B%E6%8E%A8%E7%90%86%E5%AE%9E%E8%B7%B516-%E7%AB%A0%E4%B8%BB%E9%A2%98%E5%AF%BC%E8%88%AA" aria-label="链接到《大模型推理实践》：16 章主题导航">#</a></h2>
+<p>表中“章”是讲义的章节序号，“PDF 页”是阅读器页码；两者不是同一个编号。</p>
+<table>
+<thead>
+<tr>
+<th align="right">章</th>
+<th>主题</th>
+<th align="right">PDF 页</th>
+<th>课程衔接</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="right">1</td>
+<td>推理概览</td>
+<td align="right"><a href="../../../../../../../downloads/%E5%A4%A7%E6%A8%A1%E5%9E%8B%E6%8E%A8%E7%90%86%E5%AE%9E%E8%B7%B5.pdf#page=1">第 1 页</a></td>
+<td><a href="README.html#%E5%AE%9E%E8%B7%B5%E7%BA%BF%E7%9A%84%E9%98%85%E8%AF%BB%E9%A1%BA%E5%BA%8F">实践课程顺序</a>：建立从模型到系统的全景</td>
+</tr>
+<tr>
+<td align="right">2</td>
+<td>性能指标</td>
+<td align="right"><a href="../../../../../../../downloads/%E5%A4%A7%E6%A8%A1%E5%9E%8B%E6%8E%A8%E7%90%86%E5%AE%9E%E8%B7%B5.pdf#page=6">第 6 页</a></td>
+<td><a href="../../../index.html?chapter=5">性能分析方法</a>与<a href="../../../index.html?chapter=12">Decode / PagedAttention</a>：把吞吐、延迟、显存、并发和利用率落实到测量条件</td>
+</tr>
+<tr>
+<td align="right">3</td>
+<td>Scaling Law</td>
+<td align="right"><a href="../../../../../../../downloads/%E5%A4%A7%E6%A8%A1%E5%9E%8B%E6%8E%A8%E7%90%86%E5%AE%9E%E8%B7%B5.pdf#page=10">第 10 页</a></td>
+<td><a href="../../../index.html?chapter=16">模型 GPU 分析</a>：理解模型规模与计算/存储预算</td>
+</tr>
+<tr>
+<td align="right">4</td>
+<td>昇腾系统</td>
+<td align="right"><a href="../../../../../../../downloads/%E5%A4%A7%E6%A8%A1%E5%9E%8B%E6%8E%A8%E7%90%86%E5%AE%9E%E8%B7%B5.pdf#page=14">第 14 页</a></td>
+<td><a href="gpu/README.html">GPU 与 CUDA</a>：作为 NPU→GPU 迁移的对照案例</td>
+</tr>
+<tr>
+<td align="right">5</td>
+<td>推理框架</td>
+<td align="right"><a href="../../../../../../../downloads/%E5%A4%A7%E6%A8%A1%E5%9E%8B%E6%8E%A8%E7%90%86%E5%AE%9E%E8%B7%B5.pdf#page=16">第 16 页</a></td>
+<td><a href="../../../index.html?chapter=18">真实系统落地</a>：理解算子进入真实调用链的方式</td>
+</tr>
+<tr>
+<td align="right">6</td>
+<td>RL</td>
+<td align="right"><a href="../../../../../../../downloads/%E5%A4%A7%E6%A8%A1%E5%9E%8B%E6%8E%A8%E7%90%86%E5%AE%9E%E8%B7%B5.pdf#page=23">第 23 页</a></td>
+<td><a href="../../../index.html?chapter=16">模型 GPU 分析</a>：了解训练与推理工作负载边界</td>
+</tr>
+<tr>
+<td align="right">7</td>
+<td>并行策略</td>
+<td align="right"><a href="../../../../../../../downloads/%E5%A4%A7%E6%A8%A1%E5%9E%8B%E6%8E%A8%E7%90%86%E5%AE%9E%E8%B7%B5.pdf#page=33">第 33 页</a></td>
+<td><a href="../../../index.html?chapter=18">真实系统落地</a>：连接多 GPU、通信和计算</td>
+</tr>
+<tr>
+<td align="right">8</td>
+<td>融合与图</td>
+<td align="right"><a href="../../../../../../../downloads/%E5%A4%A7%E6%A8%A1%E5%9E%8B%E6%8E%A8%E7%90%86%E5%AE%9E%E8%B7%B5.pdf#page=39">第 39 页</a></td>
+<td><a href="../../../index.html?chapter=7">完整 GPU 算子体系</a>：连接算子融合、编译图和物化边界</td>
+</tr>
+<tr>
+<td align="right">9</td>
+<td>KV Cache</td>
+<td align="right"><a href="../../../../../../../downloads/%E5%A4%A7%E6%A8%A1%E5%9E%8B%E6%8E%A8%E7%90%86%E5%AE%9E%E8%B7%B5.pdf#page=49">第 49 页</a></td>
+<td><a href="../../../index.html?chapter=16">模型 GPU 分析</a>、<a href="../../../index.html?chapter=12">Decode / PagedAttention</a>与<a href="../../../index.html?chapter=25">论文线</a>：连接缓存账本、Attention 和 Decode</td>
+</tr>
+<tr>
+<td align="right">10</td>
+<td>量化</td>
+<td align="right"><a href="../../../../../../../downloads/%E5%A4%A7%E6%A8%A1%E5%9E%8B%E6%8E%A8%E7%90%86%E5%AE%9E%E8%B7%B5.pdf#page=52">第 52 页</a></td>
+<td><a href="quantization/README.html">低精度与量化</a>：连接算法、误差与 kernel</td>
+</tr>
+<tr>
+<td align="right">11</td>
+<td>投机解码 / MTP</td>
+<td align="right"><a href="../../../../../../../downloads/%E5%A4%A7%E6%A8%A1%E5%9E%8B%E6%8E%A8%E7%90%86%E5%AE%9E%E8%B7%B5.pdf#page=55">第 55 页</a></td>
+<td><a href="../../../index.html?chapter=16">模型 GPU 分析</a>：补充 Decode 调度与推理优化</td>
+</tr>
+<tr>
+<td align="right">12</td>
+<td>整网瓶颈</td>
+<td align="right"><a href="../../../../../../../downloads/%E5%A4%A7%E6%A8%A1%E5%9E%8B%E6%8E%A8%E7%90%86%E5%AE%9E%E8%B7%B5.pdf#page=61">第 61 页</a></td>
+<td><a href="../../../index.html?chapter=5">性能分析方法</a>与<a href="../../../index.html?chapter=12">Decode / PagedAttention</a>：沿机制→代码→可观测行为→结果建立证据链</td>
+</tr>
+<tr>
+<td align="right">13</td>
+<td>盘古案例</td>
+<td align="right"><a href="../../../../../../../downloads/%E5%A4%A7%E6%A8%A1%E5%9E%8B%E6%8E%A8%E7%90%86%E5%AE%9E%E8%B7%B5.pdf#page=64">第 64 页</a></td>
+<td><a href="../../../index.html?chapter=18">真实系统落地</a>：阅读昇腾/盘古平台案例</td>
+</tr>
+<tr>
+<td align="right">14</td>
+<td>Agent 挑战</td>
+<td align="right"><a href="../../../../../../../downloads/%E5%A4%A7%E6%A8%A1%E5%9E%8B%E6%8E%A8%E7%90%86%E5%AE%9E%E8%B7%B5.pdf#page=74">第 74 页</a></td>
+<td><a href="../../../index.html?chapter=18">真实系统落地</a>：理解工具调用和长上下文带来的系统约束</td>
+</tr>
+<tr>
+<td align="right">15</td>
+<td>RL Rollout</td>
+<td align="right"><a href="../../../../../../../downloads/%E5%A4%A7%E6%A8%A1%E5%9E%8B%E6%8E%A8%E7%90%86%E5%AE%9E%E8%B7%B5.pdf#page=78">第 78 页</a></td>
+<td><a href="../../../index.html?chapter=18">真实系统落地</a>：理解 rollout 服务的吞吐、并发与调度</td>
+</tr>
+<tr>
+<td align="right">16</td>
+<td>自适应投机</td>
+<td align="right"><a href="../../../../../../../downloads/%E5%A4%A7%E6%A8%A1%E5%9E%8B%E6%8E%A8%E7%90%86%E5%AE%9E%E8%B7%B5.pdf#page=81">第 81 页</a></td>
+<td><a href="../../../index.html?chapter=16">模型 GPU 分析</a>：延伸阅读投机策略与运行时反馈，不把闲时边际成本写成无条件为零</td>
+</tr>
+</tbody></table>
+<h2 id="融合顺序与事实边界">融合顺序与事实边界<a class="heading-anchor" href="#%E8%9E%8D%E5%90%88%E9%A1%BA%E5%BA%8F%E4%B8%8E%E4%BA%8B%E5%AE%9E%E8%BE%B9%E7%95%8C" aria-label="链接到融合顺序与事实边界">#</a></h2>
+<ul>
+<li>讲义 ch2/ch12 接入性能与模型分析；ch8 接入 Fusion；ch9 接入 Decode；ch10 接入量化；ch7/ch13 接入 MoE 与系统；ch11/ch16 接入 sampling/投机。训练、scaling law、RL 是扩展，不抢算子主干。</li>
+<li>讲义 p49 的 MLA 数值按官方 DeepSeek-V3 absorbed cache 路径校正为 <code>61*(512+64)*2=70272 B/token</code>；p40、p52-p55、p61、p83 的核对和不采用项见<a href="decisions/2026-09-10-pdf-integration-and-decode.html">PDF 融合与 Decode 决策记录</a>。</li>
+<li><a href="../../../index.html?chapter=39">V4.1 论文正文</a>连续解释 CED、CSA2、层次索引、Engram、DSpark、Sinkhorn 更新、训练共享状态与缓存重放；<a href="../../../index.html?chapter=40">Scaling Law、RL 与长任务</a>承接讲义的训练和工作负载主题。数值与代码示例用于检查机制，不替代作者实现、质量实验或实际 backend/allocator 证据。</li>
+</ul>
+<h2 id="deepseek-v41-flashkv-cache-compression">DeepSeek-V4.1-Flash：KV Cache Compression<a class="heading-anchor" href="#deepseek-v41-flashkv-cache-compression" aria-label="链接到DeepSeek-V4.1-Flash：KV Cache Compression">#</a></h2>
+<p>这份报告围绕 KV Cache 压缩、注意力结构和推理系统展开，可作为<a href="quantization/README.html">量化</a>、<a href="../../../index.html?chapter=16">KV Cache 与模型 GPU 分析</a>以及 Prefill/Decode 相关论文阅读的补充材料。</p>
+<table>
+<thead>
+<tr>
+<th>报告部分</th>
+<th align="right">PDF 页</th>
+<th>课程衔接</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>§2 架构</td>
+<td align="right"><a href="../../../../../../../downloads/DeepSeek_V41_Tech_Report.pdf#page=7">第 7 页</a></td>
+<td><a href="../../../index.html?chapter=25">论文线总入口</a>：建立报告中的架构语境</td>
+</tr>
+<tr>
+<td>§2.2 CED（Causal Encoder-Decoder，因果编码器-解码器）</td>
+<td align="right"><a href="../../../../../../../downloads/DeepSeek_V41_Tech_Report.pdf#page=9">第 9 页</a></td>
+<td><a href="../../../index.html?chapter=16">模型 GPU 分析</a>：关联模型的 Prefill/Decode 路径</td>
+</tr>
+<tr>
+<td>§2.3 CSA2（Compressed Sparse Attention 2）</td>
+<td align="right"><a href="../../../../../../../downloads/DeepSeek_V41_Tech_Report.pdf#page=9">第 9 页</a></td>
+<td><a href="../../../index.html?chapter=25">Attention 演进</a>：关联稀疏注意力结构与访问路径</td>
+</tr>
+<tr>
+<td>跨层 KV / index 复用</td>
+<td align="right"><a href="../../../../../../../downloads/DeepSeek_V41_Tech_Report.pdf#page=10">第 10 页</a></td>
+<td><a href="#大模型推理实践16-章主题导航">KV Cache</a>：关联缓存容量、复用和访存路径</td>
+</tr>
+<tr>
+<td>层次索引</td>
+<td align="right"><a href="../../../../../../../downloads/DeepSeek_V41_Tech_Report.pdf#page=11">第 11 页</a></td>
+<td><a href="../../../index.html?chapter=16">模型 GPU 分析</a>：关注索引结构对 Prefill/Decode 的影响</td>
+</tr>
+<tr>
+<td>扩展</td>
+<td align="right"><a href="../../../../../../../downloads/DeepSeek_V41_Tech_Report.pdf#page=12">第 12 页</a></td>
+<td><a href="../../../index.html?chapter=18">真实系统落地</a>：把结构设计放回系统扩展条件</td>
+</tr>
+<tr>
+<td>FP4 Main KV</td>
+<td align="right"><a href="../../../../../../../downloads/DeepSeek_V41_Tech_Report.pdf#page=14">第 14 页</a></td>
+<td><a href="quantization/README.html">量化主课</a>与<a href="../../../index.html?chapter=25">量化论文线</a>：区分格式、误差和 kernel 支持</td>
+</tr>
+<tr>
+<td>§3.2 推理系统</td>
+<td align="right"><a href="../../../../../../../downloads/DeepSeek_V41_Tech_Report.pdf#page=18">第 18 页</a></td>
+<td><a href="../../../index.html?chapter=25">推理系统论文线</a>：连接系统执行路径</td>
+</tr>
+<tr>
+<td>PersistentKV</td>
+<td align="right"><a href="../../../../../../../downloads/DeepSeek_V41_Tech_Report.pdf#page=19">第 19 页</a></td>
+<td><a href="#大模型推理实践16-章主题导航">KV Cache</a>：关联缓存驻留和生命周期</td>
+</tr>
+<tr>
+<td>SWA（Sliding-Window Attention，滑动窗口注意力）BoundedReplay</td>
+<td align="right"><a href="../../../../../../../downloads/DeepSeek_V41_Tech_Report.pdf#page=20">第 20 页</a></td>
+<td><a href="../../../index.html?chapter=16">Prefill/Decode 模型分析</a>：关注窗口、重放和运行时带宽/计算条件</td>
+</tr>
+</tbody></table>
+<h2 id="如何结合课程阅读">如何结合课程阅读<a class="heading-anchor" href="#%E5%A6%82%E4%BD%95%E7%BB%93%E5%90%88%E8%AF%BE%E7%A8%8B%E9%98%85%E8%AF%BB" aria-label="链接到如何结合课程阅读">#</a></h2>
+<p>讲义提供从算子到整网的观察角度，技术报告提供具体模型的数据结构。CUDA Programming Guide 仍用于确定线程、存储、同步和 API 行为。三类材料各自回答不同问题，不按书的目录重新排列 GPU 算子主线。</p>
+<table>
+<thead>
+<tr>
+<th>材料主题</th>
+<th>对应课程</th>
+<th>阅读时要落实的问题</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>讲义第 2、12 章：指标与整网瓶颈</td>
+<td><a href="../../../index.html?chapter=5#chapter-5-section-16">性能分析：从 kernel 时间走到请求时间</a></td>
+<td>TTFT/TPOT 的时间戳、P95 是否可相加、单算子收益怎样传递到请求</td>
+</tr>
+<tr>
+<td>讲义第 8 章与报告 §2.4.1</td>
+<td><a href="../../../index.html?chapter=10#chapter-10-section-21">Fusion：Single-Pass mHC</a></td>
+<td>依赖能否消除、哪些权重可折叠、减少遍历是否改变模型</td>
+</tr>
+<tr>
+<td>讲义第 9 章与报告 §2.3、§3.2</td>
+<td><a href="../../../index.html?chapter=12">Decode / PagedAttention</a></td>
+<td>软件分页、缓存容量、有效读取、跨层复用和近似恢复的区别</td>
+</tr>
+<tr>
+<td>讲义第 10 章与报告 §2.4.4</td>
+<td><a href="quantization/README.html">低精度与量化</a></td>
+<td>数据值、scale、zero point、packing、反量化与指令路径分别如何计算</td>
+</tr>
+<tr>
+<td>讲义第 7、13 章与报告 MoE/Engram 内容</td>
+<td><a href="../../../index.html?chapter=7">算子体系</a>与<a href="../../../index.html?chapter=18">系统扩展</a></td>
+<td>专家路由、重排、稀疏访问和通信成本；昇腾案例不直接等同 CUDA 实现</td>
+</tr>
+<tr>
+<td>讲义第 11、16 章与报告 DSpark</td>
+<td><a href="../../../index.html?chapter=16">模型执行分析</a>与<a href="../../../index.html?chapter=25">独立论文线</a></td>
+<td>接受率、草稿开销、验证长度和当前负载共同决定投机收益</td>
+</tr>
+<tr>
+<td>Scaling Law、训练、RL 和多模态数据</td>
+<td><a href="../../../index.html?chapter=25">论文线</a></td>
+<td>作为模型和工作负载背景，保持与算子实践独立的阅读节奏</td>
+</tr>
+</tbody></table>
+<p>课程引用模型数字时先展开数据结构。例如 MLA 的 latent 与 RoPE key 不重复计作两份完整 K/V；FP4 还要加 scale 字节；权重与 KV 量化应分别缩小对应容量项后相加，不把两个压缩比例直接相乘。报告中的 Bounded Replay 接受近似状态，不等价于完整前向恢复。上述区别分别在 Decode 和 Fusion 正文中用公式、代码及反例说明。</p>
+<h2 id="相关课程入口">相关课程入口<a class="heading-anchor" href="#%E7%9B%B8%E5%85%B3%E8%AF%BE%E7%A8%8B%E5%85%A5%E5%8F%A3" aria-label="链接到相关课程入口">#</a></h2>
+<ul>
+<li><a href="gpu/README.html">GPU 与 CUDA</a>：把硬件机制落实到线程、warp、SM、存储、同步与性能证据。</li>
+<li><a href="../../../index.html?chapter=7">完整 GPU 算子体系</a>：把融合、KV、量化和 Attention 主题落到算子对象。</li>
+<li><a href="../../../index.html?chapter=25">独立论文与理论学习线</a>：保留论文阅读顺序和完成标准。</li>
+</ul>
+</div></main><script src="../../../reader.js"></script></body></html>

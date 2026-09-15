@@ -1,0 +1,166 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>论文管理工作流 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · papers/process.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E5%BD%93%E5%89%8D%E7%AE%A1%E9%81%93">当前管道</a></li><li><a href="#%E8%8A%82%E5%A5%8F">节奏</a></li><li><a href="#%E5%8F%91%E7%8E%B0%E7%AE%A1%E9%81%93">发现管道</a></li><li><a href="#%E4%B8%BB%E8%A6%81%E6%9D%A5%E6%BA%90">主要来源</a></li><li><a href="#%E8%87%AA%E5%8A%A8%E6%8A%93%E5%8F%96">自动抓取</a></li><li><a href="#%E5%88%86%E7%B1%BB%E6%A0%87%E5%87%86">分类标准</a></li><li><a href="#%E7%AC%94%E8%AE%B0%E6%A8%A1%E6%9D%BF">笔记模板</a></li><li><a href="#%E6%AF%8F%E6%9C%88%E4%B8%BB%E9%A2%98%E8%BD%AE%E6%8D%A2">每月主题轮换</a></li><li><a href="#%E5%BD%92%E6%A1%A3%E8%A7%84%E5%88%99">归档规则</a></li></ol></nav><div class="markdown-body"><h1 id="论文管理工作流">论文管理工作流<a class="heading-anchor" href="#%E8%AE%BA%E6%96%87%E7%AE%A1%E7%90%86%E5%B7%A5%E4%BD%9C%E6%B5%81" aria-label="链接到论文管理工作流">#</a></h1>
+<h2 id="当前管道">当前管道<a class="heading-anchor" href="#%E5%BD%93%E5%89%8D%E7%AE%A1%E9%81%93" aria-label="链接到当前管道">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">research_watch.py</span>
+<span class="code-line" data-line="2">  -&gt; papers/inbox/YYYY-MM-DD-topic.md</span>
+<span class="code-line" data-line="3">  -&gt; 每周核验/去重/P0-P2</span>
+<span class="code-line" data-line="4">  -&gt; 挂到当前或近期 PATH 节点</span>
+<span class="code-line" data-line="5">  -&gt; 精读/复现</span>
+<span class="code-line" data-line="6">  -&gt; papers 正式索引 + notes 机制笔记</span></code></pre></div>
+<p>自动抓取只负责发现，不能自动改 <code>PATH.md</code>，也不能把摘要当结论。推荐命令：</p>
+<div class="code-panel"><div class="code-caption"><span>BASH</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-bash"><span class="code-line" data-line="1">python scripts/research_watch.py --topic kernels --days 7 --write-inbox</span>
+<span class="code-line" data-line="2">python scripts/research_watch.py --topic distributed --days 14 --write-inbox</span>
+<span class="code-line" data-line="3">python scripts/research_watch.py --topic inference --days 7 --write-inbox</span></code></pre></div>
+<h2 id="节奏">节奏<a class="heading-anchor" href="#%E8%8A%82%E5%A5%8F" aria-label="链接到节奏">#</a></h2>
+<ul>
+<li><strong>每天 5min</strong>：扫 arxiv RSS / X / 公众号标题，有意思的存链接</li>
+<li><strong>每周日 30min</strong>：把本周存的链接过一遍 → 补充到索引 → 标记优先级</li>
+<li><strong>每月底 30min</strong>：回顾本月精读、归档过时的 P2 条目</li>
+</ul>
+<h2 id="发现管道">发现管道<a class="heading-anchor" href="#%E5%8F%91%E7%8E%B0%E7%AE%A1%E9%81%93" aria-label="链接到发现管道">#</a></h2>
+<h3 id="主要来源">主要来源<a class="heading-anchor" href="#%E4%B8%BB%E8%A6%81%E6%9D%A5%E6%BA%90" aria-label="链接到主要来源">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>来源</th>
+<th>频率</th>
+<th>方法</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>arxiv cs.DC</td>
+<td>每日</td>
+<td><code>scripts/fetch_papers.py</code> 自动抓</td>
+</tr>
+<tr>
+<td>arxiv cs.LG</td>
+<td>每日</td>
+<td>同上</td>
+</tr>
+<tr>
+<td>arxiv cs.CL</td>
+<td>每日</td>
+<td>同上</td>
+</tr>
+<tr>
+<td>MLSys / OSDI / SOSP / ASPLOS</td>
+<td>每年</td>
+<td>关注 proceedings</td>
+</tr>
+<tr>
+<td>知乎/公众号</td>
+<td>日常</td>
+<td>看到就存</td>
+</tr>
+<tr>
+<td>X/Twitter (AI Infra 圈)</td>
+<td>日常</td>
+<td>关注 @cHHillee, @tri_dao, @vllm_project 等</td>
+</tr>
+</tbody></table>
+<h3 id="自动抓取">自动抓取<a class="heading-anchor" href="#%E8%87%AA%E5%8A%A8%E6%8A%93%E5%8F%96" aria-label="链接到自动抓取">#</a></h3>
+<div class="code-panel"><div class="code-caption"><span>BASH</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-bash"><span class="code-line" data-line="1"><span class="hljs-comment"># 抓最近 3 天 AI Infra 相关论文（cs.DC + cs.LG + cs.CL）</span></span>
+<span class="code-line" data-line="2">python scripts/fetch_papers.py --days 3</span>
+<span class="code-line" data-line="3"></span>
+<span class="code-line" data-line="4"><span class="hljs-comment"># 抓指定关键词</span></span>
+<span class="code-line" data-line="5">python scripts/fetch_papers.py --query <span class="hljs-string">&quot;attention AND (GPU OR CUDA OR inference)&quot;</span></span>
+<span class="code-line" data-line="6"></span>
+<span class="code-line" data-line="7"><span class="hljs-comment"># 只看新论文标题，快速筛选</span></span>
+<span class="code-line" data-line="8">python scripts/fetch_papers.py --days 7 --titles-only</span></code></pre></div>
+<h2 id="分类标准">分类标准<a class="heading-anchor" href="#%E5%88%86%E7%B1%BB%E6%A0%87%E5%87%86" aria-label="链接到分类标准">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>优先级</th>
+<th>含义</th>
+<th>动作</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>P0</td>
+<td>必须精读，领域基础</td>
+<td>写完整笔记，搞懂每个设计决策</td>
+</tr>
+<tr>
+<td>P1</td>
+<td>与当前学习主题相关</td>
+<td>主题月内精读</td>
+</tr>
+<tr>
+<td>P2</td>
+<td>知道即可</td>
+<td>只读 abstract + conclusion，存档</td>
+</tr>
+</tbody></table>
+<h2 id="笔记模板">笔记模板<a class="heading-anchor" href="#%E7%AC%94%E8%AE%B0%E6%A8%A1%E6%9D%BF" aria-label="链接到笔记模板">#</a></h2>
+<p>每篇论文笔记 ≤ 一页，固定四个部分：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1"># 标题</span>
+<span class="code-line" data-line="2">**作者/年份/会议** | **状态** | **优先级**</span>
+<span class="code-line" data-line="3"></span>
+<span class="code-line" data-line="4">## 解决了什么问题</span>
+<span class="code-line" data-line="5">（1-2 句话）</span>
+<span class="code-line" data-line="6"></span>
+<span class="code-line" data-line="7">## 怎么解决的</span>
+<span class="code-line" data-line="8">（核心方法，3-5 个要点）</span>
+<span class="code-line" data-line="9"></span>
+<span class="code-line" data-line="10">## 关键数据</span>
+<span class="code-line" data-line="11">（性能数字、消融实验结论）</span>
+<span class="code-line" data-line="12"></span>
+<span class="code-line" data-line="13">## 与我何干</span>
+<span class="code-line" data-line="14">（一句话：对我的工作/学习有什么启发）</span></code></pre></div>
+<h2 id="每月主题轮换">每月主题轮换<a class="heading-anchor" href="#%E6%AF%8F%E6%9C%88%E4%B8%BB%E9%A2%98%E8%BD%AE%E6%8D%A2" aria-label="链接到每月主题轮换">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>月份</th>
+<th>主题</th>
+<th>精读重点</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>2026.06</td>
+<td>CUDA + GPU 架构</td>
+<td>GPU 体系结构论文、CUDA 最佳实践</td>
+</tr>
+<tr>
+<td>2026.07</td>
+<td>Attention 机制</td>
+<td>Flash Attn 1/2、GQA/MQA、Ring Attn</td>
+</tr>
+<tr>
+<td>2026.08</td>
+<td>Triton + 编译器</td>
+<td>Triton、MLIR、TorchDynamo</td>
+</tr>
+<tr>
+<td>2026.09</td>
+<td>LLM 推理</td>
+<td>PagedAttention、量化、调度</td>
+</tr>
+<tr>
+<td>2026.10</td>
+<td>LLM 推理（续）</td>
+<td>SGLang、SpecDecode、MoE 推理</td>
+</tr>
+<tr>
+<td>2026.11</td>
+<td>分布式训练</td>
+<td>ZeRO、FSDP、Megatron、MoE</td>
+</tr>
+<tr>
+<td>2026.12</td>
+<td>Agent 系统</td>
+<td>ReAct、Tool Use、MCP、RAG</td>
+</tr>
+<tr>
+<td>2027.01+</td>
+<td>待定</td>
+<td>根据业界动态调整</td>
+</tr>
+</tbody></table>
+<h2 id="归档规则">归档规则<a class="heading-anchor" href="#%E5%BD%92%E6%A1%A3%E8%A7%84%E5%88%99" aria-label="链接到归档规则">#</a></h2>
+<ul>
+<li>P2 论文如果 3 个月没碰 → 移到 <code>archive/</code>，只保留索引条目</li>
+<li>P0/P1 精读过的论文永久保留笔记</li>
+<li>每年年底清理一次索引</li>
+</ul>
+</div></main><script src="../../reader.js"></script></body></html>

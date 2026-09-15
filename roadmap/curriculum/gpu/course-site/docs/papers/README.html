@@ -1,0 +1,292 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>论文索引 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · papers/README.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E9%98%85%E8%AF%BB%E8%A7%84%E5%88%99">阅读规则</a></li><li><a href="#%E5%92%8C-notesalgorithms-%E7%9A%84%E8%BE%B9%E7%95%8C%E7%A1%AC%E8%A7%84%E7%9F%A9">📌 和 notes/algorithms/ 的边界（硬规矩）</a></li><li><a href="#attention--kernels">Attention &amp; Kernels</a></li><li><a href="#inference">Inference</a></li><li><a href="#training">Training</a></li><li><a href="#communication--multi-node">Communication / Multi-node</a></li><li><a href="#compiler">Compiler</a></li><li><a href="#agents">Agents</a></li></ol></nav><div class="markdown-body"><h1 id="论文索引">论文索引<a class="heading-anchor" href="#%E8%AE%BA%E6%96%87%E7%B4%A2%E5%BC%95" aria-label="链接到论文索引">#</a></h1>
+<blockquote><p>工作流：<a href="process.html">process.md</a> | 笔记模板：<a href="template.html">template.md</a> | <a href="watchlist-2026.html">2026 观察池</a>
+抓取脚本：<code>python scripts/research_watch.py --topic distributed --days 14 --write-inbox</code>（从仓库根目录运行）</p>
+</blockquote><h2 id="阅读规则">阅读规则<a class="heading-anchor" href="#%E9%98%85%E8%AF%BB%E8%A7%84%E5%88%99" aria-label="链接到阅读规则">#</a></h2>
+<ul>
+<li>每篇笔记 ≤ 一页：核心思想 + 关键设计 + 一句话启发</li>
+<li>每周扫 arxiv cs.DC/cs.LG，仅存档不深入</li>
+<li>每月一个主题，主题相关论文精读，其余存档</li>
+<li>优先级：P0 = 必须精读，P1 = 主题相关时深读，P2 = 存档备用</li>
+</ul>
+<h2 id="和-notesalgorithms-的边界硬规矩">📌 和 notes/algorithms/ 的边界（硬规矩）<a class="heading-anchor" href="#%E5%92%8C-notesalgorithms-%E7%9A%84%E8%BE%B9%E7%95%8C%E7%A1%AC%E8%A7%84%E7%9F%A9" aria-label="链接到📌 和 notes/algorithms/ 的边界（硬规矩）">#</a></h2>
+<blockquote><p><strong>单位是&quot;一篇论文&quot; → 这里；单位是&quot;一个技术/概念&quot; → <a href="../../index.html?chapter=25">notes/algorithms/</a>。</strong></p>
+</blockquote><p>有标志性论文的技术（AWQ、GQA、ZeRO）两边各一份：这里写&quot;论文讲了什么&quot;（精读，带 arxiv），algorithms 那边写&quot;机制 + 怎么实现&quot;并互链。判断：<strong>&quot;读论文&quot; ≠ &quot;会实现&quot;</strong>。非论文技术（online softmax 等）只进 algorithms。</p>
+<hr>
+<h2 id="attention--kernels">Attention &amp; Kernels<a class="heading-anchor" href="#attention--kernels" aria-label="链接到Attention &amp; Kernels">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>论文</th>
+<th>年份</th>
+<th>优先级</th>
+<th>状态</th>
+<th>笔记</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Flash Attention: Fast and Memory-Efficient Exact Attention with IO-Awareness</td>
+<td>2022</td>
+<td>P0</td>
+<td>✅</td>
+<td><a href="attention/flash-attention.html">笔记</a></td>
+</tr>
+<tr>
+<td>Flash Attention 2: Faster Attention with Better Parallelism and Work Partitioning</td>
+<td>2023</td>
+<td>P0</td>
+<td>✅</td>
+<td><a href="../../index.html?chapter=23">笔记</a></td>
+</tr>
+<tr>
+<td>GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints</td>
+<td>2023</td>
+<td>P0</td>
+<td>✅</td>
+<td><a href="../../index.html?chapter=24">笔记</a></td>
+</tr>
+<tr>
+<td>Ring Attention with Blockwise Transformers for Near-Infinite Context</td>
+<td>2023</td>
+<td>P1</td>
+<td>⏳</td>
+<td></td>
+</tr>
+</tbody></table>
+<h2 id="inference">Inference<a class="heading-anchor" href="#inference" aria-label="链接到Inference">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>论文</th>
+<th>年份</th>
+<th>优先级</th>
+<th>状态</th>
+<th>笔记</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Efficient Memory Management for Large Language Model Serving with PagedAttention</td>
+<td>2023</td>
+<td>P0</td>
+<td>✅</td>
+<td><a href="../../index.html?chapter=36">笔记</a></td>
+</tr>
+<tr>
+<td>SGLang: Efficient Execution of Structured Language Model Programs</td>
+<td>2024</td>
+<td>P1</td>
+<td>⏳</td>
+<td></td>
+</tr>
+<tr>
+<td>AWQ: Activation-aware Weight Quantization for On-Device LLM Compression and Acceleration</td>
+<td>2023</td>
+<td>P1</td>
+<td>⏳</td>
+<td></td>
+</tr>
+<tr>
+<td>GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers</td>
+<td>2023</td>
+<td>P1</td>
+<td>⏳</td>
+<td></td>
+</tr>
+<tr>
+<td>FP8 Formats for Deep Learning</td>
+<td>2023</td>
+<td>P1</td>
+<td>⏳</td>
+<td></td>
+</tr>
+<tr>
+<td>Speculative Decoding (Leviathan et al.)</td>
+<td>2023</td>
+<td>P1</td>
+<td>⏳</td>
+<td></td>
+</tr>
+</tbody></table>
+<h2 id="training">Training<a class="heading-anchor" href="#training" aria-label="链接到Training">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>论文</th>
+<th>年份</th>
+<th>优先级</th>
+<th>状态</th>
+<th>笔记</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>ZeRO: Memory Optimizations Toward Training Trillion Parameter Models</td>
+<td>2020</td>
+<td>P0</td>
+<td>✅</td>
+<td><a href="../../index.html?chapter=38">笔记</a></td>
+</tr>
+<tr>
+<td>Megatron-LM: Training Multi-Billion Parameter Language Models Using Model Parallelism</td>
+<td>2019</td>
+<td>P0</td>
+<td>⏳</td>
+<td></td>
+</tr>
+<tr>
+<td>Efficient Large-Scale Language Model Training on GPU Clusters Using Megatron-LM</td>
+<td>2021</td>
+<td>P1</td>
+<td>⏳</td>
+<td></td>
+</tr>
+<tr>
+<td>PyTorch FSDP: Experiences on Scaling Fully Sharded Data Parallel</td>
+<td>2023</td>
+<td>P1</td>
+<td>⏳</td>
+<td></td>
+</tr>
+<tr>
+<td>GSPMD: General and Scalable Parallelization for ML Computation Graphs</td>
+<td>2021</td>
+<td>P1</td>
+<td>⏳</td>
+<td></td>
+</tr>
+<tr>
+<td>MegaScale: Scaling Large Language Model Training to More Than 10,000 GPUs</td>
+<td>2024</td>
+<td>P0</td>
+<td>⏳</td>
+<td></td>
+</tr>
+</tbody></table>
+<h2 id="communication--multi-node">Communication / Multi-node<a class="heading-anchor" href="#communication--multi-node" aria-label="链接到Communication / Multi-node">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>论文</th>
+<th>年份</th>
+<th>优先级</th>
+<th>状态</th>
+<th>挂载</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Collective Communication for Distributed LLM Systems</td>
+<td>2026</td>
+<td>P1</td>
+<td>⏳</td>
+<td>D1–D5 taxonomy</td>
+</tr>
+<tr>
+<td>NCCL EP</td>
+<td>2026</td>
+<td>P1</td>
+<td>⏳</td>
+<td>D5 MoE communication</td>
+</tr>
+<tr>
+<td>CommBench</td>
+<td>2026</td>
+<td>P2</td>
+<td>⏳</td>
+<td>D1 后选题库</td>
+</tr>
+<tr>
+<td>ByteScale</td>
+<td>2025</td>
+<td>P1</td>
+<td>⏳</td>
+<td>D4 context/dynamic mesh</td>
+</tr>
+</tbody></table>
+<h2 id="compiler">Compiler<a class="heading-anchor" href="#compiler" aria-label="链接到Compiler">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>论文</th>
+<th>年份</th>
+<th>优先级</th>
+<th>状态</th>
+<th>笔记</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Triton: An Intermediate Language and Compiler for Tiled Neural Network Computations</td>
+<td>2019</td>
+<td>P0</td>
+<td>✅</td>
+<td><a href="compiler/triton-paper.html">笔记</a></td>
+</tr>
+<tr>
+<td>MLIR: Scaling Compiler Infrastructure for Domain Specific Computation</td>
+<td>2021</td>
+<td>P1</td>
+<td>⏳</td>
+<td></td>
+</tr>
+<tr>
+<td>TorchDynamo / TorchInductor (PyTorch 2.0 blog)</td>
+<td>2023</td>
+<td>P1</td>
+<td>⏳</td>
+<td></td>
+</tr>
+<tr>
+<td>TVM: An Automated End-to-End Optimizing Compiler for Deep Learning</td>
+<td>2018</td>
+<td>P2</td>
+<td>⏳</td>
+<td></td>
+</tr>
+</tbody></table>
+<h2 id="agents">Agents<a class="heading-anchor" href="#agents" aria-label="链接到Agents">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>论文</th>
+<th>年份</th>
+<th>优先级</th>
+<th>状态</th>
+<th>笔记</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>ReAct: Synergizing Reasoning and Acting in Language Models</td>
+<td>2022</td>
+<td>P0</td>
+<td>⏳</td>
+<td></td>
+</tr>
+<tr>
+<td>SWE-Agent: Agent-Computer Interfaces Enable Automated Software Engineering</td>
+<td>2024</td>
+<td>P0</td>
+<td>⏳</td>
+<td></td>
+</tr>
+<tr>
+<td>Toolformer: Language Models Can Teach Themselves to Use Tools</td>
+<td>2023</td>
+<td>P1</td>
+<td>⏳</td>
+<td></td>
+</tr>
+<tr>
+<td>MemGPT: Towards LLMs as Operating Systems</td>
+<td>2023</td>
+<td>P1</td>
+<td>⏳</td>
+<td></td>
+</tr>
+<tr>
+<td>Generative Agents: Interactive Simulacra of Human Behavior</td>
+<td>2023</td>
+<td>P2</td>
+<td>⏳</td>
+<td></td>
+</tr>
+</tbody></table>
+<hr>
+<p>状态说明：⏳ 待读 / 📖 在读 / ✅ 已精读 / 📦 存档</p>
+</div></main><script src="../../reader.js"></script></body></html>

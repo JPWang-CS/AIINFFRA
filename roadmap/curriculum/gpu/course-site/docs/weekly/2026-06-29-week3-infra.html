@@ -1,0 +1,126 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Week 3 — Agent/Skills 搭建 + 内容打磨 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · weekly/2026-06-29-week3-infra.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E5%81%9A%E4%BA%86%E4%BB%80%E4%B9%88">做了什么</a></li><li><a href="#agent-%E5%88%86%E5%B1%82%E4%BD%93%E7%B3%BB%E6%90%AD%E5%BB%BA627">Agent 分层体系搭建（6/27）</a></li><li><a href="#skills-%E6%8A%80%E8%83%BD%E4%BD%93%E7%B3%BB627">Skills 技能体系（6/27）</a></li><li><a href="#memory-%E8%B7%A8%E5%AF%B9%E8%AF%9D%E6%8C%81%E4%B9%85%E5%8C%96627">Memory 跨对话持久化（6/27）</a></li><li><a href="#lessons--notes-%E5%86%85%E5%AE%B9%E6%89%93%E7%A3%A8629">Lessons + Notes 内容打磨（6/29）</a></li><li><a href="#%E5%85%B3%E9%94%AE%E6%95%B0%E6%8D%AE">关键数据</a></li><li><a href="#%E5%8D%A1%E7%82%B9--%E6%80%8E%E4%B9%88%E8%A7%A3%E5%86%B3%E7%9A%84">卡点 / 怎么解决的</a></li><li><a href="#%E9%9D%A2%E8%AF%95%E5%8F%AF%E7%94%A8%E7%82%B9">面试可用点</a></li><li><a href="#%E4%BA%A7%E5%87%BA%E7%89%A9">产出物</a></li><li><a href="#%E4%B8%8B%E4%B8%80%E6%AD%A5">下一步</a></li></ol></nav><div class="markdown-body"><h1 id="week-3--agentskills-搭建--内容打磨">Week 3 — Agent/Skills 搭建 + 内容打磨<a class="heading-anchor" href="#week-3--agentskills-%E6%90%AD%E5%BB%BA--%E5%86%85%E5%AE%B9%E6%89%93%E7%A3%A8" aria-label="链接到Week 3 — Agent/Skills 搭建 + 内容打磨">#</a></h1>
+<blockquote><p>2026-06-25 ~ 2026-06-29 · 仓库基建 · 对应 PATH 全路线</p>
+</blockquote><h2 id="做了什么">做了什么<a class="heading-anchor" href="#%E5%81%9A%E4%BA%86%E4%BB%80%E4%B9%88" aria-label="链接到做了什么">#</a></h2>
+<h3 id="agent-分层体系搭建627">Agent 分层体系搭建（6/27）<a class="heading-anchor" href="#agent-%E5%88%86%E5%B1%82%E4%BD%93%E7%B3%BB%E6%90%AD%E5%BB%BA627" aria-label="链接到Agent 分层体系搭建（6/27）">#</a></h3>
+<ul>
+<li>新建 <strong>base-coach</strong> Agent — 基础教练，负责学习路径导航、进度同步、资源指引</li>
+<li>新建 <strong>cuda-tutor</strong> Agent — CUDA 专项辅导，专注算子开发和 Ascend→CUDA 概念映射</li>
+<li>与已有的 <code>ascend-to-gpu-coach</code> 形成三层体系：base-coach（导航）→ ascend-to-gpu-coach（GPU 学习）→ cuda-tutor（算子深钻）</li>
+</ul>
+<h3 id="skills-技能体系627">Skills 技能体系（6/27）<a class="heading-anchor" href="#skills-%E6%8A%80%E8%83%BD%E4%BD%93%E7%B3%BB627" aria-label="链接到Skills 技能体系（6/27）">#</a></h3>
+<p>新建 7 个 Skill，覆盖学习全流程：</p>
+<table>
+<thead>
+<tr>
+<th>Skill</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>code-review</code></td>
+<td>CUDA/Triton 代码审查</td>
+</tr>
+<tr>
+<td><code>concept-explain</code></td>
+<td>概念讲解（Ascend 类比）</td>
+</tr>
+<tr>
+<td><code>interview-prep</code></td>
+<td>面试叙事打磨 + 高频题</td>
+</tr>
+<tr>
+<td><code>next-step</code></td>
+<td>下一步行动建议</td>
+</tr>
+<tr>
+<td><code>perf-analysis</code></td>
+<td>性能分析（GFLOPS/bandwidth）</td>
+</tr>
+<tr>
+<td><code>theory-study</code></td>
+<td>理论线学习引导</td>
+</tr>
+<tr>
+<td><code>weekly-report</code></td>
+<td>基于 git 活动自动生成周报</td>
+</tr>
+</tbody></table>
+<h3 id="memory-跨对话持久化627">Memory 跨对话持久化（6/27）<a class="heading-anchor" href="#memory-%E8%B7%A8%E5%AF%B9%E8%AF%9D%E6%8C%81%E4%B9%85%E5%8C%96627" aria-label="链接到Memory 跨对话持久化（6/27）">#</a></h3>
+<ul>
+<li>建了 <code>.claude/memory/</code> 目录，记录用户偏好、项目进度、反馈风格</li>
+<li>Agent 专属 memory（<code>agent-memory/ascend-to-gpu-coach/</code>）：用户背景、项目进度、反馈风格、代码所有权</li>
+<li>重构计划文档：<code>AGENT_REFACTOR_PLAN.md</code>、<code>AIINFRAGUIDE_INTEGRATION.md</code>、<code>REFACTOR_REPORT.md</code></li>
+</ul>
+<h3 id="lessons--notes-内容打磨629">Lessons + Notes 内容打磨（6/29）<a class="heading-anchor" href="#lessons--notes-%E5%86%85%E5%AE%B9%E6%89%93%E7%A3%A8629" aria-label="链接到Lessons + Notes 内容打磨（6/29）">#</a></h3>
+<ul>
+<li><strong>lessons/</strong> 6 节课整体修订：CUDA 基础 → GEMM → Softmax → Flash Attn → Triton 入门</li>
+<li><strong>notes/algorithms/</strong> 大幅扩展：<ul>
+<li><code>online-softmax.md</code>：+196 行，补充完整推导和代码映射</li>
+<li><code>flash-attention-mechanism.md</code>、<code>mla-deepseek.md</code>、<code>quantization-int8-fp8.md</code>、<code>speculative-decoding.md</code>：格式修正 + 内容补全</li>
+</ul>
+</li>
+<li><strong>notes/cuda/memory-model.md</strong>：修正 memory model 描述</li>
+<li><strong>reference/ + solutions/</strong> 代码同步修正：softmax、gemm、layernorm、flash_attn 等</li>
+</ul>
+<h2 id="关键数据">关键数据<a class="heading-anchor" href="#%E5%85%B3%E9%94%AE%E6%95%B0%E6%8D%AE" aria-label="链接到关键数据">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th align="center">数字</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>新增 Agent 定义</td>
+<td align="center">2（base-coach, cuda-tutor）</td>
+</tr>
+<tr>
+<td>新增 Skill</td>
+<td align="center">7</td>
+</tr>
+<tr>
+<td>新增/修改文件（6/27）</td>
+<td align="center">14 files, +1198 行</td>
+</tr>
+<tr>
+<td>新增/修改文件（6/29）</td>
+<td align="center">26 files, +583 / -237</td>
+</tr>
+<tr>
+<td>理论笔记扩展</td>
+<td align="center">online-softmax +196 行</td>
+</tr>
+</tbody></table>
+<h2 id="卡点--怎么解决的">卡点 / 怎么解决的<a class="heading-anchor" href="#%E5%8D%A1%E7%82%B9--%E6%80%8E%E4%B9%88%E8%A7%A3%E5%86%B3%E7%9A%84" aria-label="链接到卡点 / 怎么解决的">#</a></h2>
+<ol>
+<li><p><strong>Agent 职责边界模糊</strong>：之前 ascend-to-gpu-coach 一个 Agent 包揽所有（导航 + 教学 + 审查），越来越臃肿。<strong>解法</strong>：拆成三层——base-coach 做导航和状态管理，ascend-to-gpu-coach 做 GPU 学习和理论，cuda-tutor 做算子级深钻。每个 Agent 职责清晰，通过 base-coach 协调调用。</p>
+</li>
+<li><p><strong>跨对话记忆丢失</strong>：每次新对话 Agent 都要重新了解用户背景和进度，浪费 token。<strong>解法</strong>：建立 Memory 系统（<code>.claude/memory/</code> + <code>agent-memory/</code>），把用户画像、项目进度、反馈偏好持久化，Agent 启动时自动加载。</p>
+</li>
+</ol>
+<h2 id="面试可用点">面试可用点<a class="heading-anchor" href="#%E9%9D%A2%E8%AF%95%E5%8F%AF%E7%94%A8%E7%82%B9" aria-label="链接到面试可用点">#</a></h2>
+<ul>
+<li>这周没写算子代码，但仓库基建对求职有间接价值：<ul>
+<li>Agent 协作体系体现了工程化思维（分层、解耦、状态管理）</li>
+<li>Skills 体系展示了可复用的工作流设计</li>
+<li>Memory 系统体现了对 AI 工具链的深度理解</li>
+</ul>
+</li>
+</ul>
+<h2 id="产出物">产出物<a class="heading-anchor" href="#%E4%BA%A7%E5%87%BA%E7%89%A9" aria-label="链接到产出物">#</a></h2>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> <code>.claude/agents/base-coach.md</code></li>
+<li><input checked="" disabled="" type="checkbox"> <code>.claude/agents/cuda-tutor.md</code></li>
+<li><input checked="" disabled="" type="checkbox"> <code>.claude/skills/</code> 7 个 Skill 定义</li>
+<li><input checked="" disabled="" type="checkbox"> <code>.claude/memory/</code> Memory 系统</li>
+<li><input checked="" disabled="" type="checkbox"> <code>.claude/agent-memory/ascend-to-gpu-coach/</code> Agent 专属记忆</li>
+<li><input checked="" disabled="" type="checkbox"> lessons/01-06 内容打磨</li>
+<li><input checked="" disabled="" type="checkbox"> notes/algorithms/ 5 篇笔记修订</li>
+</ul>
+<h2 id="下一步">下一步<a class="heading-anchor" href="#%E4%B8%8B%E4%B8%80%E6%AD%A5" aria-label="链接到下一步">#</a></h2>
+<ul>
+<li><strong>A4 Softmax</strong>：读完 lesson + warp-and-sync §4，开始写 <code>softmax_naive</code></li>
+<li>理论线配对：推 online softmax 更新公式</li>
+<li>基建完成，回到算子主线</li>
+</ul>
+</div></main><script src="../../reader.js"></script></body></html>

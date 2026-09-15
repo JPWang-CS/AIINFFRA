@@ -1,0 +1,76 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Weekly — 回顾周报 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · weekly/README.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E8%BF%99%E4%B8%AA%E6%96%87%E4%BB%B6%E5%A4%B9%E6%94%BE%E4%BB%80%E4%B9%88">这个文件夹放什么</a></li><li><a href="#%E6%A8%A1%E6%9D%BF">模板</a></li><li><a href="#%E5%B7%B2%E6%9C%89%E5%9B%9E%E9%A1%BE">已有回顾</a></li></ol></nav><div class="markdown-body"><h1 id="weekly--回顾周报">Weekly — 回顾周报<a class="heading-anchor" href="#weekly--%E5%9B%9E%E9%A1%BE%E5%91%A8%E6%8A%A5" aria-label="链接到Weekly — 回顾周报">#</a></h1>
+<blockquote><p><strong>回顾型日志</strong>，不是教程。每完成一个学习主题，记录实际发生了什么。
+教程内容在 <a href="../lessons/README.html">lessons/</a>，进度在 PATH.md，当前焦点在 NOW.md。</p>
+</blockquote><h2 id="这个文件夹放什么">这个文件夹放什么<a class="heading-anchor" href="#%E8%BF%99%E4%B8%AA%E6%96%87%E4%BB%B6%E5%A4%B9%E6%94%BE%E4%BB%80%E4%B9%88" aria-label="链接到这个文件夹放什么">#</a></h2>
+<p>拉模式下，每当你完成 NOW.md 的一轮（学完一个主题 + 写完代码），我会写一篇回顾，记录：</p>
+<ul>
+<li>实际做了什么、花了多久</li>
+<li>卡在哪、怎么解决的</li>
+<li>关键数据（GFLOPS、bandwidth、正确性）</li>
+<li>对面试叙事有用的点</li>
+</ul>
+<p>这些是<strong>事后记录</strong>，对求职叙事和复盘有用。和早期&quot;预写未来周教程&quot;不同——那些已经拆进 <a href="../lessons/README.html">lessons/</a> 了。</p>
+<h2 id="模板">模板<a class="heading-anchor" href="#%E6%A8%A1%E6%9D%BF" aria-label="链接到模板">#</a></h2>
+<p>回顾由我自动生成（你不用填）：你说&quot;X 学完了&quot; → 我读 <code>git log</code> 拿提交/修改时间和改动文件 → 按 <a href="_template.html">_template.md</a> 的格式写一篇，命名 <code>YYYY-MM-DD-&lt;主题&gt;.md</code>（如 <code>2026-06-24-gemm-tiled.md</code>）。</p>
+<h2 id="已有回顾">已有回顾<a class="heading-anchor" href="#%E5%B7%B2%E6%9C%89%E5%9B%9E%E9%A1%BE" aria-label="链接到已有回顾">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>日期</th>
+<th>主题</th>
+<th>对应 PATH</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><a href="2026-08-30-triton-matmul-nsys.html">2026-08-30-triton-matmul-nsys</a></td>
+<td>Triton MatMul Nsight Systems P0-lite：s3/s2 资源与性能因果实验</td>
+<td>B1</td>
+</tr>
+<tr>
+<td><a href="2026-08-28-triton-matmul-leetgpu.html">2026-08-28-triton-matmul-leetgpu</a></td>
+<td>Triton MatMul LeetGPU 通过归档 + RTX 3090 服务器验证复盘</td>
+<td>B1</td>
+</tr>
+<tr>
+<td><a href="2026-09-01-triton-softmax-leetgpu.html">2026-09-01-triton-softmax-leetgpu</a></td>
+<td>Triton Softmax LeetGPU 原始代码归档与通过结果复盘；服务器 baseline 待做</td>
+<td>B2</td>
+</tr>
+<tr>
+<td><a href="2026-08-24-triton-vector-add.html">2026-08-24-triton-vector-add</a></td>
+<td>Triton Vector Add AutoDL 验收 + B1 复盘</td>
+<td>B1</td>
+</tr>
+<tr>
+<td><a href="2026-08-03-plan-revision.html">2026-08-03-plan-revision</a></td>
+<td>计划补密度 + A5/A4 进度校准</td>
+<td>全路线</td>
+</tr>
+<tr>
+<td><a href="2026-07-22-softmax-online.html">2026-07-22-softmax-online</a></td>
+<td>Softmax 优化深挖（3-pass→2-pass online）+ A5 准备</td>
+<td>A4 优化 / A5 准备</td>
+</tr>
+<tr>
+<td><a href="2026-06-29-week3-infra.html">2026-06-29-week3-infra</a></td>
+<td>Agent/Skills 搭建 + 内容打磨</td>
+<td>全路线</td>
+</tr>
+<tr>
+<td><a href="2026-06-25-gemm-done.html">2026-06-25-gemm-done</a></td>
+<td>GEMM 完成 + 仓库重组</td>
+<td>A2 A3</td>
+</tr>
+<tr>
+<td><a href="2026-06-22-week2-gemm-naive.html">2026-06-22-week2-gemm-naive</a></td>
+<td>GEMM naive + tiled fp16</td>
+<td>A2 A3</td>
+</tr>
+<tr>
+<td><a href="2026-06-16-week1-cuda-basics.html">2026-06-16-week1-cuda-basics</a></td>
+<td>CUDA 基础 + Vector Add + 4090 配置</td>
+<td>A1</td>
+</tr>
+</tbody></table>
+<blockquote><p>早期 week-03/04 的教程已拆进 <a href="../lessons/README.html">lessons/</a>（尚未开始学，无回顾记录）。</p>
+</blockquote></div></main><script src="../../reader.js"></script></body></html>

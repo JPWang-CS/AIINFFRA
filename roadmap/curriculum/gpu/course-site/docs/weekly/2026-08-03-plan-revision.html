@@ -1,0 +1,31 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>学习计划补密度 + A5 进度校准 — 2026-07-22 ~ 2026-08-03 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · weekly/2026-08-03-plan-revision.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E5%AE%9E%E9%99%85%E7%8A%B6%E6%80%81">实际状态</a></li><li><a href="#%E4%B8%BA%E4%BB%80%E4%B9%88%E6%94%B9%E8%AE%A1%E5%88%92">为什么改计划</a></li><li><a href="#%E6%9C%AC%E8%BD%AE%E6%94%B9%E5%8A%A8">本轮改动</a></li><li><a href="#%E4%B8%8B%E4%B8%80%E6%AD%A5%E6%8C%89%E6%96%B0%E8%AF%BE%E8%A1%A8-m0">下一步（按新课表 M0）</a></li></ol></nav><div class="markdown-body"><h1 id="学习计划补密度--a5-进度校准--2026-07-22--2026-08-03">学习计划补密度 + A5 进度校准 — 2026-07-22 ~ 2026-08-03<a class="heading-anchor" href="#%E5%AD%A6%E4%B9%A0%E8%AE%A1%E5%88%92%E8%A1%A5%E5%AF%86%E5%BA%A6--a5-%E8%BF%9B%E5%BA%A6%E6%A0%A1%E5%87%86--2026-07-22--2026-08-03" aria-label="链接到学习计划补密度 + A5 进度校准 — 2026-07-22  2026-08-03">#</a></h1>
+<blockquote><p>复盘型周报 · 这次没有新的算子代码提交，主要完成两件事：校准真实进度，把计划从“地图”升级为“课表+验收”。</p>
+</blockquote><h2 id="实际状态">实际状态<a class="heading-anchor" href="#%E5%AE%9E%E9%99%85%E7%8A%B6%E6%80%81" aria-label="链接到实际状态">#</a></h2>
+<ul>
+<li>07-25 最后一次提交后，仓库没有新的 CUDA/Triton 代码提交。</li>
+<li>A5 Flash Attn CUDA 读码只完成准备（lesson/参考/机制笔记），实际逐段读码未完成。</li>
+<li>A4 Softmax：仓库里只有 3-pass <code>softmax_naive.cu</code> 和 2-pass fused <code>softmax_online.cu</code>；NOW/lesson 里提到的 1-pass <code>maxSumkernel</code> 是 LeetGPU 上的实践，未落盘到 <code>solutions/</code>。</li>
+<li>warp shuffle 优化版 <code>softmax_opt.cu</code> 仍是 3-pass 占位，没有 <code>__shfl_down_sync</code> 实现。</li>
+</ul>
+<h2 id="为什么改计划">为什么改计划<a class="heading-anchor" href="#%E4%B8%BA%E4%BB%80%E4%B9%88%E6%94%B9%E8%AE%A1%E5%88%92" aria-label="链接到为什么改计划">#</a></h2>
+<p>用户反馈“干货太少”。对照 <a href="https://github.com/caomaolufei/AIInfraGuide">AIInfraGuide</a> 后，问题不是知识分类缺失，而是每个阶段的产出和验收太薄：</p>
+<ul>
+<li>原计划很多条目是“学 X / 读 X”，没有强制要求代码、数字、面试口径三样产出。</li>
+<li>理论笔记存在“Agent 生成了但用户没消化”的混淆，容易被当成进度。</li>
+<li>推理系统/分布式只有主题占位，缺少可执行的 benchmark 和源码阅读路径。</li>
+</ul>
+<h2 id="本轮改动">本轮改动<a class="heading-anchor" href="#%E6%9C%AC%E8%BD%AE%E6%94%B9%E5%8A%A8" aria-label="链接到本轮改动">#</a></h2>
+<ul>
+<li>新增 <a href="../roadmap/ai-infra-curriculum.html">roadmap/ai-infra-curriculum.md</a>：AI Infra 密集课表，按 M0-M5 分模块，每个任务写清最小产出和验收。</li>
+<li>PATH/NOW 修正 A4 状态：3-pass ✅、2-pass fused ✅、1-pass true online 待落盘、warp shuffle/benchmark 待做。</li>
+<li>README / lessons / roadmap 索引接入新课表与外部参考。</li>
+<li>新增并扩展 <a href="../notes/algorithms/latest-model-architectures.html">最新模型与结构</a>、<a href="../notes/algorithms/remaining-theory-primer.html">剩余理论主题速览</a> 和 <a href="../notes/algorithms/model-tracker.html">模型追踪表</a>，PATH 理论线接入 M1.5 模型结构追踪；状态标记为草稿，未计入已学。</li>
+<li>agent memory 同步到 2026-08-03。</li>
+</ul>
+<h2 id="下一步按新课表-m0">下一步（按新课表 M0）<a class="heading-anchor" href="#%E4%B8%8B%E4%B8%80%E6%AD%A5%E6%8C%89%E6%96%B0%E8%AF%BE%E8%A1%A8-m0" aria-label="链接到下一步（按新课表 M0）">#</a></h2>
+<ol>
+<li>A5 读 Flash Attn CUDA，输出逐段注释笔记。</li>
+<li>把 LeetGPU 上实践过的 1-pass true online 提交为 <code>softmax_1pass.cu</code>。</li>
+<li>给 3-pass / 2-pass fused / warp shuffle 三版跑 <code>KERNEL=... ./run.sh</code>，留下 GB/s 对比。</li>
+</ol>
+</div></main><script src="../../reader.js"></script></body></html>

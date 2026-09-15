@@ -1,0 +1,165 @@
+{
+  "version": 1,
+  "scope": [
+    "roadmap/curriculum/operators/03-gemm/README.md",
+    "roadmap/curriculum/operators/03-gemm/examples/",
+    "roadmap/curriculum/operators/05-prefill-attention/README.md",
+    "roadmap/curriculum/operators/05-prefill-attention/examples/",
+    ".codex/completion-evidence-operators.json"
+  ],
+  "author_sources": {
+    "cutlass_example49": {
+      "repository": "https://github.com/NVIDIA/cutlass",
+      "tag": "v3.8.0",
+      "commit": "afa1772203677c5118fcd82537a9c8fefbcc7008",
+      "files": [
+        "examples/49_hopper_gemm_with_collective_builder/49_collective_builder.cu",
+        "include/cutlass/gemm/collective/sm90_mma_tma_gmma_ss_warpspecialized.hpp",
+        "include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized.hpp"
+      ],
+      "reviewed_contracts": [
+        "128x128x64 CTA tile, 2x1x1 cluster shape, FP16 A/B/D, FP32 accumulator/compute, 16-byte TMA alignment",
+        "Producer acquire and shared A/B TMA transactions use the stage barrier",
+        "Consumer waits for TMA readiness, submits WGMMA, waits by async-group depth, then releases a reusable stage",
+        "128-thread warpgroup partition and shared/register operand/accumulator ownership",
+        "Auto schedule is distinct from explicit KernelTmaWarpSpecialized, Pingpong, and Cooperative runners; one-load/one-MMA warpgroup counts apply only to the explicit non-pingpong specialization"
+      ],
+      "dispatch_scope": "The producer/consumer excerpts describe the explicit KernelTmaWarpSpecialized collective only. The default ExampleRunner<> uses KernelScheduleAuto and StageCountAuto; example 49 also contains separately instantiated Pingpong and Cooperative runners. Do not transfer one specialization's warpgroup counts to Auto.",
+      "reference_urls": [
+        "https://github.com/NVIDIA/cutlass/blob/afa1772203677c5118fcd82537a9c8fefbcc7008/examples/49_hopper_gemm_with_collective_builder/49_collective_builder.cu",
+        "https://github.com/NVIDIA/cutlass/blob/afa1772203677c5118fcd82537a9c8fefbcc7008/include/cutlass/gemm/collective/sm90_mma_tma_gmma_ss_warpspecialized.hpp",
+        "https://github.com/NVIDIA/cutlass/blob/afa1772203677c5118fcd82537a9c8fefbcc7008/include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized.hpp"
+      ]
+    },
+    "flashattention2": {
+      "repository": "https://github.com/Dao-AILab/flash-attention",
+      "tag": "v2.7.4",
+      "commit": "979702c87a8713a8e0a5e9fee122b90d2ef13be5",
+      "files": [
+        "README.md",
+        "csrc/flash_attn/src/flash_fwd_kernel.h"
+      ],
+      "reviewed_contracts": [
+        "Q-row block ownership, causal K-block interval, head and sequence stride-aware tensor construction",
+        "Per-warp row mapping and online softmax rescale before output accumulation",
+        "Tail and empty-range handling, reverse K/V block traversal, shared copy and matrix-operation synchronization"
+      ],
+      "reference_urls": [
+        "https://github.com/Dao-AILab/flash-attention/blob/979702c87a8713a8e0a5e9fee122b90d2ef13be5/README.md",
+        "https://github.com/Dao-AILab/flash-attention/blob/979702c87a8713a8e0a5e9fee122b90d2ef13be5/csrc/flash_attn/src/flash_fwd_kernel.h"
+      ]
+    },
+    "flashattention3": {
+      "repository": "https://github.com/Dao-AILab/flash-attention",
+      "pinned_commit": "8d3a3b80d4758ebde5a867c50d24d4351443cf2b",
+      "files": [
+        "README.md",
+        "hopper/flash_fwd_kernel_sm90.h",
+        "hopper/mainloop_fwd_sm90_tma_gmma_ws.hpp",
+        "hopper/softmax.h",
+        "hopper/flash_fwd_launch_template.h"
+      ],
+      "reviewed_contracts": [
+        "Producer WG and MMA WG ownership is selected from compile-time dispatch; NumMmaWarpGroups depends on the PV tiled MMA",
+        "K and V use stage pipelines; Transpose_V path has separate Vt-to-V conversion and fence/barrier before PV use",
+        "Online softmax rescales row_sum and output accumulator before adding the current tile's P@V contribution",
+        "P may use shared memory or register-sourced PV; the branch changes shared-memory footprint and P lifetime",
+        "Causal/local/varlen block bounds can produce an empty work interval with a dedicated invalid-tile path",
+        "Pinned README requires H100/H800 and CUDA 12.3+ and supplies the Hopper install/test entry point"
+      ],
+      "reference_urls": [
+        "https://github.com/Dao-AILab/flash-attention/blob/8d3a3b80d4758ebde5a867c50d24d4351443cf2b/README.md",
+        "https://github.com/Dao-AILab/flash-attention/blob/8d3a3b80d4758ebde5a867c50d24d4351443cf2b/hopper/flash_fwd_kernel_sm90.h",
+        "https://github.com/Dao-AILab/flash-attention/blob/8d3a3b80d4758ebde5a867c50d24d4351443cf2b/hopper/mainloop_fwd_sm90_tma_gmma_ws.hpp",
+        "https://github.com/Dao-AILab/flash-attention/blob/8d3a3b80d4758ebde5a867c50d24d4351443cf2b/hopper/softmax.h",
+        "https://github.com/Dao-AILab/flash-attention/blob/8d3a3b80d4758ebde5a867c50d24d4351443cf2b/hopper/flash_fwd_launch_template.h"
+      ],
+      "paper": "https://arxiv.org/abs/2407.08608"
+    }
+  },
+  "local_source_mappings": {
+    "gemm_existing_user_evidence": [
+      "notes/triton/matmul-performance-analysis.md",
+      "notes/triton/matmul-nsys-p0-lite-2026-08-30.md",
+      "notes/triton/logs/2026-08-29-matmul-k256-s3-nsys.txt",
+      "notes/triton/logs/2026-08-30-matmul-k256-s2-nsys.txt",
+      "solutions/triton/README.md",
+      "solutions/triton/matmul_leetgpu.py",
+      "solutions/triton/matmul.py"
+    ],
+    "attention_existing_local_source_checks": [
+      "roadmap/curriculum/operators/05-prefill-attention/examples/prefill_fp32.py",
+      "roadmap/curriculum/operators/05-prefill-attention/examples/prefill_pipeline.py",
+      "roadmap/curriculum/operators/05-prefill-attention/examples/cpu_attention_checks.py",
+      "roadmap/curriculum/operators/05-prefill-attention/examples/cpu_pipeline_checks.py",
+      "roadmap/curriculum/operators/05-prefill-attention/examples/cpu_author_attention_checks.py",
+      "reference/triton/flash_attention/flash_attn.py",
+      "reference/cuda/flash_attention/flash_attn.cu"
+    ],
+    "removed_tutorial_link_targets": [
+      "notes/triton/matmul-performance-analysis.md",
+      "notes/triton/matmul-nsys-p0-lite-2026-08-30.md",
+      "notes/triton/logs/2026-08-29-matmul-k256-s3-nsys.txt",
+      "notes/triton/logs/2026-08-30-matmul-k256-s2-nsys.txt",
+      "solutions/triton/README.md"
+    ],
+    "preserved_experiment_evidence": [
+      "RTX 3090 IEEE FP32 configuration sweep and same-run torch.mm comparison",
+      "s2/s3 Nsys trace counts, durations, registers/thread, and dynamic shared-memory observations",
+      "RTX 3090 20.830ms / 19,794.1 GFLOPS / torch.mm 80.3% summary",
+      "A100-80GB LeetGPU 24.54ms result kept separate from RTX 3090 measurements"
+    ],
+    "note": "Maintenance mappings only. They are kept out of tutorial prose links; in-body source-check comments and executable commands remain where they are needed for exact code synchronization and running guidance."
+  },
+  "checkpoint": {
+    "gemm": {
+      "status": "complete",
+      "written": [
+        "roadmap/curriculum/operators/03-gemm/README.md#6.20",
+        "roadmap/curriculum/operators/03-gemm/examples/cutlass49_cpu_checks.py",
+        "roadmap/curriculum/operators/03-gemm/examples/run_cutlass49_hopper.sh"
+      ],
+      "next": "No remaining work in this write scope."
+    },
+    "attention": {
+      "status": "complete",
+      "written": [
+        "roadmap/curriculum/operators/05-prefill-attention/README.md#6.8-6.12",
+        "roadmap/curriculum/operators/05-prefill-attention/examples/cpu_author_attention_checks.py"
+      ],
+      "next": "No remaining work in this write scope."
+    }
+  },
+  "validation": {
+    "cuda_programming_guide": {
+      "local_file": "downloads/cuda-programming-guide.pdf",
+      "version": "13.3",
+      "reviewed_pdf_pages": [363, 371, 372, 373, 374, 375, 577],
+      "printed_page_mapping": "PDF reader pages 363-375 correspond to printed pages 347-359; PDF reader page 577 corresponds to printed page 561.",
+      "visually_rendered_pages": [371, 373, 375],
+      "reviewed_topics": [
+        "TMA asynchronous producer-consumer pipeline and phase tracking",
+        "multidimensional tensor map and out-of-bounds zero fill",
+        "shared-memory barrier arrival/wait around asynchronous copies",
+        "__syncthreads waits for all non-exited block threads"
+      ],
+      "status": "pypdf extraction and selected-page visual review complete; WGMMA instruction ordering is attributed to the fixed CUTLASS implementation and official PTX ISA, not to this CUDA guide section."
+    },
+    "cpu_checks": {
+      "cutlass49_cpu_checks.py": "7 tests passed",
+      "cpu_gemm_checks.py": "all CPU checks passed",
+      "cpu_author_attention_checks.py": "8 tests passed",
+      "cpu_attention_checks.py": "all CPU checks passed",
+      "cpu_pipeline_checks.py": "all CPU checks passed"
+    },
+    "static_checks": {
+      "completion_evidence_json": "valid JSON",
+      "display_math": "standalone delimiters balanced outside fenced code blocks",
+      "inline_source_sync": "24 source-check blocks across GEMM and Prefill Attention passed exact extracted-substring comparison; no malformed markers",
+      "local_markdown_source_links": "none; existing chapter and course navigation links retained",
+      "trailing_whitespace": "none",
+      "bash_syntax": "PASS: C:/Program Files/Git/bin/bash.exe -n roadmap/curriculum/operators/03-gemm/examples/run_cutlass49_hopper.sh; bash was not found through PATH"
+    },
+    "execution_boundary": "No nvcc, CUDA device, PyTorch, or GPU benchmark is available in this environment. No CUDA compile, device correctness, performance result, or new user score may be claimed."
+  }
+}

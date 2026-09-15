@@ -1,0 +1,153 @@
+{
+  "scope": {
+    "chapters": [
+      "roadmap/curriculum/gpu/03-registers-and-memory-system/README.md",
+      "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/README.md"
+    ],
+    "principle": "Teach the requested CUDA runtime topics in their existing storage or synchronization concepts; preserve user experiments and normal chapter navigation; do not claim device execution.",
+    "protected_paths": [
+      "PATH.md",
+      "NOW.md",
+      "HISTORY.md",
+      ".codex/pdf-coverage.json",
+      ".codex/course-source-index.json",
+      "roadmap/curriculum/gpu/course-site/",
+      "notes/",
+      "solutions/",
+      "reference/",
+      "downloads/"
+    ]
+  },
+  "source_review_checkpoint": {
+    "local_source": "downloads/cuda-programming-guide.pdf",
+    "release": "CUDA Programming Guide 13.3",
+    "verified_pdf_pages": {
+      "advanced_cuda_apis_and_batched_copy": "151-161",
+      "green_contexts": "295-315",
+      "cluster_launch_control": "391-398",
+      "vmm_and_memory_sharing": "404-421",
+      "extended_gpu_memory": "426-431",
+      "dynamic_parallelism": "431-441",
+      "interoperability": "441-473"
+    },
+    "visual_pdf_review": [
+      "PDF page 296: Green Context motivation/SM split figure",
+      "PDF page 392: CLC cancellation flow figure",
+      "PDF page 426: EGM CPU/GPU/NVLink-C2C/NVSwitch topology",
+      "PDF page 432: parent-child grid nesting figure",
+      "PDF page 448: graphics map/unmap/unregister lifecycle",
+      "PDF pages 460-461: Vulkan binary/timeline semaphore signal and wait rules"
+    ],
+    "chapter_number_policy": "Use local 13.3 section numbers only when confirmed in the local PDF; identify APIs by their verified minimum Toolkit/runtime version when documenting newer Runtime exposure.",
+    "version_reconciliation": {
+      "local_13_3": "Green Contexts 4.6; CLC 4.12; EGM 4.17; Dynamic Parallelism 4.18; Interoperability 4.19",
+      "online_13_4": "CLC 4.13; EGM 4.19; Dynamic Parallelism 4.20; Interoperability 4.21",
+      "green_context_runtime": "Driver API predates Runtime exposure; CUDA Runtime execution-context APIs start in CUDA 13.1",
+      "memo": "The tutorial body uses the local 13.3 guide's terminology and explicit API version conditions; current online section renumbering is not mixed into local numbering."
+    },
+    "status": "Source review, visual spot-check, and chapter integration complete; CUDA execution remains a user-device gate."
+  },
+  "existing_content_audit": {
+    "storage_chapter": [
+      "Existing Thread Block Cluster, DSM, TMA multicast, and memory-address-space explanations are retained.",
+      "Green Contexts and Extended GPU Memory are taught in place; CUDA stream targeting is distinguished from hard QoS/MIG and EGM host-NUMA access rights are explicit."
+    ],
+    "synchronization_chapter": [
+      "Existing stream/event/copy, child graph, conditional graph, device graph launch, single-device VMM, and legacy CUDA IPC lessons are retained.",
+      "Device graph launch is not CUDA Dynamic Parallelism.",
+      "Integrated cudaMemcpyBatchAsync, CDP versus device graph launch, CLC, VMM aliases/fabric access rights, memory-pool IPC, and graphics/external memory semaphore ownership and lifecycle explanations."
+    ],
+    "editorial_audit": "Preserved existing practice explanations, experiment facts, prior section headings, and normal previous/next navigation. Removed only maintenance-style path/source mapping from formal prose and moved that map here. Kept hidden compatibility anchor chapter-4-section-26."
+  },
+  "api_signature_review": {
+    "cudaMemcpyBatchAsync": {
+      "cuda_13_3_0_runtime": "8 parameters; const void** dsts, const void** srcs, const size_t* sizes, count, attrs, attrsIdxs, numAttrs, stream",
+      "cuda_13_4_runtime": "8 parameters; void* const* dsts, const void* const* srcs, const size_t* sizes, count, attrs, attrsIdxs, numAttrs, stream",
+      "legacy_failIdx": "CUDA 12.8/12.9 references include size_t* failIdx; CUDA 13.0 removed it with rich error reporting. The CUDA Programming Guide 13.3 advanced-host sample is stale and also has uninitialized/incorrect example setup, so the teaching program is independently initialized and targets the verified CUDA 13.3.0 header signature.",
+      "semantics": "attrsIdxs is an exact segment-start partition; batch-level stream order does not define intra-batch copy order; dependent copies in one batch are undefined behavior; source lifetime follows Stream/DuringApiCall/Any."
+    },
+    "external_semaphores": "Binary semaphore signal must be submitted before its paired wait; timeline wait can be queued for a future value, but the target signal must remain reachable. NvSciSync attributes/fences are handled separately.",
+    "green_context": "Runtime API 13.3 stream creation uses cudaExecutionCtxStreamCreate; cudaStreamDefault is legal for a Green Context stream and has non-blocking semantics.",
+    "egm": "The CUDA Runtime allocator example uses cudaMallocFromPoolAsync(ptr, bytes, pool, stream); CPU NUMA access is a separate host-NUMA access descriptor and is not implied by GPU access."
+  },
+  "official_sources_reviewed": [
+    "https://docs.nvidia.com/cuda/archive/13.3.0/cuda-runtime-api/group__CUDART__MEMORY.html",
+    "https://docs.nvidia.com/cuda/archive/13.3.1/cuda-runtime-api/group__CUDART__EXTRES__INTEROP.html",
+    "https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__EXECUTION__CONTEXT.html",
+    "https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__MEMORY.html",
+    "https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__MEMORY__POOLS.html",
+    "https://docs.nvidia.com/cuda/cuda-driver-api/group__CUDA__VA.html",
+    "https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/virtual-memory-management.html",
+    "https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/green-contexts.html",
+    "https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/cluster-launch-control.html",
+    "https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/dynamic-parallelism.html",
+    "https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/extended-gpu-memory.html",
+    "https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/graphics-interop.html",
+    "https://docs.nvidia.com/cuda/archive/13.1.1/pdf/CUDA_Features_Archive.pdf"
+  ],
+  "migrated_maintenance_source_map": {
+    "synchronization_chapter_manual_topics": [
+      "CUDA Guide 13.3 section 2.5: streams, events, default stream, pinned/pageable copies",
+      "CUDA Guide 13.3 section 4.4: Cooperative Groups, collective participation, memcpy_async",
+      "CUDA Guide 13.3 sections 4.9-4.10: barrier phase/early exit/transaction tracking/pipeline",
+      "CUDA Guide 13.3 section 4.11: LDGSTS/cp.async/TMA/tensor map/swizzle/cluster DSM",
+      "CUDA Guide 13.3 section 4.14: memory synchronization domains and fence interference",
+      "CUDA Guide 13.3 section 5.7: thread scope, atomicity, data race, release/acquire"
+    ],
+    "synchronization_chapter_old_paths_removed_from_prose": [
+      "lessons/07-triton-debugging.md",
+      "lessons/08-triton-fused-softmax.md",
+      "solutions/triton/README.md",
+      "solutions/triton/matmul.py"
+    ],
+    "storage_chapter_paths_replaced_in_place": [
+      "lessons/02-gemm-naive.md: inline thread-to-address/warp-sector explanation retained",
+      "lessons/03-gemm-tiled.md: historical tiled-versus-naive experiment interpretation retained without a source-path jump"
+    ],
+    "compatibility_anchor": "chapter-4-section-26"
+  },
+  "implementation": {
+    "formal_chapters": [
+      "roadmap/curriculum/gpu/03-registers-and-memory-system/README.md",
+      "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/README.md"
+    ],
+    "new_examples": [
+      "roadmap/curriculum/gpu/03-registers-and-memory-system/examples/green_context_roundtrip.cu",
+      "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/examples/memcpy_batch_async.cu",
+      "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/examples/dynamic_parallelism.cu",
+      "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/examples/cluster_launch_control_exact_cover.cu",
+      "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/examples/cuda_runtime_protocol_checks.py"
+    ],
+    "body_inline_source_checks": "Complete examples are folded inside details; source-check comments are inside those details blocks after summary and directly before the code fence."
+  },
+  "new_example_contracts": {
+    "green_context_roundtrip.cu": "CUDA Runtime 13.3 baseline; requests one non-overlapping SM subset, verifies execution-context and stream resource counts, enqueues both H2D copies and the transform on the same Green Context stream, retains host vectors through stream synchronization, checks every output, returns 77 on unsupported resource provisioning, checks cleanup errors, and prints PASS only after successful cleanup.",
+    "cluster_launch_control_exact_cover.cu": "CUDA Toolkit 13.3 baseline and CC 10.0+; input/output/visit counters are initialized, every element must have visit count exactly one and the expected value, cancellation count is reported without a performance claim, unsupported device/runtime returns 77, cleanup failures convert an otherwise successful run to failure, and PASS is printed after cleanup.",
+    "dynamic_parallelism.cu": "CUDA 13.3 and sm_90+ baseline with -rdc=true; child launch error is written to independent device status, host reads it after parent/child completion, output and status sentinels detect missing work.",
+    "memcpy_batch_async.cu": "CUDA Runtime API 13.3.0 pointer qualifiers and eight-parameter signature; all sizes, destinations and sources initialized; pinned Stream sources retained through stream completion and stack source uses DuringApiCall.",
+    "cuda_runtime_protocol_checks.py": "Pure standard-library CPU model; timeline and binary semaphores are checked with distinct ordering contracts; no hardware timing/scheduler emulation."
+  },
+  "validation": {
+    "cpu_protocol_command": "python -B -X utf8 roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/examples/cuda_runtime_protocol_checks.py",
+    "cpu_protocol_result": "PASS: 8 unittest checks; CLC exact-cover model enumerates all 3,840 combinations of 120 five-CTA start orders and 32 steal-request subsets.",
+    "static_result": "PASS 22/22: Python AST, completion-evidence JSON parse, no-trailing-whitespace and display-math checks, no lesson/solution Markdown path jumps, compatibility-anchor check, and inline/source equality for four new CUDA examples plus the CPU model.",
+    "source_check_marker_result": "PASS: each newly added full-program source-check marker is inside details, after its summary, and before its code fence; embedded program bytes match the new example file after newline normalization.",
+    "clang_format": "Unavailable in this environment; whitespace/source equality checks pass.",
+    "site_build": "Not run because course-site output is explicitly outside the authorized write scope; all newly added full-example markers were checked for details/summary/fence placement and exact source equality.",
+    "device_boundary": "nvcc, CUDA device, and GPU runtime execution are unavailable; no CUDA source was compiled and no device/performance pass is claimed.",
+    "new_device_scores": "none"
+  },
+  "verification_boundary": {
+    "available": [
+      "Local PDF extraction with pypdf",
+      "Official NVIDIA documentation/API signature review",
+      "Python CPU protocol/lifecycle checks",
+      "Static source and Markdown checks"
+    ],
+    "not_available": [
+      "nvcc",
+      "CUDA device",
+      "GPU runtime execution or performance measurements"
+    ]
+  }
+}

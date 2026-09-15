@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="550" viewBox="0 0 960 550" role="img" aria-labelledby="title desc">
+<title id="title">GPU 内部资源：从 GPC 到 SM</title>
+<desc id="desc">GPU 内含多个 GPC，每个 GPC 内含多个 SM。SM 内有调度、寄存器、执行管线、矩阵计算以及 L1 和共享内存相关资源。L2 和显存系统为设备级资源。本图是组织关系，不是强制访存路径。</desc>
+<rect x="8" y="8" width="944" height="534" rx="18" fill="#f8fafc" stroke="#dce4ee"/>
+<g font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif">
+ <text x="36" y="47" font-size="23" font-weight="650" fill="#20334f">GPU</text>
+ <text x="920" y="45" text-anchor="end" font-size="13" fill="#697990">资源组织示意 · 数量随芯片变化</text>
+ <rect x="32" y="73" width="548" height="318" rx="14" fill="#fff" stroke="#d3dfee"/>
+ <text x="52" y="103" font-size="17" font-weight="600" fill="#385a8c">GPC · 图形处理集群</text>
+ <rect x="50" y="122" width="322" height="251" rx="12" fill="#eff4fc" stroke="#cbd9ee"/>
+ <text x="70" y="153" font-size="21" font-weight="650" fill="#273f66">SM</text>
+ <text x="70" y="176" font-size="13" fill="#5e7190">流式多处理器 · kernel 执行资源</text>
+ <g fill="#fff" stroke="#d8e2f0">
+  <rect x="66" y="192" width="290" height="32" rx="6"/>
+  <rect x="66" y="233" width="290" height="32" rx="6"/>
+  <rect x="66" y="274" width="290" height="32" rx="6"/>
+  <rect x="66" y="315" width="290" height="40" rx="6"/>
+ </g>
+ <g font-size="14" fill="#344d73">
+  <text x="82" y="213">调度与发射</text>
+  <text x="82" y="254">寄存器文件</text>
+  <text x="82" y="295">算术 / 访存 / 矩阵计算管线</text>
+  <text x="82" y="341">L1 与共享内存相关片上资源</text>
+ </g>
+ <rect x="392" y="122" width="168" height="251" rx="12" fill="#f7f9fd" stroke="#d2ddec" stroke-dasharray="5 5"/>
+ <text x="476" y="233" text-anchor="middle" font-size="21" font-weight="600" fill="#536b8e">其他 SM</text>
+ <text x="476" y="263" text-anchor="middle" font-size="13" fill="#73839b">同类执行资源</text>
+ <rect x="600" y="73" width="328" height="318" rx="14" fill="#fff" stroke="#d3dfee"/>
+ <text x="622" y="103" font-size="17" font-weight="600" fill="#385a8c">其他 GPC</text>
+ <rect x="620" y="122" width="288" height="251" rx="12" fill="#f7f9fd" stroke="#d2ddec" stroke-dasharray="5 5"/>
+ <text x="764" y="229" text-anchor="middle" font-size="21" font-weight="600" fill="#536b8e">多个 SM</text>
+ <text x="764" y="259" text-anchor="middle" font-size="13" fill="#73839b">继续提供并行执行资源</text>
+ <rect x="32" y="409" width="896" height="49" rx="10" fill="#eaf5f1" stroke="#cce4da"/>
+ <text x="54" y="440" font-size="17" font-weight="600" fill="#276857">L2 缓存</text>
+ <text x="902" y="440" text-anchor="end" font-size="14" fill="#52796c">设备级共享缓存</text>
+ <rect x="32" y="475" width="896" height="49" rx="10" fill="#fff" stroke="#d3dfee"/>
+ <text x="54" y="506" font-size="17" font-weight="600" fill="#354e6e">显存控制器与设备显存</text>
+ <text x="902" y="506" text-anchor="end" font-size="14" fill="#6a7c91">容量与外部存储带宽</text>
+</g>
+</svg>

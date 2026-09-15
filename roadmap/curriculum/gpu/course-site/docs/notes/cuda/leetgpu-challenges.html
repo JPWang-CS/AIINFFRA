@@ -1,0 +1,682 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LeetGPU 题库索引 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · notes/cuda/leetgpu-challenges.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E5%BD%93%E5%89%8D-b1-%E9%A2%98%E7%9B%AE%E5%85%A5%E5%8F%A3triton-matmul">当前 B1 题目入口：Triton MatMul</a></li><li><a href="#5-%E7%AE%97%E5%AD%90%E8%B7%AF%E7%BA%BF%E5%9B%BE--leetgpu-%E6%98%A0%E5%B0%84">5 算子路线图 ↔ LeetGPU 映射</a></li><li><a href="#%E6%A0%B8%E5%BF%83-5-%E9%A2%98%E8%AF%A6%E7%BB%86%E8%A7%84%E6%A0%BC">核心 5 题详细规格</a></li><li><a href="#1-gemm--22gemm">1. GEMM — 22gemm</a></li><li><a href="#2-softmax--5softmax">2. Softmax — 5softmax</a></li><li><a href="#3-rmsnorm--50rmsnormalization">3. RMSNorm — 50rmsnormalization</a></li><li><a href="#4-multi-head-attention--12multiheadattention-hard">4. Multi-Head Attention — 12multiheadattention (Hard)</a></li><li><a href="#5-gqa--80groupedqueryattention">5. GQA — 80groupedqueryattention</a></li><li><a href="#%E5%85%A8%E9%83%A8%E9%A2%98%E7%9B%AE%E7%B4%A2%E5%BC%95%E6%8C%89%E9%9A%BE%E5%BA%A6%E7%BC%96%E5%8F%B7">全部题目索引（按难度+编号）</a></li><li><a href="#easy">Easy</a></li><li><a href="#medium">Medium</a></li><li><a href="#hard">Hard</a></li><li><a href="#%E5%88%B7%E9%A2%98%E8%B7%AF%E7%BA%BF%E6%8C%89%E9%9A%BE%E5%BA%A6%E4%B8%BB%E9%A2%98%E8%81%9A%E7%B1%BB">刷题路线（按难度/主题聚类）</a></li><li><a href="#%E9%80%9A%E7%94%A8-starter-%E6%A8%A1%E6%9D%BF%E6%A8%A1%E5%BC%8F">通用 starter 模板模式</a></li></ol></nav><div class="markdown-body"><h1 id="leetgpu-题库索引">LeetGPU 题库索引<a class="heading-anchor" href="#leetgpu-%E9%A2%98%E5%BA%93%E7%B4%A2%E5%BC%95" aria-label="链接到LeetGPU 题库索引">#</a></h1>
+<blockquote><p>来源：<a href="https://leetgpu.com/challenges">LeetGPU Challenges</a>；题目规格镜像：<a href="https://github.com/HaoyangPing0324/LeetGPU">HaoyangPing0324/LeetGPU</a>
+平台：<a href="https://leetgpu.com">https://leetgpu.com</a>
+更新：2026-08-25</p>
+</blockquote><hr>
+<h2 id="当前-b1-题目入口triton-matmul">当前 B1 题目入口：Triton MatMul<a class="heading-anchor" href="#%E5%BD%93%E5%89%8D-b1-%E9%A2%98%E7%9B%AE%E5%85%A5%E5%8F%A3triton-matmul" aria-label="链接到当前 B1 题目入口：Triton MatMul">#</a></h2>
+<p>先做这道，不直接跳到真实卡：</p>
+<ul>
+<li>题目：<a href="https://leetgpu.com/challenges/matrix-multiplication">Matrix Multiplication</a></li>
+<li>题目规格：<a href="https://github.com/HaoyangPing0324/LeetGPU/blob/main/problems/02_Matrix_Multiplication.md">02_Matrix_Multiplication.md</a></li>
+<li>题意：FP32 矩阵 A(M×N) × B(N×K) = C(M×K)，三者 row-major。</li>
+<li>接口：保持 LeetGPU 的 <code>solve</code> 签名，结果写入 C；在题目编辑器中选择 Triton 语言后按平台模板适配。</li>
+<li>约束：1 ≤ M,N,K ≤ 8192；性能形状为 M=8192、N=6144、K=4096。</li>
+<li>验收：先提交并通过该题；通过后才上 AutoDL/真实 GPU 测 GFLOPS。</li>
+</ul>
+<p>更高一级的优化题是 <a href="https://leetgpu.com/challenges/general-matrix-multiplication-gemm">General Matrix Multiplication (GEMM)</a>（#29），不是当前第一步。</p>
+<hr>
+<h2 id="5-算子路线图--leetgpu-映射">5 算子路线图 ↔ LeetGPU 映射<a class="heading-anchor" href="#5-%E7%AE%97%E5%AD%90%E8%B7%AF%E7%BA%BF%E5%9B%BE--leetgpu-%E6%98%A0%E5%B0%84" aria-label="链接到5 算子路线图 ↔ LeetGPU 映射">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">我们的算子        LeetGPU 题                         文件夹                   难度</span>
+<span class="code-line" data-line="2">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+<span class="code-line" data-line="3">B1 MatMul        Matrix Multiplication           02_Matrix_Multiplication   Easy</span>
+<span class="code-line" data-line="4">GEMM 优化        General Matrix Multiplication     29_General_Matrix_Multiplication Medium</span>
+<span class="code-line" data-line="5">  ├─ batched    Batched Matrix Multiplication     30_batched_matrix_mul    Medium</span>
+<span class="code-line" data-line="6">  ├─ FP16       FP16 Batched MatMul               57_fp16_batched_matmul   Medium</span>
+<span class="code-line" data-line="7">  ├─ INT8       INT8 Quantized MatMul             32_int8_quantized_matmul Medium</span>
+<span class="code-line" data-line="8">  └─ INT4       INT4 Weight-Only Quantized MatMul 81_int4_matmul           Medium</span>
+<span class="code-line" data-line="9">Softmax         Softmax                           5_softmax                Medium</span>
+<span class="code-line" data-line="10">  ├─ reduction  Reduction                         4_reduction              Medium</span>
+<span class="code-line" data-line="11">  └─ +attn      Softmax Attention                 6_softmax_attention      Medium</span>
+<span class="code-line" data-line="12">RMSNorm         RMS Normalization                 50_rms_normalization     Medium</span>
+<span class="code-line" data-line="13">  └─ batchnorm  Batch Normalization               40_batch_normalization   Medium</span>
+<span class="code-line" data-line="14">Flash Attn      Multi-Head Attention              12_multi_head_attention  Hard</span>
+<span class="code-line" data-line="15">  ├─ causal     Causal Self-Attention             53_casual_attention      Hard</span>
+<span class="code-line" data-line="16">  ├─ linear     Linear Self-Attention             56_linear_attention      Hard</span>
+<span class="code-line" data-line="17">  └─ sliding    Sliding Window Self-Attention     59_sliding_window_attn   Hard</span>
+<span class="code-line" data-line="18">GQA             Grouped Query Attention           80_grouped_query_attention Medium</span></code></pre></div>
+<hr>
+<h2 id="核心-5-题详细规格">核心 5 题详细规格<a class="heading-anchor" href="#%E6%A0%B8%E5%BF%83-5-%E9%A2%98%E8%AF%A6%E7%BB%86%E8%A7%84%E6%A0%BC" aria-label="链接到核心 5 题详细规格">#</a></h2>
+<h3 id="1-gemm--22gemm">1. GEMM — <code>22_gemm</code><a class="heading-anchor" href="#1-gemm--22gemm" aria-label="链接到1. GEMM — 22gemm">#</a></h3>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">签名: solve(half* A, half* B, half* C, int M, int N, int K, float alpha, float beta)</span>
+<span class="code-line" data-line="2">计算: C = α·(A×B) + β·C</span>
+<span class="code-line" data-line="3">精度: FP16 in, FP32 accumulate, FP16 out</span>
+<span class="code-line" data-line="4">约束: 16 ≤ M,N,K ≤ 4096</span>
+<span class="code-line" data-line="5">性能测试: M=N=K=1024</span>
+<span class="code-line" data-line="6">atol/rtol: 0.05</span></code></pre></div>
+<p><strong>Ascend 对照</strong>：Cube Unit <code>mmad</code> 直接做矩阵乘。CUDA v0 阶段需手动 dot product，Tensor Core (<code>mma.sync</code>) 是 v4 的事。</p>
+<h3 id="2-softmax--5softmax">2. Softmax — <code>5_softmax</code><a class="heading-anchor" href="#2-softmax--5softmax" aria-label="链接到2. Softmax — 5softmax">#</a></h3>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">签名: solve(float* input, float* output, int N)</span>
+<span class="code-line" data-line="2">计算: softmax(x_i) = exp(x_i - max) / Σ exp(x_j - max)</span>
+<span class="code-line" data-line="3">约束: 1 ≤ N ≤ 500,000</span>
+<span class="code-line" data-line="4">性能测试: N = 500,000</span></code></pre></div>
+<p><strong>关键</strong>：必须用 max trick 防溢出。<code>[面试]</code> online softmax 是 Flash Attention 的前置。</p>
+<h3 id="3-rmsnorm--50rmsnormalization">3. RMSNorm — <code>50_rms_normalization</code><a class="heading-anchor" href="#3-rmsnorm--50rmsnormalization" aria-label="链接到3. RMSNorm — 50rmsnormalization">#</a></h3>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">签名: solve(float* input, float gamma, float beta, float* output, int N, float eps)</span>
+<span class="code-line" data-line="2">计算: rms = sqrt(mean(x²) + ε), y = γ·x/rms + β</span>
+<span class="code-line" data-line="3">约束: 1 ≤ N ≤ 100,000, ε = 1e-5</span>
+<span class="code-line" data-line="4">性能测试: N = 100,000</span></code></pre></div>
+<p><strong>关键</strong>：两次遍历（一次算 rms，一次 normalize）。warp shuffle reduce 是优化核心。</p>
+<h3 id="4-multi-head-attention--12multiheadattention-hard">4. Multi-Head Attention — <code>12_multi_head_attention</code> (Hard)<a class="heading-anchor" href="#4-multi-head-attention--12multiheadattention-hard" aria-label="链接到4. Multi-Head Attention — 12multiheadattention (Hard)">#</a></h3>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">签名: solve(float* Q, float* K, float* V, float* output, int N, int d_model, int h)</span>
+<span class="code-line" data-line="2">计算: Concat(head_1,...,head_h), head_i = softmax(Q_i·K_i^T/√d_k)·V_i</span>
+<span class="code-line" data-line="3">       d_k = d_model / h</span>
+<span class="code-line" data-line="4">约束: 1 ≤ N ≤ 10,000, 2 ≤ d_model ≤ 1,024, d_model % h == 0</span>
+<span class="code-line" data-line="5">性能测试: N=1024, d_model=1024</span></code></pre></div>
+<h3 id="5-gqa--80groupedqueryattention">5. GQA — <code>80_grouped_query_attention</code><a class="heading-anchor" href="#5-gqa--80groupedqueryattention" aria-label="链接到5. GQA — 80groupedqueryattention">#</a></h3>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">签名: solve(float* Q, float* K, float* V, float* output,</span>
+<span class="code-line" data-line="2">            int num_q_heads, int num_kv_heads, int seq_len, int head_dim)</span>
+<span class="code-line" data-line="3">计算: group_size = num_q_heads / num_kv_heads</span>
+<span class="code-line" data-line="4">      每个 group 内 query heads 共享 KV head</span>
+<span class="code-line" data-line="5">约束: num_kv_heads ≤ num_q_heads ≤ 64, num_q_heads % num_kv_heads == 0</span>
+<span class="code-line" data-line="6">      1 ≤ seq_len ≤ 4,096, 8 ≤ head_dim ≤ 256 (multiples of 8)</span>
+<span class="code-line" data-line="7">性能测试: num_q_heads=32, num_kv_heads=8, seq_len=1024, head_dim=128</span></code></pre></div>
+<hr>
+<h2 id="全部题目索引按难度编号">全部题目索引（按难度+编号）<a class="heading-anchor" href="#%E5%85%A8%E9%83%A8%E9%A2%98%E7%9B%AE%E7%B4%A2%E5%BC%95%E6%8C%89%E9%9A%BE%E5%BA%A6%E7%BC%96%E5%8F%B7" aria-label="链接到全部题目索引（按难度+编号）">#</a></h2>
+<h3 id="easy">Easy<a class="heading-anchor" href="#easy" aria-label="链接到Easy">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>文件夹</th>
+<th>题目</th>
+<th>签名关键参数</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td><code>1_vector_add</code></td>
+<td>Vector Addition</td>
+<td><code>(A, B, C, N)</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>2_matrix_multiplication</code></td>
+<td>Matrix Multiplication</td>
+<td><code>(A, B, C, M, N, K)</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>3_matrix_transpose</code></td>
+<td>Matrix Transpose</td>
+<td><code>(input, output, M, N)</code></td>
+</tr>
+<tr>
+<td>7</td>
+<td><code>7_color_inversion</code></td>
+<td>Color Inversion</td>
+<td></td>
+</tr>
+<tr>
+<td>8</td>
+<td><code>8_matrix_addition</code></td>
+<td>Matrix Addition</td>
+<td><code>(A, B, C, N)</code></td>
+</tr>
+<tr>
+<td>9</td>
+<td><code>9_1d_convolution</code></td>
+<td>1D Convolution</td>
+<td><code>(input, kernel, output, N, K)</code></td>
+</tr>
+<tr>
+<td>19</td>
+<td><code>19_reverse_array</code></td>
+<td>Reverse Array</td>
+<td><code>(A, N)</code></td>
+</tr>
+<tr>
+<td>21</td>
+<td><code>21_relu</code></td>
+<td>ReLU</td>
+<td><code>(A, N)</code></td>
+</tr>
+<tr>
+<td>23</td>
+<td><code>23_leaky_relu</code></td>
+<td>Leaky ReLU</td>
+<td></td>
+</tr>
+<tr>
+<td>24</td>
+<td><code>24_rainbow_table</code></td>
+<td>Rainbow Table</td>
+<td></td>
+</tr>
+<tr>
+<td>31</td>
+<td><code>31_matrix_copy</code></td>
+<td>Matrix Copy</td>
+<td><code>(A, B, N)</code></td>
+</tr>
+<tr>
+<td>41</td>
+<td><code>41_simple_inference</code></td>
+<td>Simple Inference</td>
+<td></td>
+</tr>
+<tr>
+<td>52</td>
+<td><code>52_silu</code></td>
+<td>SiLU</td>
+<td></td>
+</tr>
+<tr>
+<td>54</td>
+<td><code>54_swiglu</code></td>
+<td>SwiGLU</td>
+<td></td>
+</tr>
+<tr>
+<td>62</td>
+<td><code>62_value_clipping</code></td>
+<td>Value Clipping</td>
+<td></td>
+</tr>
+<tr>
+<td>63</td>
+<td><code>63_interleave</code></td>
+<td>Interleave Arrays</td>
+<td></td>
+</tr>
+<tr>
+<td>65</td>
+<td><code>65_geglu</code></td>
+<td>GEGLU</td>
+<td></td>
+</tr>
+<tr>
+<td>66</td>
+<td><code>66_rgb_to_grayscale</code></td>
+<td>RGB to Grayscale</td>
+<td></td>
+</tr>
+<tr>
+<td>68</td>
+<td><code>68_sigmoid</code></td>
+<td>Sigmoid</td>
+<td></td>
+</tr>
+</tbody></table>
+<h3 id="medium">Medium<a class="heading-anchor" href="#medium" aria-label="链接到Medium">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>文件夹</th>
+<th>题目</th>
+<th>签名关键参数</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>4</td>
+<td><code>4_reduction</code></td>
+<td>Reduction</td>
+<td><code>(input, output, N)</code></td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>5_softmax</code></td>
+<td>Softmax</td>
+<td><code>(input, output, N)</code></td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>6_softmax_attention</code></td>
+<td>Softmax Attention</td>
+<td><code>(Q, K, V, output, N, d)</code></td>
+</tr>
+<tr>
+<td>10</td>
+<td><code>10_2d_convolution</code></td>
+<td>2D Convolution</td>
+<td></td>
+</tr>
+<tr>
+<td>11</td>
+<td><code>11_3d_convolution</code></td>
+<td>3D Convolution</td>
+<td></td>
+</tr>
+<tr>
+<td>13</td>
+<td><code>13_histogramming</code></td>
+<td>Histogramming</td>
+<td></td>
+</tr>
+<tr>
+<td>16</td>
+<td><code>16_prefix_sum</code></td>
+<td>Prefix Sum</td>
+<td></td>
+</tr>
+<tr>
+<td>17</td>
+<td><code>17_dot_product</code></td>
+<td>Dot Product</td>
+<td><code>(A, B, result, N)</code></td>
+</tr>
+<tr>
+<td>18</td>
+<td><code>18_sparse_matrix_vector_mul</code></td>
+<td>SpMV</td>
+<td></td>
+</tr>
+<tr>
+<td>22</td>
+<td><code>22_gemm</code></td>
+<td><strong>GEMM (FP16)</strong></td>
+<td><code>(A, B, C, M, N, K, α, β)</code></td>
+</tr>
+<tr>
+<td>25</td>
+<td><code>25_categorical_crossentropy</code></td>
+<td>Categorical Cross Entropy</td>
+<td></td>
+</tr>
+<tr>
+<td>27</td>
+<td><code>27_mean_squared_error</code></td>
+<td>MSE</td>
+<td></td>
+</tr>
+<tr>
+<td>28</td>
+<td><code>28_gaussian_blur</code></td>
+<td>Gaussian Blur</td>
+<td></td>
+</tr>
+<tr>
+<td>29</td>
+<td><code>29_top_k_selection</code></td>
+<td>Top K Selection</td>
+<td></td>
+</tr>
+<tr>
+<td>30</td>
+<td><code>30_batched_matrix_mul</code></td>
+<td>Batched MatMul</td>
+<td><code>(A, B, C, BATCH, M, N, K)</code></td>
+</tr>
+<tr>
+<td>32</td>
+<td><code>32_int8_quantized_matmul</code></td>
+<td>INT8 Quantized MatMul</td>
+<td></td>
+</tr>
+<tr>
+<td>33</td>
+<td><code>33_ordinary_least_squares</code></td>
+<td>OLS</td>
+<td></td>
+</tr>
+<tr>
+<td>34</td>
+<td><code>34_logistic_regression</code></td>
+<td>Logistic Regression</td>
+<td></td>
+</tr>
+<tr>
+<td>35</td>
+<td><code>35_monte_carlo_integration</code></td>
+<td>Monte Carlo</td>
+<td></td>
+</tr>
+<tr>
+<td>37</td>
+<td><code>37_matrix_power</code></td>
+<td>Matrix Power</td>
+<td></td>
+</tr>
+<tr>
+<td>38</td>
+<td><code>38_nearest_neighbor</code></td>
+<td>Nearest Neighbor</td>
+<td></td>
+</tr>
+<tr>
+<td>40</td>
+<td><code>40_batch_normalization</code></td>
+<td>BatchNorm</td>
+<td></td>
+</tr>
+<tr>
+<td>42</td>
+<td><code>42_2d_max_pooling</code></td>
+<td>2D Max Pooling</td>
+<td></td>
+</tr>
+<tr>
+<td>43</td>
+<td><code>43_count_array_element</code></td>
+<td>Count Array Element</td>
+<td></td>
+</tr>
+<tr>
+<td>44</td>
+<td><code>44_count_2d_array_element</code></td>
+<td>Count 2D Array</td>
+<td></td>
+</tr>
+<tr>
+<td>45</td>
+<td><code>45_count_3d_array_element</code></td>
+<td>Count 3D Array</td>
+<td></td>
+</tr>
+<tr>
+<td>47</td>
+<td><code>47_subarray_sum</code></td>
+<td>Subarray Sum</td>
+<td></td>
+</tr>
+<tr>
+<td>48</td>
+<td><code>48_2d_subarray_sum</code></td>
+<td>2D Subarray Sum</td>
+<td></td>
+</tr>
+<tr>
+<td>49</td>
+<td><code>49_3d_subarray_sum</code></td>
+<td>3D Subarray Sum</td>
+<td></td>
+</tr>
+<tr>
+<td>50</td>
+<td><code>50_rms_normalization</code></td>
+<td><strong>RMSNorm</strong></td>
+<td><code>(input, γ, β, output, N, ε)</code></td>
+</tr>
+<tr>
+<td>51</td>
+<td><code>51_max_subarray_sum</code></td>
+<td>Max Subarray Sum</td>
+<td></td>
+</tr>
+<tr>
+<td>55</td>
+<td><code>55_attn_w_linear_bias</code></td>
+<td>ALiBi</td>
+<td></td>
+</tr>
+<tr>
+<td>57</td>
+<td><code>57_fp16_batched_matmul</code></td>
+<td>FP16 Batched MatMul</td>
+<td></td>
+</tr>
+<tr>
+<td>58</td>
+<td><code>58_fp16_dot_product</code></td>
+<td>FP16 Dot Product</td>
+<td></td>
+</tr>
+<tr>
+<td>60</td>
+<td><code>60_top_p_sampling</code></td>
+<td>Top-p Sampling</td>
+<td></td>
+</tr>
+<tr>
+<td>61</td>
+<td><code>61_rope_embedding</code></td>
+<td><strong>RoPE</strong></td>
+<td><code>(Q, cos, sin, output, M, D)</code></td>
+</tr>
+<tr>
+<td>64</td>
+<td><code>64_weight_dequantization</code></td>
+<td>Weight Dequant</td>
+<td></td>
+</tr>
+<tr>
+<td>67</td>
+<td><code>67_moe_topk_gating</code></td>
+<td>MoE Top-K Gating</td>
+<td></td>
+</tr>
+<tr>
+<td>69</td>
+<td><code>69_jacobi_stencil_2d</code></td>
+<td>2D Jacobi Stencil</td>
+<td></td>
+</tr>
+<tr>
+<td>70</td>
+<td><code>70_segmented_prefix_sum</code></td>
+<td>Segmented Prefix Sum</td>
+<td></td>
+</tr>
+<tr>
+<td>71</td>
+<td><code>71_parallel_merge</code></td>
+<td>Parallel Merge</td>
+<td></td>
+</tr>
+<tr>
+<td>72</td>
+<td><code>72_stream_compaction</code></td>
+<td>Stream Compaction</td>
+<td></td>
+</tr>
+<tr>
+<td>75</td>
+<td><code>75_sparse_dense_matmul</code></td>
+<td>SpMM</td>
+<td></td>
+</tr>
+<tr>
+<td>76</td>
+<td><code>76_adder_transformer</code></td>
+<td>Adder Transformer</td>
+<td></td>
+</tr>
+<tr>
+<td>78</td>
+<td><code>78_2d_fft</code></td>
+<td>2D FFT</td>
+<td></td>
+</tr>
+<tr>
+<td>80</td>
+<td><code>80_grouped_query_attention</code></td>
+<td><strong>GQA</strong></td>
+<td><code>(Q,K,V,out,n_qh,n_kvh,seq,dh)</code></td>
+</tr>
+<tr>
+<td>81</td>
+<td><code>81_int4_matmul</code></td>
+<td>INT4 MatMul (W4A16)</td>
+<td></td>
+</tr>
+<tr>
+<td>82</td>
+<td><code>82_linear_recurrence</code></td>
+<td>Linear Recurrence</td>
+<td></td>
+</tr>
+<tr>
+<td>84</td>
+<td><code>84_swiglu_mlp_block</code></td>
+<td><strong>SwiGLU MLP</strong></td>
+<td><code>(x,W_g,W_u,W_d,out,M,dm,df)</code></td>
+</tr>
+<tr>
+<td>85</td>
+<td><code>85_lora_linear</code></td>
+<td>LoRA Linear</td>
+<td></td>
+</tr>
+<tr>
+<td>87</td>
+<td><code>87_speculative_decoding</code></td>
+<td>Speculative Decoding</td>
+<td></td>
+</tr>
+<tr>
+<td>90</td>
+<td><code>90_causal_depthwise_conv1d</code></td>
+<td>Causal Conv1D</td>
+<td></td>
+</tr>
+<tr>
+<td>92</td>
+<td><code>92_decaying_causal_attention</code></td>
+<td>Decaying Causal Attn</td>
+<td></td>
+</tr>
+<tr>
+<td>94</td>
+<td><code>94_ssm_selective_scan</code></td>
+<td>SSM Selective Scan (Mamba)</td>
+<td></td>
+</tr>
+<tr>
+<td>96</td>
+<td><code>96_int8_kv_cache_attention</code></td>
+<td>INT8 KV-Cache Attn</td>
+<td></td>
+</tr>
+</tbody></table>
+<h3 id="hard">Hard<a class="heading-anchor" href="#hard" aria-label="链接到Hard">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>文件夹</th>
+<th>题目</th>
+<th>签名关键参数</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>12</td>
+<td><code>12_multi_head_attention</code></td>
+<td><strong>Multi-Head Attention</strong></td>
+<td><code>(Q,K,V,out,N,d_model,h)</code></td>
+</tr>
+<tr>
+<td>14</td>
+<td><code>14_multi_agent_sim</code></td>
+<td>Multi-Agent Simulation</td>
+<td></td>
+</tr>
+<tr>
+<td>15</td>
+<td><code>15_sorting</code></td>
+<td>Sorting</td>
+<td></td>
+</tr>
+<tr>
+<td>20</td>
+<td><code>20_kmeans_clustering</code></td>
+<td>K-Means</td>
+<td></td>
+</tr>
+<tr>
+<td>36</td>
+<td><code>36_radix_sort</code></td>
+<td>Radix Sort</td>
+<td></td>
+</tr>
+<tr>
+<td>39</td>
+<td><code>39_fast_fourier_transform</code></td>
+<td>FFT</td>
+<td></td>
+</tr>
+<tr>
+<td>46</td>
+<td><code>46_bfs_shortest_path</code></td>
+<td>BFS Shortest Path</td>
+<td></td>
+</tr>
+<tr>
+<td>53</td>
+<td><code>53_casual_attention</code></td>
+<td><strong>Causal Self-Attention</strong></td>
+<td><code>(Q,K,V,out,N,d_model,h)</code></td>
+</tr>
+<tr>
+<td>56</td>
+<td><code>56_linear_attention</code></td>
+<td>Linear Self-Attention</td>
+<td></td>
+</tr>
+<tr>
+<td>59</td>
+<td><code>59_sliding_window_attn</code></td>
+<td>Sliding Window Attn</td>
+<td></td>
+</tr>
+<tr>
+<td>73</td>
+<td><code>73_all_pairs_shortest_paths</code></td>
+<td>All-Pairs Shortest Paths</td>
+<td></td>
+</tr>
+<tr>
+<td>74</td>
+<td><code>74_gpt2_block</code></td>
+<td>GPT-2 Transformer Block</td>
+<td></td>
+</tr>
+<tr>
+<td>93</td>
+<td><code>93_llama_transformer_block</code></td>
+<td><strong>Llama Transformer Block</strong></td>
+<td><code>(x,out,weights,cos,sin,seq)</code></td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="刷题路线按难度主题聚类">刷题路线（按难度/主题聚类）<a class="heading-anchor" href="#%E5%88%B7%E9%A2%98%E8%B7%AF%E7%BA%BF%E6%8C%89%E9%9A%BE%E5%BA%A6%E4%B8%BB%E9%A2%98%E8%81%9A%E7%B1%BB" aria-label="链接到刷题路线（按难度/主题聚类）">#</a></h2>
+<blockquote><p>不绑周次——这是题目地图，按你算子线进度随用随取。学习节奏看 PATH.md / NOW.md。</p>
+</blockquote><div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">入门 (Easy)        1_vector_add → 8_matrix_addition → 2_matrix_multiplication</span>
+<span class="code-line" data-line="2">                   4_reduction, 17_dot_product, 16_prefix_sum (parallel pattern)</span>
+<span class="code-line" data-line="3"></span>
+<span class="code-line" data-line="4">GEMM              2_matrix_multiplication (naive→tiled) → 22_gemm (Medium)</span>
+<span class="code-line" data-line="5">                   30_batched_matmul, 57_fp16_batched_matmul</span>
+<span class="code-line" data-line="6">                   ⭐ 22_gemm Tensor Core 版（可选深钻 → roadmap/leetgpu-ladder.md）</span>
+<span class="code-line" data-line="7"></span>
+<span class="code-line" data-line="8">Softmax/采样       5_softmax → 6_softmax_attention</span>
+<span class="code-line" data-line="9">                   29_top_k_selection, 60_top_p_sampling</span>
+<span class="code-line" data-line="10"></span>
+<span class="code-line" data-line="11">Norm              50_rms_normalization, 40_batch_normalization</span>
+<span class="code-line" data-line="12">                   61_rope_embedding (高频面试加分)</span>
+<span class="code-line" data-line="13"></span>
+<span class="code-line" data-line="14">Attention         12_multi_head_attention (Hard), 53_casual_attention (Hard)</span>
+<span class="code-line" data-line="15">                   tiled + online softmax 版 → 完整 Flash Attn 自实现</span>
+<span class="code-line" data-line="16">                   56_linear_attention, 59_sliding_window_attn</span>
+<span class="code-line" data-line="17"></span>
+<span class="code-line" data-line="18">GQA/MLP           80_grouped_query_attention, 84_swiglu_mlp_block (Llama FFN)</span>
+<span class="code-line" data-line="19"></span>
+<span class="code-line" data-line="20">LLM 整块 (Bonus)   67_moe_topk_gating, 94_ssm_selective_scan</span>
+<span class="code-line" data-line="21">                   85_lora_linear, 87_speculative_decoding</span>
+<span class="code-line" data-line="22">                   74_gpt2_block, 93_llama_transformer_block</span></code></pre></div>
+<blockquote><p>Tensor Core / v2+ 优化层是 ⭐ 可选，见 <a href="../../roadmap/leetgpu-ladder.html">roadmap/leetgpu-ladder.md</a>。</p>
+</blockquote><hr>
+<h2 id="通用-starter-模板模式">通用 starter 模板模式<a class="heading-anchor" href="#%E9%80%9A%E7%94%A8-starter-%E6%A8%A1%E6%9D%BF%E6%A8%A1%E5%BC%8F" aria-label="链接到通用 starter 模板模式">#</a></h2>
+<p>所有 LeetGPU CUDA 题遵循统一模板：</p>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;cuda_runtime.h&gt;</span></span></span>
+<span class="code-line" data-line="2"></span>
+<span class="code-line" data-line="3"><span class="hljs-comment">// kernel 函数 — 你来写</span></span>
+<span class="code-line" data-line="4"><span class="hljs-function">__global__ <span class="hljs-type">void</span> <span class="hljs-title">my_kernel</span><span class="hljs-params">(...)</span> </span>{</span>
+<span class="code-line" data-line="5">    <span class="hljs-type">int</span> idx = blockIdx.x * blockDim.x + threadIdx.x;</span>
+<span class="code-line" data-line="6">    <span class="hljs-comment">// <span class="hljs-doctag">TODO:</span> 你的实现</span></span>
+<span class="code-line" data-line="7">}</span>
+<span class="code-line" data-line="8"></span>
+<span class="code-line" data-line="9"><span class="hljs-comment">// solve 函数 — 签名不可改，LeetGPU 直接调用它</span></span>
+<span class="code-line" data-line="10"><span class="hljs-keyword">extern</span> <span class="hljs-string">&quot;C&quot;</span> <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">solve</span><span class="hljs-params">(<span class="hljs-comment">/* 题目定义的参数 */</span>)</span> </span>{</span>
+<span class="code-line" data-line="11">    <span class="hljs-type">int</span> threadsPerBlock = <span class="hljs-number">256</span>;</span>
+<span class="code-line" data-line="12">    <span class="hljs-type">int</span> blocksPerGrid = (N + threadsPerBlock - <span class="hljs-number">1</span>) / threadsPerBlock;</span>
+<span class="code-line" data-line="13">    my_kernel&lt;&lt;&lt;blocksPerGrid, threadsPerBlock&gt;&gt;&gt;(...);</span>
+<span class="code-line" data-line="14">    <span class="hljs-built_in">cudaDeviceSynchronize</span>();</span>
+<span class="code-line" data-line="15">}</span></code></pre></div>
+<p><strong>关键规则</strong>：</p>
+<ul>
+<li><code>solve</code> 是入口，签名不能改</li>
+<li>所有指针参数都是 device pointer（已分配好）</li>
+<li>不用 <code>cudaMalloc</code>/<code>cudaFree</code> — 平台管理显存</li>
+<li>禁止外部库（WMMA 例外，GEMM v4 可用）</li>
+<li>结果写入 output/C 指针即可</li>
+</ul>
+</div></main><script src="../../../reader.js"></script></body></html>

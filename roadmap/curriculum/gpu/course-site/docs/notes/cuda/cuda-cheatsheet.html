@@ -1,0 +1,257 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CUDA API 速查 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · notes/cuda/cuda-cheatsheet.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#1-kernel-%E5%A3%B0%E6%98%8E%E4%B8%8E%E5%90%AF%E5%8A%A8">1. Kernel 声明与启动</a></li><li><a href="#%E5%86%85%E7%BD%AE%E5%8F%98%E9%87%8Fkernel-%E5%86%85%E5%8F%AF%E7%94%A8">内置变量（kernel 内可用）</a></li><li><a href="#%E9%99%90%E5%88%B6">限制</a></li><li><a href="#2-%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86">2. 内存管理</a></li><li><a href="#%E5%91%BD%E5%90%8D%E6%83%AF%E4%BE%8B">命名惯例</a></li><li><a href="#3-%E9%94%99%E8%AF%AF%E6%A3%80%E6%9F%A5">3. 错误检查</a></li><li><a href="#4-%E8%AE%A1%E6%97%B6">4. 计时</a></li><li><a href="#5-grid-stride-loop">5. Grid-Stride Loop</a></li><li><a href="#6-shared-memory">6. Shared Memory</a></li><li><a href="#7-warp-%E6%93%8D%E4%BD%9C">7. Warp 操作</a></li><li><a href="#8-%E5%8E%9F%E5%AD%90%E6%93%8D%E4%BD%9C">8. 原子操作</a></li><li><a href="#9-%E8%AE%BE%E5%A4%87%E4%BF%A1%E6%81%AF">9. 设备信息</a></li><li><a href="#10-%E7%BC%96%E8%AF%91%E5%91%BD%E4%BB%A4">10. 编译命令</a></li><li><a href="#11-%E5%B8%B8%E8%A7%81%E6%A8%A1%E5%BC%8F%E9%80%9F%E6%9F%A5">11. 常见模式速查</a></li><li><a href="#%E7%9B%B8%E5%85%B3%E6%96%87%E6%A1%A3">相关文档</a></li></ol></nav><div class="markdown-body"><h1 id="cuda-api-速查">CUDA API 速查<a class="heading-anchor" href="#cuda-api-%E9%80%9F%E6%9F%A5" aria-label="链接到CUDA API 速查">#</a></h1>
+<blockquote><p>日常写 CUDA 时最常用的语法、API、惯用法。每个条目给出最小可用代码。
+深入原理见 → <a href="memory-model.html">memory-model.md</a> | <a href="warp-and-sync.html">warp-and-sync.md</a></p>
+</blockquote><hr>
+<h2 id="1-kernel-声明与启动">1. Kernel 声明与启动<a class="heading-anchor" href="#1-kernel-%E5%A3%B0%E6%98%8E%E4%B8%8E%E5%90%AF%E5%8A%A8" aria-label="链接到1. Kernel 声明与启动">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-comment">// 声明 — 三个前缀之一</span></span>
+<span class="code-line" data-line="2"><span class="hljs-function">__global__ <span class="hljs-type">void</span> <span class="hljs-title">kernel</span><span class="hljs-params">(<span class="hljs-type">float</span>* data)</span> </span>{ }  <span class="hljs-comment">// CPU 调用，GPU 执行</span></span>
+<span class="code-line" data-line="3"><span class="hljs-function">__device__ <span class="hljs-type">float</span> <span class="hljs-title">helper</span><span class="hljs-params">(<span class="hljs-type">float</span> x)</span> </span>{ }     <span class="hljs-comment">// GPU 调用，GPU 执行</span></span>
+<span class="code-line" data-line="4"><span class="hljs-function">__host__   <span class="hljs-type">void</span> <span class="hljs-title">cpu_func</span><span class="hljs-params">()</span> </span>{ }           <span class="hljs-comment">// CPU 调用，CPU 执行</span></span>
+<span class="code-line" data-line="5"></span>
+<span class="code-line" data-line="6"><span class="hljs-comment">// 启动</span></span>
+<span class="code-line" data-line="7">kernel&lt;&lt;&lt;gridDim, blockDim, sharedMemBytes, stream&gt;&gt;&gt;(args);</span>
+<span class="code-line" data-line="8"></span>
+<span class="code-line" data-line="9"><span class="hljs-comment">// 典型值</span></span>
+<span class="code-line" data-line="10"><span class="hljs-function">dim3 <span class="hljs-title">block</span><span class="hljs-params">(<span class="hljs-number">256</span>)</span></span>;        <span class="hljs-comment">// 1D block，256 threads</span></span>
+<span class="code-line" data-line="11"><span class="hljs-function">dim3 <span class="hljs-title">grid</span><span class="hljs-params">( (N<span class="hljs-number">+255</span>)/<span class="hljs-number">256</span> )</span></span>;  <span class="hljs-comment">// 1D grid，足够覆盖 N 个元素</span></span>
+<span class="code-line" data-line="12"></span>
+<span class="code-line" data-line="13"><span class="hljs-function">dim3 <span class="hljs-title">block2d</span><span class="hljs-params">(<span class="hljs-number">16</span>, <span class="hljs-number">16</span>)</span></span>;   <span class="hljs-comment">// 2D block，256 threads</span></span>
+<span class="code-line" data-line="14"><span class="hljs-function">dim3 <span class="hljs-title">grid2d</span><span class="hljs-params">( (W<span class="hljs-number">+15</span>)/<span class="hljs-number">16</span>, (H<span class="hljs-number">+15</span>)/<span class="hljs-number">16</span> )</span></span>;  <span class="hljs-comment">// 2D grid</span></span></code></pre></div>
+<p><code>dim3</code> 是 CUDA 内置的三维向量类型（<code>struct { uint x, y, z; }</code>），专门用来指定 grid/block 的形状。<strong>没有 <code>dim1</code> 或 <code>dim2</code></strong>——未指定的维度自动为 1：</p>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-function">dim3 <span class="hljs-title">a</span><span class="hljs-params">(<span class="hljs-number">256</span>)</span></span>;           <span class="hljs-comment">// dim3(256, 1, 1)   ← &quot;1D&quot;</span></span>
+<span class="code-line" data-line="2"><span class="hljs-function">dim3 <span class="hljs-title">b</span><span class="hljs-params">(<span class="hljs-number">16</span>, <span class="hljs-number">16</span>)</span></span>;        <span class="hljs-comment">// dim3(16, 16, 1)   ← &quot;2D&quot;</span></span>
+<span class="code-line" data-line="3"><span class="hljs-function">dim3 <span class="hljs-title">c</span><span class="hljs-params">(<span class="hljs-number">4</span>, <span class="hljs-number">4</span>, <span class="hljs-number">4</span>)</span></span>;       <span class="hljs-comment">// dim3(4, 4, 4)     ← &quot;3D&quot;</span></span></code></pre></div>
+<p>所以 launch 时可以直接传 <code>int</code>——整数会自动提升为 <code>dim3(x, 1, 1)</code>。kernel 内 <code>gridDim</code> / <code>blockDim</code> / <code>blockIdx</code> / <code>threadIdx</code> 都是 <code>dim3</code> 类型，未使用的维度值为 0（索引）或 1（维度大小）。</p>
+<h3 id="内置变量kernel-内可用">内置变量（kernel 内可用）<a class="heading-anchor" href="#%E5%86%85%E7%BD%AE%E5%8F%98%E9%87%8Fkernel-%E5%86%85%E5%8F%AF%E7%94%A8" aria-label="链接到内置变量（kernel 内可用）">#</a></h3>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1">threadIdx.x, threadIdx.y, threadIdx.z   <span class="hljs-comment">// block 内索引 (0 ~ blockDim-1)</span></span>
+<span class="code-line" data-line="2">blockIdx.x,  blockIdx.y,  blockIdx.z    <span class="hljs-comment">// grid 内索引 (0 ~ gridDim-1)</span></span>
+<span class="code-line" data-line="3">blockDim.x,  blockDim.y,  blockDim.z    <span class="hljs-comment">// 每个 block 的线程数</span></span>
+<span class="code-line" data-line="4">gridDim.x,   gridDim.y,   gridDim.z     <span class="hljs-comment">// grid 中的 block 数</span></span>
+<span class="code-line" data-line="5"></span>
+<span class="code-line" data-line="6"><span class="hljs-comment">// 全局 ID（1D）</span></span>
+<span class="code-line" data-line="7"><span class="hljs-type">int</span> idx = blockIdx.x * blockDim.x + threadIdx.x;</span>
+<span class="code-line" data-line="8"></span>
+<span class="code-line" data-line="9"><span class="hljs-comment">// 全局 ID（2D）</span></span>
+<span class="code-line" data-line="10"><span class="hljs-type">int</span> row = blockIdx.y * blockDim.y + threadIdx.y;</span>
+<span class="code-line" data-line="11"><span class="hljs-type">int</span> col = blockIdx.x * blockDim.x + threadIdx.x;</span></code></pre></div>
+<h3 id="限制">限制<a class="heading-anchor" href="#%E9%99%90%E5%88%B6" aria-label="链接到限制">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>项目</th>
+<th>上限</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Threads per block</td>
+<td>1024</td>
+</tr>
+<tr>
+<td>Block dim (x/y)</td>
+<td>1024</td>
+</tr>
+<tr>
+<td>Block dim (z)</td>
+<td>64</td>
+</tr>
+<tr>
+<td>Grid dim (x)</td>
+<td>2³¹-1</td>
+</tr>
+<tr>
+<td>Shared memory per block</td>
+<td>48 KB (默认) / 164 KB (配置后)</td>
+</tr>
+<tr>
+<td>Registers per thread</td>
+<td>255</td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="2-内存管理">2. 内存管理<a class="heading-anchor" href="#2-%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86" aria-label="链接到2. 内存管理">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-comment">// 分配/释放</span></span>
+<span class="code-line" data-line="2"><span class="hljs-built_in">cudaMalloc</span>(&amp;d_ptr, size);     <span class="hljs-comment">// 在 GPU 上分配</span></span>
+<span class="code-line" data-line="3"><span class="hljs-built_in">cudaFree</span>(d_ptr);              <span class="hljs-comment">// 释放</span></span>
+<span class="code-line" data-line="4"></span>
+<span class="code-line" data-line="5"><span class="hljs-comment">// 数据传输</span></span>
+<span class="code-line" data-line="6"><span class="hljs-built_in">cudaMemcpy</span>(dst, src, size, cudaMemcpyHostToDevice);    <span class="hljs-comment">// CPU → GPU</span></span>
+<span class="code-line" data-line="7"><span class="hljs-built_in">cudaMemcpy</span>(dst, src, size, cudaMemcpyDeviceToHost);    <span class="hljs-comment">// GPU → CPU</span></span>
+<span class="code-line" data-line="8"><span class="hljs-built_in">cudaMemcpy</span>(dst, src, size, cudaMemcpyDeviceToDevice);  <span class="hljs-comment">// GPU → GPU</span></span>
+<span class="code-line" data-line="9"><span class="hljs-built_in">cudaMemcpy</span>(dst, src, size, cudaMemcpyDefault);         <span class="hljs-comment">// 自动推断</span></span>
+<span class="code-line" data-line="10"></span>
+<span class="code-line" data-line="11"><span class="hljs-comment">// 零拷贝 / 统一内存（简化版，性能差）</span></span>
+<span class="code-line" data-line="12"><span class="hljs-built_in">cudaMallocManaged</span>(&amp;ptr, size);  <span class="hljs-comment">// CPU/GPU 都能访问，驱动自动迁移</span></span>
+<span class="code-line" data-line="13"><span class="hljs-built_in">cudaFree</span>(ptr);</span></code></pre></div>
+<h3 id="命名惯例">命名惯例<a class="heading-anchor" href="#%E5%91%BD%E5%90%8D%E6%83%AF%E4%BE%8B" aria-label="链接到命名惯例">#</a></h3>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-type">float</span>* h_A;   <span class="hljs-comment">// host 指针</span></span>
+<span class="code-line" data-line="2"><span class="hljs-type">float</span>* d_A;   <span class="hljs-comment">// device 指针</span></span></code></pre></div>
+<hr>
+<h2 id="3-错误检查">3. 错误检查<a class="heading-anchor" href="#3-%E9%94%99%E8%AF%AF%E6%A3%80%E6%9F%A5" aria-label="链接到3. 错误检查">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-comment">// 宏（每个 CUDA API 调用后使用）</span></span>
+<span class="code-line" data-line="2"><span class="hljs-meta">#<span class="hljs-keyword">define</span> CUDA_CHECK(call) \</span></span>
+<span class="code-line" data-line="3"><span class="hljs-meta">    do { \</span></span>
+<span class="code-line" data-line="4"><span class="hljs-meta">        cudaError_t err = call; \</span></span>
+<span class="code-line" data-line="5"><span class="hljs-meta">        <span class="hljs-keyword">if</span> (err != cudaSuccess) { \</span></span>
+<span class="code-line" data-line="6"><span class="hljs-meta">            fprintf(stderr, <span class="hljs-string">&quot;CUDA error %s:%d: %s\n&quot;</span>, \</span></span>
+<span class="code-line" data-line="7"><span class="hljs-meta">                    __FILE__, __LINE__, cudaGetErrorString(err)); \</span></span>
+<span class="code-line" data-line="8"><span class="hljs-meta">            exit(1); \</span></span>
+<span class="code-line" data-line="9"><span class="hljs-meta">        } \</span></span>
+<span class="code-line" data-line="10"><span class="hljs-meta">    } while(0)</span></span>
+<span class="code-line" data-line="11"></span>
+<span class="code-line" data-line="12"><span class="hljs-comment">// kernel launch 后用这两个检查</span></span>
+<span class="code-line" data-line="13"><span class="hljs-built_in">CUDA_CHECK</span>(<span class="hljs-built_in">cudaGetLastError</span>());       <span class="hljs-comment">// 检查 launch 是否成功</span></span>
+<span class="code-line" data-line="14"><span class="hljs-built_in">CUDA_CHECK</span>(<span class="hljs-built_in">cudaDeviceSynchronize</span>());  <span class="hljs-comment">// 等 GPU 跑完 + 检查 runtime 错误</span></span></code></pre></div>
+<hr>
+<h2 id="4-计时">4. 计时<a class="heading-anchor" href="#4-%E8%AE%A1%E6%97%B6" aria-label="链接到4. 计时">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1">cudaEvent_t start, stop;</span>
+<span class="code-line" data-line="2"><span class="hljs-built_in">cudaEventCreate</span>(&amp;start);</span>
+<span class="code-line" data-line="3"><span class="hljs-built_in">cudaEventCreate</span>(&amp;stop);</span>
+<span class="code-line" data-line="4"></span>
+<span class="code-line" data-line="5"><span class="hljs-built_in">cudaEventRecord</span>(start);</span>
+<span class="code-line" data-line="6">kernel&lt;&lt;&lt;grid, block&gt;&gt;&gt;(...);</span>
+<span class="code-line" data-line="7"><span class="hljs-built_in">cudaEventRecord</span>(stop);</span>
+<span class="code-line" data-line="8"></span>
+<span class="code-line" data-line="9"><span class="hljs-built_in">cudaEventSynchronize</span>(stop);</span>
+<span class="code-line" data-line="10"><span class="hljs-type">float</span> ms;</span>
+<span class="code-line" data-line="11"><span class="hljs-built_in">cudaEventElapsedTime</span>(&amp;ms, start, stop);</span>
+<span class="code-line" data-line="12"></span>
+<span class="code-line" data-line="13"><span class="hljs-built_in">cudaEventDestroy</span>(start);</span>
+<span class="code-line" data-line="14"><span class="hljs-built_in">cudaEventDestroy</span>(stop);</span></code></pre></div>
+<hr>
+<h2 id="5-grid-stride-loop">5. Grid-Stride Loop<a class="heading-anchor" href="#5-grid-stride-loop" aria-label="链接到5. Grid-Stride Loop">#</a></h2>
+<p>处理 N 大于总线程数的情况：</p>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-function">__global__ <span class="hljs-type">void</span> <span class="hljs-title">kernel</span><span class="hljs-params">(<span class="hljs-type">float</span>* data, <span class="hljs-type">int</span> N)</span> </span>{</span>
+<span class="code-line" data-line="2">    <span class="hljs-type">int</span> idx = blockIdx.x * blockDim.x + threadIdx.x;</span>
+<span class="code-line" data-line="3">    <span class="hljs-type">int</span> stride = blockDim.x * gridDim.x;   <span class="hljs-comment">// 所有线程总数</span></span>
+<span class="code-line" data-line="4">    </span>
+<span class="code-line" data-line="5">    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = idx; i &lt; N; i += stride) {</span>
+<span class="code-line" data-line="6">        data[i] = data[i] * <span class="hljs-number">2.0f</span>;</span>
+<span class="code-line" data-line="7">    }</span>
+<span class="code-line" data-line="8">}</span>
+<span class="code-line" data-line="9"><span class="hljs-comment">// 优点：不管启动多少个 block，保证覆盖所有元素</span></span>
+<span class="code-line" data-line="10"><span class="hljs-comment">// 且减少 grid 尺寸切换的开销</span></span></code></pre></div>
+<hr>
+<h2 id="6-shared-memory">6. Shared Memory<a class="heading-anchor" href="#6-shared-memory" aria-label="链接到6. Shared Memory">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-comment">// 方式 1：静态大小</span></span>
+<span class="code-line" data-line="2"><span class="hljs-function">__global__ <span class="hljs-type">void</span> <span class="hljs-title">kernel</span><span class="hljs-params">()</span> </span>{</span>
+<span class="code-line" data-line="3">    __shared__ <span class="hljs-type">float</span> tile[<span class="hljs-number">32</span>][<span class="hljs-number">32</span>];   <span class="hljs-comment">// 编译期确定大小</span></span>
+<span class="code-line" data-line="4">}</span>
+<span class="code-line" data-line="5"></span>
+<span class="code-line" data-line="6"><span class="hljs-comment">// 方式 2：动态大小（启动时指定）</span></span>
+<span class="code-line" data-line="7"><span class="hljs-function">__global__ <span class="hljs-type">void</span> <span class="hljs-title">kernel</span><span class="hljs-params">()</span> </span>{</span>
+<span class="code-line" data-line="8">    <span class="hljs-keyword">extern</span> __shared__ <span class="hljs-type">float</span> smem[];  <span class="hljs-comment">// 大小由 launch 时的第三个参数决定</span></span>
+<span class="code-line" data-line="9">}</span>
+<span class="code-line" data-line="10"></span>
+<span class="code-line" data-line="11"><span class="hljs-comment">// 启动</span></span>
+<span class="code-line" data-line="12">kernel&lt;&lt;&lt;grid, block, shared_mem_bytes&gt;&gt;&gt;();</span>
+<span class="code-line" data-line="13"></span>
+<span class="code-line" data-line="14"><span class="hljs-comment">// 同步（barrier）</span></span>
+<span class="code-line" data-line="15">__syncthreads();  <span class="hljs-comment">// block 内所有线程在此等待，确保 shared memory 写入可见</span></span></code></pre></div>
+<blockquote><p>深入理解 → <a href="memory-model.html">memory-model.md</a></p>
+</blockquote><hr>
+<h2 id="7-warp-操作">7. Warp 操作<a class="heading-anchor" href="#7-warp-%E6%93%8D%E4%BD%9C" aria-label="链接到7. Warp 操作">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-comment">// Warp shuffle（warp 内 thread 之间通信，不经过 shared memory）</span></span>
+<span class="code-line" data-line="2"><span class="hljs-type">float</span> val = __shfl_down_sync(<span class="hljs-number">0xffffffff</span>, val, offset);  <span class="hljs-comment">// 从 lane+offset 拿值</span></span>
+<span class="code-line" data-line="3"></span>
+<span class="code-line" data-line="4"><span class="hljs-comment">// Warp vote</span></span>
+<span class="code-line" data-line="5"><span class="hljs-type">int</span> mask = __ballot_sync(<span class="hljs-number">0xffffffff</span>, condition);  <span class="hljs-comment">// 哪些 lane 满足条件</span></span>
+<span class="code-line" data-line="6"></span>
+<span class="code-line" data-line="7"><span class="hljs-comment">// Active mask（全 warp 参与）</span></span>
+<span class="code-line" data-line="8"><span class="hljs-meta">#<span class="hljs-keyword">define</span> FULL_MASK 0xffffffff</span></span></code></pre></div>
+<blockquote><p>深入理解 → <a href="warp-and-sync.html">warp-and-sync.md</a></p>
+</blockquote><hr>
+<h2 id="8-原子操作">8. 原子操作<a class="heading-anchor" href="#8-%E5%8E%9F%E5%AD%90%E6%93%8D%E4%BD%9C" aria-label="链接到8. 原子操作">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-built_in">atomicAdd</span>(&amp;addr, val);     <span class="hljs-comment">// 浮点加法</span></span>
+<span class="code-line" data-line="2"><span class="hljs-built_in">atomicMax</span>(&amp;addr, val);     <span class="hljs-comment">// 最大值</span></span>
+<span class="code-line" data-line="3"><span class="hljs-built_in">atomicExch</span>(&amp;addr, val);    <span class="hljs-comment">// 交换</span></span>
+<span class="code-line" data-line="4"><span class="hljs-built_in">atomicCAS</span>(&amp;addr, old, <span class="hljs-keyword">new</span>); <span class="hljs-comment">// compare-and-swap</span></span>
+<span class="code-line" data-line="5"></span>
+<span class="code-line" data-line="6"><span class="hljs-comment">// 注意：原子操作串行化，大量冲突时性能很差</span></span></code></pre></div>
+<hr>
+<h2 id="9-设备信息">9. 设备信息<a class="heading-anchor" href="#9-%E8%AE%BE%E5%A4%87%E4%BF%A1%E6%81%AF" aria-label="链接到9. 设备信息">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1">cudaDeviceProp prop;</span>
+<span class="code-line" data-line="2"><span class="hljs-built_in">cudaGetDeviceProperties</span>(&amp;prop, <span class="hljs-number">0</span>);</span>
+<span class="code-line" data-line="3"></span>
+<span class="code-line" data-line="4"><span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;Name: %s\n&quot;</span>, prop.name);</span>
+<span class="code-line" data-line="5"><span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;SM count: %d\n&quot;</span>, prop.multiProcessorCount);</span>
+<span class="code-line" data-line="6"><span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;Max threads per block: %d\n&quot;</span>, prop.maxThreadsPerBlock);</span>
+<span class="code-line" data-line="7"><span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;Shared mem per block: %zu KB\n&quot;</span>, prop.sharedMemPerBlock / <span class="hljs-number">1024</span>);</span>
+<span class="code-line" data-line="8"><span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;Max threads per SM: %d\n&quot;</span>, prop.maxThreadsPerMultiProcessor);</span>
+<span class="code-line" data-line="9"><span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;Warp size: %d\n&quot;</span>, prop.warpSize);</span>
+<span class="code-line" data-line="10"><span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;Clock rate: %d MHz\n&quot;</span>, prop.clockRate / <span class="hljs-number">1000</span>);</span>
+<span class="code-line" data-line="11"><span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;HBM bandwidth: %.1f GB/s\n&quot;</span>,</span>
+<span class="code-line" data-line="12">       <span class="hljs-number">2.0f</span> * prop.memoryClockRate * (prop.memoryBusWidth / <span class="hljs-number">8</span>) / <span class="hljs-number">1e6</span>);</span></code></pre></div>
+<hr>
+<h2 id="10-编译命令">10. 编译命令<a class="heading-anchor" href="#10-%E7%BC%96%E8%AF%91%E5%91%BD%E4%BB%A4" aria-label="链接到10. 编译命令">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>BASH</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-bash"><span class="code-line" data-line="1"><span class="hljs-comment"># 基本编译</span></span>
+<span class="code-line" data-line="2">nvcc -O3 -<span class="hljs-built_in">arch</span>=sm_75 kernel.cu -o kernel</span>
+<span class="code-line" data-line="3"></span>
+<span class="code-line" data-line="4"><span class="hljs-comment"># 常见 arch</span></span>
+<span class="code-line" data-line="5"><span class="hljs-comment"># sm_75 = Turing (T4, RTX 2080)</span></span>
+<span class="code-line" data-line="6"><span class="hljs-comment"># sm_80 = Ampere (A100)</span></span>
+<span class="code-line" data-line="7"><span class="hljs-comment"># sm_86 = Ampere (RTX 3090, A40)</span></span>
+<span class="code-line" data-line="8"><span class="hljs-comment"># sm_89 = Ada Lovelace (RTX 4090)</span></span>
+<span class="code-line" data-line="9"><span class="hljs-comment"># sm_90 = Hopper (H100)</span></span></code></pre></div>
+<hr>
+<h2 id="11-常见模式速查">11. 常见模式速查<a class="heading-anchor" href="#11-%E5%B8%B8%E8%A7%81%E6%A8%A1%E5%BC%8F%E9%80%9F%E6%9F%A5" aria-label="链接到11. 常见模式速查">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>模式</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>element-wise op</td>
+<td>1D grid + grid-stride loop</td>
+<td>最简单</td>
+</tr>
+<tr>
+<td>2D matrix op</td>
+<td>2D block (16×16) + 2D grid</td>
+<td>GEMM/Conv</td>
+</tr>
+<tr>
+<td>reduction</td>
+<td>1D block + shared mem + warp shuffle</td>
+<td>max/sum</td>
+</tr>
+<tr>
+<td>tiled GEMM</td>
+<td>2D block + shared mem tile + <code>__syncthreads</code></td>
+<td>见 week-03</td>
+</tr>
+<tr>
+<td>online softmax</td>
+<td>block per row + warp reduce</td>
+<td>见 week-04</td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="相关文档">相关文档<a class="heading-anchor" href="#%E7%9B%B8%E5%85%B3%E6%96%87%E6%A1%A3" aria-label="链接到相关文档">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>文档</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><a href="memory-model.html">memory-model.md</a></td>
+<td>内存层级、coalescing、bank conflict</td>
+</tr>
+<tr>
+<td><a href="warp-and-sync.html">warp-and-sync.md</a></td>
+<td>Warp 调度、divergence、shuffle</td>
+</tr>
+<tr>
+<td><a href="gpu-architecture.html">gpu-architecture.md</a></td>
+<td>NVIDIA vs Da Vinci 架构对比</td>
+</tr>
+<tr>
+<td><a href="triton-under-the-hood.html">triton-under-the-hood.md</a></td>
+<td>Triton 生成的 CUDA 代码长什么样</td>
+</tr>
+</tbody></table>
+</div></main><script src="../../../reader.js"></script></body></html>

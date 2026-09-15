@@ -1,0 +1,131 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>可选 CUDA 深钻菜单 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · roadmap/leetgpu-ladder.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E6%80%8E%E4%B9%88%E7%94%A8">怎么用</a></li><li><a href="#%E5%AE%8C%E6%88%90%E6%A0%87%E5%87%86">完成标准</a></li><li><a href="#%E7%A4%BA%E4%BE%8Bgemm-vec4">示例：GEMM vec4</a></li><li><a href="#gemm-%E8%BF%9B%E9%98%B6">GEMM 进阶</a></li><li><a href="#softmax-%E8%BF%9B%E9%98%B6">Softmax 进阶</a></li><li><a href="#normlayernorm--rmsnorm">Norm（LayerNorm / RMSNorm）</a></li><li><a href="#flash-attention-%E8%BF%9B%E9%98%B6">Flash Attention 进阶</a></li><li><a href="#gqa-attention">GQA Attention</a></li></ol></nav><div class="markdown-body"><h1 id="可选-cuda-深钻菜单">可选 CUDA 深钻菜单<a class="heading-anchor" href="#%E5%8F%AF%E9%80%89-cuda-%E6%B7%B1%E9%92%BB%E8%8F%9C%E5%8D%95" aria-label="链接到可选 CUDA 深钻菜单">#</a></h1>
+<blockquote><p>B 级够用不用看这页。想要面试强信号、或想把某个算子钻到峰值再回来。
+基础层（naive / tiled / online / warp-reduce）和进度都在 PATH.md 算子线。
+LeetGPU 题号用作 baseline/正确性验证。完整题库 → <a href="../notes/cuda/leetgpu-challenges.html">notes/cuda/leetgpu-challenges.md</a></p>
+</blockquote><hr>
+<h2 id="怎么用">怎么用<a class="heading-anchor" href="#%E6%80%8E%E4%B9%88%E7%94%A8" aria-label="链接到怎么用">#</a></h2>
+<ol>
+<li>每次只选一个算子。</li>
+<li>先看完这一层原理，再直接去 LeetGPU 题目编辑器写题。</li>
+<li>每层都要有 correctness check + 性能数字。</li>
+<li>跑不过、没数字就不算完成。</li>
+</ol>
+<h3 id="完成标准">完成标准<a class="heading-anchor" href="#%E5%AE%8C%E6%88%90%E6%A0%87%E5%87%86" aria-label="链接到完成标准">#</a></h3>
+<ul>
+<li><input disabled="" type="checkbox"> 代码在 <code>solutions/</code></li>
+<li><input disabled="" type="checkbox"> 正确性和 reference 对齐</li>
+<li><input disabled="" type="checkbox"> LeetGPU 通过记录</li>
+<li><input disabled="" type="checkbox"> 有真实 GPU 型号、GFLOPS 或 GB/s</li>
+<li><input disabled="" type="checkbox"> 能说出这一层优化省了什么</li>
+<li><input disabled="" type="checkbox"> 能用 Nsight 看到瓶颈变化</li>
+</ul>
+<h3 id="示例gemm-vec4">示例：GEMM vec4<a class="heading-anchor" href="#%E7%A4%BA%E4%BE%8Bgemm-vec4" aria-label="链接到示例：GEMM vec4">#</a></h3>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">B 级：float 标量 load</span>
+<span class="code-line" data-line="2">进阶：float4 一次读 4 个 float</span>
+<span class="code-line" data-line="3">验证：看 kernel 指令数和带宽是否改善</span></code></pre></div>
+<hr>
+<h2 id="gemm-进阶">GEMM 进阶<a class="heading-anchor" href="#gemm-%E8%BF%9B%E9%98%B6" aria-label="链接到GEMM 进阶">#</a></h2>
+<blockquote><p>基础 naive/tiled 见 PATH A2/A3。下面是 tiled 之后往峰值钻的层：</p>
+</blockquote><table>
+<thead>
+<tr>
+<th>层</th>
+<th>技术要点</th>
+<th>验证</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>vec4</td>
+<td><code>float4</code> 128-bit vectorized load，减少访存指令</td>
+<td></td>
+</tr>
+<tr>
+<td>double buffer</td>
+<td>双 shared memory buffer，copy-compute overlap（≈ Ascend pipe 流水）</td>
+<td></td>
+</tr>
+<tr>
+<td>tensor core</td>
+<td><code>mma.sync</code>，FP16→FP32，warp-level matrix fragment</td>
+<td><code>22_gemm</code> / <code>57_fp16_batched_matmul</code></td>
+</tr>
+</tbody></table>
+<p><strong>目标</strong>：tensor core GEMM 达硬件峰值 70%+</p>
+<h2 id="softmax-进阶">Softmax 进阶<a class="heading-anchor" href="#softmax-%E8%BF%9B%E9%98%B6" aria-label="链接到Softmax 进阶">#</a></h2>
+<blockquote><p>基础 3-pass/online/warp-reduce 见 PATH A4。</p>
+</blockquote><table>
+<thead>
+<tr>
+<th>层</th>
+<th>技术要点</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>fused</td>
+<td>softmax 结果直接喂下一步（如 attention 内），不写回 HBM</td>
+</tr>
+</tbody></table>
+<p><strong>目标</strong>：online softmax 的 bandwidth utilization &gt; 80%</p>
+<h2 id="normlayernorm--rmsnorm">Norm（LayerNorm / RMSNorm）<a class="heading-anchor" href="#normlayernorm--rmsnorm" aria-label="链接到Norm（LayerNorm / RMSNorm）">#</a></h2>
+<blockquote><p>⭐ 整个 Norm 在 Triton-first 路径里是 bonus（现实 LLM 用 RMSNorm）。料：<a href="../reference/cuda/layernorm/layernorm.cu">reference/cuda/layernorm/layernorm.cu</a></p>
+</blockquote><table>
+<thead>
+<tr>
+<th>层</th>
+<th>技术要点</th>
+<th>验证</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>warp reduce</td>
+<td>warp shuffle + shared memory cross-warp reduce</td>
+<td><code>50_rms_normalization</code></td>
+</tr>
+<tr>
+<td>fused residual</td>
+<td>RMSNorm(x) + x 一次完成，省一次 memory round-trip</td>
+<td></td>
+</tr>
+</tbody></table>
+<p><strong>目标</strong>：融合版比 PyTorch 原生快 2×+</p>
+<h2 id="flash-attention-进阶">Flash Attention 进阶<a class="heading-anchor" href="#flash-attention-%E8%BF%9B%E9%98%B6" aria-label="链接到Flash Attention 进阶">#</a></h2>
+<blockquote><p>基础（读懂 tiled + online softmax）见 PATH A5。下面是手写到能跑、再往上：</p>
+</blockquote><table>
+<thead>
+<tr>
+<th>层</th>
+<th>技术要点</th>
+<th>验证</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>causal</td>
+<td>causal mask 跳过无效 tile</td>
+<td><code>53_casual_attention</code></td>
+</tr>
+<tr>
+<td>multi-head</td>
+<td>B×H×N×d，batch + head 维并行</td>
+<td><code>12_multi_head_attention</code></td>
+</tr>
+</tbody></table>
+<p><strong>目标</strong>：seq_len=4096 比 naive attention 快 5×+，显存降至 O(N)</p>
+<h2 id="gqa-attention">GQA Attention<a class="heading-anchor" href="#gqa-attention" aria-label="链接到GQA Attention">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>层</th>
+<th>技术要点</th>
+<th>验证</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>GQA</td>
+<td>从 MHA 扩展，K/V head 数 &lt; Q head 数</td>
+<td><code>80_grouped_query_attention</code></td>
+</tr>
+</tbody></table>
+<blockquote><p>GQA 的机制理解（非手写）在理论线&quot;注意力演进&quot;——这里是想手写优化时的进阶。</p>
+</blockquote><hr>
+<p><em>这是静态的进阶清单，不追踪进度（进度在 PATH.md）。手写这些任意一层，对面试都是强信号。</em></p>
+</div></main><script src="../../reader.js"></script></body></html>

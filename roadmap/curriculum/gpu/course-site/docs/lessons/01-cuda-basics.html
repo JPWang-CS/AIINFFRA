@@ -1,0 +1,314 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Lesson 01 — CUDA 基础 + 第一个 Kernel · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · lessons/01-cuda-basics.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#part-1cuda-%E7%BC%96%E7%A8%8B%E6%A8%A1%E5%9E%8B%E9%98%85%E8%AF%BB--%E7%AC%94%E8%AE%B0">Part 1：CUDA 编程模型（阅读 + 笔记）</a></li><li><a href="#11-%E6%A0%B8%E5%BF%83%E6%A6%82%E5%BF%B5">1.1 核心概念</a></li><li><a href="#12-kernel-%E6%98%AF%E4%BB%80%E4%B9%88">1.2 Kernel 是什么</a></li><li><a href="#13-%E5%86%85%E5%AD%98%E5%B1%82%E7%BA%A7%E9%87%8D%E8%A6%81">1.3 内存层级（重要）</a></li><li><a href="#14-warpcuda-%E7%8B%AC%E6%9C%89%E7%9A%84%E6%A6%82%E5%BF%B5%E9%87%8D%E7%82%B9%E7%90%86%E8%A7%A3">1.4 Warp（CUDA 独有的概念，重点理解）</a></li><li><a href="#part-2vector-addition--%E4%BD%A0%E7%9A%84%E7%AC%AC%E4%B8%80%E4%B8%AA-kernel%E5%8A%A8%E6%89%8B">Part 2：Vector Addition — 你的第一个 Kernel（动手）</a></li><li><a href="#%E8%BF%99%E4%B8%AA%E7%AE%97%E5%AD%90%E5%9C%A8%E6%A8%A1%E5%9E%8B%E9%87%8C%E5%B9%B2%E5%98%9B">这个算子在模型里干嘛？</a></li><li><a href="#%E4%BB%BB%E5%8A%A1">任务</a></li><li><a href="#21-%E4%BD%A0%E8%A6%81%E5%86%99%E7%9A%84%E4%BB%A3%E7%A0%81%E6%A1%86%E6%9E%B6">2.1 你要写的代码框架</a></li><li><a href="#22-%E5%9C%A8-leetgpu-%E4%B8%8A%E8%B7%91%E6%8E%A8%E8%8D%90%E9%9B%B6%E7%8E%AF%E5%A2%83%E9%85%8D%E7%BD%AE">2.2 在 LeetGPU 上跑（推荐，零环境配置）</a></li><li><a href="#23-%E6%80%9D%E8%80%83%E9%A2%98%E5%81%9A%E5%AE%8C-kernel-%E5%90%8E%E5%9B%9E%E7%AD%94">2.3 思考题（做完 kernel 后回答）</a></li><li><a href="#part-3%E6%90%9E%E6%87%82%E6%89%A7%E8%A1%8C%E6%A8%A1%E5%9E%8B--%E9%94%99%E8%AF%AF%E6%A3%80%E6%9F%A5">Part 3：搞懂执行模型 + 错误检查</a></li><li><a href="#31-%E5%8A%A0-cuda-error-check">3.1 加 CUDA Error Check</a></li><li><a href="#32-grid-stride-loop%E5%A4%84%E7%90%86-n--grid-%E5%AE%B9%E9%87%8F%E7%9A%84%E6%83%85%E5%86%B5">3.2 Grid-Stride Loop（处理 N &gt; grid 容量的情况）</a></li><li><a href="#33-%E7%94%A8-cudaevent-%E8%AE%A1%E6%97%B6">3.3 用 cudaEvent 计时</a></li><li><a href="#%E6%9C%AC%E8%AF%BE%E6%A3%80%E9%AA%8C%E6%B8%85%E5%8D%95">✅ 本课检验清单</a></li><li><a href="#%E7%9F%A5%E8%AF%86%E5%BA%93%E7%B4%A2%E5%BC%95">知识库索引</a></li></ol></nav><div class="markdown-body"><h1 id="lesson-01--cuda-基础--第一个-kernel">Lesson 01 — CUDA 基础 + 第一个 Kernel<a class="heading-anchor" href="#lesson-01--cuda-%E5%9F%BA%E7%A1%80--%E7%AC%AC%E4%B8%80%E4%B8%AA-kernel" aria-label="链接到Lesson 01 — CUDA 基础 + 第一个 Kernel">#</a></h1>
+<blockquote><p>主题：CUDA 编程模型，写出 Vector Addition 并在 GPU 上跑通
+前置：有 Ascend C 经验，不需要从头学异构计算
+平台：LeetGPU（浏览器直接写），不需要真机
+状态：⚠️ LeetGPU 技术验收完成，但原始 <code>solve</code>/本地代码未单独归档（见 PATH.md）
+<strong>本课单元卡</strong>：LeetGPU 正确性已在下方代码快照完成；<code>solutions/</code> 归档缺失；本课不单独维护服务器性能章节。</p>
+</blockquote><p>📚 <strong>本课涉及的底层知识</strong>（跳到对应文档看完整原理）：</p>
+<ul>
+<li><a href="../notes/cuda/cuda-cheatsheet.html">CUDA API 速查</a> — 需要查 API 时随时看</li>
+<li><a href="../notes/cuda/memory-model.html">内存层级详解</a> — Day 1 内存部分</li>
+<li><a href="../notes/cuda/warp-and-sync.html">Warp 与同步</a> — Day 1 warp 部分</li>
+<li><a href="../notes/cuda/gpu-architecture.html">GPU 架构对比</a> — Ascend ↔ NVIDIA</li>
+</ul>
+<p>🎯 <strong>这对理解 Triton 有什么用</strong>：</p>
+<ul>
+<li><code>blockIdx</code> / <code>threadIdx</code> → 对应 Triton 的 <code>tl.program_id</code> 和 <code>tl.arange</code></li>
+<li><code>&lt;&lt;&lt;grid, block&gt;&gt;&gt;</code> → 对应 Triton 的 <code>grid</code> lambda</li>
+<li>grid-stride loop → Triton 自动处理，但你写的 kernel 没有它就不安全</li>
+<li>详细对照见 → <a href="../notes/cuda/triton-under-the-hood.html">Triton 底层 CUDA 对照</a></li>
+</ul>
+<hr>
+<h2 id="part-1cuda-编程模型阅读--笔记">Part 1：CUDA 编程模型（阅读 + 笔记）<a class="heading-anchor" href="#part-1cuda-%E7%BC%96%E7%A8%8B%E6%A8%A1%E5%9E%8B%E9%98%85%E8%AF%BB--%E7%AC%94%E8%AE%B0" aria-label="链接到Part 1：CUDA 编程模型（阅读 + 笔记）">#</a></h2>
+<h3 id="11-核心概念">1.1 核心概念<a class="heading-anchor" href="#11-%E6%A0%B8%E5%BF%83%E6%A6%82%E5%BF%B5" aria-label="链接到1.1 核心概念">#</a></h3>
+<p>CUDA 的并行模型是 SIMT（Single Instruction, Multiple Threads）。和 Ascend 最大的不同：<strong>Ascend 是你告诉硬件&quot;搬运数据→计算→写回&quot;，CUDA 是你告诉每个线程&quot;你算哪个元素&quot;。</strong></p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">一个 kernel 启动时的层级：</span>
+<span class="code-line" data-line="2"></span>
+<span class="code-line" data-line="3">Grid</span>
+<span class="code-line" data-line="4">├── Block (0,0)           Block (0,1)           Block (0,2)</span>
+<span class="code-line" data-line="5">│   ├── Thread 0          ├── Thread 0           ├── ...</span>
+<span class="code-line" data-line="6">│   ├── Thread 1          ├── Thread 1</span>
+<span class="code-line" data-line="7">│   ├── ...               ├── ...</span>
+<span class="code-line" data-line="8">│   └── Thread 255        └── Thread 255</span>
+<span class="code-line" data-line="9">├── Block (1,0)           ...</span>
+<span class="code-line" data-line="10">└── ...</span></code></pre></div>
+<p><strong>三个关键内置变量</strong>：</p>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1">threadIdx.x   <span class="hljs-comment">// 我在这个 block 里是第几个 thread</span></span>
+<span class="code-line" data-line="2">blockIdx.x    <span class="hljs-comment">// 我这个 block 在 grid 里是第几个</span></span>
+<span class="code-line" data-line="3">blockDim.x    <span class="hljs-comment">// 每个 block 有多少 thread</span></span>
+<span class="code-line" data-line="4"></span>
+<span class="code-line" data-line="5"><span class="hljs-comment">// 全局索引 = blockIdx.x * blockDim.x + threadIdx.x</span></span>
+<span class="code-line" data-line="6"><span class="hljs-type">int</span> idx = blockIdx.x * blockDim.x + threadIdx.x;</span></code></pre></div>
+<blockquote><p><strong>Ascend 对照</strong>：Ascend 没有 thread 概念。你用的是 tiling——把数据切成块，每块交给一个 AiCore。CUDA 的 grid/block 类似 tiling 的&quot;分块→分配到计算单元&quot;，但 CUDA 的 thread 粒度更细（每个 thread 算几个元素）。</p>
+</blockquote><h3 id="12-kernel-是什么">1.2 Kernel 是什么<a class="heading-anchor" href="#12-kernel-%E6%98%AF%E4%BB%80%E4%B9%88" aria-label="链接到1.2 Kernel 是什么">#</a></h3>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-comment">// __global__ 表示这是一个 kernel，CPU 调用，GPU 执行</span></span>
+<span class="code-line" data-line="2"><span class="hljs-function">__global__ <span class="hljs-type">void</span> <span class="hljs-title">my_kernel</span><span class="hljs-params">(<span class="hljs-type">float</span>* data, <span class="hljs-type">int</span> N)</span> </span>{</span>
+<span class="code-line" data-line="3">    <span class="hljs-type">int</span> idx = blockIdx.x * blockDim.x + threadIdx.x;</span>
+<span class="code-line" data-line="4">    <span class="hljs-keyword">if</span> (idx &lt; N) {</span>
+<span class="code-line" data-line="5">        data[idx] = data[idx] * <span class="hljs-number">2.0f</span>;  <span class="hljs-comment">// 每个 thread 处理一个元素</span></span>
+<span class="code-line" data-line="6">    }</span>
+<span class="code-line" data-line="7">}</span>
+<span class="code-line" data-line="8"></span>
+<span class="code-line" data-line="9"><span class="hljs-comment">// CPU 端调用：</span></span>
+<span class="code-line" data-line="10">my_kernel&lt;&lt;&lt;grid_size, block_size&gt;&gt;&gt;(d_data, N);</span>
+<span class="code-line" data-line="11"><span class="hljs-comment">//         ^^^^^^^^^^^^^^^^^^^^^^^^  这是 CUDA 特有的 launch syntax</span></span>
+<span class="code-line" data-line="12"><span class="hljs-comment">//         grid: 多少个 block</span></span>
+<span class="code-line" data-line="13"><span class="hljs-comment">//         block: 每个 block 多少个 thread</span></span></code></pre></div>
+<blockquote><p><strong>Ascend 对照</strong>：<code>&lt;&lt;&lt;grid, block&gt;&gt;&gt;</code> 就是 Ascend 的&quot;把 tiling 任务分发到多少个 AiCore 上&quot;。grid 决定分多少块，block 决定每块用多少计算资源。</p>
+</blockquote><h3 id="13-内存层级重要">1.3 内存层级（重要）<a class="heading-anchor" href="#13-%E5%86%85%E5%AD%98%E5%B1%82%E7%BA%A7%E9%87%8D%E8%A6%81" aria-label="链接到1.3 内存层级（重要）">#</a></h3>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">GPU 内存层级（从快到慢）：</span>
+<span class="code-line" data-line="2">Register    — 每个 thread 私有，最快，但最少（~255 个 32-bit reg/thread）</span>
+<span class="code-line" data-line="3">Shared Mem  — 每个 block 共享，快，程序员显式管理（~48-164 KB/block）</span>
+<span class="code-line" data-line="4">L2 Cache    — 所有 SM 共享，硬件自动管理</span>
+<span class="code-line" data-line="5">Global Mem  — 整个 GPU 共享（HBM），最慢但最大，程序员管理</span></code></pre></div>
+<blockquote><p><strong>Ascend 对照</strong>：</p>
+<ul>
+<li>Shared Memory ≈ <strong>L1 Buffer / Unified Buffer</strong>——都是片上、程序员显式管理</li>
+<li>Global Memory ≈ <strong>HBM</strong>——一样的东西</li>
+<li>Register ≈ Ascend 没有直接对应，但类似 Cube Unit 内部的寄存器文件</li>
+</ul>
+<p>关键差异：CUDA 没有 Ascend 的 <strong>L0A/L0B/L0C</strong> 专用缓存层。Shared Memory 承担了这个角色。</p>
+</blockquote><h3 id="14-warpcuda-独有的概念重点理解">1.4 Warp（CUDA 独有的概念，重点理解）<a class="heading-anchor" href="#14-warpcuda-%E7%8B%AC%E6%9C%89%E7%9A%84%E6%A6%82%E5%BF%B5%E9%87%8D%E7%82%B9%E7%90%86%E8%A7%A3" aria-label="链接到1.4 Warp（CUDA 独有的概念，重点理解）">#</a></h3>
+<p><strong>一个 warp = 32 个 thread 的组。同一 warp 内的 32 个线程在执行同一条指令。</strong></p>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-comment">// 如果 warp 内线程走不同分支：</span></span>
+<span class="code-line" data-line="2"><span class="hljs-keyword">if</span> (threadIdx.x % <span class="hljs-number">2</span> == <span class="hljs-number">0</span>) {</span>
+<span class="code-line" data-line="3">    <span class="hljs-comment">// 偶数线程执行这条</span></span>
+<span class="code-line" data-line="4">} <span class="hljs-keyword">else</span> {</span>
+<span class="code-line" data-line="5">    <span class="hljs-comment">// 奇数线程执行这条 → 但硬件只能串行！先执行 if，再执行 else</span></span>
+<span class="code-line" data-line="6">    <span class="hljs-comment">// 这就是 warp divergence</span></span>
+<span class="code-line" data-line="7">}</span></code></pre></div>
+<blockquote><p><strong>Ascend 对照</strong>：升腾的 Vector Unit 也有 SIMD 宽度（比如 256-bit，一次处理 8 个 FP32）。但 CUDA 的 warp divergence 是它独有的性能杀手——同一 warp 内分支会导致串行化。Ascend 没有这个因为它是数据流驱动的。</p>
+</blockquote><p><code>[面试]</code> Warp divergence 是 CUDA 面试必考题。</p>
+<hr>
+<h2 id="part-2vector-addition--你的第一个-kernel动手">Part 2：Vector Addition — 你的第一个 Kernel（动手）<a class="heading-anchor" href="#part-2vector-addition--%E4%BD%A0%E7%9A%84%E7%AC%AC%E4%B8%80%E4%B8%AA-kernel%E5%8A%A8%E6%89%8B" aria-label="链接到Part 2：Vector Addition — 你的第一个 Kernel（动手）">#</a></h2>
+<h3 id="这个算子在模型里干嘛">这个算子在模型里干嘛？<a class="heading-anchor" href="#%E8%BF%99%E4%B8%AA%E7%AE%97%E5%AD%90%E5%9C%A8%E6%A8%A1%E5%9E%8B%E9%87%8C%E5%B9%B2%E5%98%9B" aria-label="链接到这个算子在模型里干嘛？">#</a></h3>
+<p><strong>数学定义</strong>：<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mo stretchy="false">[</mo><mi>i</mi><mo stretchy="false">]</mo><mo>=</mo><mi>A</mi><mo stretchy="false">[</mo><mi>i</mi><mo stretchy="false">]</mo><mo>+</mo><mi>B</mi><mo stretchy="false">[</mo><mi>i</mi><mo stretchy="false">]</mo></mrow><annotation encoding="application/x-tex">C[i] = A[i] + B[i]</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.0715em;">C</span><span class="mopen">[</span><span class="mord mathnormal">i</span><span class="mclose">]</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">A</span><span class="mopen">[</span><span class="mord mathnormal">i</span><span class="mclose">]</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.0502em;">B</span><span class="mopen">[</span><span class="mord mathnormal">i</span><span class="mclose">]</span></span></span></span>，逐元素加法（element-wise add）。</p>
+<p><strong>在 Transformer 里的位置</strong>（以 LLaMA 一个 block 为例）：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">Input</span>
+<span class="code-line" data-line="2">  ↓</span>
+<span class="code-line" data-line="3">LayerNorm         → element-wise（kernel fusion 会合并进前一步）</span>
+<span class="code-line" data-line="4">  ↓</span>
+<span class="code-line" data-line="5">QKV Projection    → GEMM（矩阵乘）</span>
+<span class="code-line" data-line="6">  ↓</span>
+<span class="code-line" data-line="7">  ... Attention ...</span>
+<span class="code-line" data-line="8">  ↓</span>
+<span class="code-line" data-line="9">+ Residual        → ⬅ Vector Add！（输入 + Attention 输出）</span>
+<span class="code-line" data-line="10">  ↓</span>
+<span class="code-line" data-line="11">LayerNorm         → element-wise</span>
+<span class="code-line" data-line="12">  ↓</span>
+<span class="code-line" data-line="13">FFN (gate+up)     → GEMM</span>
+<span class="code-line" data-line="14">  ↓ Activation     → element-wise（SiLU）</span>
+<span class="code-line" data-line="15">  ↓ × gate        → Vector Add × element-wise mul（gated activation）</span>
+<span class="code-line" data-line="16">  ↓ down proj     → GEMM</span>
+<span class="code-line" data-line="17">  ↓</span>
+<span class="code-line" data-line="18">+ Residual        → ⬅ Vector Add！（加回 FFN 前的输入）</span></code></pre></div>
+<p>Vector Add 本身很快（memory-bound），单独提出来学是因为它是<strong>最简单的 kernel</strong>——只做一次内存读写和一次加法，不涉及 shared memory、同步、tiling。用它能练熟：</p>
+<ul>
+<li>grid/block/thread 索引计算</li>
+<li>grid-stride loop</li>
+<li>cudaEvent 计时 + bandwidth 计算</li>
+<li>memory-bound vs compute-bound 判断</li>
+</ul>
+<p><strong>什么模型用</strong>：所有 Transformer（LLaMA/GPT/BERT/DeepSeek/Mistral）、CNN（ResNet 的 residual）、任何有 skip connection 或 bias addition 的模型。</p>
+<h3 id="任务">任务<a class="heading-anchor" href="#%E4%BB%BB%E5%8A%A1" aria-label="链接到任务">#</a></h3>
+<p>写一个 GPU 程序，做两个向量的逐元素加法：<code>C[i] = A[i] + B[i]</code>。</p>
+<p><strong>自己写，不要复制仓库里的参考实现。写完可以对照参考。</strong></p>
+<h3 id="21-你要写的代码框架">2.1 你要写的代码框架<a class="heading-anchor" href="#21-%E4%BD%A0%E8%A6%81%E5%86%99%E7%9A%84%E4%BB%A3%E7%A0%81%E6%A1%86%E6%9E%B6" aria-label="链接到2.1 你要写的代码框架">#</a></h3>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;cuda_runtime.h&gt;</span></span></span>
+<span class="code-line" data-line="2"><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;cstdio&gt;</span></span></span>
+<span class="code-line" data-line="3"></span>
+<span class="code-line" data-line="4"><span class="hljs-comment">// <span class="hljs-doctag">TODO:</span> 你来写这个 kernel</span></span>
+<span class="code-line" data-line="5"><span class="hljs-function">__global__ <span class="hljs-type">void</span> <span class="hljs-title">vector_add_kernel</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">float</span>* A, <span class="hljs-type">const</span> <span class="hljs-type">float</span>* B, <span class="hljs-type">float</span>* C, <span class="hljs-type">int</span> N)</span> </span>{</span>
+<span class="code-line" data-line="6">    <span class="hljs-comment">// 1. 计算全局索引</span></span>
+<span class="code-line" data-line="7">    <span class="hljs-comment">// 2. 边界判断</span></span>
+<span class="code-line" data-line="8">    <span class="hljs-comment">// 3. 做加法</span></span>
+<span class="code-line" data-line="9">}</span>
+<span class="code-line" data-line="10"></span>
+<span class="code-line" data-line="11"><span class="hljs-function"><span class="hljs-type">int</span> <span class="hljs-title">main</span><span class="hljs-params">()</span> </span>{</span>
+<span class="code-line" data-line="12">    <span class="hljs-type">int</span> N = <span class="hljs-number">1</span> &lt;&lt; <span class="hljs-number">20</span>;  <span class="hljs-comment">// 1M 个元素</span></span>
+<span class="code-line" data-line="13">    <span class="hljs-type">size_t</span> bytes = N * <span class="hljs-keyword">sizeof</span>(<span class="hljs-type">float</span>);</span>
+<span class="code-line" data-line="14"></span>
+<span class="code-line" data-line="15">    <span class="hljs-comment">// 1. 在 CPU 上分配内存并初始化</span></span>
+<span class="code-line" data-line="16">    <span class="hljs-type">float</span> *h_A, *h_B, *h_C;</span>
+<span class="code-line" data-line="17">    h_A = (<span class="hljs-type">float</span>*)<span class="hljs-built_in">malloc</span>(bytes);</span>
+<span class="code-line" data-line="18">    h_B = (<span class="hljs-type">float</span>*)<span class="hljs-built_in">malloc</span>(bytes);</span>
+<span class="code-line" data-line="19">    h_C = (<span class="hljs-type">float</span>*)<span class="hljs-built_in">malloc</span>(bytes);</span>
+<span class="code-line" data-line="20">    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; N; i++) {</span>
+<span class="code-line" data-line="21">        h_A[i] = (<span class="hljs-type">float</span>)i;</span>
+<span class="code-line" data-line="22">        h_B[i] = (<span class="hljs-type">float</span>)(i * <span class="hljs-number">2</span>);</span>
+<span class="code-line" data-line="23">    }</span>
+<span class="code-line" data-line="24"></span>
+<span class="code-line" data-line="25">    <span class="hljs-comment">// 2. 在 GPU 上分配内存</span></span>
+<span class="code-line" data-line="26">    <span class="hljs-type">float</span> *d_A, *d_B, *d_C;</span>
+<span class="code-line" data-line="27">    <span class="hljs-built_in">cudaMalloc</span>(&amp;d_A, bytes);</span>
+<span class="code-line" data-line="28">    <span class="hljs-built_in">cudaMalloc</span>(&amp;d_B, bytes);</span>
+<span class="code-line" data-line="29">    <span class="hljs-built_in">cudaMalloc</span>(&amp;d_C, bytes);</span>
+<span class="code-line" data-line="30"></span>
+<span class="code-line" data-line="31">    <span class="hljs-comment">// 3. 把数据从 CPU 拷到 GPU</span></span>
+<span class="code-line" data-line="32">    <span class="hljs-built_in">cudaMemcpy</span>(d_A, h_A, bytes, cudaMemcpyHostToDevice);</span>
+<span class="code-line" data-line="33">    <span class="hljs-built_in">cudaMemcpy</span>(d_B, h_B, bytes, cudaMemcpyHostToDevice);</span>
+<span class="code-line" data-line="34"></span>
+<span class="code-line" data-line="35">    <span class="hljs-comment">// 4. 启动 kernel</span></span>
+<span class="code-line" data-line="36">    <span class="hljs-type">int</span> threadsPerBlock = <span class="hljs-number">256</span>;</span>
+<span class="code-line" data-line="37">    <span class="hljs-type">int</span> blocksPerGrid = (N + threadsPerBlock - <span class="hljs-number">1</span>) / threadsPerBlock;</span>
+<span class="code-line" data-line="38">    vector_add_kernel&lt;&lt;&lt;blocksPerGrid, threadsPerBlock&gt;&gt;&gt;(d_A, d_B, d_C, N);</span>
+<span class="code-line" data-line="39"></span>
+<span class="code-line" data-line="40">    <span class="hljs-comment">// 5. 等 GPU 跑完，把结果拷回 CPU</span></span>
+<span class="code-line" data-line="41">    <span class="hljs-built_in">cudaMemcpy</span>(h_C, d_C, bytes, cudaMemcpyDeviceToHost);</span>
+<span class="code-line" data-line="42"></span>
+<span class="code-line" data-line="43">    <span class="hljs-comment">// 6. 验证结果</span></span>
+<span class="code-line" data-line="44">    <span class="hljs-type">int</span> errors = <span class="hljs-number">0</span>;</span>
+<span class="code-line" data-line="45">    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; N; i++) {</span>
+<span class="code-line" data-line="46">        <span class="hljs-keyword">if</span> (<span class="hljs-built_in">fabsf</span>(h_C[i] - (h_A[i] + h_B[i])) &gt; <span class="hljs-number">1e-5</span>) {</span>
+<span class="code-line" data-line="47">            errors++;</span>
+<span class="code-line" data-line="48">        }</span>
+<span class="code-line" data-line="49">    }</span>
+<span class="code-line" data-line="50">    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;Errors: %d / %d\n&quot;</span>, errors, N);</span>
+<span class="code-line" data-line="51"></span>
+<span class="code-line" data-line="52">    <span class="hljs-comment">// 7. 清理</span></span>
+<span class="code-line" data-line="53">    <span class="hljs-built_in">cudaFree</span>(d_A); <span class="hljs-built_in">cudaFree</span>(d_B); <span class="hljs-built_in">cudaFree</span>(d_C);</span>
+<span class="code-line" data-line="54">    <span class="hljs-built_in">free</span>(h_A); <span class="hljs-built_in">free</span>(h_B); <span class="hljs-built_in">free</span>(h_C);</span>
+<span class="code-line" data-line="55">    <span class="hljs-keyword">return</span> errors == <span class="hljs-number">0</span> ? <span class="hljs-number">0</span> : <span class="hljs-number">1</span>;</span>
+<span class="code-line" data-line="56">}</span></code></pre></div>
+<blockquote><p><strong>Ascend 对照</strong>：</p>
+<ul>
+<li><code>cudaMalloc</code> ≈ Ascend 的 <code>hi_malloc</code> / <code>aclrtMalloc</code>——在设备端分配内存</li>
+<li><code>cudaMemcpy</code> ≈ Ascend 的 <code>aclrtMemcpy</code>——Host↔Device 数据传输</li>
+<li><code>&lt;&lt;&lt;grid, block&gt;&gt;&gt;</code> ≈ Ascend 的 kernel launch（但没有显式 task 分发）</li>
+</ul>
+</blockquote><h3 id="22-在-leetgpu-上跑推荐零环境配置">2.2 在 LeetGPU 上跑（推荐，零环境配置）<a class="heading-anchor" href="#22-%E5%9C%A8-leetgpu-%E4%B8%8A%E8%B7%91%E6%8E%A8%E8%8D%90%E9%9B%B6%E7%8E%AF%E5%A2%83%E9%85%8D%E7%BD%AE" aria-label="链接到2.2 在 LeetGPU 上跑（推荐，零环境配置）">#</a></h3>
+<ol>
+<li>打开 <a href="https://leetgpu.com">leetgpu.com</a>，注册登录</li>
+<li>搜索 &quot;Vector Addition&quot;</li>
+<li>选择 <strong>CUDA</strong> 标签</li>
+<li>你只需要写 kernel 函数体，平台提供 <code>solve</code> 入口：</li>
+</ol>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-comment">// LeetGPU 的 starter 模板：</span></span>
+<span class="code-line" data-line="2"><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;cuda_runtime.h&gt;</span></span></span>
+<span class="code-line" data-line="3"></span>
+<span class="code-line" data-line="4"><span class="hljs-function">__global__ <span class="hljs-type">void</span> <span class="hljs-title">vector_add</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">float</span>* A, <span class="hljs-type">const</span> <span class="hljs-type">float</span>* B, <span class="hljs-type">float</span>* C, <span class="hljs-type">int</span> N)</span> </span>{</span>
+<span class="code-line" data-line="5">    <span class="hljs-comment">// <span class="hljs-doctag">TODO:</span> 你来写</span></span>
+<span class="code-line" data-line="6">    <span class="hljs-type">int</span> idx = blockIdx.x * blockDim.x + threadIdx.x;</span>
+<span class="code-line" data-line="7">    <span class="hljs-keyword">if</span> (idx &lt; N) {</span>
+<span class="code-line" data-line="8">        C[idx] = A[idx] + B[idx];</span>
+<span class="code-line" data-line="9">    }</span>
+<span class="code-line" data-line="10">}</span>
+<span class="code-line" data-line="11"></span>
+<span class="code-line" data-line="12"><span class="hljs-keyword">extern</span> <span class="hljs-string">&quot;C&quot;</span> <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">solve</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">float</span>* A, <span class="hljs-type">const</span> <span class="hljs-type">float</span>* B, <span class="hljs-type">float</span>* C, <span class="hljs-type">int</span> N)</span> </span>{</span>
+<span class="code-line" data-line="13">    <span class="hljs-type">int</span> threadsPerBlock = <span class="hljs-number">256</span>;</span>
+<span class="code-line" data-line="14">    <span class="hljs-type">int</span> blocksPerGrid = (N + threadsPerBlock - <span class="hljs-number">1</span>) / threadsPerBlock;</span>
+<span class="code-line" data-line="15">    vector_add&lt;&lt;&lt;blocksPerGrid, threadsPerBlock&gt;&gt;&gt;(A, B, C, N);</span>
+<span class="code-line" data-line="16">    <span class="hljs-built_in">cudaDeviceSynchronize</span>();</span>
+<span class="code-line" data-line="17">}</span></code></pre></div>
+<blockquote><p><strong>注意</strong>：LeetGPU 的 <code>solve</code> 参数已经是 device pointer，你不需要 <code>cudaMalloc</code>/<code>cudaMemcpy</code>。写完 kernel 就行。</p>
+</blockquote><h3 id="23-思考题做完-kernel-后回答">2.3 思考题（做完 kernel 后回答）<a class="heading-anchor" href="#23-%E6%80%9D%E8%80%83%E9%A2%98%E5%81%9A%E5%AE%8C-kernel-%E5%90%8E%E5%9B%9E%E7%AD%94" aria-label="链接到2.3 思考题（做完 kernel 后回答）">#</a></h3>
+<ol>
+<li><code>threadsPerBlock = 256</code> 为什么选 256 而不是 128 或 512？</li>
+<li>如果 N = 25,000,000，<code>blocksPerGrid</code> 是多少？</li>
+<li>数据从 CPU 拷到 GPU 要多久？这个时间在总耗时中占比多少？</li>
+<li>这个 kernel 是 compute-bound 还是 memory-bound？为什么？</li>
+</ol>
+<hr>
+<h2 id="part-3搞懂执行模型--错误检查">Part 3：搞懂执行模型 + 错误检查<a class="heading-anchor" href="#part-3%E6%90%9E%E6%87%82%E6%89%A7%E8%A1%8C%E6%A8%A1%E5%9E%8B--%E9%94%99%E8%AF%AF%E6%A3%80%E6%9F%A5" aria-label="链接到Part 3：搞懂执行模型 + 错误检查">#</a></h2>
+<h3 id="31-加-cuda-error-check">3.1 加 CUDA Error Check<a class="heading-anchor" href="#31-%E5%8A%A0-cuda-error-check" aria-label="链接到3.1 加 CUDA Error Check">#</a></h3>
+<p>裸写 <code>cudaMalloc</code> 很危险——出错了你不知道。把这几个宏记熟：</p>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-meta">#<span class="hljs-keyword">define</span> CUDA_CHECK(call) \</span></span>
+<span class="code-line" data-line="2"><span class="hljs-meta">    do { \</span></span>
+<span class="code-line" data-line="3"><span class="hljs-meta">        cudaError_t err = call; \</span></span>
+<span class="code-line" data-line="4"><span class="hljs-meta">        <span class="hljs-keyword">if</span> (err != cudaSuccess) { \</span></span>
+<span class="code-line" data-line="5"><span class="hljs-meta">            fprintf(stderr, <span class="hljs-string">&quot;CUDA error %s:%d: %s\n&quot;</span>, __FILE__, __LINE__, \</span></span>
+<span class="code-line" data-line="6"><span class="hljs-meta">                    cudaGetErrorString(err)); \</span></span>
+<span class="code-line" data-line="7"><span class="hljs-meta">            exit(1); \</span></span>
+<span class="code-line" data-line="8"><span class="hljs-meta">        } \</span></span>
+<span class="code-line" data-line="9"><span class="hljs-meta">    } while(0)</span></span>
+<span class="code-line" data-line="10"></span>
+<span class="code-line" data-line="11"><span class="hljs-comment">// 用法：所有 CUDA API 调用都包一层</span></span>
+<span class="code-line" data-line="12"><span class="hljs-built_in">CUDA_CHECK</span>(<span class="hljs-built_in">cudaMalloc</span>(&amp;d_A, bytes));</span>
+<span class="code-line" data-line="13"><span class="hljs-built_in">CUDA_CHECK</span>(<span class="hljs-built_in">cudaMemcpy</span>(d_A, h_A, bytes, cudaMemcpyHostToDevice));</span>
+<span class="code-line" data-line="14"><span class="hljs-built_in">CUDA_CHECK</span>(<span class="hljs-built_in">cudaDeviceSynchronize</span>());  <span class="hljs-comment">// kernel launch 后用这个等 GPU 跑完</span></span></code></pre></div>
+<h3 id="32-grid-stride-loop处理-n--grid-容量的情况">3.2 Grid-Stride Loop（处理 N &gt; grid 容量的情况）<a class="heading-anchor" href="#32-grid-stride-loop%E5%A4%84%E7%90%86-n--grid-%E5%AE%B9%E9%87%8F%E7%9A%84%E6%83%85%E5%86%B5" aria-label="链接到3.2 Grid-Stride Loop（处理 N &gt; grid 容量的情况）">#</a></h3>
+<p>上面的 kernel 有一个隐患：如果 N 比 <code>blocksPerGrid × threadsPerBlock</code> 大怎么办？用 <strong>grid-stride loop</strong>：</p>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-function">__global__ <span class="hljs-type">void</span> <span class="hljs-title">vector_add_kernel</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">float</span>* A, <span class="hljs-type">const</span> <span class="hljs-type">float</span>* B, <span class="hljs-type">float</span>* C, <span class="hljs-type">int</span> N)</span> </span>{</span>
+<span class="code-line" data-line="2">    <span class="hljs-type">int</span> idx = blockIdx.x * blockDim.x + threadIdx.x;</span>
+<span class="code-line" data-line="3">    <span class="hljs-type">int</span> stride = blockDim.x * gridDim.x;   <span class="hljs-comment">// 所有线程总数</span></span>
+<span class="code-line" data-line="4"></span>
+<span class="code-line" data-line="5">    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = idx; i &lt; N; i += stride) {  <span class="hljs-comment">// 跳着处理</span></span>
+<span class="code-line" data-line="6">        C[i] = A[i] + B[i];</span>
+<span class="code-line" data-line="7">    }</span>
+<span class="code-line" data-line="8">}</span></code></pre></div>
+<blockquote><p>这样不管 N 多大，所有元素都会被覆盖。grid-stride loop 是 CUDA 编程的基础惯用法。</p>
+</blockquote><h3 id="33-用-cudaevent-计时">3.3 用 cudaEvent 计时<a class="heading-anchor" href="#33-%E7%94%A8-cudaevent-%E8%AE%A1%E6%97%B6" aria-label="链接到3.3 用 cudaEvent 计时">#</a></h3>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1">cudaEvent_t start, stop;</span>
+<span class="code-line" data-line="2"><span class="hljs-built_in">cudaEventCreate</span>(&amp;start);</span>
+<span class="code-line" data-line="3"><span class="hljs-built_in">cudaEventCreate</span>(&amp;stop);</span>
+<span class="code-line" data-line="4"></span>
+<span class="code-line" data-line="5"><span class="hljs-built_in">cudaEventRecord</span>(start);</span>
+<span class="code-line" data-line="6">vector_add_kernel&lt;&lt;&lt;blocks, threads&gt;&gt;&gt;(d_A, d_B, d_C, N);</span>
+<span class="code-line" data-line="7"><span class="hljs-built_in">cudaEventRecord</span>(stop);</span>
+<span class="code-line" data-line="8"><span class="hljs-built_in">cudaEventSynchronize</span>(stop);</span>
+<span class="code-line" data-line="9"></span>
+<span class="code-line" data-line="10"><span class="hljs-type">float</span> ms;</span>
+<span class="code-line" data-line="11"><span class="hljs-built_in">cudaEventElapsedTime</span>(&amp;ms, start, stop);</span>
+<span class="code-line" data-line="12"><span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;Kernel time: %.3f ms\n&quot;</span>, ms);</span>
+<span class="code-line" data-line="13"></span>
+<span class="code-line" data-line="14"><span class="hljs-comment">// 算 bandwidth</span></span>
+<span class="code-line" data-line="15"><span class="hljs-type">float</span> gb_per_sec = (<span class="hljs-number">3.0f</span> * N * <span class="hljs-keyword">sizeof</span>(<span class="hljs-type">float</span>)) / (ms / <span class="hljs-number">1000.0f</span>) / <span class="hljs-number">1e9f</span>;</span>
+<span class="code-line" data-line="16"><span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;Bandwidth: %.2f GB/s\n&quot;</span>, gb_per_sec);</span></code></pre></div>
+<blockquote><p>Vector Add 是典型的 memory-bound kernel：3N 个 float 的读写 ÷ kernel 耗时 = bandwidth
+对比 GPU 的理论 HBM 带宽（T4: ~320 GB/s，A100: ~2 TB/s），看你的 kernel 利用率。</p>
+</blockquote><hr>
+<h2 id="本课检验清单">✅ 本课检验清单<a class="heading-anchor" href="#%E6%9C%AC%E8%AF%BE%E6%A3%80%E9%AA%8C%E6%B8%85%E5%8D%95" aria-label="链接到✅ 本课检验清单">#</a></h2>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> 能用自己的话说清 thread/block/grid/warp 四个概念</li>
+<li><input checked="" disabled="" type="checkbox"> 写出了 <code>vector_add_kernel</code>，先在 LeetGPU 上跑通，之后才在真实 GPU 上验证，结果全对</li>
+<li><input checked="" disabled="" type="checkbox"> 理解了 grid-stride loop 的写法</li>
+<li><input checked="" disabled="" type="checkbox"> 能给 kernel 加 CUDA error check + cudaEvent 计时</li>
+<li><input checked="" disabled="" type="checkbox"> 能回答：为什么 Vector Add 是 memory-bound？</li>
+<li><input checked="" disabled="" type="checkbox"> 能说出 Ascend 和 CUDA 在编程模型上的 3 个关键差异</li>
+</ul>
+<hr>
+<h2 id="知识库索引">知识库索引<a class="heading-anchor" href="#%E7%9F%A5%E8%AF%86%E5%BA%93%E7%B4%A2%E5%BC%95" aria-label="链接到知识库索引">#</a></h2>
+<blockquote><p>这些文档覆盖完整原理，本课只做梗概。遇到不懂的跳过去读。</p>
+</blockquote><table>
+<thead>
+<tr>
+<th>想深入理解</th>
+<th>去看</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>CUDA 所有 API 的快速查阅</td>
+<td><a href="../notes/cuda/cuda-cheatsheet.html">cuda-cheatsheet.md</a></td>
+</tr>
+<tr>
+<td>内存层级、coalescing、bank conflict</td>
+<td><a href="../notes/cuda/memory-model.html">memory-model.md</a></td>
+</tr>
+<tr>
+<td>Warp 调度、divergence、shuffle、同步</td>
+<td><a href="../notes/cuda/warp-and-sync.html">warp-and-sync.md</a></td>
+</tr>
+<tr>
+<td>NVIDIA vs Da Vinci 架构对比</td>
+<td><a href="../notes/cuda/gpu-architecture.html">gpu-architecture.md</a></td>
+</tr>
+<tr>
+<td>Triton 生成的 CUDA 代码长什么样</td>
+<td><a href="../notes/cuda/triton-under-the-hood.html">triton-under-the-hood.md</a></td>
+</tr>
+<tr>
+<td>LeetGPU 全部题目</td>
+<td><a href="../notes/cuda/leetgpu-challenges.html">leetgpu-challenges.md</a></td>
+</tr>
+<tr>
+<td>完整 Vector Add 参考（先看原理并去 LeetGPU 写题！）</td>
+<td><a href="../reference/cuda/vector_add.cu">reference/cuda/vector_add.cu</a></td>
+</tr>
+<tr>
+<td>工具函数</td>
+<td><a href="../reference/cuda/include/cuda_utils.h">reference/cuda/include/cuda_utils.h</a></td>
+</tr>
+</tbody></table>
+<hr>
+<p><em>Lesson 01 · CUDA 基础 · 源自原 week-01</em></p>
+</div></main><script src="../../reader.js"></script></body></html>

@@ -1,0 +1,246 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Triton 语法速查 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · notes/triton/triton-cheatsheet.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#1-%E5%9F%BA%E6%9C%AC%E6%A1%86%E6%9E%B6">1. 基本框架</a></li><li><a href="#2-program-id-%E5%92%8C-grid">2. Program ID 和 Grid</a></li><li><a href="#3-%E5%90%91%E9%87%8F%E6%93%8D%E4%BD%9Ctlarange">3. 向量操作（tl.arange）</a></li><li><a href="#4-%E5%86%85%E5%AD%98%E6%93%8D%E4%BD%9C">4. 内存操作</a></li><li><a href="#5-%E7%B1%BB%E5%9E%8B%E5%92%8C%E5%B8%B8%E9%87%8F">5. 类型和常量</a></li><li><a href="#6-%E6%95%B0%E5%AD%A6%E8%BF%90%E7%AE%97">6. 数学运算</a></li><li><a href="#7-gemm-%E6%A0%B8%E5%BF%83tldot">7. GEMM 核心（tl.dot）</a></li><li><a href="#8-softmax-pattern">8. Softmax Pattern</a></li><li><a href="#9-autotuning">9. Autotuning</a></li><li><a href="#10-%E7%BC%96%E8%AF%91%E5%92%8C%E8%B0%83%E8%AF%95">10. 编译和调试</a></li><li><a href="#11-%E5%B8%B8%E8%A7%81-pattern-%E9%80%9F%E6%9F%A5">11. 常见 Pattern 速查</a></li><li><a href="#%E7%9B%B8%E5%85%B3%E6%96%87%E6%A1%A3">相关文档</a></li></ol></nav><div class="markdown-body"><h1 id="triton-语法速查">Triton 语法速查<a class="heading-anchor" href="#triton-%E8%AF%AD%E6%B3%95%E9%80%9F%E6%9F%A5" aria-label="链接到Triton 语法速查">#</a></h1>
+<blockquote><p>日常写 Triton 最常用的 API 和 pattern。每个条目最小可用代码。
+底层 CUDA 对照 → <a href="../cuda/triton-under-the-hood.html">../cuda/triton-under-the-hood.md</a></p>
+</blockquote><hr>
+<h2 id="1-基本框架">1. 基本框架<a class="heading-anchor" href="#1-%E5%9F%BA%E6%9C%AC%E6%A1%86%E6%9E%B6" aria-label="链接到1. 基本框架">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1"><span class="hljs-keyword">import</span> triton</span>
+<span class="code-line" data-line="2"><span class="hljs-keyword">import</span> triton.language <span class="hljs-keyword">as</span> tl</span>
+<span class="code-line" data-line="3"></span>
+<span class="code-line" data-line="4"><span class="hljs-meta">@triton.jit</span></span>
+<span class="code-line" data-line="5"><span class="hljs-keyword">def</span> <span class="hljs-title function_">my_kernel</span>(<span class="hljs-params"></span></span>
+<span class="code-line" data-line="6"><span class="hljs-params">    x_ptr,          <span class="hljs-comment"># 输入指针</span></span></span>
+<span class="code-line" data-line="7"><span class="hljs-params">    y_ptr,          <span class="hljs-comment"># 输出指针</span></span></span>
+<span class="code-line" data-line="8"><span class="hljs-params">    N,              <span class="hljs-comment"># 标量参数</span></span></span>
+<span class="code-line" data-line="9"><span class="hljs-params">    BLOCK_SIZE: tl.constexpr,  <span class="hljs-comment"># compile-time constant</span></span></span>
+<span class="code-line" data-line="10"><span class="hljs-params"></span>):</span>
+<span class="code-line" data-line="11">    <span class="hljs-comment"># program_id: 当前 block 在 grid 中的位置</span></span>
+<span class="code-line" data-line="12">    pid = tl.program_id(axis=<span class="hljs-number">0</span>)</span>
+<span class="code-line" data-line="13">    </span>
+<span class="code-line" data-line="14">    <span class="hljs-comment"># 计算这个 block 处理的元素范围</span></span>
+<span class="code-line" data-line="15">    block_start = pid * BLOCK_SIZE</span>
+<span class="code-line" data-line="16">    offsets = block_start + tl.arange(<span class="hljs-number">0</span>, BLOCK_SIZE)</span>
+<span class="code-line" data-line="17">    </span>
+<span class="code-line" data-line="18">    <span class="hljs-comment"># 边界 mask</span></span>
+<span class="code-line" data-line="19">    mask = offsets &lt; N</span>
+<span class="code-line" data-line="20">    </span>
+<span class="code-line" data-line="21">    <span class="hljs-comment"># 加载 → 计算 → 存储</span></span>
+<span class="code-line" data-line="22">    x = tl.load(x_ptr + offsets, mask=mask)</span>
+<span class="code-line" data-line="23">    y = x * <span class="hljs-number">2.0</span></span>
+<span class="code-line" data-line="24">    tl.store(y_ptr + offsets, y, mask=mask)</span>
+<span class="code-line" data-line="25"></span>
+<span class="code-line" data-line="26"><span class="hljs-comment"># 启动 kernel</span></span>
+<span class="code-line" data-line="27">grid = <span class="hljs-keyword">lambda</span> meta: (triton.cdiv(N, meta[<span class="hljs-string">&#x27;BLOCK_SIZE&#x27;</span>]),)</span>
+<span class="code-line" data-line="28">my_kernel[grid](x, y, N, BLOCK_SIZE=<span class="hljs-number">256</span>)</span></code></pre></div>
+<hr>
+<h2 id="2-program-id-和-grid">2. Program ID 和 Grid<a class="heading-anchor" href="#2-program-id-%E5%92%8C-grid" aria-label="链接到2. Program ID 和 Grid">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1"><span class="hljs-comment"># 1D grid</span></span>
+<span class="code-line" data-line="2">pid = tl.program_id(<span class="hljs-number">0</span>)          <span class="hljs-comment"># 0 到 grid[0]-1</span></span>
+<span class="code-line" data-line="3">num_pids = tl.num_programs(<span class="hljs-number">0</span>)   <span class="hljs-comment"># grid 大小</span></span>
+<span class="code-line" data-line="4"></span>
+<span class="code-line" data-line="5"><span class="hljs-comment"># 2D grid</span></span>
+<span class="code-line" data-line="6">pid_m = tl.program_id(<span class="hljs-number">0</span>)        <span class="hljs-comment"># 行方向</span></span>
+<span class="code-line" data-line="7">pid_n = tl.program_id(<span class="hljs-number">1</span>)        <span class="hljs-comment"># 列方向</span></span>
+<span class="code-line" data-line="8"></span>
+<span class="code-line" data-line="9"><span class="hljs-comment"># grid lambda — 告诉 triton 启动多少个 block</span></span>
+<span class="code-line" data-line="10">grid = <span class="hljs-keyword">lambda</span> meta: (M // meta[<span class="hljs-string">&#x27;BLOCK_M&#x27;</span>], N // meta[<span class="hljs-string">&#x27;BLOCK_N&#x27;</span>])</span>
+<span class="code-line" data-line="11">kernel[grid](...)</span></code></pre></div>
+<hr>
+<h2 id="3-向量操作tlarange">3. 向量操作（tl.arange）<a class="heading-anchor" href="#3-%E5%90%91%E9%87%8F%E6%93%8D%E4%BD%9Ctlarange" aria-label="链接到3. 向量操作（tl.arange）">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1"><span class="hljs-comment"># tl.arange(0, N) 生成一个 1D 向量 [0, 1, 2, ..., N-1]</span></span>
+<span class="code-line" data-line="2">offsets = tl.arange(<span class="hljs-number">0</span>, BLOCK_SIZE)</span>
+<span class="code-line" data-line="3"></span>
+<span class="code-line" data-line="4"><span class="hljs-comment"># 2D 向量（用于 GEMM）</span></span>
+<span class="code-line" data-line="5">row_idx = tl.arange(<span class="hljs-number">0</span>, BLOCK_M)[:, <span class="hljs-literal">None</span>]   <span class="hljs-comment"># BLOCK_M × 1</span></span>
+<span class="code-line" data-line="6">col_idx = tl.arange(<span class="hljs-number">0</span>, BLOCK_N)[<span class="hljs-literal">None</span>, :]   <span class="hljs-comment"># 1 × BLOCK_N</span></span>
+<span class="code-line" data-line="7"><span class="hljs-comment"># 广播：两个结合得到 BLOCK_M × BLOCK_N 的索引矩阵</span></span></code></pre></div>
+<hr>
+<h2 id="4-内存操作">4. 内存操作<a class="heading-anchor" href="#4-%E5%86%85%E5%AD%98%E6%93%8D%E4%BD%9C" aria-label="链接到4. 内存操作">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1"><span class="hljs-comment"># 加载（global memory → register/shared memory）</span></span>
+<span class="code-line" data-line="2">x = tl.load(ptr + offsets, mask=mask)             <span class="hljs-comment"># 基本 load</span></span>
+<span class="code-line" data-line="3">x = tl.load(ptr + offsets, mask=mask, other=<span class="hljs-number">0.0</span>)  <span class="hljs-comment"># mask 外的元素填充 0.0</span></span>
+<span class="code-line" data-line="4"></span>
+<span class="code-line" data-line="5"><span class="hljs-comment"># 存储（register/shared memory → global memory）</span></span>
+<span class="code-line" data-line="6">tl.store(ptr + offsets, values, mask=mask)</span>
+<span class="code-line" data-line="7"></span>
+<span class="code-line" data-line="8"><span class="hljs-comment"># 原子操作</span></span>
+<span class="code-line" data-line="9">tl.atomic_add(ptr + offsets, values, mask=mask)</span>
+<span class="code-line" data-line="10">tl.atomic_max(ptr + offsets, values, mask=mask)</span>
+<span class="code-line" data-line="11"></span>
+<span class="code-line" data-line="12"><span class="hljs-comment"># 指针运算（注意 triton 用 int，不是 float 指针运算）</span></span>
+<span class="code-line" data-line="13">ptr = ptr + offset_ints  <span class="hljs-comment"># 返回新指针</span></span></code></pre></div>
+<hr>
+<h2 id="5-类型和常量">5. 类型和常量<a class="heading-anchor" href="#5-%E7%B1%BB%E5%9E%8B%E5%92%8C%E5%B8%B8%E9%87%8F" aria-label="链接到5. 类型和常量">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1"><span class="hljs-comment"># 常量声明</span></span>
+<span class="code-line" data-line="2"><span class="hljs-meta">@triton.jit</span></span>
+<span class="code-line" data-line="3"><span class="hljs-keyword">def</span> <span class="hljs-title function_">kernel</span>(<span class="hljs-params">x, N,</span></span>
+<span class="code-line" data-line="4"><span class="hljs-params">           BLOCK_SIZE: tl.constexpr,     <span class="hljs-comment"># compile-time constant，影响 grid</span></span></span>
+<span class="code-line" data-line="5"><span class="hljs-params">           SCALE: tl.constexpr = <span class="hljs-number">1.0</span></span>):   <span class="hljs-comment"># 可选默认值</span></span>
+<span class="code-line" data-line="6">    ...</span>
+<span class="code-line" data-line="7"></span>
+<span class="code-line" data-line="8"><span class="hljs-comment"># 数据类型（tl 命名空间下）</span></span>
+<span class="code-line" data-line="9">tl.float32, tl.float16, tl.bfloat16</span>
+<span class="code-line" data-line="10">tl.int32, tl.int64</span>
+<span class="code-line" data-line="11">tl.uint32, tl.uint8</span>
+<span class="code-line" data-line="12"></span>
+<span class="code-line" data-line="13"><span class="hljs-comment"># 类型转换</span></span>
+<span class="code-line" data-line="14">x_fp16 = x.to(tl.float16)</span>
+<span class="code-line" data-line="15">x_fp32 = x.to(tl.float32)</span></code></pre></div>
+<hr>
+<h2 id="6-数学运算">6. 数学运算<a class="heading-anchor" href="#6-%E6%95%B0%E5%AD%A6%E8%BF%90%E7%AE%97" aria-label="链接到6. 数学运算">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1"><span class="hljs-comment"># 基本运算（向量化，和 NumPy 几乎一样）</span></span>
+<span class="code-line" data-line="2">y = x + y</span>
+<span class="code-line" data-line="3">y = x * scale</span>
+<span class="code-line" data-line="4">y = x / denom</span>
+<span class="code-line" data-line="5"></span>
+<span class="code-line" data-line="6"><span class="hljs-comment"># 数学函数</span></span>
+<span class="code-line" data-line="7">tl.exp(x)</span>
+<span class="code-line" data-line="8">tl.log(x)</span>
+<span class="code-line" data-line="9">tl.sqrt(x)</span>
+<span class="code-line" data-line="10">tl.<span class="hljs-built_in">abs</span>(x)</span>
+<span class="code-line" data-line="11">tl.maximum(a, b)</span>
+<span class="code-line" data-line="12">tl.minimum(a, b)</span>
+<span class="code-line" data-line="13">tl.sigmoid(x)   <span class="hljs-comment"># 1/(1+exp(-x))</span></span>
+<span class="code-line" data-line="14"></span>
+<span class="code-line" data-line="15"><span class="hljs-comment"># Reduction</span></span>
+<span class="code-line" data-line="16">tl.<span class="hljs-built_in">sum</span>(x, axis=<span class="hljs-number">0</span>)     <span class="hljs-comment"># 沿某一维求和</span></span>
+<span class="code-line" data-line="17">tl.<span class="hljs-built_in">max</span>(x, axis=<span class="hljs-number">0</span>)     <span class="hljs-comment"># 沿某一维取最大</span></span>
+<span class="code-line" data-line="18">tl.argmax(x, axis=<span class="hljs-number">0</span>)  <span class="hljs-comment"># 沿某一维取 argmax</span></span>
+<span class="code-line" data-line="19"></span>
+<span class="code-line" data-line="20"><span class="hljs-comment"># 条件</span></span>
+<span class="code-line" data-line="21">y = tl.where(mask, a, b)  <span class="hljs-comment"># mask ? a : b，向量化</span></span></code></pre></div>
+<hr>
+<h2 id="7-gemm-核心tldot">7. GEMM 核心（tl.dot）<a class="heading-anchor" href="#7-gemm-%E6%A0%B8%E5%BF%83tldot" aria-label="链接到7. GEMM 核心（tl.dot）">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1"><span class="hljs-meta">@triton.jit</span></span>
+<span class="code-line" data-line="2"><span class="hljs-keyword">def</span> <span class="hljs-title function_">gemm_kernel</span>(<span class="hljs-params">A, B, C, M, N, K,</span></span>
+<span class="code-line" data-line="3"><span class="hljs-params">                BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr</span>):</span>
+<span class="code-line" data-line="4">    pid_m = tl.program_id(<span class="hljs-number">0</span>)</span>
+<span class="code-line" data-line="5">    pid_n = tl.program_id(<span class="hljs-number">1</span>)</span>
+<span class="code-line" data-line="6">    </span>
+<span class="code-line" data-line="7">    <span class="hljs-comment"># 指针到 A 和 B 的 tile</span></span>
+<span class="code-line" data-line="8">    a_ptrs = A + pid_m * BLOCK_M * K + tl.arange(<span class="hljs-number">0</span>, BLOCK_M)[:, <span class="hljs-literal">None</span>] * K + tl.arange(<span class="hljs-number">0</span>, BLOCK_K)[<span class="hljs-literal">None</span>, :]</span>
+<span class="code-line" data-line="9">    b_ptrs = B + pid_n * BLOCK_N + tl.arange(<span class="hljs-number">0</span>, BLOCK_K)[:, <span class="hljs-literal">None</span>] * N + tl.arange(<span class="hljs-number">0</span>, BLOCK_N)[<span class="hljs-literal">None</span>, :]</span>
+<span class="code-line" data-line="10">    </span>
+<span class="code-line" data-line="11">    acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)</span>
+<span class="code-line" data-line="12">    <span class="hljs-keyword">for</span> k <span class="hljs-keyword">in</span> <span class="hljs-built_in">range</span>(<span class="hljs-number">0</span>, K, BLOCK_K):</span>
+<span class="code-line" data-line="13">        a = tl.load(a_ptrs)   <span class="hljs-comment"># BLOCK_M × BLOCK_K</span></span>
+<span class="code-line" data-line="14">        b = tl.load(b_ptrs)   <span class="hljs-comment"># BLOCK_K × BLOCK_N</span></span>
+<span class="code-line" data-line="15">        acc += tl.dot(a, b)   <span class="hljs-comment"># BLOCK_M × BLOCK_N（硬件加速！）</span></span>
+<span class="code-line" data-line="16">        a_ptrs += BLOCK_K</span>
+<span class="code-line" data-line="17">        b_ptrs += BLOCK_K * N</span>
+<span class="code-line" data-line="18">    </span>
+<span class="code-line" data-line="19">    c_ptrs = C + pid_m * BLOCK_M * N + pid_n * BLOCK_N + ...</span>
+<span class="code-line" data-line="20">    tl.store(c_ptrs, acc)</span></code></pre></div>
+<hr>
+<h2 id="8-softmax-pattern">8. Softmax Pattern<a class="heading-anchor" href="#8-softmax-pattern" aria-label="链接到8. Softmax Pattern">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1"><span class="hljs-meta">@triton.jit</span></span>
+<span class="code-line" data-line="2"><span class="hljs-keyword">def</span> <span class="hljs-title function_">softmax_kernel</span>(<span class="hljs-params">x_ptr, y_ptr, N, BLOCK_SIZE: tl.constexpr</span>):</span>
+<span class="code-line" data-line="3">    pid = tl.program_id(<span class="hljs-number">0</span>)</span>
+<span class="code-line" data-line="4">    offsets = pid * BLOCK_SIZE + tl.arange(<span class="hljs-number">0</span>, BLOCK_SIZE)</span>
+<span class="code-line" data-line="5">    mask = offsets &lt; N</span>
+<span class="code-line" data-line="6">    </span>
+<span class="code-line" data-line="7">    x = tl.load(x_ptr + offsets, mask=mask, other=-<span class="hljs-built_in">float</span>(<span class="hljs-string">&#x27;inf&#x27;</span>))</span>
+<span class="code-line" data-line="8">    </span>
+<span class="code-line" data-line="9">    <span class="hljs-comment"># Online softmax (triton 帮你处理 warp-level reduce)</span></span>
+<span class="code-line" data-line="10">    x_max = tl.<span class="hljs-built_in">max</span>(x, axis=<span class="hljs-number">0</span>)           <span class="hljs-comment"># 找最大值</span></span>
+<span class="code-line" data-line="11">    num = tl.exp(x - x_max)             <span class="hljs-comment"># exp(x - max)</span></span>
+<span class="code-line" data-line="12">    denom = tl.<span class="hljs-built_in">sum</span>(num, axis=<span class="hljs-number">0</span>)         <span class="hljs-comment"># sum(exp(...))</span></span>
+<span class="code-line" data-line="13">    y = num / denom</span>
+<span class="code-line" data-line="14">    </span>
+<span class="code-line" data-line="15">    tl.store(y_ptr + offsets, y, mask=mask)</span></code></pre></div>
+<hr>
+<h2 id="9-autotuning">9. Autotuning<a class="heading-anchor" href="#9-autotuning" aria-label="链接到9. Autotuning">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1"><span class="hljs-meta">@triton.autotune(<span class="hljs-params"></span></span></span>
+<span class="code-line" data-line="2"><span class="hljs-meta"><span class="hljs-params">    configs=[</span></span></span>
+<span class="code-line" data-line="3"><span class="hljs-meta"><span class="hljs-params">        triton.Config(<span class="hljs-params">{<span class="hljs-string">&#x27;BLOCK_SIZE&#x27;</span>: <span class="hljs-number">128</span>}, num_warps=<span class="hljs-number">4</span></span>),</span></span></span>
+<span class="code-line" data-line="4"><span class="hljs-meta"><span class="hljs-params">        triton.Config(<span class="hljs-params">{<span class="hljs-string">&#x27;BLOCK_SIZE&#x27;</span>: <span class="hljs-number">256</span>}, num_warps=<span class="hljs-number">8</span></span>),</span></span></span>
+<span class="code-line" data-line="5"><span class="hljs-meta"><span class="hljs-params">        triton.Config(<span class="hljs-params">{<span class="hljs-string">&#x27;BLOCK_SIZE&#x27;</span>: <span class="hljs-number">512</span>}, num_warps=<span class="hljs-number">16</span></span>),</span></span></span>
+<span class="code-line" data-line="6"><span class="hljs-meta"><span class="hljs-params">    ],</span></span></span>
+<span class="code-line" data-line="7"><span class="hljs-meta"><span class="hljs-params">    key=[<span class="hljs-string">&#x27;N&#x27;</span>],  <span class="hljs-comment"># 按 N 大小选择最优配置</span></span></span></span>
+<span class="code-line" data-line="8"><span class="hljs-meta"><span class="hljs-params"></span>)</span></span>
+<span class="code-line" data-line="9"><span class="hljs-meta">@triton.jit</span></span>
+<span class="code-line" data-line="10"><span class="hljs-keyword">def</span> <span class="hljs-title function_">my_kernel</span>(<span class="hljs-params">x_ptr, y_ptr, N, BLOCK_SIZE: tl.constexpr</span>):</span>
+<span class="code-line" data-line="11">    ...</span>
+<span class="code-line" data-line="12"></span>
+<span class="code-line" data-line="13"><span class="hljs-comment"># 第一次调用时 Triton 自动 benchmark 所有 configs</span></span>
+<span class="code-line" data-line="14"><span class="hljs-comment"># 选择最快的，缓存结果</span></span></code></pre></div>
+<hr>
+<h2 id="10-编译和调试">10. 编译和调试<a class="heading-anchor" href="#10-%E7%BC%96%E8%AF%91%E5%92%8C%E8%B0%83%E8%AF%95" aria-label="链接到10. 编译和调试">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>BASH</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-bash"><span class="code-line" data-line="1"><span class="hljs-comment"># 运行 Triton kernel（需要 NVIDIA GPU）</span></span>
+<span class="code-line" data-line="2">python my_kernel.py</span>
+<span class="code-line" data-line="3"></span>
+<span class="code-line" data-line="4"><span class="hljs-comment"># 环境变量</span></span>
+<span class="code-line" data-line="5">TRITON_INTERPRET=1 python my_kernel.py    <span class="hljs-comment"># CPU 上解释执行（调试用）</span></span>
+<span class="code-line" data-line="6">TRITON_PRINT_AUTOTUNING=1                 <span class="hljs-comment"># 打印 autotuning 结果</span></span>
+<span class="code-line" data-line="7"></span>
+<span class="code-line" data-line="8"><span class="hljs-comment"># 查看生成的中间代码</span></span>
+<span class="code-line" data-line="9"><span class="hljs-comment"># Triton IR → MLIR → LLVM IR → PTX → SASS</span></span>
+<span class="code-line" data-line="10"><span class="hljs-comment"># 用 @triton.jit 的 compile 方法</span></span></code></pre></div>
+<hr>
+<h2 id="11-常见-pattern-速查">11. 常见 Pattern 速查<a class="heading-anchor" href="#11-%E5%B8%B8%E8%A7%81-pattern-%E9%80%9F%E6%9F%A5" aria-label="链接到11. 常见 Pattern 速查">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>Pattern</th>
+<th>关键 API</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>element-wise</td>
+<td>1D grid, tl.load → compute → tl.store</td>
+<td><code>program_id(0)</code>, <code>arange</code></td>
+</tr>
+<tr>
+<td>2D grid</td>
+<td>2D program_id, 2D arange + broadcast</td>
+<td><code>program_id(0/1)</code>, <code>[:, None]</code></td>
+</tr>
+<tr>
+<td>GEMM</td>
+<td>2D grid, tl.dot in loop over K tiles</td>
+<td><code>tl.dot</code>, <code>tl.zeros</code></td>
+</tr>
+<tr>
+<td>Softmax</td>
+<td>max → exp → sum → div</td>
+<td><code>tl.max</code>, <code>tl.exp</code>, <code>tl.sum</code></td>
+</tr>
+<tr>
+<td>LayerNorm</td>
+<td>mean → var → normalize</td>
+<td><code>tl.sum</code> (×2 遍历)</td>
+</tr>
+<tr>
+<td>Attention</td>
+<td>QK^T → scale → softmax → ×V</td>
+<td><code>tl.dot</code> + softmax pattern</td>
+</tr>
+<tr>
+<td>Fused kernel</td>
+<td>多个 op 在同一个 kernel 里</td>
+<td>保存 intermediate results 到 register</td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="相关文档">相关文档<a class="heading-anchor" href="#%E7%9B%B8%E5%85%B3%E6%96%87%E6%A1%A3" aria-label="链接到相关文档">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>文档</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><a href="../cuda/triton-under-the-hood.html">../cuda/triton-under-the-hood.md</a></td>
+<td>Triton 生成的 CUDA 代码长什么样</td>
+</tr>
+<tr>
+<td><a href="../cuda/memory-model.html">../cuda/memory-model.md</a></td>
+<td>CUDA 内存层级（理解 Triton 背后）</td>
+</tr>
+<tr>
+<td><a href="triton-vs-cuda.html">triton-vs-cuda.md</a></td>
+<td>Triton vs CUDA 编程模型对比</td>
+</tr>
+</tbody></table>
+</div></main><script src="../../../reader.js"></script></body></html>

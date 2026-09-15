@@ -472,7 +472,7 @@ D 线分布式（算子线）走到 D1 时，我会给你一个 FSDP 的 minimal
 - **DeepSpeed 官方**: [www.deepspeed.ai](https://www.deepspeed.ai/)
 - **PyTorch FSDP 文档**: [FSDP](https://pytorch.org/docs/stable/fsdp.html)
 - **配套课程**: D1 分布式训练（算子线 D），[roadmap/distributed.md](../../roadmap/distributed.md)
-- **视频**: [Microsoft Research Talk](https://www.microsoft.com/en-us/research/video/zero-memory-optimizations-toward-training-trillion-parameter-models/) (1 小时，作者讲解)
+- **官方论文页**: [Microsoft Research](https://www.microsoft.com/en-us/research/publication/zero-memory-optimizations-toward-training-trillion-parameter-models/)
 
 ---
 

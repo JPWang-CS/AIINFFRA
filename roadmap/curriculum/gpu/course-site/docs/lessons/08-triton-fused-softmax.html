@@ -1,0 +1,227 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Lesson 08 — Triton Softmax 迁移实战 / 检查点 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · lessons/08-triton-fused-softmax.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E5%BD%93%E5%89%8D%E5%8D%95%E5%85%83%E5%8D%A1">当前单元卡</a></li><li><a href="#%E5%B7%B2%E6%8E%8C%E6%8F%A1%E6%9C%AC%E8%AF%BE%E4%B8%8D%E9%87%8D%E6%96%B0%E6%95%99%E5%AD%A6">已掌握：本课不重新教学</a></li><li><a href="#leetgpu%E6%9C%80%E7%BB%88%E4%BB%A3%E7%A0%81%E5%BF%AB%E7%85%A7%E7%94%A8%E6%88%B7%E9%80%9A%E8%BF%87%E7%89%88">LeetGPU最终代码快照（用户通过版）</a></li><li><a href="#%E5%94%AF%E4%B8%80%E6%96%B0%E5%A2%9E10-%E5%88%86%E9%92%9F-cuda--triton-%E6%98%A0%E5%B0%84">唯一新增：10 分钟 CUDA → Triton 映射</a></li><li><a href="#leetgpu%E6%AD%A3%E7%A1%AE%E6%80%A7%E4%B8%8E%E4%BB%A3%E7%A0%81%E5%BD%92%E6%A1%A3">LeetGPU：正确性与代码归档</a></li><li><a href="#%E6%9C%8D%E5%8A%A1%E5%99%A8%E7%9C%9F%E5%AE%9E%E6%80%A7%E8%83%BD">服务器：真实性能</a></li><li><a href="#%E9%80%80%E5%87%BA%E5%88%B0%E6%96%B0%E4%B8%BB%E7%BA%BF">退出到新主线</a></li><li><a href="#%E8%B5%84%E6%BA%90">资源</a></li></ol></nav><div class="markdown-body"><h1 id="lesson-08--triton-softmax-迁移实战--检查点">Lesson 08 — Triton Softmax 迁移实战 / 检查点<a class="heading-anchor" href="#lesson-08--triton-softmax-%E8%BF%81%E7%A7%BB%E5%AE%9E%E6%88%98--%E6%A3%80%E6%9F%A5%E7%82%B9" aria-label="链接到Lesson 08 — Triton Softmax 迁移实战 / 检查点">#</a></h1>
+<blockquote><p>当前主线：B2 Triton Softmax 语言迁移
+前置：Softmax 理论与 CUDA 实现已掌握；Triton Vector Add / MatMul 已完成阶段性基线
+状态：<code>LEETGPU_PASS</code>；用户通过版已原样归档
+本课目的：完成CUDA→Triton Softmax闭环；服务器基线后执行第一篇第一章，验收后再讨论第二章</p>
+</blockquote><h2 id="当前单元卡">当前单元卡<a class="heading-anchor" href="#%E5%BD%93%E5%89%8D%E5%8D%95%E5%85%83%E5%8D%A1" aria-label="链接到当前单元卡">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>项目</th>
+<th>当前状态</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>题目</td>
+<td><a href="https://leetgpu.com/challenges/softmax">LeetGPU Softmax</a> · 题库 #5</td>
+</tr>
+<tr>
+<td>当前代码</td>
+<td><a href="../solutions/triton/fused_softmax.py">fused_softmax.py</a>（LeetGPU 原始通过版）</td>
+</tr>
+<tr>
+<td>LeetGPU 归档</td>
+<td>已原样保存平台 <code>solve</code>/kernel 到 <a href="../solutions/triton/fused_softmax.py">fused_softmax.py</a></td>
+</tr>
+<tr>
+<td>服务器版本</td>
+<td>尚未创建；不能覆盖上面的原始平台归档</td>
+</tr>
+<tr>
+<td>LeetGPU 状态</td>
+<td><code>LEETGPU_PASS</code></td>
+</tr>
+<tr>
+<td>服务器状态</td>
+<td>未开始</td>
+</tr>
+<tr>
+<td>现在做什么</td>
+<td>保留一维 LeetGPU 通过归档；准备服务器二维 row-wise baseline</td>
+</tr>
+<tr>
+<td>下一站</td>
+<td>RTX 3090 二维 row-wise baseline</td>
+</tr>
+<tr>
+<td>调试入口</td>
+<td>遇到编译、mask、越界或数值错误时查 <a href="07-triton-debugging.html">Lesson 07 — Triton Debugging</a></td>
+</tr>
+</tbody></table>
+<h2 id="已掌握本课不重新教学">已掌握：本课不重新教学<a class="heading-anchor" href="#%E5%B7%B2%E6%8E%8C%E6%8F%A1%E6%9C%AC%E8%AF%BE%E4%B8%8D%E9%87%8D%E6%96%B0%E6%95%99%E5%AD%A6" aria-label="链接到已掌握：本课不重新教学">#</a></h2>
+<p>只保留入口，不在本课展开定义、稳定性、online 公式或 CUDA reduce：</p>
+<ul>
+<li><a href="04-softmax.html">Lesson 04 — CUDA Softmax</a></li>
+<li><a href="../../index.html?chapter=20">Online Softmax</a></li>
+<li><a href="../../index.html?chapter=21">Parallel Reduce</a></li>
+<li><a href="05-flash-attn-reading.html">Lesson 05 — Flash Attention CUDA 读码</a></li>
+<li><a href="06-triton-intro.html">Triton 入门与 MatMul</a></li>
+</ul>
+<p>旧CUDA 1-pass重写和三版重复benchmark不是当前服务器闭环的前置；Softmax/Norm系统优化后续按第三篇完整性能课程回收，并未取消。</p>
+<h2 id="leetgpu最终代码快照用户通过版">LeetGPU最终代码快照（用户通过版）<a class="heading-anchor" href="#leetgpu%E6%9C%80%E7%BB%88%E4%BB%A3%E7%A0%81%E5%BF%AB%E7%85%A7%E7%94%A8%E6%88%B7%E9%80%9A%E8%BF%87%E7%89%88" aria-label="链接到LeetGPU最终代码快照（用户通过版）">#</a></h2>
+<p>以下是用户在 LeetGPU #5 通过的原始代码归档，不是 Agent starter。该题是一维输入；服务器阶段另做二维 <code>[rows, cols]</code> row-wise baseline，不能把两者混为同一实现或状态。</p>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1"><span class="hljs-keyword">import</span> torch</span>
+<span class="code-line" data-line="2"><span class="hljs-keyword">import</span> triton</span>
+<span class="code-line" data-line="3"><span class="hljs-keyword">import</span> triton.language <span class="hljs-keyword">as</span> tl</span>
+<span class="code-line" data-line="4"></span>
+<span class="code-line" data-line="5"></span>
+<span class="code-line" data-line="6"><span class="hljs-meta">@triton.jit</span></span>
+<span class="code-line" data-line="7"><span class="hljs-keyword">def</span> <span class="hljs-title function_">softmax_partial</span>(<span class="hljs-params"><span class="hljs-built_in">input</span>: torch.Tensor, partial_max: torch.Tensor, partial_sum: torch.Tensor, N, BLOCK_SIZE: tl.constexpr</span>):</span>
+<span class="code-line" data-line="8">    <span class="hljs-built_in">input</span> = <span class="hljs-built_in">input</span>.to(tl.pointer_type(tl.float32))</span>
+<span class="code-line" data-line="9">    pid = tl.program_id(<span class="hljs-number">0</span>)</span>
+<span class="code-line" data-line="10">    offset = pid * BLOCK_SIZE + tl.arange(<span class="hljs-number">0</span>, BLOCK_SIZE)</span>
+<span class="code-line" data-line="11">    mask = offset &lt; N</span>
+<span class="code-line" data-line="12">    x = tl.load(<span class="hljs-built_in">input</span> + offset, mask=mask, other=-<span class="hljs-built_in">float</span>(<span class="hljs-string">&quot;inf&quot;</span>))</span>
+<span class="code-line" data-line="13">    tmpMax = tl.<span class="hljs-built_in">max</span>(x, axis=<span class="hljs-number">0</span>)</span>
+<span class="code-line" data-line="14">    tmpSum = tl.<span class="hljs-built_in">sum</span>(tl.exp(x - tmpMax), axis=<span class="hljs-number">0</span>)</span>
+<span class="code-line" data-line="15">    tl.store(partial_max + pid, tmpMax)</span>
+<span class="code-line" data-line="16">    tl.store(partial_sum + pid, tmpSum)</span>
+<span class="code-line" data-line="17"></span>
+<span class="code-line" data-line="18"></span>
+<span class="code-line" data-line="19"><span class="hljs-meta">@triton.jit</span></span>
+<span class="code-line" data-line="20"><span class="hljs-keyword">def</span> <span class="hljs-title function_">softmax_reduce</span>(<span class="hljs-params">global_max: torch.Tensor, global_sum: torch.Tensor, partial_max: torch.Tensor, partial_sum: torch.Tensor, num_blocks: tl.constexpr, REDUCE_SIZE: tl.constexpr</span>):</span>
+<span class="code-line" data-line="21">    offset = tl.arange(<span class="hljs-number">0</span>, REDUCE_SIZE)</span>
+<span class="code-line" data-line="22">    mask = offset &lt; num_blocks</span>
+<span class="code-line" data-line="23">    local_sum = tl.load(partial_sum + offset, mask=mask, other=<span class="hljs-built_in">float</span>(<span class="hljs-number">0</span>))</span>
+<span class="code-line" data-line="24">    local_max = tl.load(partial_max + offset, mask=mask, other=-<span class="hljs-built_in">float</span>(<span class="hljs-string">&quot;inf&quot;</span>))</span>
+<span class="code-line" data-line="25">    tmp_max = tl.<span class="hljs-built_in">max</span>(local_max, axis=<span class="hljs-number">0</span>)</span>
+<span class="code-line" data-line="26">    local_sum *= tl.exp(local_max - tmp_max)</span>
+<span class="code-line" data-line="27">    tmp_sum = tl.<span class="hljs-built_in">sum</span>(local_sum, axis=<span class="hljs-number">0</span>)</span>
+<span class="code-line" data-line="28">    tl.store(global_max, tmp_max)</span>
+<span class="code-line" data-line="29">    tl.store(global_sum, tmp_sum)</span>
+<span class="code-line" data-line="30"></span>
+<span class="code-line" data-line="31"></span>
+<span class="code-line" data-line="32"><span class="hljs-meta">@triton.jit</span></span>
+<span class="code-line" data-line="33"><span class="hljs-keyword">def</span> <span class="hljs-title function_">softmax_sum</span>(<span class="hljs-params">global_max, global_sum, <span class="hljs-built_in">input</span>, output, N, BLOCK_SIZE: tl.constexpr</span>):</span>
+<span class="code-line" data-line="34">    <span class="hljs-built_in">input</span> = <span class="hljs-built_in">input</span>.to(tl.pointer_type(tl.float32))</span>
+<span class="code-line" data-line="35">    output = output.to(tl.pointer_type(tl.float32))</span>
+<span class="code-line" data-line="36">    pid = tl.program_id(<span class="hljs-number">0</span>)</span>
+<span class="code-line" data-line="37">    offset = pid * BLOCK_SIZE + tl.arange(<span class="hljs-number">0</span>, BLOCK_SIZE)</span>
+<span class="code-line" data-line="38">    mask = offset &lt; N</span>
+<span class="code-line" data-line="39">    x = tl.load(<span class="hljs-built_in">input</span> + offset, mask=mask, other=-<span class="hljs-built_in">float</span>(<span class="hljs-string">&quot;inf&quot;</span>))</span>
+<span class="code-line" data-line="40">    gm = tl.load(global_max)</span>
+<span class="code-line" data-line="41">    gs = tl.load(global_sum)</span>
+<span class="code-line" data-line="42">    tmp_res = tl.exp(x - gm) / gs</span>
+<span class="code-line" data-line="43">    tl.store(output + offset, tmp_res, mask=mask)</span>
+<span class="code-line" data-line="44"></span>
+<span class="code-line" data-line="45"></span>
+<span class="code-line" data-line="46"><span class="hljs-keyword">def</span> <span class="hljs-title function_">solve</span>(<span class="hljs-params"><span class="hljs-built_in">input</span>: torch.Tensor, output: torch.Tensor, N: <span class="hljs-built_in">int</span></span>):</span>
+<span class="code-line" data-line="47">    BLOCK_SIZE = <span class="hljs-number">256</span></span>
+<span class="code-line" data-line="48">    num_blocks = triton.cdiv(N, BLOCK_SIZE)</span>
+<span class="code-line" data-line="49">    REDUCE_SIZE = triton.next_power_of_2(num_blocks)</span>
+<span class="code-line" data-line="50">    partial_sum = torch.empty(num_blocks, dtype=torch.float32, device=<span class="hljs-built_in">input</span>.device)</span>
+<span class="code-line" data-line="51">    partial_max = torch.empty(num_blocks, dtype=torch.float32, device=<span class="hljs-built_in">input</span>.device)</span>
+<span class="code-line" data-line="52">    global_sum = torch.empty(<span class="hljs-number">1</span>, dtype=torch.float32, device=<span class="hljs-built_in">input</span>.device)</span>
+<span class="code-line" data-line="53">    global_max = torch.empty(<span class="hljs-number">1</span>, dtype=torch.float32, device=<span class="hljs-built_in">input</span>.device)</span>
+<span class="code-line" data-line="54">    softmax_partial[(num_blocks,)](<span class="hljs-built_in">input</span>, partial_max, partial_sum, N, BLOCK_SIZE=BLOCK_SIZE)</span>
+<span class="code-line" data-line="55">    softmax_reduce[(<span class="hljs-number">1</span>,)](global_max, global_sum, partial_max, partial_sum, num_blocks, REDUCE_SIZE=REDUCE_SIZE)</span>
+<span class="code-line" data-line="56">    softmax_sum[(num_blocks,)](global_max, global_sum, <span class="hljs-built_in">input</span>, output, N, BLOCK_SIZE=BLOCK_SIZE)</span></code></pre></div>
+<h2 id="唯一新增10-分钟-cuda--triton-映射">唯一新增：10 分钟 CUDA → Triton 映射<a class="heading-anchor" href="#%E5%94%AF%E4%B8%80%E6%96%B0%E5%A2%9E10-%E5%88%86%E9%92%9F-cuda--triton-%E6%98%A0%E5%B0%84" aria-label="链接到唯一新增：10 分钟 CUDA → Triton 映射">#</a></h2>
+<p>只做语言和执行模型的对应，不重新解释 Softmax 算法：</p>
+<table>
+<thead>
+<tr>
+<th>CUDA 心智</th>
+<th>Triton 写法</th>
+<th>本次检查点</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>blockIdx.x</code> 选择任务</td>
+<td><code>tl.program_id(0)</code></td>
+<td>一个 program 负责题面规定的一个向量或一行</td>
+</tr>
+<tr>
+<td><code>threadIdx.x</code> 加循环索引</td>
+<td><code>tl.arange(0, BLOCK_SIZE)</code></td>
+<td>用索引向量表达一组 lane 的列偏移</td>
+</tr>
+<tr>
+<td><code>base + tid * stride</code></td>
+<td>指针加 element offset</td>
+<td>先确认题面布局和 stride，Triton 偏移按元素不是按字节</td>
+</tr>
+<tr>
+<td><code>if (idx &lt; N)</code></td>
+<td><code>mask = offsets &lt; N</code></td>
+<td>所有尾部 load/store 都沿用有效元素 mask</td>
+</tr>
+<tr>
+<td>越界 load 的安全哨兵</td>
+<td><code>tl.load(..., mask=..., other=...)</code></td>
+<td>max 的无效值与 sum 的无效值按已有数值语义选择</td>
+</tr>
+<tr>
+<td>shared/warp reduce</td>
+<td><code>tl.max</code> / <code>tl.sum</code></td>
+<td>明确 reduce axis；不手写线程同步</td>
+</tr>
+<tr>
+<td>kernel launch grid</td>
+<td><code>grid</code> 与 <code>meta</code> 参数</td>
+<td>先按题面规模映射 program 数量，不凭感觉改 grid</td>
+</tr>
+<tr>
+<td><code>__global__</code> 参数与 block 常量</td>
+<td>普通参数与 <code>tl.constexpr</code></td>
+<td>block 宽度属于编译期配置，输入 shape 属于运行时数据</td>
+</tr>
+<tr>
+<td>每线程写回</td>
+<td><code>tl.store(..., mask=...)</code></td>
+<td>store mask 必须和合法输出地址一致</td>
+</tr>
+</tbody></table>
+<p>迁移完成的判断很窄：能把题面中的输入、输出、长度/stride 和平台签名映射到上表，并能指出一个尾部元素如何经过 mask 到达 load、reduce、store。到此就开始写题，不再增加理论章节。</p>
+<p>本次 B2 只需记住的 Triton API：</p>
+<ul>
+<li><a href="https://triton-lang.org/main/python-api/generated/triton.language.maximum.html"><code>tl.maximum</code></a>：逐元素比较/广播，输出同形状。</li>
+<li><a href="https://triton-lang.org/main/python-api/generated/triton.language.max.html"><code>tl.max</code></a>：沿 <code>axis</code> 归约；<code>axis=None</code> 归约全部。</li>
+<li>Online 更新的一行写法：<code>m_new = tl.maximum(m_i, tl.max(scores, axis=1))</code>。</li>
+<li>区别：<code>maximum</code> 做逐元素二元比较，<code>max</code> 做指定轴归约。</li>
+<li><a href="https://triton-lang.org/main/python-api/triton.language.html">Triton language API</a></li>
+</ul>
+<h2 id="leetgpu正确性与代码归档">LeetGPU：正确性与代码归档<a class="heading-anchor" href="#leetgpu%E6%AD%A3%E7%A1%AE%E6%80%A7%E4%B8%8E%E4%BB%A3%E7%A0%81%E5%BD%92%E6%A1%A3" aria-label="链接到LeetGPU：正确性与代码归档">#</a></h2>
+<p>入口：<a href="https://leetgpu.com/challenges/softmax">LeetGPU Softmax</a>（#5）。这是本课的唯一实现入口；平台当前题面、参数和 <code>solve</code> 签名优先于仓库中的旧 CUDA 描述。</p>
+<p>执行约束：</p>
+<ol>
+<li>用 10 分钟完成上面的映射，然后在平台选择 Triton，从空题面/平台模板开始写。</li>
+<li>不复制 <code>reference/triton/</code>，不把课程说明当成完整 kernel 或 skeleton；本课不提供可直接提交的实现。</li>
+<li>根据真实题面决定是一维向量还是按行处理，并保留平台要求的函数签名。</li>
+<li>写出与已掌握语义一致的稳定计算、正确 reduce axis、尾部 mask 和 masked store。</li>
+<li>先用最小输入、非 2 次幂长度、全负数、极端值和相等输入排查；以平台判题作为最终正确性证据。</li>
+<li>只有平台通过后，才把当次原始 <code>solve</code>/kernel 原样归档到 <code>solutions/triton/fused_softmax.py</code>，并记录题号、语言、日期和平台结果。</li>
+</ol>
+<p>状态规则：平台通过且原始代码归档后为 <code>LEETGPU_PASS</code>；服务器仍未开始，因此不标记 <code>GPU_VALIDATED</code> 或 <code>COMPLETE</code>。</p>
+<h2 id="服务器真实性能">服务器：真实性能<a class="heading-anchor" href="#%E6%9C%8D%E5%8A%A1%E5%99%A8%E7%9C%9F%E5%AE%9E%E6%80%A7%E8%83%BD" aria-label="链接到服务器：真实性能">#</a></h2>
+<p>前置条件：LeetGPU 已为 <code>LEETGPU_PASS</code>，且原始平台代码已经归档。服务器代码/benchmark 必须与原始平台文件分开记录，不能用服务器 wrapper 反向冒充平台归档。</p>
+<p>服务器只做一个可靠的二维 row-wise baseline：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">X: [rows, cols]</span>
+<span class="code-line" data-line="2">Y[row, :] = softmax(X[row, :])</span></code></pre></div>
+<p>目标环境是 RTX 3090；运行时必须记录 <code>torch.cuda.get_device_name(0)</code>，不能把 A100 或其他 GPU 的数字写成 RTX 3090 结果。最低正确性集合包含 <code>(1, 1)</code>、<code>(3, 257)</code>、<code>(128, 1000)</code>、<code>(4096, 1024)</code> 和 <code>(1024, 4096)</code>，并覆盖极端值与相等输入。</p>
+<p>服务器验收必须留下：</p>
+<ul>
+<li>与 <code>torch.softmax(x, dim=-1)</code> 的 <code>assert_close</code> 结果，以及 dtype、容差和 shape；</li>
+<li>排除 Triton 首次 JIT 后固定的 warmup、repeats、CUDA 同步方式；</li>
+<li>Triton 与 <code>torch.softmax</code> 的同 shape、同 dtype 耗时（ms）和相对速度；</li>
+<li>按理想一读一写口径计算的 effective GB/s：<code>2 × rows × cols × element_size / time</code>；</li>
+<li>实际 GPU、配置、输入范围和失败 case；明确区分算法口径 GB/s 与 profiler 的真实 DRAM traffic。</li>
+</ul>
+<p>这一阶段的停止条件是：row-wise baseline正确、数字可复现、瓶颈有一句话解释。不要在同一次服务器验收中混入完整极致优化；后续在Reduction/Norm锚点中系统推进warp、资源、Nsight和多shape。</p>
+<h2 id="退出到新主线">退出到新主线<a class="heading-anchor" href="#%E9%80%80%E5%87%BA%E5%88%B0%E6%96%B0%E4%B8%BB%E7%BA%BF" aria-label="链接到退出到新主线">#</a></h2>
+<p>满足<code>LEETGPU_PASS</code>并完成RTX3090 row-wise baseline后，本单元结束。下一步按NOW学习<a href="../roadmap/curriculum/gpu/README.html">第一篇GPU硬件与性能基础</a>。FA2论文阅读已完成，但实现与GPU验证仍未开始；Softmax/Norm性能优化按逐算子闭环继续，不与正确实现割裂。</p>
+<p>本课最终状态路径：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">WIP</span>
+<span class="code-line" data-line="2">→ LEETGPU_PASS（平台通过 + 原始代码归档）</span>
+<span class="code-line" data-line="3">→ GPU_VALIDATED（RTX 3090 row-wise 正确性 + baseline 数字）</span>
+<span class="code-line" data-line="4">→ B3 FlashAttention</span></code></pre></div>
+<h2 id="资源">资源<a class="heading-anchor" href="#%E8%B5%84%E6%BA%90" aria-label="链接到资源">#</a></h2>
+<ul>
+<li><a href="04-softmax.html">Lesson 04 — CUDA Softmax</a></li>
+<li><a href="07-triton-debugging.html">Lesson 07 — Triton Debugging</a></li>
+<li><a href="../notes/triton/triton-cheatsheet.html">Triton 语法速查</a></li>
+<li><a href="../notes/cuda/leetgpu-challenges.html">LeetGPU 题库索引</a></li>
+<li><a href="../roadmap/gpu-foundations.html">GPU 底层架构与性能优化课程</a></li>
+<li><a href="https://triton-lang.org/main/getting-started/tutorials/02-fused-softmax.html">Triton 官方 Fused Softmax 教程</a></li>
+</ul>
+</div></main><script src="../../reader.js"></script></body></html>

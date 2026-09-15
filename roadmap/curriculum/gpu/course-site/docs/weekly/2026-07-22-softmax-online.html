@@ -1,0 +1,94 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Softmax 优化深挖 + A5 准备 — 2026-07-01 ~ 2026-07-22 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · weekly/2026-07-22-softmax-online.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E5%81%9A%E4%BA%86%E4%BB%80%E4%B9%88">做了什么</a></li><li><a href="#a4--softmax-%E4%BC%98%E5%8C%96%E4%B8%BB%E6%88%98%E5%9C%BA">A4 · Softmax 优化（主战场）</a></li><li><a href="#%E7%90%86%E8%AE%BA%E7%BA%BF--online-softmax%E9%85%8D%E5%AF%B9-a4">理论线 · online softmax（配对 A4）</a></li><li><a href="#a5--flash-attn-%E8%AF%BB%E7%A0%81%E5%8F%AA%E5%BC%80%E4%B8%AA%E5%A4%B4">A5 · Flash Attn 读码（只开个头）</a></li><li><a href="#%E9%A1%BA%E5%B8%A6">顺带</a></li><li><a href="#%E5%85%B3%E9%94%AE%E6%95%B0%E6%8D%AE">关键数据</a></li><li><a href="#%E5%8D%A1%E7%82%B9--%E6%80%8E%E4%B9%88%E8%A7%A3%E5%86%B3%E7%9A%84">卡点 / 怎么解决的</a></li><li><a href="#%E9%9D%A2%E8%AF%95%E5%8F%AF%E7%94%A8%E7%82%B9">面试可用点</a></li><li><a href="#%E4%BA%A7%E5%87%BA%E7%89%A9">产出物</a></li><li><a href="#%E4%B8%8B%E4%B8%80%E6%AD%A5%E6%8E%A5-now">下一步（接 NOW）</a></li></ol></nav><div class="markdown-body"><h1 id="softmax-优化深挖--a5-准备--2026-07-01--2026-07-22">Softmax 优化深挖 + A5 准备 — 2026-07-01 ~ 2026-07-22<a class="heading-anchor" href="#softmax-%E4%BC%98%E5%8C%96%E6%B7%B1%E6%8C%96--a5-%E5%87%86%E5%A4%87--2026-07-01--2026-07-22" aria-label="链接到Softmax 优化深挖 + A5 准备 — 2026-07-01  2026-07-22">#</a></h1>
+<blockquote><p>算子线 · 对应 PATH 的 <strong>A4（优化阶段）+ A5（准备）</strong>　·　上次回顾 <a href="2026-06-29-week3-infra.html">week3-infra</a></p>
+</blockquote><h2 id="做了什么">做了什么<a class="heading-anchor" href="#%E5%81%9A%E4%BA%86%E4%BB%80%E4%B9%88" aria-label="链接到做了什么">#</a></h2>
+<p>三周跨度，节奏偏慢但有真产出。主线全压在 <strong>A4 Softmax 优化深挖</strong> 上，A5 只开了头。</p>
+<h3 id="a4--softmax-优化主战场">A4 · Softmax 优化（主战场）<a class="heading-anchor" href="#a4--softmax-%E4%BC%98%E5%8C%96%E4%B8%BB%E6%88%98%E5%9C%BA" aria-label="链接到A4 · Softmax 优化（主战场）">#</a></h3>
+<ul>
+<li><strong>7/1</strong> — <code>softmax_naive.cu</code>（3-pass：<code>findMax → countSum → softmax</code>，跨 block host 归约）跑通 LeetGPU <code>5_softmax</code>，作为 baseline。</li>
+<li><strong>7/2</strong> — 本地/服务器 harness 落地：<a href="../solutions/cuda/softmax/main.cu"><code>solutions/cuda/softmax/main.cu</code></a>（造数据 → 调 <code>solve</code> → 对比 CPU 双精度参考 → 报误差/吞吐/带宽）+ <code>run.sh</code> + <a href="../solutions/cuda/softmax/README.html">README</a>。LeetGPU 挂了或要看真实带宽时本地复现。</li>
+<li><strong>7/11</strong> — <a href="../solutions/cuda/softmax/softmax_online.cu"><code>softmax_online.cu</code></a>：<strong>2-pass 融合版</strong>。<code>online_kernel</code> 一趟出 <code>(partial_max, partial_sum)</code>，host 上用 online 修正公式 merge，再 <code>normalize_kernel</code> 收尾。3 kernel → 2 kernel，HBM 读 3× → 2×。</li>
+<li><strong>7/22</strong> — <a href="../solutions/cuda/softmax/softmax_opt.cu"><code>softmax_opt.cu</code></a>：<strong>warp shuffle 优化版的工作起点（占位）</strong>。文件头写明优化路线 ① online → ② warp shuffle，但<strong>当前代码体还是 3-pass</strong>，等 <code>__shfl_down_sync</code> 改造。</li>
+</ul>
+<h3 id="理论线--online-softmax配对-a4">理论线 · online softmax（配对 A4）<a class="heading-anchor" href="#%E7%90%86%E8%AE%BA%E7%BA%BF--online-softmax%E9%85%8D%E5%AF%B9-a4" aria-label="链接到理论线 · online softmax（配对 A4）">#</a></h3>
+<ul>
+<li>✅ 能手推 online 更新公式 <code>m_new=max(m,val), s=s·exp(m-m_new)+exp(val-m_new)</code></li>
+<li>✅ merge 公式 <code>s_new = s_a·exp(m_a-m_new) + s_b·exp(m_b-m_new)</code> 满足交换律+结合律 → 可上 tree reduce</li>
+<li>✅ 能讲清&quot;为什么比 3-pass 省 3× HBM 读写&quot;</li>
+</ul>
+<h3 id="a5--flash-attn-读码只开个头">A5 · Flash Attn 读码（只开个头）<a class="heading-anchor" href="#a5--flash-attn-%E8%AF%BB%E7%A0%81%E5%8F%AA%E5%BC%80%E4%B8%AA%E5%A4%B4" aria-label="链接到A5 · Flash Attn 读码（只开个头）">#</a></h3>
+<ul>
+<li>NOW.md 把焦点切到 A5，<a href="../lessons/05-flash-attn-reading.html">lessons/05-flash-attn-reading.md</a> 已就位</li>
+<li><a href="../../index.html?chapter=22">notes/algorithms/flash-attention-mechanism.md</a> 微调（7/22 commit）</li>
+<li>⚠️ <strong>实际 CUDA 读码还没开始</strong> — <code>reference/cuda/flash_attention/</code> 未动，lessons/05 未改</li>
+</ul>
+<h3 id="顺带">顺带<a class="heading-anchor" href="#%E9%A1%BA%E5%B8%A6" aria-label="链接到顺带">#</a></h3>
+<ul>
+<li>7/22 把 Claude 的 agent/skill 体系移植一份到 <code>.codex/agents/*.toml</code>（codex 端镜像）</li>
+</ul>
+<h2 id="关键数据">关键数据<a class="heading-anchor" href="#%E5%85%B3%E9%94%AE%E6%95%B0%E6%8D%AE" aria-label="链接到关键数据">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th align="center">数字</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>提交数（6/29 之后）</td>
+<td align="center">5</td>
+</tr>
+<tr>
+<td>新增 CUDA 文件</td>
+<td align="center">3（<code>softmax_naive</code> / <code>softmax_online</code> / <code>softmax_opt</code>）+ harness 2</td>
+</tr>
+<tr>
+<td>LeetGPU 通过</td>
+<td align="center"><code>5_softmax</code> baseline ✅</td>
+</tr>
+<tr>
+<td>baseline 性能</td>
+<td align="center">3-pass ~1ms（N=百万级）</td>
+</tr>
+<tr>
+<td>HBM 读次数</td>
+<td align="center">3-pass 3× → online 2×</td>
+</tr>
+<tr>
+<td>理论笔记真掌握</td>
+<td align="center">online softmax ✅（用户实学，非 Agent 草稿）</td>
+</tr>
+</tbody></table>
+<blockquote><p>注：<code>softmax_online.cu</code> 与 <code>softmax_opt.cu</code> 两版<strong>未在本地/服务器跑过对比 benchmark</strong>（harness 已就位，但 <code>KERNEL=... ./run.sh</code> 的横向数据还没出）。</p>
+</blockquote><h2 id="卡点--怎么解决的">卡点 / 怎么解决的<a class="heading-anchor" href="#%E5%8D%A1%E7%82%B9--%E6%80%8E%E4%B9%88%E8%A7%A3%E5%86%B3%E7%9A%84" aria-label="链接到卡点 / 怎么解决的">#</a></h2>
+<ol>
+<li><p><strong>block 间 sum 怎么合</strong>：每个 block 的 <code>partial_sum</code> 是相对自己的 <code>block_max</code> 算的，直接相加会错。
+<strong>解法</strong>：host merge 时乘修正因子 <code>partial_sum[i] × exp(partial_max[i] − global_max)</code>，把各 block 的求和基准拉到同一个 <code>global_max</code> 上。这就是 online softmax 的 merge 公式落地。</p>
+</li>
+<li><p><strong>越界线程污染 sum</strong>：尾 block 线程数 &lt; 256，越界 <code>val</code> 若置 0 会把 <code>exp(0)=1</code> 加进 sum。
+<strong>解法</strong>：越界置 <code>-INFINITY</code>，<code>exp(-INF)=0</code> 不污染；sum 阶段显式 <code>idx &lt; N ? ... : 0.0f</code>。</p>
+</li>
+<li><p><strong>(记档，未在仓库落地)</strong>：NOW.md 记的 &quot;true online per-thread scan + tree reduce merge <code>(m,s)</code> pair → <code>maxSumkernel</code>&quot; 是<strong>比 <code>softmax_online.cu</code> 更激进的 1-pass 写法</strong>（Flash 的心脏）。当前仓库里只有 2-pass（block 内先 reduce max 再 reduce sum），<strong>真正的 per-thread 同步维护 <code>(m,s)</code> 的 1-pass 版本还没提交</strong> —— 是下一步要补的硬骨头。</p>
+</li>
+</ol>
+<h2 id="面试可用点">面试可用点<a class="heading-anchor" href="#%E9%9D%A2%E8%AF%95%E5%8F%AF%E7%94%A8%E7%82%B9" aria-label="链接到面试可用点">#</a></h2>
+<ul>
+<li><strong>&quot;我把 3-pass softmax 压成 2-pass&quot;</strong> — 能讲清每次融合省的是一次全量 HBM 读 + 一次 kernel launch，并能推 online merge 修正公式。</li>
+<li><strong>跨 block 归约的工程套路</strong> — block 内 shared-mem tree reduce 出 partial → D2H → host 串行 merge → 再 launch normalize。能说清&quot;为什么跨 block 归约必须回 host&quot;（无 block 间同步原语），以及为什么这是后续 warp shuffle + 单 block / atomic 改造的动机。</li>
+<li><strong>算法和工程配对学</strong> — softmax 算子和 online softmax 理论同步推，能现场推公式不是只会调 API。</li>
+</ul>
+<h2 id="产出物">产出物<a class="heading-anchor" href="#%E4%BA%A7%E5%87%BA%E7%89%A9" aria-label="链接到产出物">#</a></h2>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> <code>solutions/cuda/softmax/softmax_naive.cu</code>（3-pass baseline，LeetGPU 过）</li>
+<li><input checked="" disabled="" type="checkbox"> <code>solutions/cuda/softmax/main.cu</code> + <code>run.sh</code> + <code>README.md</code>（本地 harness）</li>
+<li><input checked="" disabled="" type="checkbox"> <code>solutions/cuda/softmax/softmax_online.cu</code>（2-pass fused）</li>
+<li><input checked="" disabled="" type="checkbox"> <code>solutions/cuda/softmax/softmax_opt.cu</code>（warp shuffle 工作起点，占位）</li>
+<li><input checked="" disabled="" type="checkbox"> 理论线：online softmax 真掌握（公式 + 省存原理）</li>
+</ul>
+<h2 id="下一步接-now">下一步（接 NOW）<a class="heading-anchor" href="#%E4%B8%8B%E4%B8%80%E6%AD%A5%E6%8E%A5-now" aria-label="链接到下一步（接 NOW）">#</a></h2>
+<ol>
+<li><strong>warp shuffle reduce</strong> — 在 <code>softmax_opt.cu</code> 上把 shared-mem tree reduce 换成 <code>__shfl_down_sync</code>，跑 <code>KERNEL=softmax_opt.cu ./run.sh</code> 出横向数据</li>
+<li><strong>三版 benchmark</strong> — naive 3-pass / online 2-pass / warp shuffle，对有效带宽，ncu 看瓶颈</li>
+<li><strong>补 1-pass true online</strong>（per-thread <code>(m,s)</code> scan，Flash 写法）— 当前 NOW 描述但仓库没有的那版</li>
+<li><strong>A5 真正开读</strong> — 逐段读 <code>flash_attn.cu</code>，标每个 <code>__syncthreads</code>，再切 B1 Triton</li>
+</ol>
+</div></main><script src="../../reader.js"></script></body></html>

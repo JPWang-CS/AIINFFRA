@@ -1,0 +1,62 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>低精度与量化主题索引 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · roadmap/curriculum/quantization/README.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol></ol></nav><div class="markdown-body"><h1 id="低精度与量化主题索引">低精度与量化主题索引<a class="heading-anchor" href="#%E4%BD%8E%E7%B2%BE%E5%BA%A6%E4%B8%8E%E9%87%8F%E5%8C%96%E4%B8%BB%E9%A2%98%E7%B4%A2%E5%BC%95" aria-label="链接到低精度与量化主题索引">#</a></h1>
+<p>量化算法、编码、kernel 与实践已在<a href="../../../../index.html?chapter=13">量化算子正文</a>连续展开。本页保留主题索引，不是额外必修路线；更深入的论文阅读独立推进。</p>
+<table>
+<thead>
+<tr>
+<th>单元</th>
+<th>内容</th>
+<th>现有入口</th>
+<th>最终验收</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>第一章</td>
+<td>FP32/TF32/FP16/BF16、INT8/INT4、E4M3/E5M2、FP4、MX/NV格式、round/saturate</td>
+<td><a href="../../../../index.html?chapter=33">量化基础</a></td>
+<td>手算范围、编码与误差</td>
+</tr>
+<tr>
+<td>第二章</td>
+<td>symmetric/asymmetric、per tensor/channel/token/group/block、static/dynamic、clipping/outlier</td>
+<td><a href="../../../notes/algorithms/remaining-theory-primer.html">理论速览</a></td>
+<td>scale/zero point与metadata账本</td>
+</tr>
+<tr>
+<td>第三章</td>
+<td>RTN、PTQ/QAT、SmoothQuant、GPTQ、AWQ</td>
+<td><a href="../../../../index.html?chapter=25">论文入口</a></td>
+<td>公式、校准、误差补偿、作者代码</td>
+</tr>
+<tr>
+<td>第四章</td>
+<td>Weight/Activation：W8A8、W4A16、W4A8、dynamic activation</td>
+<td>量化算子正文与后续模型实验</td>
+<td>精度、显存、吞吐对比</td>
+</tr>
+<tr>
+<td>第五章</td>
+<td>FP8/FP4：current/delayed/block scaling、MXFP8、NVFP4</td>
+<td><a href="../../../../index.html?chapter=25">DeepSeek相关</a></td>
+<td>计算/累加路径、layout、硬件边界</td>
+</tr>
+<tr>
+<td>第六章</td>
+<td>KV Cache量化与GQA/MLA叠加</td>
+<td><a href="../../../../index.html?chapter=25">MLA</a></td>
+<td>cache bytes、TPOT、长上下文质量</td>
+</tr>
+<tr>
+<td>第七章</td>
+<td>packing、quant/dequant、低精度GEMM、fused dequant、quant attention</td>
+<td><a href="../../../../index.html?chapter=7">量化算子</a></td>
+<td>kernel-only与含量化开销端到端分测</td>
+</tr>
+<tr>
+<td>第八章</td>
+<td>checkpoint/scale metadata、backend、TP/EP分片</td>
+<td><a href="../../../../index.html?chapter=18">系统落地</a></td>
+<td>Mini Transformer/框架接入</td>
+</tr>
+</tbody></table>
+<p>准确性按任务使用abs/rel、MSE/SQNR、cosine、perplexity或下游质量；记录校准集、失败层和长上下文退化。官方入口：<a href="https://docs.nvidia.com/deeplearning/transformer-engine/user-guide/">Transformer Engine</a> · <a href="https://nvidia.github.io/TensorRT-LLM/latest/features/quantization.html">TensorRT-LLM Quantization</a></p>
+</div></main><script src="../../../../reader.js"></script></body></html>

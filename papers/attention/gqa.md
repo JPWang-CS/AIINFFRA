@@ -204,6 +204,6 @@ A: G 太小（MQA）质量差，G 太大（MHA）KV cache 大，G=8 在质量和
 ## 参考
 
 - **论文**: [GQA](https://arxiv.org/abs/2305.13245)
-- **Flash Attention 2 GQA 支持**: [flash-attention-2.md](flash-attention-2.md) §3.1.1
+- **Flash Attention 2 GQA 支持**: [flash-attention-2.md](../../notes/algorithms/flash-attention-2.md)，参见其中关于 GQA 头分组与工作划分的实现说明
 - **vLLM KV Cache**: [paged-attention.md](../inference/paged-attention.md)
 - **后续 MLA (DeepSeek-V2)**: [notes/algorithms/mla-deepseek.md](../../notes/algorithms/mla-deepseek.md)

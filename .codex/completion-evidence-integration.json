@@ -1,0 +1,53 @@
+{
+  "request": "除用户现场实际实验外，补齐已列出的教材缺口、实现深读与阅读质量问题",
+  "scope_boundary": "不改PATH/NOW，不改原PDF、用户原始代码与实测；不宣称未运行的CUDA/模型实验已通过；不commit/push。",
+  "workers": {
+    "cuda_execution": "01a09e95-97dd-7262-87ab-9ca76994cfb0",
+    "cuda_runtime": "01a09e95-9986-74f3-8357-11737706e290",
+    "operators": "01a09e95-9bd2-7930-88e7-5b843fa19f2f",
+    "quantization": "01a09e95-9ead-7ba2-9bda-be0f03953637",
+    "papers_systems": "01a09e95-a121-71e2-ad9a-9aa1b9c051a9"
+  },
+  "integration_review": {
+    "source_manual": "CUDA Programming Guide 13.3, local 698-page PDF",
+    "primary_reviewed_sections": ["CUDA 2.2", "CUDA 3.1", "CUDA 3.5", "CUDA 4.8", "CUDA 4.12", "CUDA 4.20", "V4.1 architecture and training/system sections"],
+    "rendered_source_pages": ["CUDA PDF 392: CLC flow", "V4.1 PDF 7: architecture"],
+    "public_deepgemm_commit": "78b69000794d0937b47ae3387eff7663410264d1",
+    "public_v41_commit": "dba1be0a40aa45a94ad051997016db3960a90277",
+    "nvidia_reference_version_policy": "Local manual is13.3; latest web docs observed13.4. Use versioned API references where signatures differ."
+  },
+  "manual_examples_requiring_correction": [
+    {
+      "source": "downloads/cuda-programming-guide.pdf",
+      "pages": "57-60",
+      "issue": "CuPy-array shape metadata must not be treated as automatic Numba kernel bounds checking; dtype and synchronization samples also require actual library API checks.",
+      "handling": "Explicit i<n, explicit float32 and supported stream/device synchronization; CUDA Python authoring/control layers are distinguished."
+    },
+    {
+      "source": "downloads/cuda-programming-guide.pdf",
+      "pages": "158-161",
+      "issue": "Batched memcpy examples contain an obsolete failIdx argument and initialization/attribute spelling mistakes.",
+      "handling": "CUDA13.3 Runtime API reference has the eight-argument cudaMemcpyBatchAsync; independent copies, source ordering and lifetime must be respected.",
+      "reference": "https://docs.nvidia.com/cuda/archive/13.3.0/cuda-runtime-api/group__CUDART__MEMORY.html"
+    }
+  ],
+  "editorial_changes": [
+    "First chapter no longer redirects the reader to a source-record file for the measurement contract.",
+    "Performance chapter maintenance mapping removed; old section27 bookmark retained with an invisible compatibility anchor. Exact source references remain in course-source-index."
+  ],
+  "baseline_hashes": {
+    "PATH.md": "f81bfc48f1ffa81c3b254995688975884f93d57ca9cb6a45a286c66cfdbf592d",
+    "NOW.md": "15842a27a9fa4d0f779131ae093ac8314c650ebe6dac592aa8cfd8845e2a0219"
+  },
+  "final_validation": {
+    "build": {"reader_chapters":39,"readable_markdown_pages":100,"formulas":1637,"original_source_excerpts":148},
+    "local_link_targets":5120,
+    "python_ast_files":80,
+    "passed":["content","editorial_and_code_fence_regression","pdf_hashes_and_targets","navigation","paper_reader","font_anchor","git_diff_check"],
+    "desktop_browser":"deep navigation, mHC formulas, Llama inline program and disclosure verified",
+    "narrow_viewport":"390x844 DOM overflow check passed; screenshot scaling abnormal, no full narrow-screen visual claim",
+    "device_execution":"deferred to user; no new GPU/NPU/model result",
+    "progress_files":"PATH.md and NOW.md SHA256 unchanged"
+  },
+  "status": "complete_for_listed_non_experiment_scope"
+}

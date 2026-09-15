@@ -1,0 +1,22 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>2026-09-01 — Triton Softmax LeetGPU 归档 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · weekly/2026-09-01-triton-softmax-leetgpu.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E9%97%AE%E9%A2%98%E4%B8%8E%E4%BF%AE%E5%A4%8D">问题与修复</a></li><li><a href="#%E5%AE%9E%E7%8E%B0%E7%BB%93%E6%9E%84">实现结构</a></li><li><a href="#%E5%B9%B3%E5%8F%B0%E7%BB%93%E6%9E%9C">平台结果</a></li><li><a href="#%E4%B8%8B%E4%B8%80%E6%AD%A5">下一步</a></li></ol></nav><div class="markdown-body"><h1 id="2026-09-01--triton-softmax-leetgpu-归档">2026-09-01 — Triton Softmax LeetGPU 归档<a class="heading-anchor" href="#2026-09-01--triton-softmax-leetgpu-%E5%BD%92%E6%A1%A3" aria-label="链接到2026-09-01 — Triton Softmax LeetGPU 归档">#</a></h1>
+<h2 id="问题与修复">问题与修复<a class="heading-anchor" href="#%E9%97%AE%E9%A2%98%E4%B8%8E%E4%BF%AE%E5%A4%8D" aria-label="链接到问题与修复">#</a></h2>
+<p>LeetGPU 反馈的问题是尾部越界写（OOB store）。修复方式是让输出写回使用与输入 load 相同的 <code>mask</code>，确保无效 offset 不写入 <code>output</code>。</p>
+<h2 id="实现结构">实现结构<a class="heading-anchor" href="#%E5%AE%9E%E7%8E%B0%E7%BB%93%E6%9E%84" aria-label="链接到实现结构">#</a></h2>
+<p>用户通过版保留三阶段数据流：</p>
+<ol>
+<li><code>softmax_partial</code>：分块计算 partial <code>(max, sum)</code>；</li>
+<li><code>softmax_reduce</code>：归并 partial pair，得到全局 max/sum；</li>
+<li><code>softmax_sum</code>：使用全局统计量完成 normalize 并 masked store。</li>
+</ol>
+<p>归档文件：<a href="../solutions/triton/fused_softmax.py">solutions/triton/fused_softmax.py</a>。这是 LeetGPU 一维题的原始通过代码；服务器阶段仍需单独实现二维 row-wise baseline。</p>
+<h2 id="平台结果">平台结果<a class="heading-anchor" href="#%E5%B9%B3%E5%8F%B0%E7%BB%93%E6%9E%9C" aria-label="链接到平台结果">#</a></h2>
+<ul>
+<li>题目：LeetGPU Softmax #5</li>
+<li>状态：<code>LEETGPU_PASS</code></li>
+<li>证据：<code>SuccessPublicTrace</code></li>
+<li>时间：2026-09-01 00:37:33</li>
+<li>结果：0.29 ms，47.0th percentile</li>
+</ul>
+<h2 id="下一步">下一步<a class="heading-anchor" href="#%E4%B8%8B%E4%B8%80%E6%AD%A5" aria-label="链接到下一步">#</a></h2>
+<p>服务器二维 row-wise baseline 尚未开始。下一步在 RTX 3090 完成正确性、耗时和 effective GB/s 记录；在此之前不标记 <code>GPU_VALIDATED</code> 或 <code>COMPLETE</code>。FA2 理论进度约 50% 保持不变。</p>
+</div></main><script src="../../reader.js"></script></body></html>

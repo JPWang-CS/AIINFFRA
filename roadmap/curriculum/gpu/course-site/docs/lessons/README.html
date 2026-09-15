@@ -1,0 +1,91 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Lessons — 主题课 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · lessons/README.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E8%AF%BE%E7%A8%8B%E5%88%97%E8%A1%A8">课程列表</a></li><li><a href="#%E8%BF%99%E4%BA%9B%E8%AF%BE%E6%80%8E%E4%B9%88%E6%9D%A5%E7%9A%84">这些课怎么来的</a></li><li><a href="#%E9%85%8D%E5%A5%97">配套</a></li></ol></nav><div class="markdown-body"><h1 id="lessons--主题课">Lessons — 主题课<a class="heading-anchor" href="#lessons--%E4%B8%BB%E9%A2%98%E8%AF%BE" aria-label="链接到Lessons — 主题课">#</a></h1>
+<blockquote><p>按主题组织的讲解内容。<strong>不绑定&quot;第几周&quot;</strong>——你走到哪学到哪，进度记在 PATH.md。
+规则：每个可执行章节固定两段：<strong>LeetGPU：正确性与代码归档</strong>、<strong>服务器：真实性能</strong>。通过前不进入服务器；<code>reference/</code> 只在自己的版本提交后对照。
+每课必须有一张当前单元卡：题目入口、代码快照/路径、平台状态、服务器状态、下一步；完成状态仍以 PATH.md 为准。
+每课完成标准：跑通代码 + 性能/正确性数字 + 能讲清核心机制；完整课表见 <a href="../roadmap/ai-infra-curriculum.html">roadmap/ai-infra-curriculum.md</a>。</p>
+</blockquote><h2 id="课程列表">课程列表<a class="heading-anchor" href="#%E8%AF%BE%E7%A8%8B%E5%88%97%E8%A1%A8" aria-label="链接到课程列表">#</a></h2>
+<table>
+<thead>
+<tr>
+<th align="center">#</th>
+<th>课</th>
+<th>主题</th>
+<th>配套代码</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="center">01</td>
+<td><a href="01-cuda-basics.html">cuda-basics</a></td>
+<td>CUDA 编程模型 + Vector Add</td>
+<td><a href="01-cuda-basics.html#22-%E5%9C%A8-leetgpu-%E4%B8%8A%E8%B7%91%E6%8E%A8%E8%8D%90%E9%9B%B6%E7%8E%AF%E5%A2%83%E9%85%8D%E7%BD%AE">Lesson code</a> · 本地归档缺失</td>
+<td>⚠️</td>
+</tr>
+<tr>
+<td align="center">02</td>
+<td><a href="02-gemm-naive.html">gemm-naive</a></td>
+<td>Naive GEMM + 瓶颈分析</td>
+<td><a href="02-gemm-naive.html">Lesson</a> · <a href="../../../../../../solutions/cuda/">solutions/cuda/</a></td>
+<td>✅</td>
+</tr>
+<tr>
+<td align="center">03</td>
+<td><a href="03-gemm-tiled.html">gemm-tiled</a></td>
+<td>Shared memory tiling + bank conflict</td>
+<td><a href="03-gemm-tiled.html">Lesson</a> · <a href="../../../../../../solutions/cuda/">solutions/cuda/</a></td>
+<td>✅</td>
+</tr>
+<tr>
+<td align="center">04</td>
+<td><a href="04-softmax.html">softmax</a></td>
+<td>Softmax 定义、稳定性、Online Softmax、Parallel Reduce、CUDA 实现</td>
+<td><a href="../reference/cuda/softmax/softmax.cu">reference/cuda/softmax/</a></td>
+<td>✅ 知识完成 · ⭐旧债务</td>
+</tr>
+<tr>
+<td align="center">05</td>
+<td><a href="05-flash-attn-reading.html">flash-attn-reading</a></td>
+<td>读懂 Flash Attention CUDA 代码</td>
+<td><a href="../reference/cuda/flash_attention/flash_attn.cu">reference/cuda/flash_attention/</a></td>
+<td>✅ 读码完成</td>
+</tr>
+<tr>
+<td align="center">06</td>
+<td><a href="06-triton-intro.html">triton-intro</a></td>
+<td>Triton Vector Add → MatMul（B1 baseline 已收口）</td>
+<td><a href="06-triton-intro.html#%E6%9C%AC%E8%AF%BE%E4%BB%A3%E7%A0%81%E4%B8%8E%E8%BF%9B%E5%BA%A6%E7%B4%A2%E5%BC%95%E4%BB%8E%E8%BF%99%E9%87%8C%E4%B8%80%E7%9C%BC%E6%9F%A5%E7%9C%8B">Lesson code</a> · <a href="../solutions/triton/README.html">solutions/triton/</a></td>
+<td>✅ 阶段性</td>
+</tr>
+<tr>
+<td align="center">07</td>
+<td><a href="07-triton-debugging.html">triton-debugging</a></td>
+<td>Triton 调试：interpreter、打印、断言、sanitizer、数值误差</td>
+<td><a href="06-triton-intro.html#56-%E6%9C%8D%E5%8A%A1%E5%99%A8%E7%9C%9F%E5%AE%9E%E6%80%A7%E8%83%BD">Lesson 06 MatMul</a> · <a href="07-triton-debugging.html">Triton Debugging</a></td>
+<td>配套</td>
+</tr>
+<tr>
+<td align="center">08</td>
+<td><a href="08-triton-fused-softmax.html">triton-softmax 迁移</a></td>
+<td>CUDA → Triton 映射检查点（B2）</td>
+<td>LeetGPU #5 → <a href="../solutions/triton/fused_softmax.py"><code>solutions/triton/fused_softmax.py</code></a> 已归档 → RTX 3090 row-wise baseline</td>
+<td><code>LEETGPU_PASS</code>；服务器待做</td>
+</tr>
+<tr>
+<td align="center">09</td>
+<td><a href="09-gpu-environment-baseline.html">GPU架构总论</a></td>
+<td>第一篇第一章兼容入口；单篇完整课程</td>
+<td><a href="../scripts/collect-gpu-environment-baseline.sh"><code>collect-gpu-environment-baseline.sh</code></a></td>
+<td><code>WIP</code>：阅读与服务器待验收</td>
+</tr>
+</tbody></table>
+<blockquote><p>01-08是已完成或正在收尾的旧阶段课程，代码和证据全部保留。当前先完成Lesson 08的RTX 3090 baseline，随后执行第一篇第一章；第二章尚未讨论，不提前生成。通用调试入口是Lesson 07。</p>
+</blockquote><h2 id="这些课怎么来的">这些课怎么来的<a class="heading-anchor" href="#%E8%BF%99%E4%BA%9B%E8%AF%BE%E6%80%8E%E4%B9%88%E6%9D%A5%E7%9A%84" aria-label="链接到这些课怎么来的">#</a></h2>
+<p>源自早期按周组织的教程（week-01~04）。重组时按主题拆开：week-03 拆成 GEMM tiled（03）+ Softmax（04），week-04 拆成 Flash Attn 阅读（05）+ Triton 入门（06）。原始周文件的历史在 git 里。</p>
+<h2 id="配套">配套<a class="heading-anchor" href="#%E9%85%8D%E5%A5%97" aria-label="链接到配套">#</a></h2>
+<ul>
+<li><strong>理论线</strong> → <a href="../../index.html?chapter=25">notes/algorithms/</a> — 每周一条：量化、新算法、GPU 优化算法</li>
+<li><strong>知识库</strong> → <a href="../notes/cuda/README.html">notes/cuda/</a> · <a href="../../../../../../notes/triton/">notes/triton/</a> — 速查表 + 深入笔记</li>
+<li><strong>我写的代码</strong> → <a href="../solutions/README.html">solutions/</a></li>
+<li><strong>回顾周报</strong> → <a href="../weekly/README.html">weekly/</a></li>
+</ul>
+</div></main><script src="../../reader.js"></script></body></html>

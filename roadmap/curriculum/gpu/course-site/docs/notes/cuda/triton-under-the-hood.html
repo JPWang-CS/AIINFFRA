@@ -1,0 +1,319 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Triton → CUDA 底层对照 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · notes/cuda/triton-under-the-hood.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#1-%E6%A0%B8%E5%BF%83%E5%AF%B9%E7%85%A7%E8%A1%A8">1. 核心对照表</a></li><li><a href="#2-%E6%9C%80%E6%A0%B8%E5%BF%83%E5%B7%AE%E5%BC%82block-level-vs-thread-level">2. 最核心差异：Block-Level vs Thread-Level</a></li><li><a href="#3-triton-%E7%9A%84-memory-hierarchy-vs-cuda">3. Triton 的 Memory Hierarchy vs CUDA</a></li><li><a href="#4-%E5%B8%B8%E8%A7%81-triton-kernel-%E7%94%9F%E6%88%90%E7%9A%84-cuda-%E7%BB%93%E6%9E%84">4. 常见 Triton Kernel 生成的 CUDA 结构</a></li><li><a href="#vector-add--%E7%AE%80%E5%8D%95%E7%9A%84-element-wise">Vector Add — 简单的 element-wise</a></li><li><a href="#tiled-gemm--%E7%BC%96%E8%AF%91%E5%99%A8%E8%87%AA%E5%8A%A8%E6%8F%92%E5%85%A5-shared-memory">Tiled GEMM — 编译器自动插入 shared memory</a></li><li><a href="#5-tldot-%E7%9A%84%E5%BA%95%E5%B1%82%E5%AE%9E%E7%8E%B0">5. tl.dot 的底层实现</a></li><li><a href="#6-%E4%BD%A0%E5%AD%A6-cuda-%E5%88%B0%E4%BB%80%E4%B9%88%E7%A8%8B%E5%BA%A6%E5%B0%B1%E5%A4%9F%E4%BA%86">6. 你学 CUDA 到什么程度就够了</a></li><li><a href="#7-%E8%B0%83%E8%AF%95%E7%9C%8B-triton-%E7%94%9F%E6%88%90%E7%9A%84-cuda-%E4%BB%A3%E7%A0%81">7. 调试：看 Triton 生成的 CUDA 代码</a></li><li><a href="#%E7%9B%B8%E5%85%B3%E6%96%87%E6%A1%A3">相关文档</a></li></ol></nav><div class="markdown-body"><h1 id="triton--cuda-底层对照">Triton → CUDA 底层对照<a class="heading-anchor" href="#triton--cuda-%E5%BA%95%E5%B1%82%E5%AF%B9%E7%85%A7" aria-label="链接到Triton → CUDA 底层对照">#</a></h1>
+<blockquote><p>学 CUDA 不是为了手写极致优化，而是为了<strong>看懂 Triton 在底层做了什么</strong>。
+本文建立 Triton 概念和 CUDA 实现的对照关系。
+Triton API 速查 → <a href="../triton/triton-cheatsheet.html">../triton/triton-cheatsheet.md</a></p>
+</blockquote><hr>
+<h2 id="1-核心对照表">1. 核心对照表<a class="heading-anchor" href="#1-%E6%A0%B8%E5%BF%83%E5%AF%B9%E7%85%A7%E8%A1%A8" aria-label="链接到1. 核心对照表">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>Triton 概念</th>
+<th>对应的 CUDA 实现</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>tl.program_id(0)</code></td>
+<td><code>blockIdx.x</code></td>
+<td>当前 block 在哪个位置</td>
+</tr>
+<tr>
+<td><code>tl.program_id(1)</code></td>
+<td><code>blockIdx.y</code></td>
+<td>2D block indexing</td>
+</tr>
+<tr>
+<td><code>tl.num_programs(0)</code></td>
+<td><code>gridDim.x</code></td>
+<td>grid 中有多少个 block</td>
+</tr>
+<tr>
+<td><code>tl.load(ptr)</code></td>
+<td>shared mem load + <code>__syncthreads</code> (自动)</td>
+<td>Triton 编译器自动分配 shared mem</td>
+</tr>
+<tr>
+<td><code>tl.store(ptr, val)</code></td>
+<td>shared mem write + copy to global (自动)</td>
+<td></td>
+</tr>
+<tr>
+<td><code>@triton.jit</code></td>
+<td><code>__global__</code> kernel function</td>
+<td>Triton 自动生成 launch code</td>
+</tr>
+<tr>
+<td><code>tl.arange(0, BLOCK)</code></td>
+<td><code>threadIdx.x</code> 的范围</td>
+<td>向量化表达，不需手动分 thread</td>
+</tr>
+<tr>
+<td>block-level program</td>
+<td>1 block = 1 program instance</td>
+<td>Triton 不是 thread-level，是 block-level</td>
+</tr>
+<tr>
+<td><code>tl.zeros(...)</code></td>
+<td>shared memory allocation + init</td>
+<td>编译器自动分配</td>
+</tr>
+<tr>
+<td><code>tl.dot(a, b)</code></td>
+<td><code>mma.sync</code> (Tensor Core) 或手动 FMA loop</td>
+<td>取决于硬件和 dtype</td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="2-最核心差异block-level-vs-thread-level">2. 最核心差异：Block-Level vs Thread-Level<a class="heading-anchor" href="#2-%E6%9C%80%E6%A0%B8%E5%BF%83%E5%B7%AE%E5%BC%82block-level-vs-thread-level" aria-label="链接到2. 最核心差异：Block-Level vs Thread-Level">#</a></h2>
+<p><strong>这是理解 Triton 的关键。</strong></p>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1"><span class="hljs-comment"># Triton — block-level programming</span></span>
+<span class="code-line" data-line="2"><span class="hljs-comment"># 你描述一个 block 在做什么，不关心 block 内 thread 怎么分配</span></span>
+<span class="code-line" data-line="3"><span class="hljs-meta">@triton.jit</span></span>
+<span class="code-line" data-line="4"><span class="hljs-keyword">def</span> <span class="hljs-title function_">add_kernel</span>(<span class="hljs-params">x_ptr, y_ptr, output_ptr, n_elements, BLOCK_SIZE: tl.constexpr</span>):</span>
+<span class="code-line" data-line="5">    pid = tl.program_id(axis=<span class="hljs-number">0</span>)</span>
+<span class="code-line" data-line="6">    block_start = pid * BLOCK_SIZE</span>
+<span class="code-line" data-line="7">    offsets = block_start + tl.arange(<span class="hljs-number">0</span>, BLOCK_SIZE)   <span class="hljs-comment"># 这是一个向量！</span></span>
+<span class="code-line" data-line="8">    mask = offsets &lt; n_elements</span>
+<span class="code-line" data-line="9">    x = tl.load(x_ptr + offsets, mask=mask)             <span class="hljs-comment"># 一条语句加载 BLOCK_SIZE 个元素</span></span>
+<span class="code-line" data-line="10">    y = tl.load(y_ptr + offsets, mask=mask)</span>
+<span class="code-line" data-line="11">    output = x + y                                       <span class="hljs-comment"># 向量运算</span></span>
+<span class="code-line" data-line="12">    tl.store(output_ptr + offsets, output, mask=mask)</span></code></pre></div>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-comment">// CUDA 等价 — thread-level programming</span></span>
+<span class="code-line" data-line="2"><span class="hljs-comment">// 你需要显式管理每个 thread</span></span>
+<span class="code-line" data-line="3"><span class="hljs-function">__global__ <span class="hljs-type">void</span> <span class="hljs-title">add_kernel</span><span class="hljs-params">(<span class="hljs-type">float</span>* x, <span class="hljs-type">float</span>* y, <span class="hljs-type">float</span>* output, <span class="hljs-type">int</span> n)</span> </span>{</span>
+<span class="code-line" data-line="4">    <span class="hljs-type">int</span> idx = blockIdx.x * blockDim.x + threadIdx.x;</span>
+<span class="code-line" data-line="5">    <span class="hljs-keyword">if</span> (idx &lt; n) {</span>
+<span class="code-line" data-line="6">        output[idx] = x[idx] + y[idx];</span>
+<span class="code-line" data-line="7">    }</span>
+<span class="code-line" data-line="8">}</span>
+<span class="code-line" data-line="9"><span class="hljs-comment">// 还要手动计算 grid/block 尺寸，分配 shared memory 等</span></span></code></pre></div>
+<p><strong>Triton 编译器自动做的事</strong>（你不需手写 CUDA）：</p>
+<ol>
+<li>决定 block 内的 thread 数量和分布</li>
+<li>分配 shared memory（<code>tl.load</code> 自动用 shared memory 缓冲）</li>
+<li>插入 <code>__syncthreads()</code> barrier</li>
+<li>处理 bank conflict（尽可能避免）</li>
+<li>向量化 load/store（<code>float4</code> 等）</li>
+<li>选择 Tensor Core 路径（如果可用且有益）</li>
+</ol>
+<hr>
+<h2 id="3-triton-的-memory-hierarchy-vs-cuda">3. Triton 的 Memory Hierarchy vs CUDA<a class="heading-anchor" href="#3-triton-%E7%9A%84-memory-hierarchy-vs-cuda" aria-label="链接到3. Triton 的 Memory Hierarchy vs CUDA">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">Triton 编程模型          CUDA 实现</span>
+<span class="code-line" data-line="2">─────────────────────────────────────────────</span>
+<span class="code-line" data-line="3">Program (每个 program    Block</span>
+<span class="code-line" data-line="4">  instance 处理一个 tile)</span>
+<span class="code-line" data-line="5">                       </span>
+<span class="code-line" data-line="6">tl.load (从 global)     shared memory buffer (多 thread 合作 load)</span>
+<span class="code-line" data-line="7">                        → __syncthreads</span>
+<span class="code-line" data-line="8">                        → 从 shared memory 读取</span>
+<span class="code-line" data-line="9"></span>
+<span class="code-line" data-line="10">tl.store (写到 global)  写入 shared memory buffer</span>
+<span class="code-line" data-line="11">                        → __syncthreads</span>
+<span class="code-line" data-line="12">                        → 多 thread 合作 write 到 global memory</span>
+<span class="code-line" data-line="13"></span>
+<span class="code-line" data-line="14">block 内的数据           Register / Shared Memory (编译器自动决定)</span>
+<span class="code-line" data-line="15">                        → 小 tensor 放 register</span>
+<span class="code-line" data-line="16">                        → 大 tensor 放 shared memory</span></code></pre></div>
+<p><strong>关键洞察</strong>：Triton 让你不用管 shared memory 的分配细节。它自动分析你的 kernel，决定哪些数据放 register、哪些放 shared memory、什么时候 <code>__syncthreads</code>。这就是为什么 Triton 的生产力高。</p>
+<hr>
+<h2 id="4-常见-triton-kernel-生成的-cuda-结构">4. 常见 Triton Kernel 生成的 CUDA 结构<a class="heading-anchor" href="#4-%E5%B8%B8%E8%A7%81-triton-kernel-%E7%94%9F%E6%88%90%E7%9A%84-cuda-%E7%BB%93%E6%9E%84" aria-label="链接到4. 常见 Triton Kernel 生成的 CUDA 结构">#</a></h2>
+<h3 id="vector-add--简单的-element-wise">Vector Add — 简单的 element-wise<a class="heading-anchor" href="#vector-add--%E7%AE%80%E5%8D%95%E7%9A%84-element-wise" aria-label="链接到Vector Add — 简单的 element-wise">#</a></h3>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1"><span class="hljs-comment"># Triton</span></span>
+<span class="code-line" data-line="2"><span class="hljs-meta">@triton.jit</span></span>
+<span class="code-line" data-line="3"><span class="hljs-keyword">def</span> <span class="hljs-title function_">add</span>(<span class="hljs-params">x, y, out, N, BLOCK: tl.constexpr</span>):</span>
+<span class="code-line" data-line="4">    pid = tl.program_id(<span class="hljs-number">0</span>)</span>
+<span class="code-line" data-line="5">    offsets = pid * BLOCK + tl.arange(<span class="hljs-number">0</span>, BLOCK)</span>
+<span class="code-line" data-line="6">    mask = offsets &lt; N</span>
+<span class="code-line" data-line="7">    x_val = tl.load(x + offsets, mask=mask)</span>
+<span class="code-line" data-line="8">    y_val = tl.load(y + offsets, mask=mask)</span>
+<span class="code-line" data-line="9">    tl.store(out + offsets, x_val + y_val, mask=mask)</span></code></pre></div>
+<p>生成的 CUDA 大致逻辑：</p>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-comment">// 编译器生成（简化）</span></span>
+<span class="code-line" data-line="2"><span class="hljs-function">__global__ <span class="hljs-type">void</span> <span class="hljs-title">add_kernel</span><span class="hljs-params">(<span class="hljs-type">float</span>* x, <span class="hljs-type">float</span>* y, <span class="hljs-type">float</span>* out, <span class="hljs-type">int</span> N, <span class="hljs-type">int</span> BLOCK)</span> </span>{</span>
+<span class="code-line" data-line="3">    <span class="hljs-type">int</span> pid = blockIdx.x;</span>
+<span class="code-line" data-line="4">    <span class="hljs-type">int</span> base = pid * BLOCK + threadIdx.x;  <span class="hljs-comment">// tl.arange → threadIdx.x</span></span>
+<span class="code-line" data-line="5">    </span>
+<span class="code-line" data-line="6">    <span class="hljs-comment">// tl.load → coalesced global load</span></span>
+<span class="code-line" data-line="7">    <span class="hljs-keyword">if</span> (base &lt; N) {</span>
+<span class="code-line" data-line="8">        out[base] = x[base] + y[base];</span>
+<span class="code-line" data-line="9">    }</span>
+<span class="code-line" data-line="10">}</span>
+<span class="code-line" data-line="11"><span class="hljs-comment">// element-wise 的 Triton ≈ 直接翻译成 CUDA，几乎无 overhead</span></span></code></pre></div>
+<h3 id="tiled-gemm--编译器自动插入-shared-memory">Tiled GEMM — 编译器自动插入 shared memory<a class="heading-anchor" href="#tiled-gemm--%E7%BC%96%E8%AF%91%E5%99%A8%E8%87%AA%E5%8A%A8%E6%8F%92%E5%85%A5-shared-memory" aria-label="链接到Tiled GEMM — 编译器自动插入 shared memory">#</a></h3>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1"><span class="hljs-comment"># Triton</span></span>
+<span class="code-line" data-line="2"><span class="hljs-meta">@triton.jit</span></span>
+<span class="code-line" data-line="3"><span class="hljs-keyword">def</span> <span class="hljs-title function_">gemm</span>(<span class="hljs-params">A, B, C, M, N, K, BLOCK_M, BLOCK_N, BLOCK_K</span>):</span>
+<span class="code-line" data-line="4">    pid_m = tl.program_id(<span class="hljs-number">0</span>)</span>
+<span class="code-line" data-line="5">    pid_n = tl.program_id(<span class="hljs-number">1</span>)</span>
+<span class="code-line" data-line="6">    </span>
+<span class="code-line" data-line="7">    <span class="hljs-comment"># 编译器分析这些 access pattern，决定用 shared memory tiling</span></span>
+<span class="code-line" data-line="8">    a_ptrs = A + ...  <span class="hljs-comment"># block of A</span></span>
+<span class="code-line" data-line="9">    b_ptrs = B + ...  <span class="hljs-comment"># block of B</span></span>
+<span class="code-line" data-line="10">    </span>
+<span class="code-line" data-line="11">    acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)</span>
+<span class="code-line" data-line="12">    <span class="hljs-keyword">for</span> k <span class="hljs-keyword">in</span> <span class="hljs-built_in">range</span>(<span class="hljs-number">0</span>, K, BLOCK_K):</span>
+<span class="code-line" data-line="13">        a = tl.load(a_ptrs)   <span class="hljs-comment"># 编译器自动：多 thread 合作 load A_tile 到 shared mem</span></span>
+<span class="code-line" data-line="14">        b = tl.load(b_ptrs)   <span class="hljs-comment"># 编译器自动：多 thread 合作 load B_tile 到 shared mem</span></span>
+<span class="code-line" data-line="15">        acc += tl.dot(a, b)   <span class="hljs-comment"># 编译器自动：Tensor Core MMA 或 manual FMA loop</span></span>
+<span class="code-line" data-line="16">                              <span class="hljs-comment"># 自动插入 __syncthreads</span></span>
+<span class="code-line" data-line="17">        a_ptrs += BLOCK_K</span>
+<span class="code-line" data-line="18">        b_ptrs += BLOCK_K</span>
+<span class="code-line" data-line="19">    </span>
+<span class="code-line" data-line="20">    tl.store(c_ptrs, acc)</span></code></pre></div>
+<p>编译器在背后做的事：</p>
+<ol>
+<li><strong>自动分块</strong>：分析 <code>BLOCK_M × BLOCK_K</code> 的 A tile 和 <code>BLOCK_K × BLOCK_N</code> 的 B tile</li>
+<li><strong>自动 shared memory allocation</strong>：两个 tile 各放 shared memory</li>
+<li><strong>自动 <code>__syncthreads()</code></strong>：load 完后 barrier，再计算</li>
+<li><strong>自动 double buffering</strong>：如果性能有利，编译器会分配两个 buffer 做 ping-pong</li>
+<li><strong>自动选择 Tensor Core 路径</strong>：如果 dtype 和尺寸匹配（FP16/BF16/INT8），用 <code>mma.sync</code></li>
+</ol>
+<p>你写的是：</p>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1">a = tl.load(a_ptrs)</span>
+<span class="code-line" data-line="2">b = tl.load(b_ptrs)</span>
+<span class="code-line" data-line="3">acc += tl.dot(a, b)</span></code></pre></div>
+<p>CUDA 等价物你如果手写需要 ~50 行：shared memory 分配、多 thread 合作加载、<code>__syncthreads</code>、FMA loop / mma 调用、bank conflict padding。</p>
+<hr>
+<h2 id="5-tldot-的底层实现">5. <code>tl.dot</code> 的底层实现<a class="heading-anchor" href="#5-tldot-%E7%9A%84%E5%BA%95%E5%B1%82%E5%AE%9E%E7%8E%B0" aria-label="链接到5. tl.dot 的底层实现">#</a></h2>
+<p><code>tl.dot</code> 是 Triton GEMM 的核心。它的底层实现取决于硬件：</p>
+<table>
+<thead>
+<tr>
+<th>硬件</th>
+<th>dtype</th>
+<th><code>tl.dot</code> 实现</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Ampere+ (A100/H100)</td>
+<td>FP16/BF16/INT8</td>
+<td><code>mma.sync</code> (Tensor Core)</td>
+</tr>
+<tr>
+<td>Ampere+ (A100/H100)</td>
+<td>FP32</td>
+<td>手写 FMA loop（无 Tensor Core 加速）</td>
+</tr>
+<tr>
+<td>Turing (T4)</td>
+<td>FP16</td>
+<td><code>mma.sync</code> (Turing Tensor Core)</td>
+</tr>
+<tr>
+<td>Turing (T4)</td>
+<td>FP32</td>
+<td>FMA loop</td>
+</tr>
+</tbody></table>
+<p><strong>Tensor Core 的 <code>mma.sync</code> 长这样</strong>（了解一下，不需要手写）：</p>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-comment">// 这是编译器调用的底层指令，不是你写的</span></span>
+<span class="code-line" data-line="2"><span class="hljs-comment">// wmma API（较简单）：</span></span>
+<span class="code-line" data-line="3">wmma::fragment&lt;wmma::matrix_a, <span class="hljs-number">16</span>, <span class="hljs-number">16</span>, <span class="hljs-number">16</span>, half, wmma::row_major&gt; a_frag;</span>
+<span class="code-line" data-line="4">wmma::fragment&lt;wmma::matrix_b, <span class="hljs-number">16</span>, <span class="hljs-number">16</span>, <span class="hljs-number">16</span>, half, wmma::row_major&gt; b_frag;</span>
+<span class="code-line" data-line="5">wmma::fragment&lt;wmma::accumulator, <span class="hljs-number">16</span>, <span class="hljs-number">16</span>, <span class="hljs-number">16</span>, <span class="hljs-type">float</span>&gt; c_frag;</span>
+<span class="code-line" data-line="6">wmma::<span class="hljs-built_in">load_matrix_sync</span>(a_frag, a_ptr, lda);</span>
+<span class="code-line" data-line="7">wmma::<span class="hljs-built_in">load_matrix_sync</span>(b_frag, b_ptr, ldb);</span>
+<span class="code-line" data-line="8">wmma::<span class="hljs-built_in">mma_sync</span>(c_frag, a_frag, b_frag, c_frag);  <span class="hljs-comment">// 一次 16×16×16 的矩阵乘+累加</span></span>
+<span class="code-line" data-line="9">wmma::<span class="hljs-built_in">store_matrix_sync</span>(c_ptr, c_frag, ldc, wmma::mem_row_major);</span></code></pre></div>
+<blockquote><p>这就是为什么 FP16 GEMM 比 FP32 快很多——Tensor Core 一步算 16×16×16 = 4096 次乘加，而 FP32 的 FMA loop 一步只算一次。</p>
+</blockquote><hr>
+<h2 id="6-你学-cuda-到什么程度就够了">6. 你学 CUDA 到什么程度就够了<a class="heading-anchor" href="#6-%E4%BD%A0%E5%AD%A6-cuda-%E5%88%B0%E4%BB%80%E4%B9%88%E7%A8%8B%E5%BA%A6%E5%B0%B1%E5%A4%9F%E4%BA%86" aria-label="链接到6. 你学 CUDA 到什么程度就够了">#</a></h2>
+<p>针对你的目标（Triton 为主，CUDA 为辅）：</p>
+<table>
+<thead>
+<tr>
+<th>你需要理解</th>
+<th>为什么</th>
+<th>深度</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>grid/block/warp</td>
+<td>理解 <code>program_id</code> 和并行度</td>
+<td>能用话说清</td>
+</tr>
+<tr>
+<td>shared memory</td>
+<td>知道 Triton 的 <code>tl.load</code> 背后在做什么</td>
+<td>能解释原理</td>
+</tr>
+<tr>
+<td><code>__syncthreads</code></td>
+<td>知道 Triton 插入 barrier 的时机和原因</td>
+<td>能解释为什么需要</td>
+</tr>
+<tr>
+<td>memory coalescing</td>
+<td>知道你写的 Triton 代码的 memory access 是否高效</td>
+<td>能判断好坏</td>
+</tr>
+<tr>
+<td>bank conflict</td>
+<td>知道 Triton 有时需要手动 padding 来避免</td>
+<td>能识别并解决</td>
+</tr>
+<tr>
+<td>occupancy</td>
+<td>知道为什么 tile size 不是越大越好</td>
+<td>能解释 trade-off</td>
+</tr>
+<tr>
+<td>Tensor Core 概念</td>
+<td>知道 <code>tl.dot</code> 在什么时候用硬件加速</td>
+<td>能说出条件</td>
+</tr>
+<tr>
+<td>PTX/SASS/MMA</td>
+<td>❌ 不需要</td>
+<td>编译器的事</td>
+</tr>
+<tr>
+<td>手写 tensor core GEMM</td>
+<td>❌ 不需要</td>
+<td>Triton 帮你做</td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="7-调试看-triton-生成的-cuda-代码">7. 调试：看 Triton 生成的 CUDA 代码<a class="heading-anchor" href="#7-%E8%B0%83%E8%AF%95%E7%9C%8B-triton-%E7%94%9F%E6%88%90%E7%9A%84-cuda-%E4%BB%A3%E7%A0%81" aria-label="链接到7. 调试：看 Triton 生成的 CUDA 代码">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1"><span class="hljs-comment"># 方法 1：打印中间表示</span></span>
+<span class="code-line" data-line="2"><span class="hljs-keyword">import</span> triton</span>
+<span class="code-line" data-line="3">triton.runtime.driver.set_active_to_cpu()</span>
+<span class="code-line" data-line="4"><span class="hljs-comment"># 写入 TTGIR 和 LLVM IR</span></span>
+<span class="code-line" data-line="5"></span>
+<span class="code-line" data-line="6"><span class="hljs-comment"># 方法 2：export PTX</span></span>
+<span class="code-line" data-line="7"><span class="hljs-meta">@triton.autotune(<span class="hljs-params">...</span>)</span></span>
+<span class="code-line" data-line="8"><span class="hljs-meta">@triton.jit</span></span>
+<span class="code-line" data-line="9"><span class="hljs-keyword">def</span> <span class="hljs-title function_">my_kernel</span>(<span class="hljs-params">...</span>): ...</span>
+<span class="code-line" data-line="10"></span>
+<span class="code-line" data-line="11"><span class="hljs-comment"># 用 TRITON_INTERPRET=1 环境变量在 CPU 上跑（调试模式）</span></span>
+<span class="code-line" data-line="12"></span>
+<span class="code-line" data-line="13"><span class="hljs-comment"># 方法 3：用 triton.compile 拿到编译产物</span></span>
+<span class="code-line" data-line="14">compiled = triton.<span class="hljs-built_in">compile</span>(my_kernel, signature=..., constants=...)</span>
+<span class="code-line" data-line="15"><span class="hljs-comment"># 查看 generated PTX</span></span></code></pre></div>
+<hr>
+<h2 id="相关文档">相关文档<a class="heading-anchor" href="#%E7%9B%B8%E5%85%B3%E6%96%87%E6%A1%A3" aria-label="链接到相关文档">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>文档</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><a href="../triton/triton-cheatsheet.html">../triton/triton-cheatsheet.md</a></td>
+<td>Triton 语法速查</td>
+</tr>
+<tr>
+<td><a href="memory-model.html">memory-model.md</a></td>
+<td>CUDA 内存层级（理解 Triton 背后在做什么）</td>
+</tr>
+<tr>
+<td><a href="warp-and-sync.html">warp-and-sync.md</a></td>
+<td>Warp 调度（理解 Triton 的 block 内并行）</td>
+</tr>
+<tr>
+<td><a href="gpu-architecture.html">gpu-architecture.md</a></td>
+<td>GPU 架构基础</td>
+</tr>
+</tbody></table>
+</div></main><script src="../../../reader.js"></script></body></html>

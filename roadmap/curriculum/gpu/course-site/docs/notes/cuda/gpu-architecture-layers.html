@@ -1,0 +1,636 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GPU 架构详解：系统、芯片、SM、指令与代际 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · notes/cuda/gpu-architecture-layers.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#1-%E5%9B%9B%E5%B1%82%E6%9E%B6%E6%9E%84%E4%B8%89%E5%BC%A0%E4%B8%8D%E5%90%8C%E7%9A%84%E5%9B%BE">1. 四层架构，三张不同的图</a></li><li><a href="#2-%E4%BB%8E%E6%95%B4%E6%9C%BA%E5%88%B0-sm">2. 从整机到 SM</a></li><li><a href="#3-%E6%89%A7%E8%A1%8C%E6%A8%A1%E5%9E%8B">3. 执行模型</a></li><li><a href="#4-%E6%95%B0%E6%8D%AE%E5%B1%82%E6%AC%A1">4. 数据层次</a></li><li><a href="#5-%E8%AE%A1%E7%AE%97%E5%8D%95%E5%85%83%E6%90%AC%E8%BF%90%E4%B8%8E%E6%8C%87%E4%BB%A4">5. 计算单元、搬运与指令</a></li><li><a href="#gemm-%E7%9A%84%E7%B2%BE%E5%BA%A6%E8%B7%AF%E5%BE%84%E5%86%B3%E5%AE%9A%E8%AE%A1%E7%AE%97%E5%8D%95%E5%85%83">GEMM 的精度路径决定计算单元</a></li><li><a href="#6-%E6%9E%B6%E6%9E%84%E4%BB%A3%E9%99%85%E5%8F%AA%E8%AE%B0%E6%94%B9%E5%8F%98%E7%BC%96%E7%A8%8B%E5%86%B3%E7%AD%96%E7%9A%84%E5%B7%AE%E5%BC%82">6. 架构代际：只记改变编程决策的差异</a></li><li><a href="#7-nvidia-%E4%B8%8E%E6%98%87%E8%85%BE%E8%BF%81%E7%A7%BB%E6%9C%AC%E8%B4%A8%E9%99%90%E5%88%B6%E7%B1%BB%E6%AF%94">7. NVIDIA 与昇腾：迁移本质，限制类比</a></li><li><a href="#8-%E5%BA%95%E5%B1%82%E5%BE%AE%E6%9E%B6%E6%9E%84%E6%A6%82%E5%BF%B5%E5%AD%A6%E5%88%B0%E8%83%BD%E8%A7%A3%E9%87%8A-counter">8. 底层微架构概念：学到能解释 counter</a></li><li><a href="#%E4%B8%80%E6%AC%A1-kernel-%E7%9A%84%E5%AE%8C%E6%95%B4%E8%B7%AF%E5%BE%84">一次 kernel 的完整路径</a></li><li><a href="#9-%E5%85%A8%E6%A0%88%E4%BC%98%E5%8C%96%E5%B1%82%E6%AC%A1">9. 全栈优化层次</a></li><li><a href="#10-profiling-%E5%9B%A0%E6%9E%9C%E9%93%BE">10. Profiling 因果链</a></li><li><a href="#11-%E7%B2%BE%E9%80%89%E8%B5%84%E6%96%99">11. 精选资料</a></li><li><a href="#12-%E4%B8%80%E5%88%86%E9%92%9F%E5%8F%A3%E5%BE%84">12. 一分钟口径</a></li></ol></nav><div class="markdown-body"><h1 id="gpu-架构详解系统芯片sm指令与代际">GPU 架构详解：系统、芯片、SM、指令与代际<a class="heading-anchor" href="#gpu-%E6%9E%B6%E6%9E%84%E8%AF%A6%E8%A7%A3%E7%B3%BB%E7%BB%9F%E8%8A%AF%E7%89%87sm%E6%8C%87%E4%BB%A4%E4%B8%8E%E4%BB%A3%E9%99%85" aria-label="链接到GPU 架构详解：系统、芯片、SM、指令与代际">#</a></h1>
+<blockquote><p>新版主笔记。旧的 <a href="gpu-architecture.html">NVIDIA vs Da Vinci 对比</a> 只作早期速记；学习任务见 <a href="../../roadmap/gpu-foundations.html">GPU 基础补强路线</a>。
+具体资源数字随 SKU 改变，以 <code>cudaGetDeviceProperties</code>、Compute Capability 和官方 tuning guide 为准。</p>
+</blockquote><hr>
+<h2 id="1-四层架构三张不同的图">1. 四层架构，三张不同的图<a class="heading-anchor" href="#1-%E5%9B%9B%E5%B1%82%E6%9E%B6%E6%9E%84%E4%B8%89%E5%BC%A0%E4%B8%8D%E5%90%8C%E7%9A%84%E5%9B%BE" aria-label="链接到1. 四层架构，三张不同的图">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>层次</th>
+<th>对象</th>
+<th>核心问题</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>系统层</td>
+<td>CPU、PCIe/NVLink、GPU、HBM</td>
+<td>数据在哪里，跨设备搬多少？</td>
+</tr>
+<tr>
+<td>芯片层</td>
+<td>GPC、TPC、SM、L2、内存控制器</td>
+<td>block 被调度到哪里？</td>
+</tr>
+<tr>
+<td>SM 层</td>
+<td>warp scheduler、执行单元、register、L1/shared</td>
+<td>occupancy 与 stall 从哪来？</td>
+</tr>
+<tr>
+<td>指令层</td>
+<td>PTX、SASS、LD/ST、FFMA、MMA、异步搬运</td>
+<td>源码最终发出什么？</td>
+</tr>
+</tbody></table>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">CUDA 逻辑层级：Grid -&gt; [Cluster] -&gt; Block -&gt; Warp -&gt; Thread</span>
+<span class="code-line" data-line="2">硬件物理层级：GPU -&gt; GPC -&gt; TPC -&gt; SM -&gt; execution units</span>
+<span class="code-line" data-line="3">数据存储层级：HBM -&gt; L2 -&gt; L1/Shared -&gt; Register</span></code></pre></div>
+<p>关键映射：</p>
+<ul>
+<li>一个 block 在任一时刻驻留于一个 SM，不能跨 SM 执行。</li>
+<li>一个 SM 可驻留多个 block，受 threads、warps、register、shared memory 等共同限制。</li>
+<li>block 内线程按连续 ID 划成 32-thread warp。</li>
+<li>Hopper（CC 9.0）起可选 Thread Block Cluster；同 cluster 的 blocks 被调度到一个 GPC，并可使用 Distributed Shared Memory。</li>
+</ul>
+<hr>
+<h2 id="2-从整机到-sm">2. 从整机到 SM<a class="heading-anchor" href="#2-%E4%BB%8E%E6%95%B4%E6%9C%BA%E5%88%B0-sm" aria-label="链接到2. 从整机到 SM">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">Host CPU / DRAM</span>
+<span class="code-line" data-line="2">    | PCIe 或 NVLink-C2C</span>
+<span class="code-line" data-line="3">    v</span>
+<span class="code-line" data-line="4">GPU</span>
+<span class="code-line" data-line="5">├── GPC</span>
+<span class="code-line" data-line="6">│   └── TPC</span>
+<span class="code-line" data-line="7">│       └── SM</span>
+<span class="code-line" data-line="8">│           ├── warp schedulers / dispatch</span>
+<span class="code-line" data-line="9">│           ├── FP/INT、LD-ST、SFU pipelines</span>
+<span class="code-line" data-line="10">│           ├── Tensor Cores</span>
+<span class="code-line" data-line="11">│           ├── register file</span>
+<span class="code-line" data-line="12">│           └── unified L1 / texture / shared memory</span>
+<span class="code-line" data-line="13">├── 全 GPU 共享 L2</span>
+<span class="code-line" data-line="14">├── memory controllers</span>
+<span class="code-line" data-line="15">└── GDDR/HBM</span></code></pre></div>
+<ul>
+<li>PCIe/NVLink 是设备间互连，HBM/GDDR 是 GPU 本地显存；链路带宽不等于显存带宽。</li>
+<li>GPC/TPC 是物理组织边界；初期知道位置即可，不必学图形管线。</li>
+<li>SM 是 CUDA 计算、驻留和调度的核心资源容器。</li>
+<li>warp 遇到内存或依赖等待时，scheduler 可选择另一个 ready warp，用并发隐藏延迟。</li>
+</ul>
+<p>核心权衡：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">更大 tile / 更多 register / 更多 shared memory</span>
+<span class="code-line" data-line="2">  -&gt; 可能提高复用和指令效率</span>
+<span class="code-line" data-line="3">  -&gt; 也可能降低 resident blocks/warps</span></code></pre></div>
+<p>目标是让瓶颈资源保持忙碌，不是盲目追求 100% occupancy。</p>
+<hr>
+<h2 id="3-执行模型">3. 执行模型<a class="heading-anchor" href="#3-%E6%89%A7%E8%A1%8C%E6%A8%A1%E5%9E%8B" aria-label="链接到3. 执行模型">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>CUDA 概念</th>
+<th>语义</th>
+<th>硬件事实</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Grid</td>
+<td>一次 kernel 的全部 blocks</td>
+<td>blocks 分发到可用 SM</td>
+</tr>
+<tr>
+<td>Cluster</td>
+<td>可选 block 组，CC 9.0+</td>
+<td>同 cluster 驻留于一个 GPC，可跨 block 协作</td>
+</tr>
+<tr>
+<td>Block / CTA</td>
+<td>可同步并共享 shared memory 的线程组</td>
+<td>生命周期内驻留同一 SM</td>
+</tr>
+<tr>
+<td>Warp</td>
+<td>32 个连续 thread</td>
+<td>SM 的基本 SIMT 执行组</td>
+</tr>
+<tr>
+<td>Thread</td>
+<td>逻辑标量上下文</td>
+<td>私有 register/local state 与独立控制流语义</td>
+</tr>
+</tbody></table>
+<p>SIMT 不是简单 SIMD：SIMT 暴露独立 thread 状态和控制流，硬件将其组成 warp 执行。warp 内分支不同会产生 divergence。Volta 起有 Independent Thread Scheduling，不能依赖旧式“warp 内天然同步”的未定义写法；warp 协作应用带 mask 的 primitives 或明确同步。</p>
+<p>active blocks/SM 取以下上限的最小值：每 SM 最大 blocks/warps/threads、register 使用、shared-memory 使用及其他架构限制。</p>
+<p>必须区分：</p>
+<ul>
+<li>occupancy：active warps / hardware maximum；</li>
+<li>utilization：硬件单元有多忙；</li>
+<li>efficiency：完成同样工作用了多少有效 transaction / instruction。</li>
+</ul>
+<p>低 occupancy 的大 tile 可能因复用充分而更快；高 occupancy、低利用率也可能存在长依赖链或低效访存。</p>
+<hr>
+<h2 id="4-数据层次">4. 数据层次<a class="heading-anchor" href="#4-%E6%95%B0%E6%8D%AE%E5%B1%82%E6%AC%A1" aria-label="链接到4. 数据层次">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>空间</th>
+<th>作用域</th>
+<th>管理者</th>
+<th>常见问题</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Register</td>
+<td>thread</td>
+<td>编译器</td>
+<td>register pressure、spill</td>
+</tr>
+<tr>
+<td>Local memory</td>
+<td>thread 语义，物理走显存/cache 路径</td>
+<td>编译器/硬件</td>
+<td>spill、动态索引</td>
+</tr>
+<tr>
+<td>Shared memory</td>
+<td>block</td>
+<td>程序员</td>
+<td>bank conflict、同步、容量压低 occupancy</td>
+</tr>
+<tr>
+<td>Distributed Shared Memory</td>
+<td>cluster，Hopper+</td>
+<td>程序员</td>
+<td>跨 block 访问、cluster occupancy</td>
+</tr>
+<tr>
+<td>L1/Texture</td>
+<td>SM</td>
+<td>硬件 + carveout</td>
+<td>命中率、与 shared 容量权衡</td>
+</tr>
+<tr>
+<td>L2</td>
+<td>全 GPU</td>
+<td>硬件，可给 persistence hint</td>
+<td>工作集、跨 SM 复用、thrashing</td>
+</tr>
+<tr>
+<td>Global memory</td>
+<td>全 GPU</td>
+<td>程序员分配、硬件 transaction</td>
+<td>coalescing、对齐、带宽、延迟</td>
+</tr>
+<tr>
+<td>Constant/Texture</td>
+<td>特定只读模式</td>
+<td>程序员 + 硬件</td>
+<td>只在合适模式下有优势</td>
+</tr>
+</tbody></table>
+<p>四个关键点：</p>
+<ol>
+<li>coalescing 决定 warp 地址如何组成 memory transactions；不要死记“必然一次 128B”，粒度依架构、指令、cache 和数据宽度变化。</li>
+<li>shared bank conflict 是同 warp 多个不同地址落到同 bank 后的串行化；相同地址广播是特殊情况。</li>
+<li>spill 会生成 local-memory load/store；local 是地址空间名称，不是片上小缓存。</li>
+<li>tiling 用片上容量换数据复用和更高 arithmetic intensity。</li>
+</ol>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">普通 load：global -&gt; L1/L2 命中或 HBM -&gt; register</span>
+<span class="code-line" data-line="2">高复用：global -&gt; shared tile -&gt; compute -&gt; register accumulator -&gt; global</span></code></pre></div>
+<hr>
+<h2 id="5-计算单元搬运与指令">5. 计算单元、搬运与指令<a class="heading-anchor" href="#5-%E8%AE%A1%E7%AE%97%E5%8D%95%E5%85%83%E6%90%AC%E8%BF%90%E4%B8%8E%E6%8C%87%E4%BB%A4" aria-label="链接到5. 计算单元、搬运与指令">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>单元</th>
+<th>操作</th>
+<th>ML 例子</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>FP/INT pipelines</td>
+<td>算术与地址计算</td>
+<td>elementwise、索引、归约</td>
+</tr>
+<tr>
+<td>LD/ST units</td>
+<td>内存指令</td>
+<td>global/shared load-store</td>
+</tr>
+<tr>
+<td>SFU</td>
+<td>exp、sin、倒数等</td>
+<td>softmax、激活</td>
+</tr>
+<tr>
+<td>Tensor Cores</td>
+<td>小矩阵 MMA</td>
+<td>GEMM、QK/AV、MLP</td>
+</tr>
+<tr>
+<td>Async/copy mechanisms</td>
+<td>数据搬运</td>
+<td>global→shared pipeline、TMA</td>
+</tr>
+</tbody></table>
+<p>CUDA Core 数不能单独预测性能；还取决于 dtype、指令吞吐、Tensor Core、内存、occupancy 和 workload。</p>
+<h3 id="gemm-的精度路径决定计算单元">GEMM 的精度路径决定计算单元<a class="heading-anchor" href="#gemm-%E7%9A%84%E7%B2%BE%E5%BA%A6%E8%B7%AF%E5%BE%84%E5%86%B3%E5%AE%9A%E8%AE%A1%E7%AE%97%E5%8D%95%E5%85%83" aria-label="链接到GEMM 的精度路径决定计算单元">#</a></h3>
+<p>“输入 tensor 的 dtype 是 <code>float32</code>”并不能单独决定走哪一种硬件路径；还要看 matmul 的内部精度策略。Ampere 上应把下面三种情况分开记录：</p>
+<table>
+<thead>
+<tr>
+<th>路径</th>
+<th>乘法输入精度</th>
+<th>主要计算单元</th>
+<th>累加器</th>
+<th>Triton / PyTorch 控制</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>IEEE FP32</td>
+<td>FP32，23-bit mantissa</td>
+<td>FP32 CUDA pipelines</td>
+<td>FP32</td>
+<td><code>tl.dot(..., input_precision=&quot;ieee&quot;)</code>；PyTorch <code>&quot;highest&quot;</code> / 禁用 TF32</td>
+<td>数值 reference、严格容差</td>
+</tr>
+<tr>
+<td>TF32</td>
+<td>FP32 range、10-bit mantissa</td>
+<td>Tensor Cores 的 TF32 MMA</td>
+<td>FP32</td>
+<td>Triton 默认/TF32 路径；PyTorch <code>&quot;high&quot;</code> 或允许 TF32</td>
+<td>多数 DL FP32 GEMM 的吞吐优先路径</td>
+</tr>
+<tr>
+<td>FP16 / BF16</td>
+<td>低精度输入</td>
+<td>Tensor Cores</td>
+<td>常用 FP32</td>
+<td>输入 dtype + <code>tl.dot</code></td>
+<td>训练/推理主流路径，需按模型容差验证</td>
+</tr>
+</tbody></table>
+<p>TF32 不是把 tensor 存成新 dtype：FP32 tensor 保持原样，硬件在矩阵乘内部只读取 10 位 mantissa，保留 FP32 的 8-bit exponent 范围，并以 FP32 累加。它用较小的输入精度交换 Tensor Core 吞吐，因此必须同时报告误差和性能；不能把 TF32 GFLOPS 与 IEEE FP32 GFLOPS 当作同一精度成绩。</p>
+<p>对当前 Triton MatMul 的诊断顺序固定：先在 IEEE FP32 下调 tile/warp/stage，确认数据复用与资源占用；再固定最快 tile，单独开启 TF32 对照 <code>max_abs_error</code>、<code>max_rel_error</code> 和吞吐。若结果变快，先归因于“计算单元从 CUDA FP32 pipeline 转到 Tensor Core”，不能误归因给 tile 优化。</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">基础：load tile -&gt; __syncthreads -&gt; compute -&gt; __syncthreads</span>
+<span class="code-line" data-line="2">Ampere：cp.async / pipeline，让 global-&gt;shared 与计算重叠</span>
+<span class="code-line" data-line="3">Hopper：TMA 做多维 bulk tensor copy，配合 mbarrier、warp specialization</span>
+<span class="code-line" data-line="4">Blackwell：现代 pipeline 上加入 TMEM 等矩阵计算数据通路</span></code></pre></div>
+<p>这与昇腾 <code>CopyIn -&gt; Compute -&gt; CopyOut</code>、double buffer 的本质相通，但 CUDA 的 thread/warp 角色、同步作用域和接口不同。</p>
+<p>编译链：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">CUDA C++ / Triton -&gt; PTX 虚拟 ISA -&gt; SASS 目标机器指令</span></code></pre></div>
+<ul>
+<li><code>nvcc -ptx</code> 或 Triton cache 看 PTX；<code>cuobjdump --dump-sass</code> / <code>nvdisasm</code> 看 SASS。</li>
+<li>初期只识别 load-store、算术、控制流、同步、MMA、异步搬运六类。</li>
+<li>PTX 前向 JIT 不代表所有架构特化指令都可移植；<code>sm_90a</code>、<code>sm_100a</code> 等目标需单独处理。</li>
+</ul>
+<hr>
+<h2 id="6-架构代际只记改变编程决策的差异">6. 架构代际：只记改变编程决策的差异<a class="heading-anchor" href="#6-%E6%9E%B6%E6%9E%84%E4%BB%A3%E9%99%85%E5%8F%AA%E8%AE%B0%E6%94%B9%E5%8F%98%E7%BC%96%E7%A8%8B%E5%86%B3%E7%AD%96%E7%9A%84%E5%B7%AE%E5%BC%82" aria-label="链接到6. 架构代际：只记改变编程决策的差异">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>代际</th>
+<th>常见 CC / 代表卡</th>
+<th>ML kernel 关键变化</th>
+<th>当前深度</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Volta</td>
+<td>7.0 / V100</td>
+<td>第一代 Tensor Core、Independent Thread Scheduling</td>
+<td>起点，知道即可</td>
+</tr>
+<tr>
+<td>Turing</td>
+<td>7.5 / T4、RTX 20</td>
+<td>Tensor Core 类型扩展</td>
+<td>知道即可</td>
+</tr>
+<tr>
+<td>Ampere DC</td>
+<td>8.0 / A100</td>
+<td>TF32、BF16、<code>cp.async</code>、更大 L2/shared、MIG</td>
+<td>必学基线</td>
+</tr>
+<tr>
+<td>Ampere 消费级</td>
+<td>8.6 / RTX 30、A10</td>
+<td>资源上限不同，如最大 48 warps/SM、shared 更小</td>
+<td>当前 3090 实验基线</td>
+</tr>
+<tr>
+<td>Ada</td>
+<td>8.9 / RTX 40、L40</td>
+<td>延续模型，硬件与低精度能力演进</td>
+<td>会查 CC 和实测</td>
+</tr>
+<tr>
+<td>Hopper</td>
+<td>9.0 / H100、H200</td>
+<td>TMA、block cluster、DSM、warp-group MMA、FP8</td>
+<td>FA/CUTLASS 阶段重点</td>
+</tr>
+<tr>
+<td>Blackwell DC</td>
+<td>10.x / B200、B300</td>
+<td>第五代 Tensor Core、TMEM、更新低精度与互连</td>
+<td>架构增量</td>
+</tr>
+<tr>
+<td>Blackwell 消费级</td>
+<td>12.0 / RTX 50</td>
+<td>与 SM100 不同目标，资源上限也不同</td>
+<td>知道同代不等于同 CC</td>
+</tr>
+</tbody></table>
+<table>
+<thead>
+<tr>
+<th>对比</th>
+<th>RTX 3090</th>
+<th>A100</th>
+<th>H100</th>
+<th>B200</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>定位</td>
+<td>消费级 Ampere</td>
+<td>数据中心 Ampere</td>
+<td>数据中心 Hopper</td>
+<td>数据中心 Blackwell</td>
+</tr>
+<tr>
+<td>CC</td>
+<td>8.6</td>
+<td>8.0</td>
+<td>9.0</td>
+<td>10.0</td>
+</tr>
+<tr>
+<td>显存</td>
+<td>GDDR6X</td>
+<td>HBM2e</td>
+<td>HBM3/HBM2e（依 SKU）</td>
+<td>HBM3e</td>
+</tr>
+<tr>
+<td>关键能力</td>
+<td>Ampere Tensor Core/async 基础</td>
+<td>更大 shared/L2</td>
+<td>TMA、cluster/DSM、WGMMA、FP8</td>
+<td>TMEM、新 Tensor Core/低精度</td>
+</tr>
+</tbody></table>
+<p>3090 和 A100 都叫 Ampere，但 CC、最大 active warps、shared memory、显存和数据中心特性不同。不能拿 A100 的上限直接解释 3090 的 occupancy 或带宽。</p>
+<p>跨架构稳定原则：合并访问、减少传输、提高复用、控制 divergence/同步/资源占用，用 roofline + profiler 判断瓶颈。</p>
+<p>必须重测：最佳 tile/<code>num_warps</code>/stages、register/shared/occupancy、Tensor Core dtype 与指令、实际 HBM/L2/互连带宽。</p>
+<hr>
+<h2 id="7-nvidia-与昇腾迁移本质限制类比">7. NVIDIA 与昇腾：迁移本质，限制类比<a class="heading-anchor" href="#7-nvidia-%E4%B8%8E%E6%98%87%E8%85%BE%E8%BF%81%E7%A7%BB%E6%9C%AC%E8%B4%A8%E9%99%90%E5%88%B6%E7%B1%BB%E6%AF%94" aria-label="链接到7. NVIDIA 与昇腾：迁移本质，限制类比">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>本质</th>
+<th>NVIDIA</th>
+<th>昇腾</th>
+<th>提示</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>计算资源容器</td>
+<td>SM</td>
+<td>AI Core</td>
+<td>可类比调度资源，不等价微架构</td>
+</tr>
+<tr>
+<td>矩阵计算</td>
+<td>Tensor Core / MMA</td>
+<td>Cube / Mmad</td>
+<td>都依赖 tile、layout、精度、累加类型</td>
+</tr>
+<tr>
+<td>向量/标量</td>
+<td>CUDA pipelines、SFU</td>
+<td>Vector / Scalar Unit</td>
+<td>运算可映射，调度不同</td>
+</tr>
+<tr>
+<td>片上显式存储</td>
+<td>Shared、register fragments</td>
+<td>UB、L1、L0A/B/C</td>
+<td>都做分块复用，可见层次不同</td>
+</tr>
+<tr>
+<td>搬运流水</td>
+<td>async copy、TMA、pipeline</td>
+<td>DataCopy、TQue/TPipe</td>
+<td>double buffer 思路可迁移</td>
+</tr>
+<tr>
+<td>任务划分</td>
+<td>grid/block/warp/thread</td>
+<td>block_dim/AI Core + 向量化</td>
+<td>CUDA 多暴露 thread/warp 层</td>
+</tr>
+</tbody></table>
+<p>危险类比：</p>
+<ul>
+<li>register 不等于 Ascend L0；前者是 thread 私有、编译器分配资源，后者是专用矩阵数据通路存储。</li>
+<li>CUDA warp 不等于 Ascend block；warp 是 32-thread 硬件执行组。</li>
+<li><code>__syncthreads()</code> 不直接等同某个 Ascend API；先问同步实体、作用域、内存可见性。</li>
+</ul>
+<hr>
+<h2 id="8-底层微架构概念学到能解释-counter">8. 底层微架构概念：学到能解释 counter<a class="heading-anchor" href="#8-%E5%BA%95%E5%B1%82%E5%BE%AE%E6%9E%B6%E6%9E%84%E6%A6%82%E5%BF%B5%E5%AD%A6%E5%88%B0%E8%83%BD%E8%A7%A3%E9%87%8A-counter" aria-label="链接到8. 底层微架构概念：学到能解释 counter">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>概念</th>
+<th>应理解到的深度</th>
+<th>常见误区</th>
+<th>对应证据</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>latency / throughput</td>
+<td>单条指令延迟与流水线单位时间吞吐不是一回事</td>
+<td>只背“某指令几 cycle”</td>
+<td>dependency stall、instruction throughput</td>
+</tr>
+<tr>
+<td>ILP / TLP</td>
+<td>单 warp 独立指令与多 resident warp 都能隐藏延迟</td>
+<td>occupancy 越高一定越快</td>
+<td>eligible warps、issue slot、active warps</td>
+</tr>
+<tr>
+<td>scheduler / SMSP</td>
+<td>SM 内有多个调度分区，warp 归属与资源分区依架构</td>
+<td>把 SM 当作一个串行核心</td>
+<td>issue active、warp state</td>
+</tr>
+<tr>
+<td>scoreboarding</td>
+<td>数据/内存依赖未满足时 warp 不能发射下一条相关指令</td>
+<td>所有 stall 都是“访存慢”</td>
+<td>long/short scoreboard + source correlation</td>
+</tr>
+<tr>
+<td>predication/divergence</td>
+<td>分支可用 predication 或分路径执行，代价取决于路径与 active lanes</td>
+<td>看到 <code>if</code> 就等于严重 divergence</td>
+<td>branch efficiency、active threads</td>
+</tr>
+<tr>
+<td>memory transaction/sector</td>
+<td>warp 请求会按地址、宽度、cache/架构组成 transaction</td>
+<td>固定背“一次一定 128B”</td>
+<td>requested vs transferred bytes、sectors</td>
+</tr>
+<tr>
+<td>bank conflict</td>
+<td>shared bank 映射造成同 warp 串行，广播是例外</td>
+<td>把所有 shared 慢归因于 conflict</td>
+<td>shared wavefront/conflict metrics</td>
+</tr>
+<tr>
+<td>register allocation</td>
+<td>编译器按 thread 分配，block 粒度量化影响驻留；过量会 spill</td>
+<td>只看源码变量数量</td>
+<td>ptxas、registers/thread、local traffic</td>
+</tr>
+<tr>
+<td>wave / tail effect</td>
+<td>grid 的最后一波 block 不能填满所有 SM</td>
+<td>只看平均 occupancy</td>
+<td>waves per SM、grid size、timeline</td>
+</tr>
+<tr>
+<td>cache locality</td>
+<td>L1/L2 命中既由访问模式也由并发工作集决定</td>
+<td>命中率越高必然越快</td>
+<td>hit rate + bytes + latency + reuse distance</td>
+</tr>
+<tr>
+<td>memory consistency</td>
+<td>barrier、fence、atomic 的同步实体/作用域/可见性不同</td>
+<td><code>__syncthreads()</code> 等于全 GPU 同步</td>
+<td>racecheck、thread scope、happens-before</td>
+</tr>
+</tbody></table>
+<p>学习边界：这些概念用于建立“源码 → 指令 → pipeline → counter”的解释链，不要求背未公开的内部实现。不同架构的 scheduler 数量、吞吐和资源量必须查对应 Compute Capability 文档或实测。</p>
+<h3 id="一次-kernel-的完整路径">一次 kernel 的完整路径<a class="heading-anchor" href="#%E4%B8%80%E6%AC%A1-kernel-%E7%9A%84%E5%AE%8C%E6%95%B4%E8%B7%AF%E5%BE%84" aria-label="链接到一次 kernel 的完整路径">#</a></h3>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">CPU launch</span>
+<span class="code-line" data-line="2">-&gt; grid blocks 排队</span>
+<span class="code-line" data-line="3">-&gt; block 取得 SM 的 register/shared/warp slots</span>
+<span class="code-line" data-line="4">-&gt; warp scheduler 选择 ready warp</span>
+<span class="code-line" data-line="5">-&gt; 指令发往 FP/INT/LDST/SFU/Tensor pipeline</span>
+<span class="code-line" data-line="6">-&gt; load 经 L1/L2 到 HBM，或访问 shared/register</span>
+<span class="code-line" data-line="7">-&gt; block 完成释放资源</span>
+<span class="code-line" data-line="8">-&gt; 最后一波 block 决定 tail</span></code></pre></div>
+<p>这条路径对应五类性能上限：launch/并行度不足、memory、compute instruction、dependency latency、resource/tail。优化前先确定属于哪一类。</p>
+<hr>
+<h2 id="9-全栈优化层次">9. 全栈优化层次<a class="heading-anchor" href="#9-%E5%85%A8%E6%A0%88%E4%BC%98%E5%8C%96%E5%B1%82%E6%AC%A1" aria-label="链接到9. 全栈优化层次">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">数学/算法：少算、少存、允许什么误差</span>
+<span class="code-line" data-line="2">    ↓</span>
+<span class="code-line" data-line="3">图与算子：融合、重计算、布局、稀疏</span>
+<span class="code-line" data-line="4">    ↓</span>
+<span class="code-line" data-line="5">kernel：tile、warp、memory、pipeline、instruction</span>
+<span class="code-line" data-line="6">    ↓</span>
+<span class="code-line" data-line="7">runtime：launch、stream、graph、allocator、copy overlap</span>
+<span class="code-line" data-line="8">    ↓</span>
+<span class="code-line" data-line="9">单机多卡：P2P、NVLink/NVSwitch、collective</span>
+<span class="code-line" data-line="10">    ↓</span>
+<span class="code-line" data-line="11">多节点：NIC、PCIe/NUMA、RDMA、topology、parallel strategy</span></code></pre></div>
+<p>越靠上潜在收益通常越大，但数值和系统约束也越强；越靠下越接近硬件，收益更依赖具体架构。不能用 kernel 微优化补救错误的算法工作量，也不能用 NCCL 参数补救不合理的并行策略。</p>
+<table>
+<thead>
+<tr>
+<th>症状</th>
+<th>第一检查层</th>
+<th>常见下一步</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>小 shape GPU 很闲</td>
+<td>launch/runtime</td>
+<td>fusion、batch、CUDA Graph</td>
+</tr>
+<tr>
+<td>HBM 接近上限</td>
+<td>算法/数据复用</td>
+<td>fusion、tiling、少读写</td>
+</tr>
+<tr>
+<td>compute 接近上限</td>
+<td>数值/指令</td>
+<td>Tensor Core、低精度、减少非 MMA 指令</td>
+</tr>
+<tr>
+<td>两者都低</td>
+<td>并行/依赖/资源</td>
+<td>grid、stall、divergence、spill、tail</td>
+</tr>
+<tr>
+<td>单卡快、多卡慢</td>
+<td>通信/拓扑</td>
+<td>collective 量、overlap、rank placement</td>
+</tr>
+<tr>
+<td>换 GPU 后退化</td>
+<td>代际/资源</td>
+<td>重查 CC、tile、shared/register、指令路径</td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="10-profiling-因果链">10. Profiling 因果链<a class="heading-anchor" href="#10-profiling-%E5%9B%A0%E6%9E%9C%E9%93%BE" aria-label="链接到10. Profiling 因果链">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">FLOPs/bytes -&gt; 理论瓶颈 -&gt; launch/tile/access</span>
+<span class="code-line" data-line="2">-&gt; register/shared/warps -&gt; profiler 证据</span>
+<span class="code-line" data-line="3">-&gt; 单变量修改 -&gt; 正确性与性能复测</span></code></pre></div>
+<table>
+<thead>
+<tr>
+<th>工具</th>
+<th>回答的问题</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>nvidia-smi</code></td>
+<td>SKU、驱动、显存与系统视图</td>
+</tr>
+<tr>
+<td><code>deviceQuery</code></td>
+<td>CC 与资源上限</td>
+</tr>
+<tr>
+<td>Nsight Systems</td>
+<td>launch、stream、copy、kernel 时间线</td>
+</tr>
+<tr>
+<td>Nsight Compute</td>
+<td>吞吐、stall、occupancy、访存</td>
+</tr>
+<tr>
+<td><code>nvcc -Xptxas -v</code></td>
+<td>register、shared、spill</td>
+</tr>
+<tr>
+<td><code>cuobjdump</code> / <code>nvdisasm</code></td>
+<td>是否出现预期指令类别</td>
+</tr>
+</tbody></table>
+<p>每次至少回答：是 launch/latency/memory/compute 哪类瓶颈？哪个资源接近上限？stall 对应哪段源码？tile 复用收益是否大于 occupancy 损失？</p>
+<hr>
+<h2 id="11-精选资料">11. 精选资料<a class="heading-anchor" href="#11-%E7%B2%BE%E9%80%89%E8%B5%84%E6%96%99" aria-label="链接到11. 精选资料">#</a></h2>
+<p>官方主线：</p>
+<ol>
+<li><a href="https://docs.nvidia.com/cuda/cuda-programming-guide/01-introduction/programming-model.html">CUDA Programming Guide：Programming Model</a></li>
+<li><a href="https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/">CUDA Best Practices Guide</a></li>
+<li><a href="https://docs.nvidia.com/cuda/ampere-tuning-guide/">Ampere Tuning Guide</a></li>
+<li><a href="https://docs.nvidia.com/cuda/hopper-tuning-guide/">Hopper Tuning Guide</a></li>
+<li><a href="https://docs.nvidia.com/cuda/blackwell-tuning-guide/">Blackwell Tuning Guide</a></li>
+</ol>
+<p>GitHub：</p>
+<ul>
+<li><a href="https://github.com/gpu-mode/lectures">gpu-mode/lectures</a>：lecture 4 架构、8 性能、16 profiling、23 Tensor Core、29 Triton internals。</li>
+<li><a href="https://github.com/NVIDIA/cuda-samples">NVIDIA/cuda-samples</a>：<code>deviceQuery</code>、bandwidth、async copy、cooperative groups。</li>
+<li><a href="https://github.com/siboehm/SGEMM_CUDA">siboehm/SGEMM_CUDA</a>：coalescing、shared/register tiling、vectorized access。</li>
+<li><a href="https://github.com/NVIDIA/cutlass">NVIDIA/cutlass</a>：Hopper/Blackwell 的 hierarchy、CuTe layout、TMA/WGMMA，暂不作为入门作业。</li>
+<li><a href="https://github.com/NVIDIA/cccl">NVIDIA/cccl</a>：CUB、Thrust、libcu++；归约、scan、同步与通用 primitive 的生产级参考。</li>
+<li><a href="https://github.com/NVIDIA/accelerated-computing-hub">NVIDIA/accelerated-computing-hub</a>：NVIDIA 维护的 GPU 教学资源入口。</li>
+<li>PMPP 第 4–6 章：compute architecture、memory architecture、performance considerations。</li>
+</ul>
+<p>官方文档定事实，GitHub 学实验和读码，目标 GPU benchmark 负责最终结论。</p>
+<hr>
+<h2 id="12-一分钟口径">12. 一分钟口径<a class="heading-anchor" href="#12-%E4%B8%80%E5%88%86%E9%92%9F%E5%8F%A3%E5%BE%84" aria-label="链接到12. 一分钟口径">#</a></h2>
+<blockquote><p>CUDA 的软件层次是 grid、可选 cluster、block、warp、thread，硬件核心是 SM。一个 block 驻留在一个 SM，SM 将 threads 划成 32-thread warps，通过多个 resident warps 隐藏延迟。性能同时取决于 HBM/L2/shared/register 的数据复用，以及 register/shared 对 occupancy 的限制。Ampere强化异步 global-to-shared pipeline，Hopper加入 TMA、block cluster 和 DSM，Blackwell进一步强化 Tensor Core、低精度和 TMEM。跨架构原则稳定，但最佳 tile 和资源配置必须按 Compute Capability 与真实 GPU 重新 profile。</p>
+</blockquote></div></main><script src="../../../reader.js"></script></body></html>

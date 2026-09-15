@@ -1,0 +1,254 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Lesson 03 — GEMM Tiled (Shared Memory) · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · lessons/03-gemm-tiled.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#part-0tiled-%E5%92%8C-naive-%E5%9C%A8%E6%A8%A1%E5%9E%8B%E9%87%8C%E4%B8%80%E6%A0%B7%E5%8C%BA%E5%88%AB%E6%98%AF%E8%A7%84%E6%A8%A1">Part 0：tiled 和 naive 在模型里一样，区别是规模</a></li><li><a href="#part-1%E5%8E%9F%E7%90%86%E5%9B%9E%E9%A1%BE">Part 1：原理回顾</a></li><li><a href="#part-2%E4%BD%A0%E8%A6%81%E5%86%99%E7%9A%84%E4%BB%A3%E7%A0%81">Part 2：你要写的代码</a></li><li><a href="#part-3tile-%E5%A4%A7%E5%B0%8F%E7%9A%84%E9%80%89%E6%8B%A9">Part 3：TILE 大小的选择</a></li><li><a href="#part-4bank-conflict%E4%BC%9A%E4%BA%86%E5%B0%B1%E6%98%AF%E5%8A%A0%E5%88%86%E9%A1%B9">Part 4：Bank Conflict（会了就是加分项）</a></li><li><a href="#part-5%E5%AF%B9%E6%AF%94%E5%92%8C%E9%AA%8C%E8%AF%81">Part 5：对比和验证</a></li><li><a href="#%E6%9C%AC%E8%AF%BE%E6%A3%80%E9%AA%8C%E6%B8%85%E5%8D%95">✅ 本课检验清单</a></li><li><a href="#part-6%E6%88%91%E7%9A%84%E5%AE%9E%E7%8E%B0--gemmfp16tiled-%E5%B7%B2%E9%80%9A%E8%BF%87">Part 6：我的实现 — gemmfp16tiled（✅ 已通过）</a></li><li><a href="#%E4%B8%BA%E4%BB%80%E4%B9%88-4090-%E4%B8%8A-tiled-%E6%B2%A1%E5%8A%A0%E9%80%9F%E9%9D%A2%E8%AF%95%E5%8A%A0%E5%88%86%E7%82%B9">为什么 4090 上 tiled 没加速？（面试加分点）</a></li><li><a href="#%E7%9F%A5%E8%AF%86%E5%BA%93%E7%B4%A2%E5%BC%95">知识库索引</a></li></ol></nav><div class="markdown-body"><h1 id="lesson-03--gemm-tiled-shared-memory">Lesson 03 — GEMM Tiled (Shared Memory)<a class="heading-anchor" href="#lesson-03--gemm-tiled-shared-memory" aria-label="链接到Lesson 03 — GEMM Tiled (Shared Memory)">#</a></h1>
+<blockquote><p>主题：用 shared memory tiling 加速 GEMM，理解 <code>__syncthreads</code> 和 bank conflict
+前置：完成 <a href="02-gemm-naive.html">Lesson 02</a>，理解 naive GEMM 的瓶颈（memory-bound）
+平台：LeetGPU <code>2_matrix_multiplication</code> → 真实 GPU FP32 benchmark
+状态：✅ 已完成（见 PATH.md）
+<strong>本课验收分两段</strong>：LeetGPU 正确性与代码归档 → 真实 GPU benchmark；前一段未通过不进入后一段。</p>
+</blockquote><p>📚 <strong>本课涉及的底层知识</strong>：</p>
+<ul>
+<li><a href="../notes/cuda/memory-model.html">内存层级详解</a> — shared memory tiling、bank conflict</li>
+<li><a href="../notes/cuda/warp-and-sync.html">Warp 与同步</a> — <code>__syncthreads</code></li>
+<li><a href="../notes/cuda/cuda-cheatsheet.html">CUDA API 速查</a> — shared memory 语法</li>
+</ul>
+<p>🎯 <strong>这对理解 Triton 有什么用</strong>：</p>
+<ul>
+<li>shared memory tiling → <strong>这是 Triton 的 <code>tl.load</code> + <code>tl.dot</code> 在底层做的事</strong></li>
+<li><code>__syncthreads</code> → Triton 自动插入，但知道为什么需要帮你 debug</li>
+<li>详细对照见 → <a href="../notes/cuda/triton-under-the-hood.html">Triton 底层 CUDA 对照</a></li>
+</ul>
+<hr>
+<h2 id="part-0tiled-和-naive-在模型里一样区别是规模">Part 0：tiled 和 naive 在模型里一样，区别是规模<a class="heading-anchor" href="#part-0tiled-%E5%92%8C-naive-%E5%9C%A8%E6%A8%A1%E5%9E%8B%E9%87%8C%E4%B8%80%E6%A0%B7%E5%8C%BA%E5%88%AB%E6%98%AF%E8%A7%84%E6%A8%A1" aria-label="链接到Part 0：tiled 和 naive 在模型里一样，区别是规模">#</a></h2>
+<p>Tiled GEMM 和 naive GEMM 算的是同一个东西——矩阵乘法。在模型里的位置完全一样（QKV projection、FFN gate/up/down、attention output projection）。</p>
+<p><strong>什么时候 tiling 赢</strong>：K 维度足够大，且 L2 cache 不够。例如：</p>
+<ul>
+<li>LLaMA-7B 的 FFN：<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>d</mi><mtext>model</mtext></msub><mo>=</mo><mn>4096</mn><mo>→</mo><msub><mi>d</mi><mtext>ff</mtext></msub><mo>=</mo><mn>11008</mn></mrow><annotation encoding="application/x-tex">d_{\text{model}}=4096 \to d_{\text{ff}}=11008</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:0.8444em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">model</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.6444em;"></span><span class="mord">4096</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">→</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.8444em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">ff</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.6444em;"></span><span class="mord">11008</span></span></span></span>，这个 K 维度巨大，A+B 数据量远超 L2</li>
+<li>老 GPU（Kepler/Maxwell）L2 小，tiling 始终有效</li>
+<li>4090 L2=72MB，小规模(K&lt;8K) naive 已够快</li>
+</ul>
+<p><strong>面试关键点</strong>：&quot;Tiling 什么时候必须？&quot; → 当数据量超出 L2 cache 容量时，shared memory tiling 是唯一避免反复读 HBM 的手段。</p>
+<h2 id="part-1原理回顾">Part 1：原理回顾<a class="heading-anchor" href="#part-1%E5%8E%9F%E7%90%86%E5%9B%9E%E9%A1%BE" aria-label="链接到Part 1：原理回顾">#</a></h2>
+<p>Naive GEMM 的问题：每个 thread 从 global memory 读 <code>2×K</code> 个元素。K=1024 时，2K 次 global memory read per output element → 严重 memory-bound。</p>
+<p>Tiled GEMM 的思路：<strong>把 A 和 B 切成 TILE×TILE 的小块，先搬到 shared memory，在片上高速计算。</strong></p>
+<p>把 K 维度切成 TILE 大小的段：</p>
+<div class="equation"><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>C</mi><mo stretchy="false">[</mo><mi>b</mi><mi>l</mi><mi>o</mi><mi>c</mi><mi>k</mi><mi mathvariant="normal">_</mi><mi>y</mi><mo>:</mo><mi>b</mi><mi>l</mi><mi>o</mi><mi>c</mi><mi>k</mi><mi mathvariant="normal">_</mi><mi>y</mi><mo>+</mo><mi>T</mi><mi>I</mi><mi>L</mi><mi>E</mi><mo stretchy="false">]</mo><mo stretchy="false">[</mo><mi>b</mi><mi>l</mi><mi>o</mi><mi>c</mi><mi>k</mi><mi mathvariant="normal">_</mi><mi>x</mi><mo>:</mo><mi>b</mi><mi>l</mi><mi>o</mi><mi>c</mi><mi>k</mi><mi mathvariant="normal">_</mi><mi>x</mi><mo>+</mo><mi>T</mi><mi>I</mi><mi>L</mi><mi>E</mi><mo stretchy="false">]</mo><mo>+</mo><mo>=</mo><mi>A</mi><mo stretchy="false">[</mo><mi>b</mi><mi>l</mi><mi>o</mi><mi>c</mi><mi>k</mi><mi mathvariant="normal">_</mi><mi>y</mi><mo>:</mo><mi>b</mi><mi>l</mi><mi>o</mi><mi>c</mi><mi>k</mi><mi mathvariant="normal">_</mi><mi>y</mi><mo>+</mo><mi>T</mi><mi>I</mi><mi>L</mi><mi>E</mi><mo stretchy="false">]</mo><mo stretchy="false">[</mo><mi>t</mi><mo>:</mo><mi>t</mi><mo>+</mo><mi>T</mi><mi>I</mi><mi>L</mi><mi>E</mi><mo stretchy="false">]</mo><mo>×</mo><mi>B</mi><mo stretchy="false">[</mo><mi>t</mi><mo>:</mo><mi>t</mi><mo>+</mo><mi>T</mi><mi>I</mi><mi>L</mi><mi>E</mi><mo stretchy="false">]</mo><mo stretchy="false">[</mo><mi>b</mi><mi>l</mi><mi>o</mi><mi>c</mi><mi>k</mi><mi mathvariant="normal">_</mi><mi>x</mi><mo>:</mo><mi>b</mi><mi>l</mi><mi>o</mi><mi>c</mi><mi>k</mi><mi mathvariant="normal">_</mi><mi>x</mi><mo>+</mo><mi>T</mi><mi>I</mi><mi>L</mi><mi>E</mi><mo stretchy="false">]</mo></mrow><annotation encoding="application/x-tex">C[block\_y : block\_y + TILE][block\_x : block\_x + TILE] \mathrel{+}= A[block\_y : block\_y + TILE][t : t + TILE] \times B[t : t + TILE][block\_x : block\_x + TILE]</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:1.06em;vertical-align:-0.31em;"></span><span class="mord mathnormal" style="margin-right:0.0715em;">C</span><span class="mopen">[</span><span class="mord mathnormal">b</span><span class="mord mathnormal" style="margin-right:0.0197em;">l</span><span class="mord mathnormal">oc</span><span class="mord mathnormal" style="margin-right:0.0315em;">k</span><span class="mord" style="margin-right:0.0278em;">_</span><span class="mord mathnormal" style="margin-right:0.0359em;">y</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">:</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:1.0044em;vertical-align:-0.31em;"></span><span class="mord mathnormal">b</span><span class="mord mathnormal" style="margin-right:0.0197em;">l</span><span class="mord mathnormal">oc</span><span class="mord mathnormal" style="margin-right:0.0315em;">k</span><span class="mord" style="margin-right:0.0278em;">_</span><span class="mord mathnormal" style="margin-right:0.0359em;">y</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:1.06em;vertical-align:-0.31em;"></span><span class="mord mathnormal" style="margin-right:0.1389em;">T</span><span class="mord mathnormal" style="margin-right:0.0785em;">I</span><span class="mord mathnormal">L</span><span class="mord mathnormal" style="margin-right:0.0576em;">E</span><span class="mclose">]</span><span class="mopen">[</span><span class="mord mathnormal">b</span><span class="mord mathnormal" style="margin-right:0.0197em;">l</span><span class="mord mathnormal">oc</span><span class="mord mathnormal" style="margin-right:0.0315em;">k</span><span class="mord" style="margin-right:0.0278em;">_</span><span class="mord mathnormal">x</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">:</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:1.0044em;vertical-align:-0.31em;"></span><span class="mord mathnormal">b</span><span class="mord mathnormal" style="margin-right:0.0197em;">l</span><span class="mord mathnormal">oc</span><span class="mord mathnormal" style="margin-right:0.0315em;">k</span><span class="mord" style="margin-right:0.0278em;">_</span><span class="mord mathnormal">x</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.1389em;">T</span><span class="mord mathnormal" style="margin-right:0.0785em;">I</span><span class="mord mathnormal">L</span><span class="mord mathnormal" style="margin-right:0.0576em;">E</span><span class="mclose">]</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel"><span class="mord">+</span></span></span><span class="katex-base"><span class="katex-strut" style="height:0.3669em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:1.06em;vertical-align:-0.31em;"></span><span class="mord mathnormal">A</span><span class="mopen">[</span><span class="mord mathnormal">b</span><span class="mord mathnormal" style="margin-right:0.0197em;">l</span><span class="mord mathnormal">oc</span><span class="mord mathnormal" style="margin-right:0.0315em;">k</span><span class="mord" style="margin-right:0.0278em;">_</span><span class="mord mathnormal" style="margin-right:0.0359em;">y</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">:</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:1.0044em;vertical-align:-0.31em;"></span><span class="mord mathnormal">b</span><span class="mord mathnormal" style="margin-right:0.0197em;">l</span><span class="mord mathnormal">oc</span><span class="mord mathnormal" style="margin-right:0.0315em;">k</span><span class="mord" style="margin-right:0.0278em;">_</span><span class="mord mathnormal" style="margin-right:0.0359em;">y</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.1389em;">T</span><span class="mord mathnormal" style="margin-right:0.0785em;">I</span><span class="mord mathnormal">L</span><span class="mord mathnormal" style="margin-right:0.0576em;">E</span><span class="mclose">]</span><span class="mopen">[</span><span class="mord mathnormal">t</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">:</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.6984em;vertical-align:-0.0833em;"></span><span class="mord mathnormal">t</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.1389em;">T</span><span class="mord mathnormal" style="margin-right:0.0785em;">I</span><span class="mord mathnormal">L</span><span class="mord mathnormal" style="margin-right:0.0576em;">E</span><span class="mclose">]</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.0502em;">B</span><span class="mopen">[</span><span class="mord mathnormal">t</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">:</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.6984em;vertical-align:-0.0833em;"></span><span class="mord mathnormal">t</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:1.06em;vertical-align:-0.31em;"></span><span class="mord mathnormal" style="margin-right:0.1389em;">T</span><span class="mord mathnormal" style="margin-right:0.0785em;">I</span><span class="mord mathnormal">L</span><span class="mord mathnormal" style="margin-right:0.0576em;">E</span><span class="mclose">]</span><span class="mopen">[</span><span class="mord mathnormal">b</span><span class="mord mathnormal" style="margin-right:0.0197em;">l</span><span class="mord mathnormal">oc</span><span class="mord mathnormal" style="margin-right:0.0315em;">k</span><span class="mord" style="margin-right:0.0278em;">_</span><span class="mord mathnormal">x</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">:</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:1.0044em;vertical-align:-0.31em;"></span><span class="mord mathnormal">b</span><span class="mord mathnormal" style="margin-right:0.0197em;">l</span><span class="mord mathnormal">oc</span><span class="mord mathnormal" style="margin-right:0.0315em;">k</span><span class="mord" style="margin-right:0.0278em;">_</span><span class="mord mathnormal">x</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.1389em;">T</span><span class="mord mathnormal" style="margin-right:0.0785em;">I</span><span class="mord mathnormal">L</span><span class="mord mathnormal" style="margin-right:0.0576em;">E</span><span class="mclose">]</span></span></span></span></span></div>
+<p>每个 block 做 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>I</mi><mi>L</mi><mi>E</mi><mo>×</mo><mi>T</mi><mi>I</mi><mi>L</mi><mi>E</mi></mrow><annotation encoding="application/x-tex">TILE \times TILE</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:0.7667em;vertical-align:-0.0833em;"></span><span class="mord mathnormal" style="margin-right:0.1389em;">T</span><span class="mord mathnormal" style="margin-right:0.0785em;">I</span><span class="mord mathnormal">L</span><span class="mord mathnormal" style="margin-right:0.0576em;">E</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.1389em;">T</span><span class="mord mathnormal" style="margin-right:0.0785em;">I</span><span class="mord mathnormal">L</span><span class="mord mathnormal" style="margin-right:0.0576em;">E</span></span></span></span> 的输出，循环 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>K</mi><mi mathvariant="normal">/</mi><mi>T</mi><mi>I</mi><mi>L</mi><mi>E</mi></mrow><annotation encoding="application/x-tex">K/TILE</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.0715em;">K</span><span class="mord">/</span><span class="mord mathnormal" style="margin-right:0.1389em;">T</span><span class="mord mathnormal" style="margin-right:0.0785em;">I</span><span class="mord mathnormal">L</span><span class="mord mathnormal" style="margin-right:0.0576em;">E</span></span></span></span> 次：</p>
+<ol>
+<li>加载 A_tile（所有 thread 合作搬）</li>
+<li>加载 B_tile</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mtext>__syncthreads()</mtext></mrow><annotation encoding="application/x-tex">\text{\_\_syncthreads()}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:1.06em;vertical-align:-0.31em;"></span><span class="mord text"><span class="mord">__syncthreads()</span></span></span></span></span></li>
+<li>在 shared memory 上计算部分积</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mtext>__syncthreads()</mtext></mrow><annotation encoding="application/x-tex">\text{\_\_syncthreads()}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:1.06em;vertical-align:-0.31em;"></span><span class="mord text"><span class="mord">__syncthreads()</span></span></span></span></span>（在覆写 tile 之前）</li>
+</ol>
+<blockquote><p><strong>Ascend 对照</strong>：这和 Ascend 的 L1 Buffer tiling 完全一样——把大矩阵切开，小块搬入片上内存（L1 Buffer/Shared Memory），在片上计算。区别是 Ascend 用 pipe 机制做搬运和计算的流水线重叠，CUDA 需要你手动控制 <code>__syncthreads()</code>。</p>
+</blockquote><hr>
+<h2 id="part-2你要写的代码">Part 2：你要写的代码<a class="heading-anchor" href="#part-2%E4%BD%A0%E8%A6%81%E5%86%99%E7%9A%84%E4%BB%A3%E7%A0%81" aria-label="链接到Part 2：你要写的代码">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-meta">#<span class="hljs-keyword">define</span> TILE 32  <span class="hljs-comment">// 为什么选 32？思考和实验</span></span></span>
+<span class="code-line" data-line="2"></span>
+<span class="code-line" data-line="3"><span class="hljs-function">__global__ <span class="hljs-type">void</span> <span class="hljs-title">gemm_tiled</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">float</span>* A, <span class="hljs-type">const</span> <span class="hljs-type">float</span>* B, <span class="hljs-type">float</span>* C,</span></span></span>
+<span class="code-line" data-line="4"><span class="hljs-function"><span class="hljs-params">                            <span class="hljs-type">int</span> M, <span class="hljs-type">int</span> N, <span class="hljs-type">int</span> K)</span> </span>{</span>
+<span class="code-line" data-line="5">    <span class="hljs-comment">// 1. 声明 shared memory 的 A_tile 和 B_tile</span></span>
+<span class="code-line" data-line="6">    <span class="hljs-comment">//    A_tile: TILE×TILE float</span></span>
+<span class="code-line" data-line="7">    <span class="hljs-comment">//    B_tile: TILE×TILE float</span></span>
+<span class="code-line" data-line="8">    <span class="hljs-comment">// TODO</span></span>
+<span class="code-line" data-line="9"></span>
+<span class="code-line" data-line="10">    <span class="hljs-comment">// 2. 计算这个 thread 对应的 row 和 col</span></span>
+<span class="code-line" data-line="11">    <span class="hljs-comment">//    (blockIdx 配合 TILE 做 offset)</span></span>
+<span class="code-line" data-line="12">    <span class="hljs-comment">// TODO</span></span>
+<span class="code-line" data-line="13"></span>
+<span class="code-line" data-line="14">    <span class="hljs-type">float</span> sum = <span class="hljs-number">0.0f</span>;</span>
+<span class="code-line" data-line="15"></span>
+<span class="code-line" data-line="16">    <span class="hljs-comment">// 3. 循环遍历 K 维度的 tile</span></span>
+<span class="code-line" data-line="17">    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> t = <span class="hljs-number">0</span>; t &lt; (K + TILE - <span class="hljs-number">1</span>) / TILE; t++) {</span>
+<span class="code-line" data-line="18">        <span class="hljs-comment">// 3a. 从 global memory 加载 A_tile</span></span>
+<span class="code-line" data-line="19">        <span class="hljs-comment">//     每个 thread 加载一个元素到 shared memory</span></span>
+<span class="code-line" data-line="20">        <span class="hljs-comment">//     注意边界（K 可能不被 TILE 整除）</span></span>
+<span class="code-line" data-line="21">        <span class="hljs-comment">// TODO</span></span>
+<span class="code-line" data-line="22"></span>
+<span class="code-line" data-line="23">        <span class="hljs-comment">// 3b. 加载 B_tile（同理）</span></span>
+<span class="code-line" data-line="24">        <span class="hljs-comment">// TODO</span></span>
+<span class="code-line" data-line="25"></span>
+<span class="code-line" data-line="26">        __syncthreads();  <span class="hljs-comment">// 确保所有 thread 加载完毕</span></span>
+<span class="code-line" data-line="27"></span>
+<span class="code-line" data-line="28">        <span class="hljs-comment">// 3c. 在 shared memory 上计算部分点积</span></span>
+<span class="code-line" data-line="29">        <span class="hljs-comment">//     循环 k=0..TILE，累加 A_tile[row][k] * B_tile[k][col]</span></span>
+<span class="code-line" data-line="30">        <span class="hljs-comment">//     （注意：A_tile 用 threadIdx.y 索引行，B_tile 用 threadIdx.x 索引列）</span></span>
+<span class="code-line" data-line="31">        <span class="hljs-comment">// TODO</span></span>
+<span class="code-line" data-line="32"></span>
+<span class="code-line" data-line="33">        __syncthreads();  <span class="hljs-comment">// 确保所有 thread 计算完毕，然后才覆写 tile</span></span>
+<span class="code-line" data-line="34">    }</span>
+<span class="code-line" data-line="35"></span>
+<span class="code-line" data-line="36">    <span class="hljs-comment">// 4. 写入结果</span></span>
+<span class="code-line" data-line="37">    <span class="hljs-keyword">if</span> (row &lt; M &amp;&amp; col &lt; N) {</span>
+<span class="code-line" data-line="38">        C[row * N + col] = sum;</span>
+<span class="code-line" data-line="39">    }</span>
+<span class="code-line" data-line="40">}</span></code></pre></div>
+<hr>
+<h2 id="part-3tile-大小的选择">Part 3：TILE 大小的选择<a class="heading-anchor" href="#part-3tile-%E5%A4%A7%E5%B0%8F%E7%9A%84%E9%80%89%E6%8B%A9" aria-label="链接到Part 3：TILE 大小的选择">#</a></h2>
+<p>Shared memory 容量：</p>
+<div class="equation"><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>T</mi><mi>I</mi><mi>L</mi><mi>E</mi><mo>×</mo><mi>T</mi><mi>I</mi><mi>L</mi><mi>E</mi><mo>×</mo><mn>2</mn><mo>×</mo><mn>4</mn><mtext>B</mtext><mo>=</mo><mi>T</mi><mi>I</mi><mi>L</mi><msup><mi>E</mi><mn>2</mn></msup><mo>×</mo><mn>8</mn><mtext>B</mtext></mrow><annotation encoding="application/x-tex">TILE \times TILE \times 2 \times 4\text{B} = TILE^{2} \times 8\text{B}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:0.7667em;vertical-align:-0.0833em;"></span><span class="mord mathnormal" style="margin-right:0.1389em;">T</span><span class="mord mathnormal" style="margin-right:0.0785em;">I</span><span class="mord mathnormal">L</span><span class="mord mathnormal" style="margin-right:0.0576em;">E</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.7667em;vertical-align:-0.0833em;"></span><span class="mord mathnormal" style="margin-right:0.1389em;">T</span><span class="mord mathnormal" style="margin-right:0.0785em;">I</span><span class="mord mathnormal">L</span><span class="mord mathnormal" style="margin-right:0.0576em;">E</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">2</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.6833em;"></span><span class="mord">4</span><span class="mord text"><span class="mord">B</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.9474em;vertical-align:-0.0833em;"></span><span class="mord mathnormal" style="margin-right:0.1389em;">T</span><span class="mord mathnormal" style="margin-right:0.0785em;">I</span><span class="mord mathnormal">L</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0576em;">E</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8641em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.6833em;"></span><span class="mord">8</span><span class="mord text"><span class="mord">B</span></span></span></span></span></span></div>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">影响因素：</span>
+<span class="code-line" data-line="2">1. Shared memory 容量：</span>
+<span class="code-line" data-line="3">   TILE=32 -&gt; 8 KB</span>
+<span class="code-line" data-line="4">   TILE=64 -&gt; 32 KB</span>
+<span class="code-line" data-line="5"></span>
+<span class="code-line" data-line="6">2. Block 大小：TILE * TILE 个 thread</span>
+<span class="code-line" data-line="7">   TILE=32 -&gt; 1024 threads -&gt; 刚好上限</span>
+<span class="code-line" data-line="8"></span>
+<span class="code-line" data-line="9">3. Occupancy：每个 block 用多少 shared memory</span>
+<span class="code-line" data-line="10">   Shared mem 用多了 -&gt; 同时驻留 SM 的 block 数少 -&gt; occupancy 低</span>
+<span class="code-line" data-line="11"></span>
+<span class="code-line" data-line="12">建议：先从 TILE=32 开始，跑通后再试 TILE=16 和 TILE=64 对比</span></code></pre></div>
+<hr>
+<h2 id="part-4bank-conflict会了就是加分项">Part 4：Bank Conflict（会了就是加分项）<a class="heading-anchor" href="#part-4bank-conflict%E4%BC%9A%E4%BA%86%E5%B0%B1%E6%98%AF%E5%8A%A0%E5%88%86%E9%A1%B9" aria-label="链接到Part 4：Bank Conflict（会了就是加分项）">#</a></h2>
+<p>TILE=32 时，A_tile 和 B_tile 都是 32×32 float。同一 warp 的 thread 访问同一列的不同行 → 32-way bank conflict？</p>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-comment">// 加载 A_tile 时，threadIdx.x（列）相同的线程访问连续的行</span></span>
+<span class="code-line" data-line="2"><span class="hljs-comment">// A_tile[threadIdx.y][threadIdx.x]</span></span>
+<span class="code-line" data-line="3"><span class="hljs-comment">// warp 内 threadIdx.x 相同 → 全部访问同一个 bank → 32-way conflict！</span></span>
+<span class="code-line" data-line="4"></span>
+<span class="code-line" data-line="5"><span class="hljs-comment">// 解法：padding</span></span>
+<span class="code-line" data-line="6">__shared__ <span class="hljs-type">float</span> As[TILE][TILE + <span class="hljs-number">1</span>];  <span class="hljs-comment">// 多一列，打破 stride=32 的对齐</span></span></code></pre></div>
+<blockquote><p>具体原理见 → <a href="../notes/cuda/memory-model.html">memory-model.md</a> §3.3</p>
+</blockquote><hr>
+<h2 id="part-5对比和验证">Part 5：对比和验证<a class="heading-anchor" href="#part-5%E5%AF%B9%E6%AF%94%E5%92%8C%E9%AA%8C%E8%AF%81" aria-label="链接到Part 5：对比和验证">#</a></h2>
+<p>跑通后对比 naive vs tiled 的 GFLOPS：</p>
+<ul>
+<li>T4 FP32 预期：naive ~20 GFLOPS，tiled ~200 GFLOPS（~10× 提升）</li>
+<li>如果不到 10×：检查 shared memory 是否正确加载、<code>__syncthreads</code> 位置是否正确</li>
+</ul>
+<hr>
+<h2 id="本课检验清单">✅ 本课检验清单<a class="heading-anchor" href="#%E6%9C%AC%E8%AF%BE%E6%A3%80%E9%AA%8C%E6%B8%85%E5%8D%95" aria-label="链接到✅ 本课检验清单">#</a></h2>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> ✅ <code>gemm_fp16_tiled</code> LeetGPU 跑通（2026-06-22，TILE=32）→ <a href="../solutions/cuda/gemm/tiled_fp16.cu">solutions/cuda/gemm/tiled_fp16.cu</a></li>
+<li><input checked="" disabled="" type="checkbox"> ✅ 能解释 <code>__syncthreads</code> 在两个位置各起什么作用</li>
+<li><input checked="" disabled="" type="checkbox"> ✅ 知道 TILE=32 的 shared memory 用量（As+Bs = 4KB），以及为什么 TILE=64 可能有 bank conflict</li>
+<li><input checked="" disabled="" type="checkbox"> ✅ 4090 实测: K=2048 naive 5033 GFLOPS vs tiled 3118 GFLOPS (0.6x); K=8192 类似（tiled 未加速，见下）</li>
+</ul>
+<hr>
+<h2 id="part-6我的实现--gemmfp16tiled-已通过">Part 6：我的实现 — <code>gemm_fp16_tiled</code>（✅ 已通过）<a class="heading-anchor" href="#part-6%E6%88%91%E7%9A%84%E5%AE%9E%E7%8E%B0--gemmfp16tiled-%E5%B7%B2%E9%80%9A%E8%BF%87" aria-label="链接到Part 6：我的实现 — gemmfp16tiled（✅ 已通过）">#</a></h2>
+<blockquote><p>2026-06-25，LeetGPU <code>22_gemm</code> fp16，TILE=32，shared memory tiling
+代码归档在 <a href="../solutions/cuda/gemm/tiled_fp16.cu">solutions/cuda/gemm/tiled_fp16.cu</a></p>
+</blockquote><div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-keyword">constexpr</span> <span class="hljs-type">int</span> tileLen = <span class="hljs-number">32</span>;</span>
+<span class="code-line" data-line="2"></span>
+<span class="code-line" data-line="3"><span class="hljs-function">__global__ <span class="hljs-type">void</span> <span class="hljs-title">kernel</span><span class="hljs-params">(<span class="hljs-type">const</span> half* A, <span class="hljs-type">const</span> half* B, half* C,</span></span></span>
+<span class="code-line" data-line="4"><span class="hljs-function"><span class="hljs-params">                       <span class="hljs-type">int</span> M, <span class="hljs-type">int</span> N, <span class="hljs-type">int</span> K, <span class="hljs-type">float</span> alpha, <span class="hljs-type">float</span> beta)</span> </span>{</span>
+<span class="code-line" data-line="5">    <span class="hljs-type">int</span> m = blockIdx.x * tileLen + threadIdx.x;</span>
+<span class="code-line" data-line="6">    <span class="hljs-type">int</span> n = blockIdx.y * tileLen + threadIdx.y;</span>
+<span class="code-line" data-line="7">    <span class="hljs-type">float</span> sum = <span class="hljs-number">0.0f</span>;</span>
+<span class="code-line" data-line="8"></span>
+<span class="code-line" data-line="9">    <span class="hljs-comment">// 每个线程先搬运暂存</span></span>
+<span class="code-line" data-line="10">    __shared__ half As[tileLen][tileLen];</span>
+<span class="code-line" data-line="11">    __shared__ half Bs[tileLen][tileLen];</span>
+<span class="code-line" data-line="12"></span>
+<span class="code-line" data-line="13">    <span class="hljs-comment">// 遍历 K</span></span>
+<span class="code-line" data-line="14">    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> t = <span class="hljs-number">0</span>; t &lt; (K + tileLen - <span class="hljs-number">1</span>) / tileLen; ++t) {</span>
+<span class="code-line" data-line="15">        <span class="hljs-comment">// A 矩阵按列步进</span></span>
+<span class="code-line" data-line="16">        <span class="hljs-type">int</span> aK = t * tileLen + threadIdx.y;</span>
+<span class="code-line" data-line="17">        As[threadIdx.x][threadIdx.y] = (m &lt; M &amp;&amp; aK &lt; K)</span>
+<span class="code-line" data-line="18">            ? A[m * K + aK] : __float2half_rn(<span class="hljs-number">0.0f</span>);</span>
+<span class="code-line" data-line="19"></span>
+<span class="code-line" data-line="20">        <span class="hljs-comment">// B 矩阵按行步进</span></span>
+<span class="code-line" data-line="21">        <span class="hljs-type">int</span> bK = t * tileLen + threadIdx.x;</span>
+<span class="code-line" data-line="22">        Bs[threadIdx.x][threadIdx.y] = (n &lt; N &amp;&amp; bK &lt; K)</span>
+<span class="code-line" data-line="23">            ? B[bK * N + n] : __float2half_rn(<span class="hljs-number">0.0f</span>);</span>
+<span class="code-line" data-line="24"></span>
+<span class="code-line" data-line="25">        __syncthreads();</span>
+<span class="code-line" data-line="26"></span>
+<span class="code-line" data-line="27">        <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> k = <span class="hljs-number">0</span>; k &lt; tileLen; k++) {</span>
+<span class="code-line" data-line="28">            sum += __half2float(As[threadIdx.x][k]) *</span>
+<span class="code-line" data-line="29">                   __half2float(Bs[k][threadIdx.y]);</span>
+<span class="code-line" data-line="30">        }</span>
+<span class="code-line" data-line="31"></span>
+<span class="code-line" data-line="32">        __syncthreads();</span>
+<span class="code-line" data-line="33">    }</span>
+<span class="code-line" data-line="34"></span>
+<span class="code-line" data-line="35">    <span class="hljs-keyword">if</span> (m &lt; M &amp;&amp; n &lt; N) {</span>
+<span class="code-line" data-line="36">        C[m * N + n] = __float2half_rn(</span>
+<span class="code-line" data-line="37">            alpha * sum + beta * __half2float(C[m * N + n]));</span>
+<span class="code-line" data-line="38">    }</span>
+<span class="code-line" data-line="39">}</span></code></pre></div>
+<table>
+<thead>
+<tr>
+<th>关键点</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Grid 铺法</td>
+<td>blockIdx.x→M，blockIdx.y→N，和 naive 版（x→K, y→M）不同</td>
+</tr>
+<tr>
+<td>A tile 加载</td>
+<td>threadIdx.y 走 K 维度(列)，threadIdx.x 走 M 维度(行)</td>
+</tr>
+<tr>
+<td>B tile 加载</td>
+<td>threadIdx.x 走 K 维度(行)，threadIdx.y 走 N 维度(列)</td>
+</tr>
+<tr>
+<td>Syncthreads #1</td>
+<td>确保所有线程加载完 tile 再开始计算</td>
+</tr>
+<tr>
+<td>Syncthreads #2</td>
+<td>确保所有线程计算完再覆写下一轮 tile（防race）</td>
+</tr>
+<tr>
+<td>Shared mem 用量</td>
+<td>As + Bs = 2×(32×32)×2B = <strong>4KB</strong>（任何 GPU 都够）</td>
+</tr>
+<tr>
+<td>alpha/beta</td>
+<td>支持 BLAS 标准公式：<code>C = α·A·B + β·C</code></td>
+</tr>
+<tr>
+<td>⚠️ 4090 实测</td>
+<td>K=2048/8192 tiled 0.6x naive — 不是 bug，是 4090 L2(72MB) 缓存大 + occupancy 低(1024 threads/block vs 256)。<strong>Tiling 在 4090 上不总是赢的</strong> — 这是真实的学习记录。详见 <a href="../solutions/cuda/gemm/benchmark.cu">benchmark.cu</a></td>
+</tr>
+</tbody></table>
+<hr>
+<h3 id="为什么-4090-上-tiled-没加速面试加分点">为什么 4090 上 tiled 没加速？（面试加分点）<a class="heading-anchor" href="#%E4%B8%BA%E4%BB%80%E4%B9%88-4090-%E4%B8%8A-tiled-%E6%B2%A1%E5%8A%A0%E9%80%9F%E9%9D%A2%E8%AF%95%E5%8A%A0%E5%88%86%E7%82%B9" aria-label="链接到为什么 4090 上 tiled 没加速？（面试加分点）">#</a></h3>
+<ol>
+<li><p><strong>RTX 4090 的 L2 太大</strong> (72MB)——A+B=16MB(K=2048) 或 64MB(K=8192) 大部分在 L2 cache 里缓存了。Naive 的重复读取实际从 L2 命中了，没有真正从 HBM 重读。</p>
+</li>
+<li><p><strong>Tiled 的同步开销 &gt; 实际节省</strong>——K=8192 时 (8192/32=256) × 2 syncthreads = <strong>512 次同步</strong> vs naive 0 次。</p>
+</li>
+<li><p><strong>Occupancy 差</strong>——TILE=32→1024 threads/block，4090 SM 最多 1536 threads → 只能跑 1 block/SM（浪费 512 线程槽）。Naive 256 threads → 6 blocks/SM → 更好的延迟隐藏。</p>
+</li>
+<li><p><strong>真需要 tiling 的场景</strong>：老 GPU（Kepler/Maxwell 小 L2）、超大矩阵（K&gt;16K 超出 L2 容量）、或组合 Tensor Core（Tiled fp16→Tensor Core 比 cuda core 快 10x）。</p>
+</li>
+</ol>
+<blockquote><p><code>[面试]</code> 这道题可以讲：&quot;Tiling 不是万能药——在 Ada Lovelace 的大 L2 上，naive 的 cache 优化已足够。真正的加速来自 Tensor Core 而非手写 tiling。&quot;</p>
+</blockquote><hr>
+<h2 id="知识库索引">知识库索引<a class="heading-anchor" href="#%E7%9F%A5%E8%AF%86%E5%BA%93%E7%B4%A2%E5%BC%95" aria-label="链接到知识库索引">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>想深入理解</th>
+<th>去看</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Shared memory tiling 完整原理</td>
+<td><a href="../notes/cuda/memory-model.html">memory-model.md</a></td>
+</tr>
+<tr>
+<td>Bank conflict 详解和解决</td>
+<td><a href="../notes/cuda/memory-model.html">memory-model.md</a> §3.3</td>
+</tr>
+<tr>
+<td><code>__syncthreads</code> 的陷阱</td>
+<td><a href="../notes/cuda/warp-and-sync.html">warp-and-sync.md</a> §3.2</td>
+</tr>
+<tr>
+<td>Triton GEMM 的底层实现</td>
+<td><a href="../notes/cuda/triton-under-the-hood.html">triton-under-the-hood.md</a> §4</td>
+</tr>
+<tr>
+<td>Tiled GEMM 参考实现（先看原理并去 LeetGPU 写题！）</td>
+<td><a href="../reference/cuda/gemm/gemm.cu">reference/cuda/gemm/gemm.cu</a></td>
+</tr>
+</tbody></table>
+<hr>
+<p><em>Lesson 03 · GEMM Tiled · 源自原 week-03（前半）</em></p>
+</div></main><script src="../../reader.js"></script></body></html>

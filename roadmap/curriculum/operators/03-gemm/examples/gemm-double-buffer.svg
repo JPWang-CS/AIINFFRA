@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 310" role="img" aria-labelledby="title desc">
+<title id="title">GEMM 单缓冲与双缓冲提交顺序</title>
+<desc id="desc">单缓冲按加载、计算顺序串行。双缓冲先准备零号块，再在计算当前块前发起下一块加载，每轮末等待加载完成后切换槽位。</desc>
+<rect width="900" height="310" rx="16" fill="#f8fafc"/>
+<g font-family="system-ui,Segoe UI,Microsoft YaHei,sans-serif" font-size="15" fill="#1e293b">
+<text x="28" y="35" font-size="18" font-weight="650">改变提交顺序，给加载与计算创造重叠机会</text>
+<text x="28" y="89">单缓冲</text>
+<g stroke="#cbd5e1"><rect x="130" y="62" width="112" height="43" rx="7" fill="#e0f2fe"/><rect x="250" y="62" width="112" height="43" rx="7" fill="#d1fae5"/><rect x="370" y="62" width="112" height="43" rx="7" fill="#e0f2fe"/><rect x="490" y="62" width="112" height="43" rx="7" fill="#d1fae5"/><rect x="610" y="62" width="112" height="43" rx="7" fill="#e0f2fe"/><rect x="730" y="62" width="112" height="43" rx="7" fill="#d1fae5"/></g>
+<g text-anchor="middle"><text x="186" y="89">加载 0</text><text x="306" y="89">计算 0</text><text x="426" y="89">加载 1</text><text x="546" y="89">计算 1</text><text x="666" y="89">加载 2</text><text x="786" y="89">计算 2</text></g>
+<text x="28" y="158">双缓冲</text><text x="28" y="181" font-size="12" fill="#64748b">同一个 warp</text>
+<g stroke="#cbd5e1"><rect x="130" y="132" width="112" height="42" rx="7" fill="#e0f2fe"/><rect x="250" y="132" width="180" height="42" rx="7" fill="#e0f2fe"/><rect x="440" y="132" width="180" height="42" rx="7" fill="#e0f2fe"/><rect x="250" y="182" width="180" height="42" rx="7" fill="#d1fae5"/><rect x="440" y="182" width="180" height="42" rx="7" fill="#d1fae5"/><rect x="630" y="182" width="180" height="42" rx="7" fill="#d1fae5"/></g>
+<g text-anchor="middle"><text x="186" y="159">预装 0 / 槽 0</text><text x="340" y="159">提交加载 1 / 槽 1</text><text x="530" y="159">提交加载 2 / 槽 0</text><text x="340" y="209">计算 0 / 槽 0</text><text x="530" y="209">计算 1 / 槽 1</text><text x="720" y="209">计算 2 / 槽 0</text></g>
+<path d="M435 124V231M625 124V231" stroke="#94a3b8" stroke-dasharray="4 4"/>
+<text x="450" y="257" text-anchor="middle" font-size="14">每轮切换前：等待下一块加载完成，并让参与线程会合。</text>
+<text x="450" y="285" text-anchor="middle" font-size="13" fill="#64748b">示意图不按耗时比例绘制；实际重叠和收益取决于目标 GPU、编译结果与资源占用。</text>
+</g></svg>

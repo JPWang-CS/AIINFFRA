@@ -1,0 +1,289 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Triton MatMul Nsight Systems P0-lite 记录 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · notes/triton/matmul-nsys-p0-lite-2026-08-30.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#1-%E5%AE%9E%E9%AA%8C%E8%83%8C%E6%99%AF%E4%B8%8E%E5%91%BD%E4%BB%A4">1. 实验背景与命令</a></li><li><a href="#2-%E6%97%A5%E5%BF%97%E7%BB%93%E6%9E%84%E4%B8%8E%E8%A7%A3%E6%9E%90%E5%8F%A3%E5%BE%84">2. 日志结构与解析口径</a></li><li><a href="#3-cuda-gpu-trace-%E8%AF%A6%E8%A7%A3">3. CUDA GPU Trace 详解</a></li><li><a href="#31-triton-%E7%9B%AE%E6%A0%87%E8%B0%83%E7%94%A8">3.1 Triton 目标调用</a></li><li><a href="#32-correctness-%E6%B1%A1%E6%9F%93%E7%9A%84%E4%BD%8D%E7%BD%AE">3.2 correctness 污染的位置</a></li><li><a href="#4-kernel-summary-%E5%8E%BB%E6%B1%A1%E6%9F%93%E7%BB%9F%E8%AE%A1">4. Kernel Summary 去污染统计</a></li><li><a href="#5-cuda-api-summary%E7%AD%89%E5%BE%85%E4%B8%8E-launch-%E7%9A%84%E8%BE%B9%E7%95%8C">5. CUDA API Summary：等待与 launch 的边界</a></li><li><a href="#6-s3-vs-s2%E8%B5%84%E6%BA%90%E4%B8%8E%E6%80%A7%E8%83%BD">6. s3 vs s2：资源与性能</a></li><li><a href="#61-triton-%E8%B5%84%E6%BA%90%E5%BD%A2%E7%8A%B6%E5%AD%97%E6%AE%B5">6.1 Triton 资源/形状字段</a></li><li><a href="#62-cutlass-%E5%AF%B9%E7%85%A7">6.2 CUTLASS 对照</a></li><li><a href="#7-%E7%90%86%E8%AE%BA%E9%A9%BB%E7%95%99%E6%8E%A8%E5%AF%BC%E9%9D%99%E6%80%81%E4%B8%8A%E9%99%90%E4%B8%8D%E6%98%AF-achieved-occupancy">7. 理论驻留推导：静态上限，不是 achieved occupancy</a></li><li><a href="#8-%E8%AF%81%E6%8D%AE%E8%BE%B9%E7%95%8C%E4%B8%8E-p0-lite-%E7%BB%93%E8%AE%BA">8. 证据边界与 P0-lite 结论</a></li><li><a href="#%E4%B8%8B%E4%B8%80%E5%8D%95%E5%8F%98%E9%87%8F%E5%AE%9E%E9%AA%8C">下一单变量实验</a></li><li><a href="#9-%E4%B8%80%E5%88%86%E9%92%9F%E9%9D%A2%E8%AF%95%E5%8F%A3%E5%BE%84">9. 一分钟面试口径</a></li><li><a href="#10-%E5%AE%8C%E6%95%B4%E5%8E%9F%E5%A7%8B%E6%97%A5%E5%BF%97">10. 完整原始日志</a></li></ol></nav><div class="markdown-body"><h1 id="triton-matmul-nsight-systems-p0-lite-记录">Triton MatMul Nsight Systems P0-lite 记录<a class="heading-anchor" href="#triton-matmul-nsight-systems-p0-lite-%E8%AE%B0%E5%BD%95" aria-label="链接到Triton MatMul Nsight Systems P0-lite 记录">#</a></h1>
+<blockquote><p>日期：2026-08-30<br>对象：RTX 3090 上 <code>128×32×256, w8</code> 的 Triton MatMul；比较 <code>num_stages=3</code>（s3）与 <code>num_stages=2</code>（s2）<br>状态：<code>P0-lite</code> 完成（timeline + launch metadata）；MatMul 总体仍为 <code>GPU_VALIDATED</code>，不是 <code>COMPLETE</code></p>
+</blockquote><h2 id="1-实验背景与命令">1. 实验背景与命令<a class="heading-anchor" href="#1-%E5%AE%9E%E9%AA%8C%E8%83%8C%E6%99%AF%E4%B8%8E%E5%91%BD%E4%BB%A4" aria-label="链接到1. 实验背景与命令">#</a></h2>
+<p>此前 IEEE FP32 sweep 在 RTX 3090 上选出 <code>BLOCK_M=128, BLOCK_N=32, BLOCK_K=256, num_warps=8, num_stages=3</code>。本次只改变 pipeline stage：s3 → s2；M/N/K、tile、warp、FP32/IEEE 语义和 benchmark shape 保持不变。目标 shape 是 <code>M=8192, N=6144, K=4096</code>，因此 Triton 大 shape 的 launch 为 <code>Grid=64×16×1, Block=256×1×1</code>。</p>
+<p>服务器执行 Nsight Systems 统计的命令为：</p>
+<div class="code-panel"><div class="code-caption"><span>BASH</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-bash"><span class="code-line" data-line="1">nsys stats \</span>
+<span class="code-line" data-line="2">  --report cuda_gpu_trace \</span>
+<span class="code-line" data-line="3">  --report cuda_gpu_kern_sum \</span>
+<span class="code-line" data-line="4">  --report cuda_api_sum \</span>
+<span class="code-line" data-line="5">  /tmp/matmul_nsys_run1.nsys-rep       <span class="hljs-comment"># s3</span></span>
+<span class="code-line" data-line="6"></span>
+<span class="code-line" data-line="7">nsys stats \</span>
+<span class="code-line" data-line="8">  --report cuda_gpu_trace \</span>
+<span class="code-line" data-line="9">  --report cuda_gpu_kern_sum \</span>
+<span class="code-line" data-line="10">  --report cuda_api_sum \</span>
+<span class="code-line" data-line="11">  /tmp/matmul_k256_s2.nsys-rep         <span class="hljs-comment"># s2</span></span></code></pre></div>
+<p>两份报告都来自 NVIDIA GeForce RTX 3090，且都包含 correctness、小 kernel、Triton 大 shape kernel 和 CUTLASS 对照。本文所有性能统计均重新从 <code>cuda_gpu_trace</code> 的逐次调用行计算；不直接采用被 correctness 调用混入的 <code>cuda_gpu_kern_sum</code> Triton summary 平均值。</p>
+<h2 id="2-日志结构与解析口径">2. 日志结构与解析口径<a class="heading-anchor" href="#2-%E6%97%A5%E5%BF%97%E7%BB%93%E6%9E%84%E4%B8%8E%E8%A7%A3%E6%9E%90%E5%8F%A3%E5%BE%84" aria-label="链接到2. 日志结构与解析口径">#</a></h2>
+<p>每份 raw 日志依次包含：</p>
+<ol>
+<li><code>cuda_gpu_trace</code>：逐次 GPU 活动，字段包括 <code>Start</code>、<code>Duration</code>、<code>CorrId</code>、<code>GrdX/Y/Z</code>、<code>BlkX/Y/Z</code>、<code>Reg/Trd</code>、<code>StcSMem</code>、<code>DymSMem</code>、设备和 kernel 名称。</li>
+<li><code>cuda_gpu_kern_sum</code>：按 kernel 名称聚合的总时间、实例数、均值、中位数、最小/最大值和标准差。</li>
+<li><code>cuda_api_sum</code>：CUDA Runtime/API 在主机侧的调用聚合。</li>
+</ol>
+<p>解析脚本对 <code>cuda_gpu_trace</code> 做了以下筛选：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">Triton：Name == matrix_multiplication_kernel</span>
+<span class="code-line" data-line="2">        GrdX/Y/Z == 64/16/1</span>
+<span class="code-line" data-line="3">        BlkX/Y/Z == 256/1/1</span>
+<span class="code-line" data-line="4">        取到 N=60</span>
+<span class="code-line" data-line="5"></span>
+<span class="code-line" data-line="6">CUTLASS：Name 包含 cutlass::Kernel2</span>
+<span class="code-line" data-line="7">         取到 N=60</span></code></pre></div>
+<p><code>Duration</code> 是 trace 中该次 GPU kernel 的持续时间，单位为 ns；下文的 ms 只是 ns ÷ 1,000,000。<code>std</code> 使用这 60 个观测值的样本标准差（分母 <code>N-1</code>），以便和 Nsight summary 的 StdDev 口径对齐。</p>
+<h2 id="3-cuda-gpu-trace-详解">3. CUDA GPU Trace 详解<a class="heading-anchor" href="#3-cuda-gpu-trace-%E8%AF%A6%E8%A7%A3" aria-label="链接到3. CUDA GPU Trace 详解">#</a></h2>
+<h3 id="31-triton-目标调用">3.1 Triton 目标调用<a class="heading-anchor" href="#31-triton-%E7%9B%AE%E6%A0%87%E8%B0%83%E7%94%A8" aria-label="链接到3.1 Triton 目标调用">#</a></h3>
+<p>Triton 的输出 tile 是 <code>128×256</code>，沿归约维 N 以 <code>BLOCK_N=32</code> 循环；对 <code>M=8192,K=4096</code>，program grid 为 64×16。Block 中 256 个线程对应 8 个 warp。trace 中的大 shape 调用全部呈现同一组 Grid/Block 和资源字段，适合做逐次统计。</p>
+<h3 id="32-correctness-污染的位置">3.2 correctness 污染的位置<a class="heading-anchor" href="#32-correctness-%E6%B1%A1%E6%9F%93%E7%9A%84%E4%BD%8D%E7%BD%AE" aria-label="链接到3.2 correctness 污染的位置">#</a></h3>
+<p>每份 trace 里 <code>matrix_multiplication_kernel</code> 一共 64 次，但只有后 60 次是目标大 shape。前 4 次 correctness 的 Grid 是 <code>1×1×1</code>、<code>1×1×1</code>、<code>1×1×1</code>、<code>3×1×1</code>，仍然使用同一个 kernel 名称；因此不能把同名 kernel 的 64 次直接当作 benchmark 样本。</p>
+<p>这 4 次的 duration 也明显不是目标 workload：</p>
+<table>
+<thead>
+<tr>
+<th>日志</th>
+<th align="right">4 次 correctness duration (ns)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>s3</td>
+<td align="right">10,561；12,514；29,829；163,769</td>
+</tr>
+<tr>
+<td>s2</td>
+<td align="right">12,219；14,361；32,560；185,736</td>
+</tr>
+</tbody></table>
+<p>它们数量少但会改变 <code>cuda_gpu_kern_sum</code> 的总时间、均值和标准差，所以本文的结论以 Grid/Block 精确筛出的 60 次为准。</p>
+<h2 id="4-kernel-summary-去污染统计">4. Kernel Summary 去污染统计<a class="heading-anchor" href="#4-kernel-summary-%E5%8E%BB%E6%B1%A1%E6%9F%93%E7%BB%9F%E8%AE%A1" aria-label="链接到4. Kernel Summary 去污染统计">#</a></h2>
+<p><code>cuda_gpu_kern_sum</code> 的 Triton 行包含 64 个实例，不能直接使用：</p>
+<table>
+<thead>
+<tr>
+<th>日志</th>
+<th align="right">Summary instances</th>
+<th align="right">Summary total (ns)</th>
+<th align="right">Summary Avg (ns)</th>
+<th align="right">Summary Med (ns)</th>
+<th align="right">Summary Min/Max (ns)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>s3</td>
+<td align="right">64</td>
+<td align="right">1,272,713,734</td>
+<td align="right">19,886,152.1</td>
+<td align="right">21,162,962.5</td>
+<td align="right">10,561 / 22,227,448</td>
+</tr>
+<tr>
+<td>s2</td>
+<td align="right">64</td>
+<td align="right">1,341,939,689</td>
+<td align="right">20,967,807.6</td>
+<td align="right">22,273,469.5</td>
+<td align="right">12,219 / 22,934,017</td>
+</tr>
+</tbody></table>
+<p>重新筛选大 shape 的 60 行后，得到以下统计。均值、中位数、最小值、最大值和样本标准差均为 trace duration：</p>
+<table>
+<thead>
+<tr>
+<th>运行</th>
+<th align="right">N</th>
+<th align="right">mean (ms)</th>
+<th align="right">median (ms)</th>
+<th align="right">min (ms)</th>
+<th align="right">max (ms)</th>
+<th align="right">std (ms)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>s3 Triton</td>
+<td align="right">60</td>
+<td align="right">21.208284350</td>
+<td align="right">21.163139000</td>
+<td align="right">19.016006000</td>
+<td align="right">22.227448000</td>
+<td align="right">0.488482101</td>
+</tr>
+<tr>
+<td>s2 Triton</td>
+<td align="right">60</td>
+<td align="right">22.361580217</td>
+<td align="right">22.317032000</td>
+<td align="right">21.870078000</td>
+<td align="right">22.934017000</td>
+<td align="right">0.268108583</td>
+</tr>
+</tbody></table>
+<p>同一结果用 ns 表示为：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">s3: N=60, mean=21208284.35, median=21163139,</span>
+<span class="code-line" data-line="2">    min=19016006, max=22227448, std=488482.101027 ns</span>
+<span class="code-line" data-line="3">s2: N=60, mean=22361580.216667, median=22317032,</span>
+<span class="code-line" data-line="4">    min=21870078, max=22934017, std=268108.582503 ns</span></code></pre></div>
+<p>因此在这组固定 workload 上，s2 的 Triton mean 比 s3 慢约 5.4379%，median 慢约 5.4524%。这不是“动态共享内存更少所以更快”的结果；s2 虽然资源字段更小，但观测到的 kernel 时间更长。</p>
+<h2 id="5-cuda-api-summary等待与-launch-的边界">5. CUDA API Summary：等待与 launch 的边界<a class="heading-anchor" href="#5-cuda-api-summary%E7%AD%89%E5%BE%85%E4%B8%8E-launch-%E7%9A%84%E8%BE%B9%E7%95%8C" aria-label="链接到5. CUDA API Summary：等待与 launch 的边界">#</a></h2>
+<p>日志中的 API summary 是主机侧 API 时间聚合，不等于 GPU kernel 的执行时间。关键行如下：</p>
+<table>
+<thead>
+<tr>
+<th>API</th>
+<th align="right">s3 total / calls</th>
+<th align="right">s3 median</th>
+<th align="right">s2 total / calls</th>
+<th align="right">s2 median</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>cudaEventSynchronize</code></td>
+<td align="right">1,899,920,121 ns / 2</td>
+<td align="right">949,960,060.5 ns</td>
+<td align="right">1,951,736,384 ns / 2</td>
+<td align="right">975,868,192 ns</td>
+</tr>
+<tr>
+<td><code>cudaDeviceSynchronize</code></td>
+<td align="right">373,313,899 ns / 6</td>
+<td align="right">73,182.5 ns</td>
+<td align="right">388,369,646 ns / 6</td>
+<td align="right">88,264.5 ns</td>
+</tr>
+<tr>
+<td><code>cudaLaunchKernel</code></td>
+<td align="right">87,464,734 ns / 70</td>
+<td align="right">7,904 ns</td>
+<td align="right">99,375,972 ns / 70</td>
+<td align="right">13,090 ns</td>
+</tr>
+</tbody></table>
+<p><code>cudaEventSynchronize</code> 和 <code>cudaDeviceSynchronize</code> 的高累计时间主要是在等待已经发射的 GPU 工作完成；它们是测量/正确性流程的同步点，不应被解读成一个独立的 GPU 算术瓶颈。s2 的 event/device wait 累计时间略高，与 s2 kernel 更慢的事实一致，但不能仅凭 API summary 证明原因。</p>
+<p><code>cudaLaunchKernel</code> 的 median 只有 s3 的 7.904 μs、s2 的 13.090 μs，而对应 Triton 大 shape kernel median 是 21.163139 ms、22.317032 ms。launch median 只占 kernel median 约 0.037348%（s3）和 0.058655%（s2），分别相差约 2,678× 和 1,705×；本次 21–22 ms workload 的主要时间不在 launch。</p>
+<h2 id="6-s3-vs-s2资源与性能">6. s3 vs s2：资源与性能<a class="heading-anchor" href="#6-s3-vs-s2%E8%B5%84%E6%BA%90%E4%B8%8E%E6%80%A7%E8%83%BD" aria-label="链接到6. s3 vs s2：资源与性能">#</a></h2>
+<h3 id="61-triton-资源形状字段">6.1 Triton 资源/形状字段<a class="heading-anchor" href="#61-triton-%E8%B5%84%E6%BA%90%E5%BD%A2%E7%8A%B6%E5%AD%97%E6%AE%B5" aria-label="链接到6.1 Triton 资源/形状字段">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>运行</th>
+<th align="right">Reg/Trd</th>
+<th align="right">StcSMem (MB)</th>
+<th align="right">DymSMem (MB)</th>
+<th>Grid</th>
+<th>Block</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>s3 (<code>w8-s3</code>)</td>
+<td align="right">255</td>
+<td align="right">0.000</td>
+<td align="right">0.098</td>
+<td>64×16×1</td>
+<td>256×1×1</td>
+</tr>
+<tr>
+<td>s2 (<code>w8-s2</code>)</td>
+<td align="right">255</td>
+<td align="right">0.000</td>
+<td align="right">0.049</td>
+<td>64×16×1</td>
+<td>256×1×1</td>
+</tr>
+</tbody></table>
+<p>唯一稳定的资源变化是 <code>DymSMem</code> 从 0.098 MB 降到 0.049 MB，约减少一半；<code>Reg/Trd</code>、Grid 和 Block 没有变化。性能却从 s3 的 21.208284350 ms mean 退化到 s2 的 22.361580217 ms mean。合理但尚未被 counter 证实的解释是 s2 减少了 pipeline buffering，可能降低延迟隐藏；在没有 warp stall、memory traffic 或 achieved occupancy counter 的情况下，这只能标记为推测，不能写成因果结论。</p>
+<h3 id="62-cutlass-对照">6.2 CUTLASS 对照<a class="heading-anchor" href="#62-cutlass-%E5%AF%B9%E7%85%A7" aria-label="链接到6.2 CUTLASS 对照">#</a></h3>
+<p>CUTLASS 的 trace kernel 名称为：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">void cutlass::Kernel2&lt;cutlass_80_simt_sgemm_256x128_8x4_nn_align1&gt;(T1::Params)</span></code></pre></div>
+<p>它的 60 次调用统计为：</p>
+<table>
+<thead>
+<tr>
+<th>运行</th>
+<th align="right">N</th>
+<th align="right">mean (ms)</th>
+<th align="right">median (ms)</th>
+<th align="right">min (ms)</th>
+<th align="right">max (ms)</th>
+<th align="right">std (ms)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>s3 CUTLASS</td>
+<td align="right">60</td>
+<td align="right">16.716166717</td>
+<td align="right">16.623331500</td>
+<td align="right">15.759053000</td>
+<td align="right">17.443282000</td>
+<td align="right">0.316561043</td>
+</tr>
+<tr>
+<td>s2 CUTLASS</td>
+<td align="right">60</td>
+<td align="right">16.682412133</td>
+<td align="right">16.612236500</td>
+<td align="right">15.749290000</td>
+<td align="right">17.425223000</td>
+<td align="right">0.333787347</td>
+</tr>
+</tbody></table>
+<p>CUTLASS 资源和形状字段在 s3/s2 两份日志中相同：<code>Reg/Trd=202</code>、<code>StcSMem=0.000 MB</code>、<code>DymSMem=0.049 MB</code>、<code>Grid=512×2×2</code>、<code>Block=256×1×1</code>。s2 相对 s3 的 CUTLASS mean 只快约 0.2019%，落在本次观测噪声/运行差异的量级，不能归因于 Triton 的 stage 改动。相比 CUTLASS，Triton mean 在 s3 慢约 26.87%，在 s2 慢约 34.04%；这说明库 kernel 的执行映射/指令路径不同，但本日志没有足够硬件 counter 去解释具体差距。</p>
+<h2 id="7-理论驻留推导静态上限不是-achieved-occupancy">7. 理论驻留推导：静态上限，不是 achieved occupancy<a class="heading-anchor" href="#7-%E7%90%86%E8%AE%BA%E9%A9%BB%E7%95%99%E6%8E%A8%E5%AF%BC%E9%9D%99%E6%80%81%E4%B8%8A%E9%99%90%E4%B8%8D%E6%98%AF-achieved-occupancy" aria-label="链接到7. 理论驻留推导：静态上限，不是 achieved occupancy">#</a></h2>
+<p>按 RTX 3090 近似资源：每 SM 约 65,536 registers、48 warps、1,536 threads。目标 block 为 256 threads，即 8 warps。只用这些上限做静态资源取最小值：</p>
+<table>
+<thead>
+<tr>
+<th>Kernel</th>
+<th align="right">Reg/Trd</th>
+<th align="right">registers/block</th>
+<th align="right">register 上限</th>
+<th align="right">warp 上限</th>
+<th align="right">thread 上限</th>
+<th align="right">静态驻留上限</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Triton s3/s2</td>
+<td align="right">255</td>
+<td align="right">255×256=65,280</td>
+<td align="right">floor(65,536/65,280)=1</td>
+<td align="right">floor(48/8)=6</td>
+<td align="right">floor(1,536/256)=6</td>
+<td align="right"><strong>1 block/SM</strong></td>
+</tr>
+<tr>
+<td>CUTLASS</td>
+<td align="right">202</td>
+<td align="right">202×256=51,712</td>
+<td align="right">floor(65,536/51,712)=1</td>
+<td align="right">6</td>
+<td align="right">6</td>
+<td align="right"><strong>1 block/SM</strong></td>
+</tr>
+</tbody></table>
+<p>这个结果只能说明按给定近似寄存器/warp/thread 限制时，理论最小资源上限为 1 block/SM；它不是 profiler 的 achieved occupancy，也没有证明实际任何时刻都只有一个活跃 block。真实驻留还会受寄存器分配粒度、shared-memory 配置、编译器生成代码和调度状态影响。尤其不能把本节的静态 1 block/SM 当成 achieved occupancy 或性能因果证据。</p>
+<h2 id="8-证据边界与-p0-lite-结论">8. 证据边界与 P0-lite 结论<a class="heading-anchor" href="#8-%E8%AF%81%E6%8D%AE%E8%BE%B9%E7%95%8C%E4%B8%8E-p0-lite-%E7%BB%93%E8%AE%BA" aria-label="链接到8. 证据边界与 P0-lite 结论">#</a></h2>
+<p>本次已经有证据的内容：</p>
+<ul>
+<li><code>cuda_gpu_trace</code> timeline 中 60 次目标 Triton kernel 的逐次 duration；</li>
+<li>Triton/CUTLASS 的 Grid、Block、Reg/Trd、静态/动态 shared-memory metadata；</li>
+<li>CUDA launch 与同步 API 的调用数量、累计时间和 median；</li>
+<li>s3/s2 的资源变化与固定 shape 下的性能结果。</li>
+</ul>
+<p>本次没有证据的内容：</p>
+<ul>
+<li>没有 warp stall reason；</li>
+<li>没有 L2 hit/traffic、DRAM traffic 或实际 memory throughput；</li>
+<li>没有 achieved occupancy/active warps；</li>
+<li>没有 PTX/SASS 指令混合、MMA/FP32 pipeline 利用率或 spill 证据；</li>
+<li>没有 NCU hardware counters。AutoDL 环境的 <code>RmProfilingAdminOnly=1</code>，且缺少 <code>CAP_SYS_ADMIN/CAP_PERFMON</code>，因此 NCU 阶段被权限阻塞。</li>
+</ul>
+<p>所以当前最稳妥的结论是：s2 确实降低了动态 shared-memory metadata，但没有降低 Reg/Trd，静态寄存器上限仍为 1 block/SM；在这次 60 次 trace 中，s2 性能反而比 s3 差约 5.44%。不能进一步断言是 occupancy、stall、L2、DRAM 或某条指令造成的退化。</p>
+<h3 id="下一单变量实验">下一单变量实验<a class="heading-anchor" href="#%E4%B8%8B%E4%B8%80%E5%8D%95%E5%8F%98%E9%87%8F%E5%AE%9E%E9%AA%8C" aria-label="链接到下一单变量实验">#</a></h3>
+<p>s2 已把 dynamic shared memory 减半，但 <code>Reg/Trd</code> 仍为 255，静态驻留上限没有改善；因此下一步不再增加 stage。保持 <code>M/N/K</code>、IEEE FP32、<code>BLOCK_M=128</code>、归约 tile <code>BLOCK_N=32</code>、<code>num_warps=8</code>、<code>num_stages=3</code> 不变，只把输出列 tile <code>BLOCK_K</code> 从 256 降为 128，新增 <code>k128-128x32x128-w8-s3</code>。目标是观察 accumulator 缩小后 <code>Reg/Trd</code> 是否下降，以及更低 register pressure 能否抵消较小输出 tile 的开销。若环境权限恢复，再用 NCU 对当前 s3 与 k128 配置采同一组 counters。</p>
+<h2 id="9-一分钟面试口径">9. 一分钟面试口径<a class="heading-anchor" href="#9-%E4%B8%80%E5%88%86%E9%92%9F%E9%9D%A2%E8%AF%95%E5%8F%A3%E5%BE%84" aria-label="链接到9. 一分钟面试口径">#</a></h2>
+<p>“我在 RTX 3090 上对同一个 IEEE FP32 Triton GEMM 只改变 <code>num_stages</code>，用 Nsight Systems 从 GPU trace 精确筛了 Grid=64×16、Block=256 的 60 次调用，而不是直接用混入 4 次 correctness 的 kernel summary。s3 的 Triton kernel mean 是 21.208 ms，s2 是 22.362 ms，s2 约慢 5.44%；资源上 Reg/Trd 都是 255，但动态 shared memory 从 0.098 MB 降到 0.049 MB。按 65,536 registers/SM、48 warps/SM、1,536 threads/SM 做静态推导，两者都被寄存器近似限制到 1 block/SM，但这不是 achieved occupancy。CUTLASS 约 16.7 ms，明显更快。当前证据能说明资源变化和性能结果，不能说明具体 stall/L2/DRAM 原因，因为 NCU counters 被 AutoDL profiling 权限阻塞；下一步缩小输出列 tile，验证 accumulator/register pressure。”</p>
+<h2 id="10-完整原始日志">10. 完整原始日志<a class="heading-anchor" href="#10-%E5%AE%8C%E6%95%B4%E5%8E%9F%E5%A7%8B%E6%97%A5%E5%BF%97" aria-label="链接到10. 完整原始日志">#</a></h2>
+<ul>
+<li><a href="logs/2026-08-29-matmul-k256-s3-nsys.txt">2026-08-29 s3 raw Nsight Systems log</a></li>
+<li><a href="logs/2026-08-30-matmul-k256-s2-nsys.txt">2026-08-30 s2 raw Nsight Systems log</a></li>
+</ul>
+<p>两份 raw 文件均为源日志的逐字节机械复制；源/目标 SHA256 已在落盘后独立核对。</p>
+</div></main><script src="../../../reader.js"></script></body></html>

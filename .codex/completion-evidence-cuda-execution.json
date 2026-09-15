@@ -1,0 +1,64 @@
+{
+  "chapter": "02-cuda-execution-and-scheduling",
+  "source_manual": {
+    "title": "CUDA Programming Guide",
+    "release": "13.3",
+    "pdf": "downloads/cuda-programming-guide.pdf",
+    "pdf_pages": 698,
+    "sections": [
+      {"section": "2.2", "pages": "53-60", "topics": ["CUDA Python"]},
+      {"section": "2.4", "pages": "88-116", "topics": ["Tile kernels", "views", "shape operations", "atomics", "layout", "synchronization"]},
+      {"section": "2.7", "pages": "142-149 (printed 126-133)", "topics": ["NVCC compilation workflow", "separate device compilation", "device link"]},
+      {"section": "4.8", "pages": "318-320", "topics": ["Error Log Management", "limitations and known issues"]},
+      {"section": "4.20", "pages": "474-480", "topics": ["Driver Entry Point Access"]},
+      {"section": "5.3", "pages": "497-560", "topics": ["CUDA C++ language support"]}
+    ]
+  },
+  "source_mapping": [
+    {"source": "solutions/cuda/gemm/naive_float.cu", "preserved_teaching_point": "One output element per thread; row-major address calculation; warp accesses for fixed reduction index."},
+    {"source": "solutions/cuda/gemm/tiled_fp16.cu", "preserved_teaching_point": "FP16 tiled GEMM, shared-memory producer/consumer barriers, and tile/resource distinction."},
+    {"source": "solutions/triton/matmul.py", "preserved_teaching_point": "Triton configuration and generated-code inspection context."},
+    {"source": "solutions/triton/matmul_leetgpu.py", "preserved_teaching_point": "IEEE FP32 correctness settings, masks, tiles, and grid; no new score asserted."},
+    {"source": "solutions/triton/matmul_leetgpu_wip.py", "preserved_teaching_point": "Unmodified comparison source for omitted precision configuration."},
+    {"source": "lessons/07-triton-debugging.md", "preserved_teaching_point": "Existing error-isolation and debug-tool guidance."},
+    {"source": "examples/execution_and_scheduling.cu", "preserved_teaching_point": "Existing execution scheduling kernels and compile/disassembly exercises."},
+    {"source": "examples/tile_vector_add.py", "preserved_teaching_point": "Existing cuTile Python kernel, launch, tail validation, and device-backed array ownership."},
+    {"source": "examples/driver_api_vector_add.cu", "preserved_teaching_point": "Existing Driver API PTX module loading, parameter ABI, and resource cleanup."},
+    {"source": "examples/runtime_lazy_loading.cu", "preserved_teaching_point": "Existing Runtime initialization, eager/lazy loading, and async error boundary."},
+    {"source": "examples/cuda_python_bindings_lifecycle.py", "preserved_teaching_point": "Python Driver bindings example for primary context, stream, CUdeviceptr, D2H sentinel, and restoring the prior current context."},
+    {"source": "examples/numba_simt_vector_add.py", "preserved_teaching_point": "Explicit SIMT i<n bounds guard, FP32 inputs, asynchronous stream, D2H result and tail sentinel."},
+    {"source": "examples/cuda_tile_views_atomics.py", "preserved_teaching_point": "Verified TiledView traversal, reshape, transpose, permute, and TiledView.atomic_store_add API example."},
+    {"source": "examples/cuda_tile_views_cpu_model.py", "preserved_teaching_point": "CPU address and shape model for overlap, flatten, transpose, and permute; not an atomic simulator."},
+    {"source": "examples/cpp_device_ops.cuh", "preserved_teaching_point": "Cross-translation-unit device function declaration; device functions have external linkage by default."},
+    {"source": "examples/cpp_device_ops.cu", "preserved_teaching_point": "Cross-translation-unit CUDA device function definition."},
+    {"source": "examples/cpp_language_support.cu", "preserved_teaching_point": "Host/device template and lambda, fixed/dynamic shared storage, host RAII owner versus trivial device view, exception-safe unwinding, and explicit completion fence."},
+    {"source": "examples/error_log_probe.cu", "preserved_teaching_point": "Documented invalid-buffer Driver logging call and bounded in-memory log dump."},
+    {"source": "examples/driver_entry_point_query.cu", "preserved_teaching_point": "CUDA_VERSION/runtime/driver version distinction and exact PFN_cuMemAllocAsync_v11020 plus ABI 11020 lookup."}
+  ],
+  "official_api_audit": [
+    {"source": "NVIDIA CUDA Programming Guide 13.3, 2.2", "verified": ["cuda.bindings is a low-level Driver/Runtime C API wrapper, distinct from cuda.lang, cuda.tile, and Numba-CUDA kernel DSLs."]},
+    {"source": "NVIDIA Numba-CUDA official stable examples/kernel/host docs checked 2026-09-14", "verified": ["Official vector-add and matrix examples use explicit i<n or row/column bounds guards; the authored sample does not rely on array-wrapper bounds behavior.", "external_stream wraps a foreign stream, whose owner must keep the handle alive; stream synchronization is explicit."]},
+    {"source": "CuPy 13.2.0 zeros API and CuPy 14.1.1 stable API index/Stream docs", "verified": ["cupy.zeros defaults dtype to Python float, not numpy.float32; examples set dtype explicitly.", "Stream.synchronize() and Device/Event synchronization are documented; no top-level cupy.synchronize appears in the current API index."]},
+    {"source": "cuTile Python 1.4.0 API/release notes and current CUDA 13.3 Tile guide", "verified": ["Array.tiled_view(tile_shape, traversal_steps=...) defines tile-space origins.", "Tile.reshape, ct.transpose, ct.permute, ct.atomic_add, and TiledView.atomic_store_add names and argument order.", "Bulk atomic calls are per-element atomic, not whole-tile transactions; Tile code exposes no explicit intra-block barrier."]},
+    {"source": "cuda.bindings 13.3.2 Driver API reference", "verified": ["Primary-context retain/set-current semantics, status-plus-output Python return tuples, and Driver API error-name/string queries."]},
+    {"source": "Current online CUDA Programming Guide", "verified": ["The current online guide numbers Driver Entry Point Access as section 4.22; the assigned local Release 13.3 PDF uses section 4.20, pages 474-480."]},
+    {"source": "CUDA Programming Guide 13.3, 2.7, 4.8, 4.20, 5.3; cudaTypedefs.h", "verified": ["Separate device compilation uses -dc/-rdc and a device-link stage.", "Error Log scope, buffer bounds, callback/dump API, and limitations continue through PDF page 320.", "PFN_cuMemAllocAsync_v11020 is requested with exact ABI version 11020, not CUDA_VERSION or cuDriverGetVersion.", "CUDA 13 linkage defaults distinguish __global__ functions/device variables; device functions remain external by default."]}
+  ],
+  "completion": {
+    "completed_sections": ["CUDA Python bindings and SIMT kernel DSL", "cuTile views, shape transforms, atomics, layout, and synchronization", "CUDA C++ execution spaces, templates/lambdas, object lifetime, storage and separate device link", "Error Log Management", "Driver Entry Points and version queries", "Prose source-path mapping transferred to evidence; in-place debugging guidance retained"],
+    "remaining_sections": [],
+    "validation": {
+      "source_marker_structure": "14 markers parsed; each marker immediately precedes its fence, with new markers inside details after summary",
+      "embedded_source_identity": "all 14 embedded blocks match their referenced source text",
+      "markdown_prose_local_source_links": "no local .md/.py/.cu links or maintenance source-path mappings remain in reader-facing prose; run commands remain",
+      "python_syntax": "AST pass for all example Python files",
+      "cpu_semantic_checks": "tile view/address/shape model passes",
+      "completion_evidence_json": "valid JSON",
+      "pdf_inspection": "pypdf extraction checked release, section headings, and page 320 continuation; visual rendering not needed for text-only claims",
+      "nvcc_compile": "not run; nvcc is absent",
+      "gpu_execution": "not run; no NVIDIA device, PyTorch, Numba-CUDA, cuda.bindings, or CuPy in the supplied Python runtime",
+      "course_site_build": "not run because it writes course-site outside the assigned write scope; the build.cjs marker/source conditions were checked read-only",
+      "performance_results_added": false
+    }
+  }
+}

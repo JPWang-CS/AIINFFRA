@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 285" role="img" aria-labelledby="title desc">
+<title id="title">CUDA Graph 内存生命周期</title>
+<desc id="desc">图中依次分配 scratch，写入，计算，复制到持久输出，再释放。scratch 仅在分配与释放之间有效，持久输出在图结束后继续有效。</desc>
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 8 4 0 8" fill="#64748b"/></marker></defs>
+<rect width="900" height="285" rx="16" fill="#f8fafc"/>
+<g font-family="system-ui,Segoe UI,Microsoft YaHei,sans-serif" fill="#172b4d">
+<text x="30" y="37" font-size="18" font-weight="650">一次 replay 内的执行顺序</text>
+<g stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"><path d="M170 98H203"/><path d="M340 98H373"/><path d="M510 98H543"/><path d="M680 98H713"/></g>
+<g fill="#fff" stroke="#cbd5e1"><rect x="30" y="66" width="140" height="64" rx="10"/><rect x="205" y="66" width="135" height="64" rx="10"/><rect x="375" y="66" width="135" height="64" rx="10"/><rect x="545" y="66" width="135" height="64" rx="10"/><rect x="715" y="66" width="155" height="64" rx="10"/></g>
+<g text-anchor="middle" font-size="16"><text x="100" y="93">分配 scratch</text><text x="100" y="114" font-size="12" fill="#64748b">alloc</text><text x="272" y="104">写入初始数据</text><text x="442" y="104">计算</text><text x="612" y="104">复制到 output</text><text x="792" y="93">释放 scratch</text><text x="792" y="114" font-size="12" fill="#64748b">free</text></g>
+<path d="M100 148V161H792V148" fill="none" stroke="#0284c7" stroke-width="2"/>
+<text x="445" y="188" text-anchor="middle" font-size="15" fill="#0369a1">scratch 有效区间：所有读写必须位于 alloc 与 free 之间</text>
+<rect x="30" y="215" width="840" height="44" rx="9" fill="#ecfdf5" stroke="#a7f3d0"/>
+<text x="450" y="243" text-anchor="middle" font-size="15" fill="#065f46">持久 output 在图外分配 · 等待 replay 完成后读取 · 最终由应用释放</text>
+</g></svg>

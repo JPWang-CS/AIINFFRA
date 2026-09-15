@@ -1,0 +1,48 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第一篇 GPU硬件与性能基础 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · roadmap/curriculum/gpu/README.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E8%AF%BE%E7%A8%8B%E5%85%A5%E5%8F%A3">课程入口</a></li><li><a href="#cuda-%E8%B5%84%E6%96%99">CUDA 资料</a></li></ol></nav><div class="markdown-body"><h1 id="第一篇-gpu硬件与性能基础">第一篇 GPU硬件与性能基础<a class="heading-anchor" href="#%E7%AC%AC%E4%B8%80%E7%AF%87-gpu%E7%A1%AC%E4%BB%B6%E4%B8%8E%E6%80%A7%E8%83%BD%E5%9F%BA%E7%A1%80" aria-label="链接到第一篇 GPU硬件与性能基础">#</a></h1>
+<p>本篇从 CUDA 程序的执行过程出发，逐步建立线程、存储、协作和性能分析的模型。Vector Add、矩阵转置、Reduction、Softmax、MatMul 和 Attention 是贯穿案例；硬件能力以 CUDA 手册为依据，优化结论回到代码与实测。</p>
+<p>网页课程入口：<a href="../../../../index.html?chapter=1">GPU 与 CUDA</a>。</p>
+<h2 id="课程入口">课程入口<a class="heading-anchor" href="#%E8%AF%BE%E7%A8%8B%E5%85%A5%E5%8F%A3" aria-label="链接到课程入口">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>章</th>
+<th>内容</th>
+<th>实践主线</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><a href="../../../../index.html?chapter=1">第一章：从 CUDA 程序看 GPU 的整体结构</a></td>
+<td>系统、程序、索引、架构与版本</td>
+<td>完整 Vector Add 程序、地址手算</td>
+</tr>
+<tr>
+<td><a href="../../../../index.html?chapter=2">第二章：线程执行、指令调度与计算管线</a></td>
+<td>驻留与就绪、依赖链、分歧、数值格式、编译产物</td>
+<td>执行对照、Triton MatMul 精度问题</td>
+</tr>
+<tr>
+<td><a href="../../../../index.html?chapter=3">第三章：寄存器、存储层次与数据访问</a></td>
+<td>活跃区间、local、sector、bank、复用</td>
+<td>Matrix Transpose、寄存器探针</td>
+</tr>
+<tr>
+<td><a href="../../../../index.html?chapter=4">第四章：同步、线程协作与异步流水线</a></td>
+<td>原子与内存序、归约、stream/event、异步搬运</td>
+<td>消息发布、尾块归约、双缓冲流水</td>
+</tr>
+<tr>
+<td><a href="../../../../index.html?chapter=5">第五章：资源模型、性能分析与优化方法</a></td>
+<td>occupancy、Roofline、正确计时、Profiler、优化证据</td>
+<td>资源账本、MatMul sweep 与 Nsys 复盘</td>
+</tr>
+</tbody></table>
+<p>阅读顺序是执行 → 存储 → 协作 → 性能证据。每个机制通过具体索引、算例和源代码解释；性能结论保留输入形状、精度、硬件与计时口径。</p>
+<h2 id="cuda-资料">CUDA 资料<a class="heading-anchor" href="#cuda-%E8%B5%84%E6%96%99" aria-label="链接到CUDA 资料">#</a></h2>
+<ul>
+<li><a href="../../../../../../../../downloads/cuda-programming-guide.pdf">本地 CUDA Programming Guide 13.3</a></li>
+<li><a href="https://docs.nvidia.com/cuda/cuda-programming-guide/index.html">CUDA Programming Guide 在线版</a></li>
+<li><a href="https://docs.nvidia.com/cuda/cuda-programming-guide/01-introduction/programming-model.html">CUDA Programming Model</a></li>
+<li><a href="https://developer.nvidia.com/cuda-gpus">CUDA GPU 计算能力表</a></li>
+</ul>
+<p><a href="../README.html">返回课程总路由</a></p>
+</div></main><script src="../../../../reader.js"></script></body></html>

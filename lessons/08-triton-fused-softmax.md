@@ -3,7 +3,7 @@
 > 当前主线：B2 Triton Softmax 语言迁移
 > 前置：Softmax 理论与 CUDA 实现已掌握；Triton Vector Add / MatMul 已完成阶段性基线
 > 状态：`LEETGPU_PASS`；用户通过版已原样归档
-> 本课目的：用一个小检查点把 CUDA 的地址、mask、reduce 心智迁移到 Triton，然后立即进入 B3 FlashAttention
+> 本课目的：完成CUDA→Triton Softmax闭环；服务器基线后执行第一篇第一章，验收后再讨论第二章
 
 ## 当前单元卡
 
@@ -29,7 +29,7 @@
 - [Lesson 05 — Flash Attention CUDA 读码](05-flash-attn-reading.md)
 - [Triton 入门与 MatMul](06-triton-intro.md)
 
-旧 CUDA 1-pass 重写、三版 benchmark、warp-shuffle 深钻和 Softmax P0–P8 都是可选优化债务，不是 B2 的前置条件。
+旧CUDA 1-pass重写和三版重复benchmark不是当前服务器闭环的前置；Softmax/Norm系统优化后续按第三篇完整性能课程回收，并未取消。
 
 ## LeetGPU最终代码快照（用户通过版）
 
@@ -156,11 +156,11 @@ Y[row, :] = softmax(X[row, :])
 - 按理想一读一写口径计算的 effective GB/s：`2 × rows × cols × element_size / time`；
 - 实际 GPU、配置、输入范围和失败 case；明确区分算法口径 GB/s 与 profiler 的真实 DRAM traffic。
 
-这一阶段的停止条件是：row-wise baseline 正确、数字可复现、瓶颈有一句话解释。不要在 B2 追加 Softmax P0–P8、warp shuffle、三版 CUDA benchmark 或 1-pass 用户重写；它们统一留在可选优化债务池。
+这一阶段的停止条件是：row-wise baseline正确、数字可复现、瓶颈有一句话解释。不要在同一次服务器验收中混入完整极致优化；后续在Reduction/Norm锚点中系统推进warp、资源、Nsight和多shape。
 
-## 退出到 B3
+## 退出到新主线
 
-满足 `LEETGPU_PASS` 并完成 RTX 3090 row-wise baseline 后，B2 结束，直接打开 B3 Triton FlashAttention。B3 的实现主线是 tiling、online softmax 数据流和与 PyTorch/reference 对齐；理论侧 FA2 目前约 50% WIP，继续在 B3 相关任务中消化，不回头补 Softmax 旧债务。
+满足`LEETGPU_PASS`并完成RTX3090 row-wise baseline后，本单元结束。下一步按[NOW](../NOW.md)学习[第一篇GPU硬件与性能基础](../roadmap/curriculum/gpu/README.md)。FA2论文阅读已完成，但实现与GPU验证仍未开始；Softmax/Norm性能优化按逐算子闭环继续，不与正确实现割裂。
 
 本课最终状态路径：
 

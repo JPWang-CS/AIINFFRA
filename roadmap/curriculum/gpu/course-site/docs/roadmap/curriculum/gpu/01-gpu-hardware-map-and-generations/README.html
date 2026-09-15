@@ -1,0 +1,686 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第一章 从 CUDA 程序看 GPU 的整体结构 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · roadmap/curriculum/gpu/01-gpu-hardware-map-and-generations/README.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E9%98%85%E8%AF%BB%E6%97%B6%E6%80%8E%E6%A0%B7%E4%BD%BF%E7%94%A8-cuda-%E6%89%8B%E5%86%8C">阅读时怎样使用 CUDA 手册</a></li><li><a href="#1-%E7%A1%AC%E4%BB%B6%E5%85%A8%E8%B2%8C%E4%B8%BA%E4%BB%80%E4%B9%88%E9%9C%80%E8%A6%81-cpu-%E5%92%8C-gpu-%E4%B8%80%E8%B5%B7%E5%B7%A5%E4%BD%9C">1. 硬件全貌：为什么需要 CPU 和 GPU 一起工作</a></li><li><a href="#11-%E5%90%9E%E5%90%90%E9%AB%98%E4%B8%8D%E7%AD%89%E4%BA%8E%E5%8D%95%E4%B8%AA%E4%BB%BB%E5%8A%A1%E7%9A%84%E5%BB%B6%E8%BF%9F%E4%BD%8E">1.1 吞吐高，不等于单个任务的延迟低</a></li><li><a href="#12-host-%E4%B8%8E-device-%E6%98%AF%E8%A7%92%E8%89%B2%E4%B8%8D%E5%8F%AA%E6%98%AF%E6%8C%87%E9%92%88%E5%89%8D%E7%BC%80">1.2 Host 与 Device 是角色，不只是指针前缀</a></li><li><a href="#13-gpu-%E5%86%85%E9%83%A8sm-%E6%98%AF%E4%B8%80%E7%BB%84%E6%89%A7%E8%A1%8C%E8%B5%84%E6%BA%90%E4%B8%8D%E6%98%AF%E4%B8%80%E4%B8%AA%E5%A4%A7%E6%A0%B8%E5%BF%83">1.3 GPU 内部：SM 是一组执行资源，不是一个“大核心”</a></li><li><a href="#14-%E8%AE%BE%E5%A4%87%E5%86%85%E9%83%A8%E7%9A%84%E5%BF%AB%E4%B8%8E%E6%95%B4%E4%B8%AA%E7%A8%8B%E5%BA%8F%E7%9A%84%E5%BF%AB">1.4 “设备内部的快”与“整个程序的快”</a></li><li><a href="#2-%E7%BC%96%E7%A8%8B%E6%A8%A1%E5%9E%8B%E5%B7%A5%E4%BD%9C%E6%80%8E%E6%A0%B7%E7%BB%84%E7%BB%87%E7%A1%AC%E4%BB%B6%E6%80%8E%E6%A0%B7%E6%89%BF%E6%8E%A5">2. 编程模型：工作怎样组织，硬件怎样承接</a></li><li><a href="#21-kernelgridblockthread-%E5%9B%9E%E7%AD%94%E4%B8%8D%E5%90%8C%E7%9A%84%E9%97%AE%E9%A2%98">2.1 kernel、grid、block、thread 回答不同的问题</a></li><li><a href="#22-%E4%B8%80%E4%B8%AA-block-%E5%9C%A8%E4%B8%80%E4%B8%AA-sm-%E4%B8%8A%E6%89%A7%E8%A1%8C%E4%B8%8D%E4%BB%A3%E8%A1%A8%E4%B8%80%E4%B8%AA-sm-%E5%8F%AA%E6%9C%89%E4%B8%80%E4%B8%AA-block">2.2 一个 block 在一个 SM 上执行，不代表一个 SM 只有一个 block</a></li><li><a href="#23-warp-%E6%98%AF-32-%E4%B8%AA%E9%80%BB%E8%BE%91%E7%BA%BF%E7%A8%8B%E4%B8%8D%E6%98%AF%E6%B0%B8%E4%B9%85%E7%BB%91%E5%AE%9A%E7%9A%84-32-%E4%B8%AA%E6%A0%B8%E5%BF%83">2.3 warp 是 32 个逻辑线程，不是永久绑定的 32 个核心</a></li><li><a href="#24-cuda-%E7%9A%84%E7%BA%BF%E7%A8%8B%E8%A7%86%E8%A7%92%E4%B8%8E-triton-%E7%9A%84-tile-%E8%A7%86%E8%A7%92">2.4 CUDA 的线程视角与 Triton 的 tile 视角</a></li><li><a href="#3-%E5%AE%8C%E6%95%B4%E7%A8%8B%E5%BA%8F%E6%B2%BF%E7%9D%80%E4%B8%80%E6%AC%A1%E8%AE%A1%E7%AE%97%E8%B5%B0%E4%B8%80%E9%81%8D">3. 完整程序：沿着一次计算走一遍</a></li><li><a href="#31-%E5%85%88%E7%9C%8B%E5%AE%8C%E6%95%B4%E4%BB%A3%E7%A0%81%E5%86%8D%E8%A7%A3%E9%87%8A%E6%AF%8F%E4%B8%AA%E9%98%B6%E6%AE%B5">3.1 先看完整代码，再解释每个阶段</a></li><li><a href="#32-main%E4%B8%BB%E6%9C%BA%E6%95%B0%E7%BB%84%E4%B8%8E%E8%AE%BE%E5%A4%87%E6%8C%87%E9%92%88">3.2 main、主机数组与设备指针</a></li><li><a href="#33-%E5%A4%8D%E5%88%B6%E9%A1%BA%E5%BA%8F%E5%90%AF%E5%8A%A8%E5%BC%82%E6%AD%A5%E6%80%A7%E4%B8%8E%E7%BB%93%E6%9E%9C%E5%8F%AF%E7%94%A8%E6%80%A7">3.3 复制顺序、启动异步性与结果可用性</a></li><li><a href="#34-%E4%B8%A4%E5%B1%82%E9%94%99%E8%AF%AF%E6%A3%80%E6%9F%A5%E4%B8%BA%E4%BB%80%E4%B9%88%E9%83%BD%E8%A6%81%E6%9C%89">3.4 两层错误检查为什么都要有</a></li><li><a href="#35-%E6%80%8E%E6%A0%B7%E7%BC%96%E8%AF%91%E5%92%8C%E6%A3%80%E6%9F%A5">3.5 怎样编译和检查</a></li><li><a href="#4-%E7%B4%A2%E5%BC%95%E4%B8%8E%E5%9C%B0%E5%9D%80%E6%8A%8A%E7%BA%BF%E7%A8%8B%E8%90%BD%E5%88%B0%E6%AF%8F%E4%B8%80%E4%B8%AA%E5%85%83%E7%B4%A0">4. 索引与地址：把线程落到每一个元素</a></li><li><a href="#41-%E4%B8%80%E7%BB%B4%E7%B4%A2%E5%BC%95%E4%B8%8D%E6%98%AF%E6%AD%BB%E8%AE%B0%E7%9A%84%E5%85%AC%E5%BC%8F">4.1 一维索引不是死记的公式</a></li><li><a href="#42-%E4%BA%8C%E7%BB%B4%E7%BA%BF%E7%A8%8B%E5%9D%97%E6%98%A0%E5%B0%84%E5%88%B0-35-%E7%9F%A9%E9%98%B5">4.2 二维线程块映射到 3×5 矩阵</a></li><li><a href="#43-%E5%85%83%E7%B4%A0%E5%81%8F%E7%A7%BB%E5%AD%97%E8%8A%82%E5%81%8F%E7%A7%BB%E4%B8%8E-stride">4.3 元素偏移、字节偏移与 stride</a></li><li><a href="#44-%E5%9C%B0%E5%9D%80%E9%9B%86%E5%90%88%E4%B8%8D%E6%98%AF%E8%AF%BB%E5%9B%9E%E7%9A%84%E5%80%BC">4.4 地址集合不是读回的值</a></li><li><a href="#45-%E4%B8%80%E7%BA%BF%E7%A8%8B%E5%8F%AF%E4%BB%A5%E5%A4%84%E7%90%86%E5%A4%9A%E4%B8%AA%E5%85%83%E7%B4%A0">4.5 一线程可以处理多个元素</a></li><li><a href="#5-%E6%9E%B6%E6%9E%84%E8%8A%AF%E7%89%87%E4%BA%A7%E5%93%81%E4%B8%8E%E8%BD%AF%E4%BB%B6%E7%89%88%E6%9C%AC">5. 架构、芯片、产品与软件版本</a></li><li><a href="#51-%E4%B8%BA%E4%BB%80%E4%B9%88%E4%B8%80%E5%BC%A0-gpu-%E7%9A%84%E5%90%8D%E5%AD%97%E4%B8%8D%E5%A4%9F%E7%94%A8">5.1 为什么一张 GPU 的名字不够用</a></li><li><a href="#52-%E4%BB%A3%E9%99%85%E4%B8%8D%E6%98%AF%E4%B8%80%E6%9D%A1%E6%97%A0%E5%88%86%E6%94%AF%E7%9A%84%E4%BA%A7%E5%93%81%E5%8D%87%E7%BA%A7%E9%93%BE">5.2 代际不是一条无分支的产品升级链</a></li><li><a href="#53-%E4%BB%8E-cuda-%E6%BA%90%E7%A0%81%E5%88%B0%E8%AE%BE%E5%A4%87%E6%89%A7%E8%A1%8C%E4%B8%AD%E9%97%B4%E6%9C%89%E5%93%AA%E4%BA%9B%E8%BD%AF%E4%BB%B6">5.3 从 CUDA 源码到设备执行，中间有哪些软件</a></li><li><a href="#54-%E8%83%BD%E8%BF%90%E8%A1%8C%E4%B8%8E%E6%8C%89%E7%9B%AE%E6%A0%87%E4%BC%98%E5%8C%96%E4%B8%8D%E6%98%AF%E5%90%8C%E4%B8%80%E4%B8%AA%E7%BB%93%E8%AE%BA">5.4 “能运行”与“按目标优化”不是同一个结论</a></li><li><a href="#55-%E5%9C%A8%E6%9C%8D%E5%8A%A1%E5%99%A8%E4%B8%8A%E5%88%86%E5%88%AB%E6%9F%A5%E8%AF%A2%E4%BB%80%E4%B9%88">5.5 在服务器上分别查询什么</a></li><li><a href="#6-%E6%A6%82%E5%BF%B5%E8%BE%A8%E6%9E%90%E4%B8%8E%E5%B8%B8%E8%A7%81%E9%97%AE%E9%A2%98">6. 概念辨析与常见问题</a></li><li><a href="#leetgpu%E6%AD%A3%E7%A1%AE%E6%80%A7%E4%B8%8E%E4%BB%A3%E7%A0%81%E5%BD%92%E6%A1%A3">LeetGPU：正确性与代码归档</a></li><li><a href="#%E6%9C%8D%E5%8A%A1%E5%99%A8%E7%9C%9F%E5%AE%9E%E6%80%A7%E8%83%BD">服务器：真实性能</a></li><li><a href="#7-%E9%9D%A2%E8%AF%95%E8%BF%BD%E9%97%AE%E6%8A%8A%E6%9C%BA%E5%88%B6%E7%BB%84%E6%88%90%E5%AE%8C%E6%95%B4%E5%9B%9E%E7%AD%94">7. 面试追问：把机制组成完整回答</a></li><li><a href="#%E4%BB%8E-npu-%E7%BB%8F%E9%AA%8C%E8%BF%81%E7%A7%BB%E4%BF%9D%E7%95%99%E5%88%86%E6%9E%90%E6%96%B9%E6%B3%95%E4%B8%8D%E7%85%A7%E6%90%AC%E6%89%A7%E8%A1%8C%E5%8D%95%E4%BD%8D">从 NPU 经验迁移：保留分析方法，不照搬执行单位</a></li><li><a href="#%E7%9F%A5%E8%AF%86%E6%80%BB%E7%BB%93%E4%B8%8E%E5%BB%B6%E4%BC%B8%E9%98%85%E8%AF%BB">知识总结与延伸阅读</a></li><li><a href="#%E5%8F%82%E8%80%83%E9%98%85%E8%AF%BB">参考阅读</a></li><li><a href="#%E7%AB%A0%E8%8A%82%E5%AF%BC%E8%88%AA">章节导航</a></li></ol></nav><div class="markdown-body"><h1 id="第一章-从-cuda-程序看-gpu-的整体结构">第一章 从 CUDA 程序看 GPU 的整体结构<a class="heading-anchor" href="#%E7%AC%AC%E4%B8%80%E7%AB%A0-%E4%BB%8E-cuda-%E7%A8%8B%E5%BA%8F%E7%9C%8B-gpu-%E7%9A%84%E6%95%B4%E4%BD%93%E7%BB%93%E6%9E%84" aria-label="链接到第一章 从 CUDA 程序看 GPU 的整体结构">#</a></h1>
+<p>CUDA 程序把工作分成线程、线程块和 grid，GPU 再把这些工作分配给 SM 执行。数据分块、线程分工和物理计算单元是三个不同层次。</p>
+<p>一个 64×64 的输出块有 4096 个元素，可以由较少的线程分多次计算；一个包含 256 个线程的 block，也不要求 256 个物理计算单元同时执行。Vector Add 与 MatMul 的地址、线程和数据复用，可以用来观察这层映射。</p>
+<h2 id="阅读时怎样使用-cuda-手册">阅读时怎样使用 CUDA 手册<a class="heading-anchor" href="#%E9%98%85%E8%AF%BB%E6%97%B6%E6%80%8E%E6%A0%B7%E4%BD%BF%E7%94%A8-cuda-%E6%89%8B%E5%86%8C" aria-label="链接到阅读时怎样使用 CUDA 手册">#</a></h2>
+<aside class="callout callout-important" aria-label="先分清三个层次"><div class="callout-title">先分清三个层次</div><div class="callout-body"><p><strong>数据 tile 是工作划分，CUDA 线程是执行实例，SM/CUDA Core 是硬件资源。三者没有固定的一一对应。</strong> 后面的地址映射、寄存器和性能分析都建立在这个区分上。</p>
+</div></aside><p>CUDA 编程模型定义主机、设备、线程和内存之间的关系。具体 API（Application Programming Interface，应用程序编程接口）的同步行为查 API reference，架构差异查对应调优指南；分析代码时将这些条件与实际编译目标一起核对。</p>
+<h2 id="1-硬件全貌为什么需要-cpu-和-gpu-一起工作">1. 硬件全貌：为什么需要 CPU 和 GPU 一起工作<a class="heading-anchor" href="#1-%E7%A1%AC%E4%BB%B6%E5%85%A8%E8%B2%8C%E4%B8%BA%E4%BB%80%E4%B9%88%E9%9C%80%E8%A6%81-cpu-%E5%92%8C-gpu-%E4%B8%80%E8%B5%B7%E5%B7%A5%E4%BD%9C" aria-label="链接到1. 硬件全貌：为什么需要 CPU 和 GPU 一起工作">#</a></h2>
+<h3 id="11-吞吐高不等于单个任务的延迟低">1.1 吞吐高，不等于单个任务的延迟低<a class="heading-anchor" href="#11-%E5%90%9E%E5%90%90%E9%AB%98%E4%B8%8D%E7%AD%89%E4%BA%8E%E5%8D%95%E4%B8%AA%E4%BB%BB%E5%8A%A1%E7%9A%84%E5%BB%B6%E8%BF%9F%E4%BD%8E" aria-label="链接到1.1 吞吐高，不等于单个任务的延迟低">#</a></h3>
+<p>CPU（Central Processing Unit，中央处理器）和 GPU（Graphics Processing Unit，图形处理器）都能执行计算，但设计时面对的主要矛盾不同。CPU 要让一条具有复杂依赖、分支和不规则访问的指令流尽快向前推进；GPU 则要在功耗和面积约束下，让大量工作持续通过计算与存储资源。</p>
+<p>以串行链 <code>x = f(x)</code> 为例，第 2 次计算依赖第 1 次的结果，第 3 次又依赖第 2 次。即使设备有很多执行资源，也不能把同一条链的所有步骤同时执行。换成 <code>c[i] = a[i] + b[i]</code>，不同 i 的结果互不依赖，才出现可以分配给大量线程的工作。<strong>并行度首先来自问题中的独立工作，不是从硬件核心数里凭空产生。</strong></p>
+<p>延迟和吞吐也要分开。假设一条生产线完成一个产品需要 10 个时间单位，但启动后每个时间单位能交付一个产品：单个产品延迟仍是 10，稳定吞吐却是每单位时间 1 个。GPU 利用足够多就绪工作保持管线繁忙，也有类似效果；这个类比只帮助区分两个量，不意味着 GPU 全部执行过程就是一条固定流水线。</p>
+<p>“访存延迟可以用更多线程隐藏”的准确含义，是一些线程等待数据时，硬件有机会执行其他就绪工作。那一次内存请求的实际延迟没有消失。如果所有工作都在等同一瓶颈，或者已经达到可持续带宽，再增加线程不会创造额外带宽。</p>
+<p>对算子先问三个问题：是否有足够独立工作？工作能否相对规则地组织？计算或复用是否足以摊薄准备与搬运成本？向量加法容易并行，但每个元素只有一次加法、两次读取和一次写入；矩阵乘法则能让同一输入参与很多乘加。两者都运行在 GPU 上，性能限制却不必相同。</p>
+<h3 id="12-host-与-device-是角色不只是指针前缀">1.2 Host 与 Device 是角色，不只是指针前缀<a class="heading-anchor" href="#12-host-%E4%B8%8E-device-%E6%98%AF%E8%A7%92%E8%89%B2%E4%B8%8D%E5%8F%AA%E6%98%AF%E6%8C%87%E9%92%88%E5%89%8D%E7%BC%80" aria-label="链接到1.2 Host 与 Device 是角色，不只是指针前缀">#</a></h3>
+<p>CUDA（Compute Unified Device Architecture，统一计算设备架构）采用异构计算模型。程序通常从主机侧开始，由主机代码组织数据、调用运行时并提交设备工作。Host 指主机及其执行环境，通常包括 CPU 与主机内存；Device 指参与计算的 GPU 设备及其可用资源。</p>
+<p>先看常见的独立 GPU 系统：</p>
+<figure class="diagram-frame">
+<img src="assets/host-device.svg" alt="主机与独立 GPU 分区：CPU 提交 kernel，输入数组通过 H2D 送入设备显存，GPU 计算后的结果通过 D2H 返回主机内存。">
+<figcaption>图：任务提交与数据搬运分开表示。CPU 与 SM 执行计算，主机内存与设备显存保存数组；互联上的两个箭头标明数据方向。</figcaption>
+</figure><p>H2D（Host to Device，主机到设备）和 D2H（Device to Host，设备到主机）表示传输方向。互联可以是 PCIe（Peripheral Component Interconnect Express，外围组件高速互联）或具体系统提供的其他通道。某种服务器的连接方式不是全部 CUDA 系统共同的物理结构。</p>
+<p>图中把“提交任务”和“传输数据”分开。执行 <code>kernel&lt;&lt;&lt;...&gt;&gt;&gt;(d_a)</code> 时，传入的是设备指针这个参数的值，不是把它指向的整个数组再复制一次。数组必须已处于 kernel 可合法访问的位置，或由相应内存机制保证可访问。kernel 启动不是自动搬运任意 CPU 数组的操作。</p>
+<p>也不能把独立显卡示意图理解成“CPU 与 GPU 永远必须拥有完全分离的物理内存”。集成系统、映射内存、统一内存和硬件一致性平台具有不同的访问与迁移机制。本章用显式分配和复制，是为了把位置与生命周期说清楚，不是说只有这一种方式。</p>
+<h3 id="13-gpu-内部sm-是一组执行资源不是一个大核心">1.3 GPU 内部：SM 是一组执行资源，不是一个“大核心”<a class="heading-anchor" href="#13-gpu-%E5%86%85%E9%83%A8sm-%E6%98%AF%E4%B8%80%E7%BB%84%E6%89%A7%E8%A1%8C%E8%B5%84%E6%BA%90%E4%B8%8D%E6%98%AF%E4%B8%80%E4%B8%AA%E5%A4%A7%E6%A0%B8%E5%BF%83" aria-label="链接到1.3 GPU 内部：SM 是一组执行资源，不是一个“大核心”">#</a></h3>
+<p>SM（Streaming Multiprocessor，流式多处理器）是 GPU 中承载线程块执行的一组硬件资源，也是理解 CUDA 执行的重要硬件层次。一个 SM 包含线程状态所需的寄存器资源、指令调度与发射资源、计算和访存管线，以及片上缓存和共享内存相关资源。多个 SM 共同访问设备级缓存和显存系统。</p>
+<p>下面是组织关系图，不是某一芯片的精确版图，也不表示每次访存都必须经过图中的所有层级：</p>
+<figure class="diagram-frame">
+<img src="assets/gpu-resource-map.svg" alt="GPU 内部组织：多个 GPC 包含多个 SM，SM 内有调度、寄存器、计算与存储资源；L2 和显存系统是设备级资源。">
+<figcaption>图：框的嵌套表示资源归属，不表示固定的访存路径。GPC 为 Graphics Processing Cluster（图形处理集群）；矩阵计算能力取决于具体架构。</figcaption>
+</figure><p>GPC 内还可能有 TPC（Texture Processing Cluster，纹理处理集群）等组织层次，但普通 CUDA 程序通常不通过 TPC 编号划分任务。这个名称帮助你阅读硬件框图，不意味着所有图形专用模块都需要成为通用计算的调度接口。</p>
+<p>寄存器文件的“文件”不是磁盘文件，而是一组高速存储资源。线程私有是其编程可见范围：一个线程不能因为寄存器物理上位于同一 SM，就任意读另一个线程的局部变量。物理资源共同存在，不等于变量访问权限共同存在。</p>
+<p>共享内存为线程块内部协作提供数据空间。普通线程块之间的共享内存不因驻留同一 SM 就变成共同可读写的数组。支持硬件上的集群级分布式共享内存属于显式扩展，不能用它改写普通线程块的语义。</p>
+<p>L1（Level 1，一级）和 L2（Level 2，二级）缓存保存部分数据副本，减少访问更远存储的需求。缓存与共享内存即使共用部分物理资源，控制方式也不同：程序用共享内存地址显式组织协作数据，缓存则按缓存策略服务访问。它们都“在片上”，不代表可以互换使用方式。</p>
+<p>设备显存通常由 DRAM（Dynamic Random-Access Memory，动态随机存取存储器）实现。HBM（High Bandwidth Memory，高带宽存储器）与 GDDR（Graphics Double Data Rate，图形双倍数据速率存储器）是不同的显存技术，不是所有 NVIDIA GPU 都使用 HBM。容量回答“能放多少”，带宽回答“每单位时间能搬多少”，不能用一个指标代替另一个。</p>
+<p>Tensor Core 是支持特定矩阵运算的硬件计算单元，不是另一组执行任意 C++ 语句的通用线程。普通加法、地址计算、条件判断和矩阵乘加可能使用不同管线。写了矩阵乘法的数学表达式，并不意味着编译器一定选择 Tensor Core；输入格式、表达方式、指令与架构支持都参与决定。后续会把它具体落实到矩阵指令和布局。</p>
+<h3 id="14-设备内部的快与整个程序的快">1.4 “设备内部的快”与“整个程序的快”<a class="heading-anchor" href="#14-%E8%AE%BE%E5%A4%87%E5%86%85%E9%83%A8%E7%9A%84%E5%BF%AB%E4%B8%8E%E6%95%B4%E4%B8%AA%E7%A8%8B%E5%BA%8F%E7%9A%84%E5%BF%AB" aria-label="链接到1.4 “设备内部的快”与“整个程序的快”">#</a></h3>
+<p>假设把两个长度为 N 的 float 数组送入设备，完成加法，再取回结果。只按有效载荷记账，H2D 是 <code>2×N×4</code> 字节，D2H 是 <code>N×4</code> 字节；kernel 本身又有两个读取和一个写入，逻辑流量为 <code>3×N×4</code> 字节。</p>
+<p>两组字节走的不是同一条路径。前者经过主机—设备互联，后者在 GPU 存储体系中发生。kernel 的 12N 字节是算法口径的有效流量，也不一定等于实际显存总线流量：缓存命中、访问粒度和存储行为可能改变物理流量。</p>
+<p>端到端耗时还可能包含分配、初始化、提交与同步。即使把 kernel 时间减半，如果它只占总耗时的一小部分，整个任务的收益仍然有限。反过来，多个算子连续在 GPU 上执行，输入只传一次，中间结果留在设备，搬运成本就可以被多次计算摊薄。这解释了为什么既需要单 kernel 优化，也要保留模型级分析。</p>
+<p><strong>追问：CPU 擅长串行，所以 GPU 不能写循环吗？</strong></p>
+<p>可以写。关键是循环内部与线程之间有哪些依赖。不同线程各自执行独立任务的循环，仍能并行；所有工作围绕单一依赖链，才难以利用大量资源。“代码里有循环”与“问题只能串行”不是同一个判断。</p>
+<h2 id="2-编程模型工作怎样组织硬件怎样承接">2. 编程模型：工作怎样组织，硬件怎样承接<a class="heading-anchor" href="#2-%E7%BC%96%E7%A8%8B%E6%A8%A1%E5%9E%8B%E5%B7%A5%E4%BD%9C%E6%80%8E%E6%A0%B7%E7%BB%84%E7%BB%87%E7%A1%AC%E4%BB%B6%E6%80%8E%E6%A0%B7%E6%89%BF%E6%8E%A5" aria-label="链接到2. 编程模型：工作怎样组织，硬件怎样承接">#</a></h2>
+<h3 id="21-kernelgridblockthread-回答不同的问题">2.1 kernel、grid、block、thread 回答不同的问题<a class="heading-anchor" href="#21-kernelgridblockthread-%E5%9B%9E%E7%AD%94%E4%B8%8D%E5%90%8C%E7%9A%84%E9%97%AE%E9%A2%98" aria-label="链接到2.1 kernel、grid、block、thread 回答不同的问题">#</a></h3>
+<p>kernel（核函数）说明参与线程执行什么设备代码；kernel launch（核函数启动）指定这次调用采用什么执行配置。grid（线程块网格）是这次启动组织出的线程块集合；thread block（线程块）是其中一个可协作的线程组；thread（线程）是执行代码、具有自身索引与局部状态的逻辑实例。</p>
+<p>论文和底层资料中的 CTA（Cooperative Thread Array，协作线程数组），在通常讨论 CUDA 线程块的语境中，指的就是 thread block。遇到 CTA，不需要在已有 block 之外再想象一层新硬件。</p>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1">vector_add_kernel&lt;&lt;&lt;<span class="hljs-number">4</span>, <span class="hljs-number">256</span>&gt;&gt;&gt;(d_a, d_b, d_c, <span class="hljs-number">1000</span>);</span></code></pre></div>
+<p>4 是 grid 中线程块的数量；256 是每个线程块的线程数。总共组织 1024 个逻辑线程，每个线程执行同一份核函数，但读取不同的内建索引，决定处理哪个元素。</p>
+<p>“同一份代码”不等于“同一份局部状态”。每个线程算出的 i 可以不同，条件 <code>i &lt; n</code> 的结果也可能不同。变量名在代码中只写一次，但其执行实例属于各线程，不是所有线程共同修改唯一一个 i。</p>
+<p>“组织 1024 个线程”也不等于“1024 个线程同时执行某条机器指令”。执行配置描述程序；实际并发还由设备资源、线程块需求、指令和数据依赖等决定。程序必须在允许的调度方式下都正确，不能依赖想象中的同时启动时间。</p>
+<h3 id="22-一个-block-在一个-sm-上执行不代表一个-sm-只有一个-block">2.2 一个 block 在一个 SM 上执行，不代表一个 SM 只有一个 block<a class="heading-anchor" href="#22-%E4%B8%80%E4%B8%AA-block-%E5%9C%A8%E4%B8%80%E4%B8%AA-sm-%E4%B8%8A%E6%89%A7%E8%A1%8C%E4%B8%8D%E4%BB%A3%E8%A1%A8%E4%B8%80%E4%B8%AA-sm-%E5%8F%AA%E6%9C%89%E4%B8%80%E4%B8%AA-block" aria-label="链接到2.2 一个 block 在一个 SM 上执行，不代表一个 SM 只有一个 block">#</a></h3>
+<p>普通线程块的线程在同一 SM 上执行，使块内共享内存和同步成为可能。资源允许时，一个 SM 可以同时驻留多个线程块；很大的 grid 则可以分批安排到有限数量的 SM 上。</p>
+<p>假设设备有 2 个 SM，grid 有 6 个 block；为讨论进一步假设每个 SM 此时只能驻留 1 个 block。开始时最多有 2 个 block 驻留，某个 block 结束并释放资源后，后续 block 才有机会进入。但没有规定“必须先执行 block 0 和 block 1”，也没有规定“某个 block 必须对应某个 SM”。</p>
+<p>若每个 SM 能驻留 2 个 block，就可能同时容纳 4 个 block。调度能力改变，不改变 <code>blockIdx</code> 的含义：它仍是程序中的块索引，不是物理 SM 编号。把它用作矩阵输出块编号是正确的；直接当作硬件核心编号则不正确。</p>
+<p>为什么普通 kernel 不应该让 block 0 一直轮询，等待 block 5 写一个标志？等待者可能占住资源，而被等待的 block 尚无法被调度。某次运行没有卡住，不构成正确性保证。跨块协作需要满足前置条件的机制，不能凭某次观察到的执行顺序设计程序。</p>
+<p>这不表示“CUDA 永远不能跨块同步”。Cooperative Groups（协作组）中的相关启动与同步机制，以及支持硬件上的 Thread Block Cluster（线程块集群），提供了特定协作范围。手册 §1.2.2.1.1 介绍了计算能力 9.0 及以上支持的集群：同一集群的块在同一 GPC 内协同调度和通信。它需要显式使用，不是普通启动自动获得的全 grid 屏障。</p>
+<h3 id="23-warp-是-32-个逻辑线程不是永久绑定的-32-个核心">2.3 warp 是 32 个逻辑线程，不是永久绑定的 32 个核心<a class="heading-anchor" href="#23-warp-%E6%98%AF-32-%E4%B8%AA%E9%80%BB%E8%BE%91%E7%BA%BF%E7%A8%8B%E4%B8%8D%E6%98%AF%E6%B0%B8%E4%B9%85%E7%BB%91%E5%AE%9A%E7%9A%84-32-%E4%B8%AA%E6%A0%B8%E5%BF%83" aria-label="链接到2.3 warp 是 32 个逻辑线程，不是永久绑定的 32 个核心">#</a></h3>
+<p>warp（线程束）把同一线程块中的线程按 32 个一组组织。SIMT（Single Instruction, Multiple Threads，单指令多线程）描述这种执行模型：硬件对参与线程发射指令，各线程使用自己的寄存器值和地址，得到各自结果。</p>
+<p>256 个线程组成 8 个 warp。线程块若只有 40 个线程，则需要 2 个 warp，第二个只有 8 个有效线程位置。lane（线程束内位置）编号为 0 到 31，不足 32 个线程不意味着 warp 的硬件宽度自动变成 8。</p>
+<p>二维、三维线程块也要按线性线程编号分组。二维时：</p>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-type">const</span> <span class="hljs-type">unsigned</span> linear_tid = threadIdx.x + blockDim.x * threadIdx.y;</span>
+<span class="code-line" data-line="2"><span class="hljs-type">const</span> <span class="hljs-type">unsigned</span> warp_id = linear_tid / <span class="hljs-number">32</span>;</span>
+<span class="code-line" data-line="3"><span class="hljs-type">const</span> <span class="hljs-type">unsigned</span> lane_id = linear_tid % <span class="hljs-number">32</span>;</span></code></pre></div>
+<p>因此 x 方向先变化。二维 block 的“一行”是否正好对应一个 warp，要看 x 方向长度，不能因为数据是矩阵就把 warp 等同于矩阵的一行。</p>
+<p>CUDA Core 是某类硬件算术执行资源的产品/架构描述，CUDA thread 是具有执行状态的逻辑线程，没有永久一一对应关系。SM 能保留很多线程的状态，调度它们使用有限的执行管线；不同指令也可能去往不同功能单元。不能把 CUDA Core 数量直接代入 grid×block 的线程数公式。</p>
+<p>同一 warp 遇到不同分支时，不同路径在相应活动线程集合上执行；被屏蔽的线程不会在该路径完成相同的有效工作。本章先理解分支可能降低有效利用率，不进一步推断“同一 warp 的线程天然可以不加同步交换共享内存数据”。独立线程调度和内存顺序会影响这种写法，协作仍须使用规定的同步原语。</p>
+<h3 id="24-cuda-的线程视角与-triton-的-tile-视角">2.4 CUDA 的线程视角与 Triton 的 tile 视角<a class="heading-anchor" href="#24-cuda-%E7%9A%84%E7%BA%BF%E7%A8%8B%E8%A7%86%E8%A7%92%E4%B8%8E-triton-%E7%9A%84-tile-%E8%A7%86%E8%A7%92" aria-label="链接到2.4 CUDA 的线程视角与 Triton 的 tile 视角">#</a></h3>
+<p>CUDA C++ 常写“一个线程计算哪个索引”。Triton Vector Add 则写的是“一个 program 处理哪些元素”：</p>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1">pid = tl.program_id(<span class="hljs-number">0</span>)</span>
+<span class="code-line" data-line="2">offsets = pid * BLOCK_SIZE + tl.arange(<span class="hljs-number">0</span>, BLOCK_SIZE)</span>
+<span class="code-line" data-line="3">mask = offsets &lt; n_elements</span></code></pre></div>
+<p>来源：现有 Vector Add 文件。它是本地验证/benchmark wrapper，不是单独归档的平台原始 solve；来源区别必须保留。</p>
+<p>offsets 是逻辑索引集合。它有 256 个元素，并不单独决定编译器使用多少线程、每线程持有几个值、怎样安排寄存器。对常规 NVIDIA Triton kernel，program 实例通常对应一个 CUDA 线程块，但具体映射由编译器、执行配置和后端决定；高级集群配置还须检查对应行为。</p>
+<p>这与手册 §1.2.2.3 的区分一致：block 是执行组织，tile 是数据组织。不要把该节的 CUDA tile API 与 Triton API 当成同一套语法；它们共享部分抽象思想，不是可直接替换的接口。</p>
+<p>“不同 thread 会不会重复读一行？”不能只看地址 tile 判断。地址 tile 只能知道请求了哪些逻辑元素，不能断言每个 CUDA 线程都各自读整行；还要看元素怎样分配、缓存和共享内存是否复用，以及最终访存指令。不同 program 之间可能请求相同输入区域，但请求重复不意味着每次都重新走到显存。</p>
+<h2 id="3-完整程序沿着一次计算走一遍">3. 完整程序：沿着一次计算走一遍<a class="heading-anchor" href="#3-%E5%AE%8C%E6%95%B4%E7%A8%8B%E5%BA%8F%E6%B2%BF%E7%9D%80%E4%B8%80%E6%AC%A1%E8%AE%A1%E7%AE%97%E8%B5%B0%E4%B8%80%E9%81%8D" aria-label="链接到3. 完整程序：沿着一次计算走一遍">#</a></h2>
+<h3 id="31-先看完整代码再解释每个阶段">3.1 先看完整代码，再解释每个阶段<a class="heading-anchor" href="#31-%E5%85%88%E7%9C%8B%E5%AE%8C%E6%95%B4%E4%BB%A3%E7%A0%81%E5%86%8D%E8%A7%A3%E9%87%8A%E6%AF%8F%E4%B8%AA%E9%98%B6%E6%AE%B5" aria-label="链接到3.1 先看完整代码，再解释每个阶段">#</a></h3>
+<p>下面包含主机初始化、设备分配、输入复制、kernel 启动、两层错误检查、结果复制、参考比较和释放。输入选择较小的整数倍二进制分数，便于此例精确比较；不代表一般浮点归约都应逐位相等。</p>
+<p>代码来源：vector_add_walkthrough.cu。这是用于讲解主机—设备执行过程的独立 CUDA 示例，不替换其他实现。网站构建时会检查本节代码块与文件一致；修改示例必须同步正文。</p>
+<!-- BEGIN vector_add_walkthrough.cu -->
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;cuda_runtime.h&gt;</span></span></span>
+<span class="code-line" data-line="2"></span>
+<span class="code-line" data-line="3"><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;algorithm&gt;</span></span></span>
+<span class="code-line" data-line="4"><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;cmath&gt;</span></span></span>
+<span class="code-line" data-line="5"><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;cstddef&gt;</span></span></span>
+<span class="code-line" data-line="6"><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;cstdlib&gt;</span></span></span>
+<span class="code-line" data-line="7"><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;exception&gt;</span></span></span>
+<span class="code-line" data-line="8"><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;iostream&gt;</span></span></span>
+<span class="code-line" data-line="9"><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;limits&gt;</span></span></span>
+<span class="code-line" data-line="10"><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdexcept&gt;</span></span></span>
+<span class="code-line" data-line="11"><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;string&gt;</span></span></span>
+<span class="code-line" data-line="12"><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;vector&gt;</span></span></span>
+<span class="code-line" data-line="13"></span>
+<span class="code-line" data-line="14"><span class="hljs-comment">// 教学示例：展示显式分配、复制、启动、检查和释放的完整路径。</span></span>
+<span class="code-line" data-line="15"><span class="hljs-comment">// 正常路径检查 CUDA 返回值；异常清理保留原始异常，不覆盖它。</span></span>
+<span class="code-line" data-line="16"><span class="hljs-meta">#<span class="hljs-keyword">define</span> CUDA_CHECK(call)                                                        \</span></span>
+<span class="code-line" data-line="17"><span class="hljs-meta">  do {                                                                          \</span></span>
+<span class="code-line" data-line="18"><span class="hljs-meta">    const cudaError_t error__ = (call);                                         \</span></span>
+<span class="code-line" data-line="19"><span class="hljs-meta">    <span class="hljs-keyword">if</span> (error__ != cudaSuccess) {                                               \</span></span>
+<span class="code-line" data-line="20"><span class="hljs-meta">      throw std::runtime_error(std::string(<span class="hljs-string">&quot;CUDA error at &quot;</span>) + __FILE__ + <span class="hljs-string">&quot;:&quot;</span> + \</span></span>
+<span class="code-line" data-line="21"><span class="hljs-meta">                               std::to_string(__LINE__) + <span class="hljs-string">&quot;: &quot;</span> +               \</span></span>
+<span class="code-line" data-line="22"><span class="hljs-meta">                               cudaGetErrorString(error__));                    \</span></span>
+<span class="code-line" data-line="23"><span class="hljs-meta">    }                                                                            \</span></span>
+<span class="code-line" data-line="24"><span class="hljs-meta">  } while (false)</span></span>
+<span class="code-line" data-line="25"></span>
+<span class="code-line" data-line="26"><span class="hljs-function">__global__ <span class="hljs-type">void</span> <span class="hljs-title">vector_add_kernel</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">float</span>* a, <span class="hljs-type">const</span> <span class="hljs-type">float</span>* b, <span class="hljs-type">float</span>* c,</span></span></span>
+<span class="code-line" data-line="27"><span class="hljs-function"><span class="hljs-params">                                  std::<span class="hljs-type">size_t</span> n)</span> </span>{</span>
+<span class="code-line" data-line="28">  <span class="hljs-comment">// 一个 thread 处理一个逻辑元素；block 是调度/资源分配单位。</span></span>
+<span class="code-line" data-line="29">  <span class="hljs-type">const</span> std::<span class="hljs-type">size_t</span> i = <span class="hljs-keyword">static_cast</span>&lt;std::<span class="hljs-type">size_t</span>&gt;(blockIdx.x) * blockDim.x +</span>
+<span class="code-line" data-line="30">                        threadIdx.x;</span>
+<span class="code-line" data-line="31">  <span class="hljs-keyword">if</span> (i &lt; n) {</span>
+<span class="code-line" data-line="32">    c[i] = a[i] + b[i];</span>
+<span class="code-line" data-line="33">  }</span>
+<span class="code-line" data-line="34">}</span>
+<span class="code-line" data-line="35"></span>
+<span class="code-line" data-line="36"><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">vector_add_cpu</span><span class="hljs-params">(<span class="hljs-type">const</span> std::vector&lt;<span class="hljs-type">float</span>&gt;&amp; a, <span class="hljs-type">const</span> std::vector&lt;<span class="hljs-type">float</span>&gt;&amp; b,</span></span></span>
+<span class="code-line" data-line="37"><span class="hljs-function"><span class="hljs-params">                    std::vector&lt;<span class="hljs-type">float</span>&gt;* c)</span> </span>{</span>
+<span class="code-line" data-line="38">  <span class="hljs-keyword">if</span> (a.<span class="hljs-built_in">size</span>() != b.<span class="hljs-built_in">size</span>() || a.<span class="hljs-built_in">size</span>() != c-&gt;<span class="hljs-built_in">size</span>()) {</span>
+<span class="code-line" data-line="39">    <span class="hljs-keyword">throw</span> std::<span class="hljs-built_in">invalid_argument</span>(<span class="hljs-string">&quot;CPU vectors have different sizes&quot;</span>);</span>
+<span class="code-line" data-line="40">  }</span>
+<span class="code-line" data-line="41">  <span class="hljs-keyword">for</span> (std::<span class="hljs-type">size_t</span> i = <span class="hljs-number">0</span>; i &lt; a.<span class="hljs-built_in">size</span>(); ++i) {</span>
+<span class="code-line" data-line="42">    (*c)[i] = a[i] + b[i];</span>
+<span class="code-line" data-line="43">  }</span>
+<span class="code-line" data-line="44">}</span>
+<span class="code-line" data-line="45"></span>
+<span class="code-line" data-line="46"><span class="hljs-function"><span class="hljs-type">int</span> <span class="hljs-title">main</span><span class="hljs-params">(<span class="hljs-type">int</span> argc, <span class="hljs-type">char</span>** argv)</span> </span>{</span>
+<span class="code-line" data-line="47">  <span class="hljs-keyword">try</span> {</span>
+<span class="code-line" data-line="48">    <span class="hljs-type">const</span> std::<span class="hljs-type">size_t</span> n = argc &gt; <span class="hljs-number">1</span> ? std::<span class="hljs-built_in">stoull</span>(argv[<span class="hljs-number">1</span>]) : <span class="hljs-number">1000</span>;</span>
+<span class="code-line" data-line="49">    <span class="hljs-keyword">if</span> (n == <span class="hljs-number">0</span>) {</span>
+<span class="code-line" data-line="50">      <span class="hljs-keyword">throw</span> std::<span class="hljs-built_in">invalid_argument</span>(<span class="hljs-string">&quot;N must be greater than zero&quot;</span>);</span>
+<span class="code-line" data-line="51">    }</span>
+<span class="code-line" data-line="52">    <span class="hljs-keyword">if</span> (n &gt; std::numeric_limits&lt;std::<span class="hljs-type">size_t</span>&gt;::<span class="hljs-built_in">max</span>() / <span class="hljs-keyword">sizeof</span>(<span class="hljs-type">float</span>)) {</span>
+<span class="code-line" data-line="53">      <span class="hljs-keyword">throw</span> std::<span class="hljs-built_in">invalid_argument</span>(<span class="hljs-string">&quot;N * sizeof(float) overflows size_t&quot;</span>);</span>
+<span class="code-line" data-line="54">    }</span>
+<span class="code-line" data-line="55"></span>
+<span class="code-line" data-line="56">    <span class="hljs-type">int</span> device_count = <span class="hljs-number">0</span>;</span>
+<span class="code-line" data-line="57">    <span class="hljs-built_in">CUDA_CHECK</span>(<span class="hljs-built_in">cudaGetDeviceCount</span>(&amp;device_count));</span>
+<span class="code-line" data-line="58">    <span class="hljs-keyword">if</span> (device_count == <span class="hljs-number">0</span>) {</span>
+<span class="code-line" data-line="59">      <span class="hljs-keyword">throw</span> std::<span class="hljs-built_in">runtime_error</span>(<span class="hljs-string">&quot;no CUDA-capable device is available&quot;</span>);</span>
+<span class="code-line" data-line="60">    }</span>
+<span class="code-line" data-line="61">    <span class="hljs-built_in">CUDA_CHECK</span>(<span class="hljs-built_in">cudaSetDevice</span>(<span class="hljs-number">0</span>));</span>
+<span class="code-line" data-line="62"></span>
+<span class="code-line" data-line="63">    cudaDeviceProp device{};</span>
+<span class="code-line" data-line="64">    <span class="hljs-built_in">CUDA_CHECK</span>(<span class="hljs-built_in">cudaGetDeviceProperties</span>(&amp;device, <span class="hljs-number">0</span>));</span>
+<span class="code-line" data-line="65">    <span class="hljs-keyword">constexpr</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> block_size = <span class="hljs-number">256</span>;</span>
+<span class="code-line" data-line="66">    <span class="hljs-type">const</span> std::<span class="hljs-type">size_t</span> grid_size = n / block_size + (n % block_size != <span class="hljs-number">0</span>);</span>
+<span class="code-line" data-line="67">    <span class="hljs-keyword">if</span> (grid_size &gt; <span class="hljs-keyword">static_cast</span>&lt;std::<span class="hljs-type">size_t</span>&gt;(device.maxGridSize[<span class="hljs-number">0</span>])) {</span>
+<span class="code-line" data-line="68">      <span class="hljs-keyword">throw</span> std::<span class="hljs-built_in">invalid_argument</span>(<span class="hljs-string">&quot;N is too large for this 1D grid&quot;</span>);</span>
+<span class="code-line" data-line="69">    }</span>
+<span class="code-line" data-line="70"></span>
+<span class="code-line" data-line="71">    <span class="hljs-function">std::vector&lt;<span class="hljs-type">float</span>&gt; <span class="hljs-title">h_a</span><span class="hljs-params">(n)</span>, <span class="hljs-title">h_b</span><span class="hljs-params">(n)</span>, <span class="hljs-title">h_c</span><span class="hljs-params">(n)</span>, <span class="hljs-title">h_reference</span><span class="hljs-params">(n)</span></span>;</span>
+<span class="code-line" data-line="72">    <span class="hljs-keyword">for</span> (std::<span class="hljs-type">size_t</span> i = <span class="hljs-number">0</span>; i &lt; n; ++i) {</span>
+<span class="code-line" data-line="73">      h_a[i] = <span class="hljs-keyword">static_cast</span>&lt;<span class="hljs-type">float</span>&gt;((i % <span class="hljs-number">97</span>) * <span class="hljs-number">0.25</span>);</span>
+<span class="code-line" data-line="74">      h_b[i] = <span class="hljs-keyword">static_cast</span>&lt;<span class="hljs-type">float</span>&gt;((i % <span class="hljs-number">53</span>) * <span class="hljs-number">-0.5</span>);</span>
+<span class="code-line" data-line="75">    }</span>
+<span class="code-line" data-line="76">    <span class="hljs-built_in">vector_add_cpu</span>(h_a, h_b, &amp;h_reference);</span>
+<span class="code-line" data-line="77"></span>
+<span class="code-line" data-line="78">    <span class="hljs-type">float</span>* d_a = <span class="hljs-literal">nullptr</span>;</span>
+<span class="code-line" data-line="79">    <span class="hljs-type">float</span>* d_b = <span class="hljs-literal">nullptr</span>;</span>
+<span class="code-line" data-line="80">    <span class="hljs-type">float</span>* d_c = <span class="hljs-literal">nullptr</span>;</span>
+<span class="code-line" data-line="81">    <span class="hljs-keyword">try</span> {</span>
+<span class="code-line" data-line="82">      <span class="hljs-type">const</span> std::<span class="hljs-type">size_t</span> bytes = n * <span class="hljs-keyword">sizeof</span>(<span class="hljs-type">float</span>);</span>
+<span class="code-line" data-line="83">      <span class="hljs-built_in">CUDA_CHECK</span>(<span class="hljs-built_in">cudaMalloc</span>(&amp;d_a, bytes));</span>
+<span class="code-line" data-line="84">      <span class="hljs-built_in">CUDA_CHECK</span>(<span class="hljs-built_in">cudaMalloc</span>(&amp;d_b, bytes));</span>
+<span class="code-line" data-line="85">      <span class="hljs-built_in">CUDA_CHECK</span>(<span class="hljs-built_in">cudaMalloc</span>(&amp;d_c, bytes));</span>
+<span class="code-line" data-line="86"></span>
+<span class="code-line" data-line="87">      <span class="hljs-comment">// 这里使用默认 stream 的普通 cudaMemcpy，展示阶段顺序：H2D → kernel。</span></span>
+<span class="code-line" data-line="88">      <span class="hljs-comment">// 不把 cudaMemcpy 的“同步”泛化到所有方向和 pageable/pinned 情况。</span></span>
+<span class="code-line" data-line="89">      <span class="hljs-built_in">CUDA_CHECK</span>(<span class="hljs-built_in">cudaMemcpy</span>(d_a, h_a.<span class="hljs-built_in">data</span>(), bytes, cudaMemcpyHostToDevice));</span>
+<span class="code-line" data-line="90">      <span class="hljs-built_in">CUDA_CHECK</span>(<span class="hljs-built_in">cudaMemcpy</span>(d_b, h_b.<span class="hljs-built_in">data</span>(), bytes, cudaMemcpyHostToDevice));</span>
+<span class="code-line" data-line="91"></span>
+<span class="code-line" data-line="92">      vector_add_kernel&lt;&lt;&lt;<span class="hljs-keyword">static_cast</span>&lt;<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>&gt;(grid_size), block_size&gt;&gt;&gt;(</span>
+<span class="code-line" data-line="93">          d_a, d_b, d_c, n);</span>
+<span class="code-line" data-line="94">      <span class="hljs-built_in">CUDA_CHECK</span>(<span class="hljs-built_in">cudaGetLastError</span>());       <span class="hljs-comment">// 检查 launch 配置/提交错误</span></span>
+<span class="code-line" data-line="95">      <span class="hljs-built_in">CUDA_CHECK</span>(<span class="hljs-built_in">cudaDeviceSynchronize</span>());  <span class="hljs-comment">// 检查执行期异步错误</span></span>
+<span class="code-line" data-line="96"></span>
+<span class="code-line" data-line="97">      <span class="hljs-comment">// D2H 返回后，本例中的 h_c 已可由 CPU 读取并比较。</span></span>
+<span class="code-line" data-line="98">      <span class="hljs-built_in">CUDA_CHECK</span>(<span class="hljs-built_in">cudaMemcpy</span>(h_c.<span class="hljs-built_in">data</span>(), d_c, bytes, cudaMemcpyDeviceToHost));</span>
+<span class="code-line" data-line="99"></span>
+<span class="code-line" data-line="100">      <span class="hljs-type">double</span> max_abs_error = <span class="hljs-number">0.0</span>;</span>
+<span class="code-line" data-line="101">      <span class="hljs-keyword">for</span> (std::<span class="hljs-type">size_t</span> i = <span class="hljs-number">0</span>; i &lt; n; ++i) {</span>
+<span class="code-line" data-line="102">        <span class="hljs-keyword">if</span> (!std::<span class="hljs-built_in">isfinite</span>(h_c[i])) {</span>
+<span class="code-line" data-line="103">          <span class="hljs-keyword">throw</span> std::<span class="hljs-built_in">runtime_error</span>(<span class="hljs-string">&quot;GPU output contains a non-finite value&quot;</span>);</span>
+<span class="code-line" data-line="104">        }</span>
+<span class="code-line" data-line="105">        max_abs_error = std::<span class="hljs-built_in">max</span>(</span>
+<span class="code-line" data-line="106">            max_abs_error,</span>
+<span class="code-line" data-line="107">            <span class="hljs-keyword">static_cast</span>&lt;<span class="hljs-type">double</span>&gt;(std::<span class="hljs-built_in">fabs</span>(h_c[i] - h_reference[i])));</span>
+<span class="code-line" data-line="108">      }</span>
+<span class="code-line" data-line="109">      <span class="hljs-keyword">if</span> (max_abs_error != <span class="hljs-number">0.0</span>) {</span>
+<span class="code-line" data-line="110">        <span class="hljs-keyword">throw</span> std::<span class="hljs-built_in">runtime_error</span>(<span class="hljs-string">&quot;GPU result differs from CPU reference: &quot;</span> +</span>
+<span class="code-line" data-line="111">                                 std::<span class="hljs-built_in">to_string</span>(max_abs_error));</span>
+<span class="code-line" data-line="112">      }</span>
+<span class="code-line" data-line="113"></span>
+<span class="code-line" data-line="114">      std::cout &lt;&lt; <span class="hljs-string">&quot;device=&quot;</span> &lt;&lt; device.name &lt;&lt; <span class="hljs-string">&quot; N=&quot;</span> &lt;&lt; n</span>
+<span class="code-line" data-line="115">                &lt;&lt; <span class="hljs-string">&quot; block=&quot;</span> &lt;&lt; block_size &lt;&lt; <span class="hljs-string">&quot; grid=&quot;</span> &lt;&lt; grid_size</span>
+<span class="code-line" data-line="116">                &lt;&lt; <span class="hljs-string">&quot; max_abs_error=&quot;</span> &lt;&lt; max_abs_error &lt;&lt; <span class="hljs-string">&quot; PASS\n&quot;</span>;</span>
+<span class="code-line" data-line="117"></span>
+<span class="code-line" data-line="118">      <span class="hljs-built_in">CUDA_CHECK</span>(<span class="hljs-built_in">cudaFree</span>(d_c));</span>
+<span class="code-line" data-line="119">      d_c = <span class="hljs-literal">nullptr</span>;</span>
+<span class="code-line" data-line="120">      <span class="hljs-built_in">CUDA_CHECK</span>(<span class="hljs-built_in">cudaFree</span>(d_b));</span>
+<span class="code-line" data-line="121">      d_b = <span class="hljs-literal">nullptr</span>;</span>
+<span class="code-line" data-line="122">      <span class="hljs-built_in">CUDA_CHECK</span>(<span class="hljs-built_in">cudaFree</span>(d_a));</span>
+<span class="code-line" data-line="123">      d_a = <span class="hljs-literal">nullptr</span>;</span>
+<span class="code-line" data-line="124">    } <span class="hljs-keyword">catch</span> (...) {</span>
+<span class="code-line" data-line="125">      <span class="hljs-comment">// 释放已成功分配的 device memory；不要让错误路径把显存永久留给进程。</span></span>
+<span class="code-line" data-line="126">      <span class="hljs-keyword">if</span> (d_c != <span class="hljs-literal">nullptr</span>) <span class="hljs-built_in">cudaFree</span>(d_c);</span>
+<span class="code-line" data-line="127">      <span class="hljs-keyword">if</span> (d_b != <span class="hljs-literal">nullptr</span>) <span class="hljs-built_in">cudaFree</span>(d_b);</span>
+<span class="code-line" data-line="128">      <span class="hljs-keyword">if</span> (d_a != <span class="hljs-literal">nullptr</span>) <span class="hljs-built_in">cudaFree</span>(d_a);</span>
+<span class="code-line" data-line="129">      <span class="hljs-keyword">throw</span>;</span>
+<span class="code-line" data-line="130">    }</span>
+<span class="code-line" data-line="131">  } <span class="hljs-keyword">catch</span> (<span class="hljs-type">const</span> std::exception&amp; error) {</span>
+<span class="code-line" data-line="132">    std::cerr &lt;&lt; <span class="hljs-string">&quot;FAILED: &quot;</span> &lt;&lt; error.<span class="hljs-built_in">what</span>() &lt;&lt; <span class="hljs-string">&#x27;\n&#x27;</span>;</span>
+<span class="code-line" data-line="133">    <span class="hljs-keyword">return</span> EXIT_FAILURE;</span>
+<span class="code-line" data-line="134">  }</span>
+<span class="code-line" data-line="135">  <span class="hljs-keyword">return</span> EXIT_SUCCESS;</span>
+<span class="code-line" data-line="136">}</span></code></pre></div>
+<!-- END vector_add_walkthrough.cu --><h3 id="32-main主机数组与设备指针">3.2 main、主机数组与设备指针<a class="heading-anchor" href="#32-main%E4%B8%BB%E6%9C%BA%E6%95%B0%E7%BB%84%E4%B8%8E%E8%AE%BE%E5%A4%87%E6%8C%87%E9%92%88" aria-label="链接到3.2 main、主机数组与设备指针">#</a></h3>
+<p>main 在 CPU 上执行。<code>std::vector&lt;float&gt;</code> 分配的是本例的主机数组，<code>h_a.data()</code> 返回首元素地址。初始化循环与 CPU reference 都是主机工作；文件包含 CUDA 语法，不意味着所有函数都在 GPU 上运行。</p>
+<p><code>__global__</code> 标记核函数。CPU 用三尖括号语法提交设备执行，而不是普通 C++ 函数调用。指针参数的值被传入设备端，线程通过这些参数访问相应存储。</p>
+<p><code>float* d_a = nullptr</code> 只定义指针变量，尚未申请数组。<code>cudaMalloc(&amp;d_a, bytes)</code> 才申请设备内存，并把返回地址写入 d_a。传 <code>&amp;d_a</code>，是因为 API 要修改指针变量，不是写数组第一个 float。</p>
+<p>cudaMalloc 的大小单位为字节。1000 个 float 需要 4000 字节，三个设备数组的有效容量为 12000 字节。但这不是 CUDA 进程全部显存开销：上下文、代码和其他运行时资源不在这个数组账本中。</p>
+<p>设备分配通常不会替你初始化输入值。两个 H2D 复制填充 d_a、d_b；没有初始化 d_c，是因为每个有效输出都由 kernel 完整覆盖。若改成对已有 d_c[i] 累加，就必须先定义初值。分配成功不等于内容为零。</p>
+<h3 id="33-复制顺序启动异步性与结果可用性">3.3 复制顺序、启动异步性与结果可用性<a class="heading-anchor" href="#33-%E5%A4%8D%E5%88%B6%E9%A1%BA%E5%BA%8F%E5%90%AF%E5%8A%A8%E5%BC%82%E6%AD%A5%E6%80%A7%E4%B8%8E%E7%BB%93%E6%9E%9C%E5%8F%AF%E7%94%A8%E6%80%A7" aria-label="链接到3.3 复制顺序、启动异步性与结果可用性">#</a></h3>
+<p>本例输入复制与 kernel 使用默认 stream（执行流）。stream 是有序提交工作的软件概念，不是 SM，也不是固定物理计算管线。同一流的顺序约束保证后面的 kernel 不会合法地越过前面的输入复制，消费尚未准备好的数据。</p>
+<p>“流内有序”和“CPU 被阻塞到何时”是两件事。普通 cudaMemcpy 的主机同步行为取决于方向和主机内存类型：可分页主机内存到设备的复制，主机返回时可能只完成了中间暂存；设备到主机的普通复制则在复制完成后返回。不能把没有 Async 后缀概括成“所有方向都阻塞到 GPU 操作结束”。具体边界见 <a href="https://docs.nvidia.com/cuda/cuda-runtime-api/api-sync-behavior.html">Runtime API：同步行为</a>。</p>
+<p>kernel 启动通常相对提交它的主机线程异步：CPU 可以在 kernel 未完成时继续执行。启动后立即读取 h_c 没有意义——GPU 写的是 d_c，设备工作还可能没有结束。</p>
+<p>本例先调用 cudaDeviceSynchronize，等待当前设备、当前上下文相关的先前工作完成并检查错误，再做 D2H。它不是等待整台机器所有进程的 GPU 工作。多流程序应依数据依赖选择更精确的同步，后续课程展开。</p>
+<p>在本例相同流的顺序与普通 D2H 条件下，显式设备同步不是让 CPU 最终得到正确结果的唯一写法。把它放在这里，还有明确定位 kernel 执行期错误的作用。不能推广成“每次 kernel 后都必须全设备同步”。</p>
+<h3 id="34-两层错误检查为什么都要有">3.4 两层错误检查为什么都要有<a class="heading-anchor" href="#34-%E4%B8%A4%E5%B1%82%E9%94%99%E8%AF%AF%E6%A3%80%E6%9F%A5%E4%B8%BA%E4%BB%80%E4%B9%88%E9%83%BD%E8%A6%81%E6%9C%89" aria-label="链接到3.4 两层错误检查为什么都要有">#</a></h3>
+<p>三尖括号启动表达式不返回 cudaError_t。紧接着调用 cudaGetLastError，可以检查当时的错误状态，例如无效启动配置。它也可能报告先前异步操作留下的错误，因此诊断时需要知道前面的错误是否已经处理。</p>
+<p>这一步成功不等于 kernel 已经成功执行，甚至不等于已经开始执行。运行时越界等问题可能稍后暴露，所以后面的同步调用同样检查返回值：</p>
+<table>
+<thead>
+<tr>
+<th>检查点</th>
+<th>本例采用的操作</th>
+<th>能确认什么</th>
+<th>仍不能保证什么</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>提交之后</td>
+<td><code>cudaGetLastError()</code></td>
+<td>当时的 CUDA 错误状态，例如无效启动配置</td>
+<td>kernel 已经完成，或计算结果正确</td>
+</tr>
+<tr>
+<td>等待设备工作</td>
+<td><code>cudaDeviceSynchronize()</code> 并检查返回值</td>
+<td>相关先前工作完成，执行期错误有机会在这里报告</td>
+<td>数学索引和算法正确</td>
+</tr>
+<tr>
+<td>结果可读之后</td>
+<td>D2H 并与 CPU reference 比较</td>
+<td>所测输入满足声明的数值合同</td>
+<td>所有未测试形状和并发场景都正确</td>
+</tr>
+</tbody></table>
+<p>数值比较是第三种不同检查。API 不报错不能证明数学索引和逻辑正确。例如把 a[i]+b[i] 写成 a[i]+a[i]，可能合法地访问内存，却算出错误结果。</p>
+<p>异常路径尝试释放已分配数组，并保留原始错误；正常路径检查释放结果。正式项目可以用资源所有权封装管理生命周期，这里保留显式操作，是为了能看见分配与释放的对应关系。</p>
+<h3 id="35-怎样编译和检查">3.5 怎样编译和检查<a class="heading-anchor" href="#35-%E6%80%8E%E6%A0%B7%E7%BC%96%E8%AF%91%E5%92%8C%E6%A3%80%E6%9F%A5" aria-label="链接到3.5 怎样编译和检查">#</a></h3>
+<p>在具有 CUDA Toolkit、支持的主机 C++ 编译器与兼容驱动的 Linux 服务器上，从仓库根目录执行：</p>
+<div class="code-panel"><div class="code-caption"><span>BASH</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-bash"><span class="code-line" data-line="1">nvcc -O2 -std=c++17 -lineinfo \</span>
+<span class="code-line" data-line="2">  roadmap/curriculum/gpu/01-gpu-hardware-map-and-generations/examples/vector_add_walkthrough.cu \</span>
+<span class="code-line" data-line="3">  -o /tmp/vector_add_walkthrough</span>
+<span class="code-line" data-line="4"></span>
+<span class="code-line" data-line="5">/tmp/vector_add_walkthrough 1</span>
+<span class="code-line" data-line="6">/tmp/vector_add_walkthrough 256</span>
+<span class="code-line" data-line="7">/tmp/vector_add_walkthrough 257</span>
+<span class="code-line" data-line="8">/tmp/vector_add_walkthrough 1000</span>
+<span class="code-line" data-line="9">compute-sanitizer --tool memcheck /tmp/vector_add_walkthrough 1000</span></code></pre></div>
+<p>Windows 的输出文件后缀与主机编译器配置不同。nvcc 的默认设备目标取决于工具版本；使用前通过 <code>nvcc --list-gpu-code</code>、设备计算能力和版本确认支持范围，必要时显式指定匹配目标的 <code>-arch</code>，不照抄固定型号的目标。</p>
+<p>示例只检查正确性与执行过程，没有实现可用于性能比较的计时器。进程启动包含上下文初始化及可能的即时编译，shell 测到的整段时间不能当成 kernel 延迟。</p>
+<h2 id="4-索引与地址把线程落到每一个元素">4. 索引与地址：把线程落到每一个元素<a class="heading-anchor" href="#4-%E7%B4%A2%E5%BC%95%E4%B8%8E%E5%9C%B0%E5%9D%80%E6%8A%8A%E7%BA%BF%E7%A8%8B%E8%90%BD%E5%88%B0%E6%AF%8F%E4%B8%80%E4%B8%AA%E5%85%83%E7%B4%A0" aria-label="链接到4. 索引与地址：把线程落到每一个元素">#</a></h2>
+<h3 id="41-一维索引不是死记的公式">4.1 一维索引不是死记的公式<a class="heading-anchor" href="#41-%E4%B8%80%E7%BB%B4%E7%B4%A2%E5%BC%95%E4%B8%8D%E6%98%AF%E6%AD%BB%E8%AE%B0%E7%9A%84%E5%85%AC%E5%BC%8F" aria-label="链接到4.1 一维索引不是死记的公式">#</a></h3>
+<p>若每个 block 负责长度为 B 的连续区间，第 p 块起点就是 p×B；块内第 t 个线程再偏移 t 个元素，所以：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">i = blockIdx.x × blockDim.x + threadIdx.x</span></code></pre></div>
+<p>它来自“块起点 + 块内偏移”，成立的前提是我们选择一线程一元素的映射。CUDA 没有规定所有 kernel 必须用这条映射，一个线程也可以循环处理多个元素。</p>
+<p>对 N=1000、B=256，需要 <code>ceil(1000/256)=4</code> 个 block：</p>
+<table>
+<thead>
+<tr>
+<th>blockIdx.x</th>
+<th>块内 threadIdx.x</th>
+<th>全局 i</th>
+<th>实际工作</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>0</td>
+<td>0–255</td>
+<td>0–255</td>
+<td>全有效</td>
+</tr>
+<tr>
+<td>1</td>
+<td>0–255</td>
+<td>256–511</td>
+<td>全有效</td>
+</tr>
+<tr>
+<td>2</td>
+<td>0–255</td>
+<td>512–767</td>
+<td>全有效</td>
+</tr>
+<tr>
+<td>3</td>
+<td>0–231</td>
+<td>768–999</td>
+<td>有效</td>
+</tr>
+<tr>
+<td>3</td>
+<td>232–255</td>
+<td>1000–1023</td>
+<td>条件不成立，不访问数组</td>
+</tr>
+</tbody></table>
+<p>第四块仍有 256 个线程，不是临时把尺寸改成 232。条件控制有效访问，不改变 grid 或 block 形状，也没有给数组增加填充元素。</p>
+<p>常见向上取整写法为 <code>(N+B-1)/B</code>。整除时不会多一块，有余数时进到下一整数。例如 1000+255=1255，整数除以 256 得 4。示例采用 <code>N/B+(N%B!=0)</code> 避免巨大 N 的加法溢出，并检查 N×sizeof(float) 是否可表示；N=0 单独拒绝，避免零大小 grid。</p>
+<p><strong>追问：不写 mask，多分配一点内存可以吗？</strong></p>
+<p>那是另一种需要明确定义填充区的合同。所有数组确实有足够合法容量，某些额外访问可能不越界，但仍须考虑无效数据是否进入计算。归约的填充值必须匹配运算；多分配本身不保证数值正确。当前例子没有这样的填充合同，必须保护访问。</p>
+<h3 id="42-二维线程块映射到-35-矩阵">4.2 二维线程块映射到 3×5 矩阵<a class="heading-anchor" href="#42-%E4%BA%8C%E7%BB%B4%E7%BA%BF%E7%A8%8B%E5%9D%97%E6%98%A0%E5%B0%84%E5%88%B0-35-%E7%9F%A9%E9%98%B5" aria-label="链接到4.2 二维线程块映射到 3×5 矩阵">#</a></h3>
+<p>设行数 M=3、列数 N=5，按 row-major（行优先）连续存储。选择 block=(4,2)，让 x 对应列、y 对应行：</p>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-function">dim3 <span class="hljs-title">block</span><span class="hljs-params">(<span class="hljs-number">4</span>, <span class="hljs-number">2</span>)</span></span>;</span>
+<span class="code-line" data-line="2"><span class="hljs-function">dim3 <span class="hljs-title">grid</span><span class="hljs-params">((N + block.x - <span class="hljs-number">1</span>) / block.x,</span></span></span>
+<span class="code-line" data-line="3"><span class="hljs-function"><span class="hljs-params">          (M + block.y - <span class="hljs-number">1</span>) / block.y)</span></span>;</span>
+<span class="code-line" data-line="4"></span>
+<span class="code-line" data-line="5"><span class="hljs-comment">// kernel 内：</span></span>
+<span class="code-line" data-line="6"><span class="hljs-type">int</span> col = blockIdx.x * blockDim.x + threadIdx.x;</span>
+<span class="code-line" data-line="7"><span class="hljs-type">int</span> row = blockIdx.y * blockDim.y + threadIdx.y;</span>
+<span class="code-line" data-line="8"><span class="hljs-keyword">if</span> (row &lt; M &amp;&amp; col &lt; N) {</span>
+<span class="code-line" data-line="9">    <span class="hljs-type">int</span> offset = row * N + col;</span>
+<span class="code-line" data-line="10">    <span class="hljs-comment">// 对 a[offset] 等合法位置进行操作</span></span>
+<span class="code-line" data-line="11">}</span></code></pre></div>
+<p>grid=(2,2)，共 4 块，每块 8 线程，总计 32 线程。但这<strong>不是一个 32 线程的 warp</strong>：warp 不跨线程块拼接，每个 8 线程块各需要一个未填满的 warp。尺寸仅用于手算，不是性能建议。</p>
+<table>
+<thead>
+<tr>
+<th>blockIdx=(x,y)</th>
+<th>覆盖行</th>
+<th>覆盖列</th>
+<th>有效元素个数</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>(0,0)</td>
+<td>0、1</td>
+<td>0、1、2、3</td>
+<td>8</td>
+</tr>
+<tr>
+<td>(1,0)</td>
+<td>0、1</td>
+<td>4、5、6、7</td>
+<td>2</td>
+</tr>
+<tr>
+<td>(0,1)</td>
+<td>2、3</td>
+<td>0、1、2、3</td>
+<td>4</td>
+</tr>
+<tr>
+<td>(1,1)</td>
+<td>2、3</td>
+<td>4、5、6、7</td>
+<td>1</td>
+</tr>
+</tbody></table>
+<p>有效个数为 8+2+4+1=15，等于 M×N。右下块不是全无效，它仍有坐标 (2,4)。边界判断必须分别检查行和列。</p>
+<p>具体算一个线程：blockIdx=(1,0)、threadIdx=(0,1)，得到 col=1×4+0=4，row=0×2+1=1，所以 offset=1×5+4=9，访问第 2 行第 5 列。另一个线程 blockIdx=(1,1)、threadIdx=(1,0) 得到 row=2、col=5，列已经越界。</p>
+<p>更容易忽视的是 row=0、col=5：线性偏移 5 在数组总长度内，却实际落到下一行开头。只检查 offset&lt;M×N 会错把非法列当成合法坐标，并可能与真正的下一行线程写同一地址。二维 mask 必须匹配二维坐标合同。</p>
+<h3 id="43-元素偏移字节偏移与-stride">4.3 元素偏移、字节偏移与 stride<a class="heading-anchor" href="#43-%E5%85%83%E7%B4%A0%E5%81%8F%E7%A7%BB%E5%AD%97%E8%8A%82%E5%81%8F%E7%A7%BB%E4%B8%8E-stride" aria-label="链接到4.3 元素偏移、字节偏移与 stride">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>行 / 列</th>
+<th>0</th>
+<th>1</th>
+<th>2</th>
+<th>3</th>
+<th>4</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>0</td>
+<td><code>a[0]</code></td>
+<td><code>a[1]</code></td>
+<td><code>a[2]</code></td>
+<td><code>a[3]</code></td>
+<td><code>a[4]</code></td>
+</tr>
+<tr>
+<td>1</td>
+<td><code>a[5]</code></td>
+<td><code>a[6]</code></td>
+<td><code>a[7]</code></td>
+<td><code>a[8]</code></td>
+<td><code>a[9]</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>a[10]</code></td>
+<td><code>a[11]</code></td>
+<td><code>a[12]</code></td>
+<td><code>a[13]</code></td>
+<td><code>a[14]</code></td>
+</tr>
+</tbody></table>
+<p>每跨一行跳过 N 个元素，所以元素偏移为 row×N+col。对 float 指针 a，表达式 a+9 已按类型规则换算成 9 个 float 的距离，不要再乘 sizeof(float) 后加到 float 指针上。</p>
+<p>假设基地址为 0x1000，float 为 4 字节，a+9 对应字节地址 0x1000+36=0x1024。它是手算假设，不是实测分配结果。若使用字节指针，才需要自己把元素偏移乘以元素大小。</p>
+<p>N 在这里既是逻辑列数，也是相邻行的元素步长，只因为布局连续。有 padding、转置视图或非连续布局时，两者可能不同，一般地址为：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">元素偏移 = row × stride_row + col × stride_col</span></code></pre></div>
+<p>stride（步长）必须声明单位。PyTorch 通常按元素计 stride；CUDA 某些 pitched allocation 接口返回的 pitch 却以字节计。把字节步长当 float 元素步长会多乘一次元素大小。shape 描述多少元素，stride 描述它们在哪里，不能合成一个概念。</p>
+<h3 id="44-地址集合不是读回的值">4.4 地址集合不是读回的值<a class="heading-anchor" href="#44-%E5%9C%B0%E5%9D%80%E9%9B%86%E5%90%88%E4%B8%8D%E6%98%AF%E8%AF%BB%E5%9B%9E%E7%9A%84%E5%80%BC" aria-label="链接到4.4 地址集合不是读回的值">#</a></h3>
+<p>MatMul LeetGPU 实现中的典型片段是：</p>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1">ptr_a = a + offset_m[:, <span class="hljs-literal">None</span>] * N + offset_n[<span class="hljs-literal">None</span>, :]</span>
+<span class="code-line" data-line="2">mask_a = (offset_m[:, <span class="hljs-literal">None</span>] &lt; M) &amp; (offset_n[<span class="hljs-literal">None</span>, :] &lt; N)</span>
+<span class="code-line" data-line="3">tile_a = tl.load(ptr_a, mask=mask_a, other=<span class="hljs-number">0.0</span>)</span></code></pre></div>
+<p>这是已保存的 Triton MatMul 平台代码片段，用于说明地址计算、mask 与读取值之间的关系。</p>
+<p>取 offset_m=[1,2]、offset_n=[3,4,5]、N=5，先算元素偏移：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">offset_m[:, None] * 5        offset_n[None, :]</span>
+<span class="code-line" data-line="2">         [ 5 ]                    [3  4  5]</span>
+<span class="code-line" data-line="3">         [10 ]</span>
+<span class="code-line" data-line="4"></span>
+<span class="code-line" data-line="5">广播相加：</span>
+<span class="code-line" data-line="6">[ 8   9  10 ]</span>
+<span class="code-line" data-line="7">[13  14  15 ]</span></code></pre></div>
+<p>再加 a 得到对应形状的指针集合，还没有读 A 的数据；tl.load 才请求值。特意让 offset_n 的第三个值为 5，是为了重现二维越界问题：这一列逻辑越界，不能因为 a+10 在整个数组内就读取。</p>
+<p>若 M=3，mask 为：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">[ true  true  false ]</span>
+<span class="code-line" data-line="2">[ true  true  false ]</span></code></pre></div>
+<p>other=0.0 给无效位置提供零值，适合矩阵乘法的归约填充。mask 按 tile 位置控制访问，不把整个 tile 变小。tl.store 同样如此：输出指针给出候选位置，输出 mask 决定真正写入哪些位置。</p>
+<p>若算法是 C=A@B，累加器从零开始，最后覆盖 C，不需要读旧 C；若变成 C=alpha×(A@B)+beta×C 且 beta 非零，才需要定义和读取旧 C 的贡献。读不读输出由数学合同决定，不是“每个指针都先 load 一遍”。</p>
+<h3 id="45-一线程可以处理多个元素">4.5 一线程可以处理多个元素<a class="heading-anchor" href="#45-%E4%B8%80%E7%BA%BF%E7%A8%8B%E5%8F%AF%E4%BB%A5%E5%A4%84%E7%90%86%E5%A4%9A%E4%B8%AA%E5%85%83%E7%B4%A0" aria-label="链接到4.5 一线程可以处理多个元素">#</a></h3>
+<p>常见的 grid-stride loop（网格步长循环）让线程从初始索引出发，每轮跨过整个 grid 的线程总数：</p>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1">std::<span class="hljs-type">size_t</span> start =</span>
+<span class="code-line" data-line="2">    <span class="hljs-keyword">static_cast</span>&lt;std::<span class="hljs-type">size_t</span>&gt;(blockIdx.x) * blockDim.x + threadIdx.x;</span>
+<span class="code-line" data-line="3">std::<span class="hljs-type">size_t</span> step =</span>
+<span class="code-line" data-line="4">    <span class="hljs-keyword">static_cast</span>&lt;std::<span class="hljs-type">size_t</span>&gt;(gridDim.x) * blockDim.x;</span>
+<span class="code-line" data-line="5"><span class="hljs-keyword">for</span> (std::<span class="hljs-type">size_t</span> i = start; i &lt; n; i += step) {</span>
+<span class="code-line" data-line="6">    c[i] = a[i] + b[i];</span>
+<span class="code-line" data-line="7">}</span></code></pre></div>
+<p>若 2 个 block、每块 256 线程，步长为 512。全局线程 0 处理 0、512；线程 487 处理 487、999；线程 488 只处理 488，因为下一次到 1000 已越界。512 个逻辑线程同样覆盖 1000 个元素。片段假设 n 与步长处于不会使索引溢出的可用范围。</p>
+<p>数组长度、每块数据覆盖量、逻辑线程总数、物理执行单元数量是四个不同的量。优化不断改变它们的对应关系，但正确性始终要求：有效输出被处理，输入访问合法，不发生遗漏或不受控制的写入冲突。</p>
+<h2 id="5-架构芯片产品与软件版本">5. 架构、芯片、产品与软件版本<a class="heading-anchor" href="#5-%E6%9E%B6%E6%9E%84%E8%8A%AF%E7%89%87%E4%BA%A7%E5%93%81%E4%B8%8E%E8%BD%AF%E4%BB%B6%E7%89%88%E6%9C%AC" aria-label="链接到5. 架构、芯片、产品与软件版本">#</a></h2>
+<h3 id="51-为什么一张-gpu-的名字不够用">5.1 为什么一张 GPU 的名字不够用<a class="heading-anchor" href="#51-%E4%B8%BA%E4%BB%80%E4%B9%88%E4%B8%80%E5%BC%A0-gpu-%E7%9A%84%E5%90%8D%E5%AD%97%E4%B8%8D%E5%A4%9F%E7%94%A8" aria-label="链接到5.1 为什么一张 GPU 的名字不够用">#</a></h3>
+<p>“这是 Ampere GPU”给出架构家族，不给出完整资源预算。某个产品型号也不代替计算能力与运行环境。讨论性能和兼容性，要分开五个问题：</p>
+<table>
+<thead>
+<tr>
+<th>层次</th>
+<th>回答的问题</th>
+<th>不能直接推断</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>架构家族</td>
+<td>属于哪一代设计与能力范围？</td>
+<td>同家族资源完全相同</td>
+</tr>
+<tr>
+<td>芯片设计</td>
+<td>采用哪颗芯片及组织？</td>
+<td>产品启用全部资源</td>
+</tr>
+<tr>
+<td>产品型号</td>
+<td>系统枚举或购买的设备是什么？</td>
+<td>所有任务的性能排序</td>
+</tr>
+<tr>
+<td>CC：Compute Capability，计算能力</td>
+<td>支持哪些 CUDA 硬件能力与限制？</td>
+<td>CC 大就一定更快</td>
+</tr>
+<tr>
+<td>软件版本</td>
+<td>编译器、运行时、驱动、库是什么？</td>
+<td>更新软件能增加硬件单元</td>
+</tr>
+</tbody></table>
+<p>同属 Ampere 的 CC 8.0 与 8.6，官方调优指南分别列出不同的最大驻留 warp、共享内存容量和普通 FP32 吞吐特征。这说明“家族相同仍需分支”，不是把某个分支当默认设备。后续资源计算必须读实际属性并核对架构限制。</p>
+<p>昇腾经验中“先确认硬件与编译目标，再讨论资源预算”的习惯可以迁移，但不要建立“一个 AI Core 等于一个 SM”的硬对应。软件职责、同步范围与存储管理方式不同，类比帮助提出问题，不能替代 CUDA 定义。</p>
+<h3 id="52-代际不是一条无分支的产品升级链">5.2 代际不是一条无分支的产品升级链<a class="heading-anchor" href="#52-%E4%BB%A3%E9%99%85%E4%B8%8D%E6%98%AF%E4%B8%80%E6%9D%A1%E6%97%A0%E5%88%86%E6%94%AF%E7%9A%84%E4%BA%A7%E5%93%81%E5%8D%87%E7%BA%A7%E9%93%BE" aria-label="链接到5.2 代际不是一条无分支的产品升级链">#</a></h3>
+<p>下面建立能力地图，不列型号性能，也不意味着后来的家族在全部指标上替代先前产品：</p>
+<table>
+<thead>
+<tr>
+<th>架构阶段</th>
+<th>后续课程涉及的变化</th>
+<th>第一章需要记住的边界</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Fermi、Kepler、Maxwell、Pascal</td>
+<td>通用计算、存储与执行组织持续演进</td>
+<td>用于理解历史代码；当前工具是否仍支持要另查</td>
+</tr>
+<tr>
+<td>Volta</td>
+<td>Tensor Core 与独立线程调度成为重要背景</td>
+<td>旧的隐式 warp 同步假设不能机械沿用</td>
+</tr>
+<tr>
+<td>Turing</td>
+<td>在相关产品方向扩展矩阵与执行能力</td>
+<td>产品方向与数据格式需具体查</td>
+</tr>
+<tr>
+<td>Ampere</td>
+<td>异步 global-to-shared 搬运、矩阵数值模式发展</td>
+<td>8.0、8.6 等分支不能套同一资源预算</td>
+</tr>
+<tr>
+<td>Ada</td>
+<td>面向其产品方向演进计算、缓存与矩阵能力</td>
+<td>不默认获得 Hopper 全部接口</td>
+</tr>
+<tr>
+<td>Hopper</td>
+<td>线程块集群、TMA 等改变协作与搬运</td>
+<td>新机制需要对应硬件与同步协议</td>
+</tr>
+<tr>
+<td>Blackwell</td>
+<td>矩阵计算、低精度和执行/数据组织继续演进</td>
+<td>存在不同计算能力分支，按具体目标核查</td>
+</tr>
+</tbody></table>
+<p>TMA（Tensor Memory Accelerator，张量内存加速器）这里只作代际示例：它组织张量数据搬运，不是执行矩阵乘法的 Tensor Core。描述符、传输完成与消费之间的同步，留到后续完整章节。</p>
+<p>尤其不要把 Ada 与 Hopper 写成“先 Ada，再把全部部件换成 Hopper”的单线关系。它们服务不同产品方向；相近时期的架构可以在缓存、矩阵指令、互联与协作机制上有不同取舍。判断某项能力能否使用，要查目标设备、CC、API/指令与编译目标，而不是比较架构名出现的先后。</p>
+<p>查证入口：<a href="https://docs.nvidia.com/cuda/ampere-tuning-guide/index.html">Ampere 调优指南</a>、<a href="https://docs.nvidia.com/cuda/ada-tuning-guide/index.html">Ada 调优指南</a>、<a href="https://docs.nvidia.com/cuda/hopper-tuning-guide/index.html">Hopper 调优指南</a>、<a href="https://developer.nvidia.com/cuda-gpus">计算能力表</a>。本表建立方向，不代替硬件规格。</p>
+<h3 id="53-从-cuda-源码到设备执行中间有哪些软件">5.3 从 CUDA 源码到设备执行，中间有哪些软件<a class="heading-anchor" href="#53-%E4%BB%8E-cuda-%E6%BA%90%E7%A0%81%E5%88%B0%E8%AE%BE%E5%A4%87%E6%89%A7%E8%A1%8C%E4%B8%AD%E9%97%B4%E6%9C%89%E5%93%AA%E4%BA%9B%E8%BD%AF%E4%BB%B6" aria-label="链接到5.3 从 CUDA 源码到设备执行，中间有哪些软件">#</a></h3>
+<p>CUDA Toolkit 包含开发所需头文件、库与工具，nvcc 是其中的编译驱动，主机 C++ 部分还需要主机编译器。NVIDIA 驱动提供设备访问与运行支持，它与 Toolkit 不是同一个软件包，也不是同一个版本号。</p>
+<p>CUDA Runtime API（运行时应用程序编程接口）提供 cudaMalloc、cudaMemcpy 等接口，建立在较低层的 CUDA Driver API（驱动应用程序编程接口）之上。采用 Runtime API 并不绕过驱动，而是使用更高层的管理接口。</p>
+<p>设备代码可经过 PTX（Parallel Thread Execution，并行线程执行虚拟指令集），再编译成目标 GPU 机器代码。PTX 不是硬件直接执行的最终指令。GPU 二进制通常称 cubin（CUDA binary）；fatbin（fat binary，胖二进制容器）可容纳多个目标的 cubin 与 PTX。</p>
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>输入与处理</th>
+<th>产物或动作</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>主机编译</td>
+<td>主机 C++ 编译器处理 host 部分</td>
+<td>CPU 机器代码</td>
+</tr>
+<tr>
+<td>设备编译</td>
+<td>设备工具链处理 kernel，可经过 PTX 等中间表示</td>
+<td>目标 GPU 的 cubin，也可保留 PTX 供运行时编译</td>
+</tr>
+<tr>
+<td>打包与链接</td>
+<td>将 host 代码和包含设备目标的 fatbin 组织进程序</td>
+<td>可执行程序或库</td>
+</tr>
+<tr>
+<td>运行时加载</td>
+<td>根据目标设备和驱动能力选择兼容 cubin，必要时 JIT 编译 PTX</td>
+<td>可供该设备执行的机器代码</td>
+</tr>
+<tr>
+<td>设备执行</td>
+<td>host 提交 kernel，设备按执行配置安排线程块</td>
+<td>GPU 执行加载后的代码，而不是直接解释 PTX 文本</td>
+</tr>
+</tbody></table>
+<p>JIT（Just-In-Time compilation，即时编译）是在运行时完成编译。驱动可以编译程序内 PTX 并缓存结果，第一次运行可能含编译开销，后续则命中缓存。不能拿首次运行总时间比较已预热的库 kernel 时间。</p>
+<p>PTX 还有两个容易混淆的“版本”：语言有自己的 ISA（Instruction Set Architecture，指令集架构）版本，设备目标用 compute_XX 等形式表达能力要求。GPU 足够新，不代表旧驱动一定能解析新工具生成的 PTX 语言版本。</p>
+<h3 id="54-能运行与按目标优化不是同一个结论">5.4 “能运行”与“按目标优化”不是同一个结论<a class="heading-anchor" href="#54-%E8%83%BD%E8%BF%90%E8%A1%8C%E4%B8%8E%E6%8C%89%E7%9B%AE%E6%A0%87%E4%BC%98%E5%8C%96%E4%B8%8D%E6%98%AF%E5%90%8C%E4%B8%80%E4%B8%AA%E7%BB%93%E8%AE%BA" aria-label="链接到5.4 “能运行”与“按目标优化”不是同一个结论">#</a></h3>
+<p>手册 §1.3.4 解释普通目标的二进制兼容方向。例如面向 sm_86 的 cubin 可用于相应兼容的 8.6、8.9 设备，但不能直接当作 8.0 或 9.0 的机器代码。兼容不对称，也不能跨主版本简单推断。</p>
+<p>若程序携带合适 PTX，驱动支持其版本、设备满足其特性要求，就可能通过 JIT 在其他受支持目标运行。架构专用 a 目标与 family-specific f 目标还有更具体的兼容规则，不能拿普通目标的概括覆盖它们，实际部署须查对应指南。</p>
+<p>即使旧代码能运行，也不等于自动用上新架构全部能力。没有表达合适的张量搬运或矩阵计算的程序，不会仅因换卡就必然成为精心设计的新流水线。编译器能优化，但能否生成目标指令、生成后是否更快，还需看代码、编译结果与实测。</p>
+<p>“库支持某卡”与“编译的程序携带兼容代码”也是两个问题。分清层次，才能定位 no kernel image、不支持 PTX 版本或不支持编译目标，而不是统一归因于“CUDA 版本不对”。</p>
+<h3 id="55-在服务器上分别查询什么">5.5 在服务器上分别查询什么<a class="heading-anchor" href="#55-%E5%9C%A8%E6%9C%8D%E5%8A%A1%E5%99%A8%E4%B8%8A%E5%88%86%E5%88%AB%E6%9F%A5%E8%AF%A2%E4%BB%80%E4%B9%88" aria-label="链接到5.5 在服务器上分别查询什么">#</a></h3>
+<div class="code-panel"><div class="code-caption"><span>BASH</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-bash"><span class="code-line" data-line="1">nvidia-smi</span>
+<span class="code-line" data-line="2">nvcc --version</span>
+<span class="code-line" data-line="3">nvcc --list-gpu-code</span></code></pre></div>
+<p>nvidia-smi 帮助确认设备、驱动与运行状态，其中 CUDA Version 表示驱动支持相关 CUDA 能力的版本信息，不证明已安装同版本 Toolkit；nvcc --version 才确认当前调用的编译工具。多个 Toolkit 可以共存，命令搜索路径决定实际调用哪一个。</p>
+<p>程序内 cudaGetDeviceProperties 可查询 major、minor、multiProcessorCount、maxThreadsPerBlock 等属性。CC 常写 major.minor，SM 数量与每块线程上限则是不同属性，不能互相替代。</p>
+<p>使用 PyTorch、Triton 或预编译库时，还须记录版本与构建信息。框架携带的运行库版本不一定等于系统 nvcc 版本。把硬件、驱动、Toolkit、框架分栏记录，比一句“环境是 CUDA 13”更有诊断价值。</p>
+<h2 id="6-概念辨析与常见问题">6. 概念辨析与常见问题<a class="heading-anchor" href="#6-%E6%A6%82%E5%BF%B5%E8%BE%A8%E6%9E%90%E4%B8%8E%E5%B8%B8%E8%A7%81%E9%97%AE%E9%A2%98" aria-label="链接到6. 概念辨析与常见问题">#</a></h2>
+<p>下面的问答把本章概念放回已有 CUDA、Triton Vector Add 和 MatMul 代码中，重点是区分逻辑组织、地址计算与硬件执行。</p>
+<table>
+<thead>
+<tr>
+<th>常见问题</th>
+<th>核心辨析</th>
+<th>代码案例</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>CTA 是什么，怎样体现在 Triton？</td>
+<td>CTA 通常指线程块；program 与 tile 要区分</td>
+<td>Vector Add 的 <code>program_id</code> 与 CUDA 的 block</td>
+</tr>
+<tr>
+<td><code>ptr_a</code> 是地址合集吗？</td>
+<td>指针集合与读取值不同；元素偏移不是字节偏移</td>
+<td>MatMul 的 <code>ptr_a</code>、<code>mask_a</code> 与 <code>tl.load</code></td>
+</tr>
+<tr>
+<td>边界位置怎样处理？</td>
+<td>按 tile 位置控制访问，不改变逻辑形状</td>
+<td>Vector Add 的 <code>i &lt; n</code> 与 MatMul 的二维 mask</td>
+</tr>
+<tr>
+<td>不同 thread 会重复读一行吗？</td>
+<td>广播表达式不能直接说明物理分工</td>
+<td>tile 地址、缓存、共享内存和最终指令</td>
+</tr>
+<tr>
+<td>有 <code>ptr_c</code> 就要先 load 吗？</td>
+<td>覆盖输出与读取旧输出由数学合同决定</td>
+<td><code>C=A@B</code> 与带非零 <code>beta</code> 的更新</td>
+</tr>
+</tbody></table>
+<p>本章 CUDA 示例用于解释执行过程，Triton 片段用于对照地址与 tile；两者的源码路径和适用范围分别标明。</p>
+<h3 id="leetgpu正确性与代码归档">LeetGPU：正确性与代码归档<a class="heading-anchor" href="#leetgpu%E6%AD%A3%E7%A1%AE%E6%80%A7%E4%B8%8E%E4%BB%A3%E7%A0%81%E5%BD%92%E6%A1%A3" aria-label="链接到LeetGPU：正确性与代码归档">#</a></h3>
+<p>题面入口：<a href="https://leetgpu.com/challenges/vector-addition">Vector Addition</a>、<a href="https://leetgpu.com/challenges/matrix-multiplication">Matrix Multiplication</a>。MatMul 平台源码保存在 matmul_leetgpu.py；Vector Add 的本地案例保存在 vector_add.py。平台题目中的 <code>solve</code>/kernel 与本地 wrapper 应分别保存，不能互相替代。</p>
+<p>本章 <code>vector_add_walkthrough.cu</code> 是独立 CUDA 教学案例，没有平台题目的 <code>solve</code> 接口。阅读时把它与 Triton 的 program、tile、mask 对照，不需要把两个接口混为一谈。</p>
+<h3 id="服务器真实性能">服务器：真实性能<a class="heading-anchor" href="#%E6%9C%8D%E5%8A%A1%E5%99%A8%E7%9C%9F%E5%AE%9E%E6%80%A7%E8%83%BD" aria-label="链接到服务器：真实性能">#</a></h3>
+<p>在具备 CUDA Toolkit、兼容主机编译器、驱动和 NVIDIA GPU 的服务器上，运行前文命令，记录设备、计算能力、工具版本和实际输出。该命令用于观察执行路径并检查结果；若要测量性能，应另行设计预热、计时、输入规模和报告指标。</p>
+<p>遇到错误时保留原始错误信息，分别检查编译、启动、执行期同步和数值比较。比较性能时固定输入形状、精度、计时范围和设备；某张卡上的结果不能直接推广为通用硬件结论。</p>
+<h2 id="7-面试追问把机制组成完整回答">7. 面试追问：把机制组成完整回答<a class="heading-anchor" href="#7-%E9%9D%A2%E8%AF%95%E8%BF%BD%E9%97%AE%E6%8A%8A%E6%9C%BA%E5%88%B6%E7%BB%84%E6%88%90%E5%AE%8C%E6%95%B4%E5%9B%9E%E7%AD%94" aria-label="链接到7. 面试追问：把机制组成完整回答">#</a></h2>
+<h3 id="从-npu-经验迁移保留分析方法不照搬执行单位">从 NPU 经验迁移：保留分析方法，不照搬执行单位<a class="heading-anchor" href="#%E4%BB%8E-npu-%E7%BB%8F%E9%AA%8C%E8%BF%81%E7%A7%BB%E4%BF%9D%E7%95%99%E5%88%86%E6%9E%90%E6%96%B9%E6%B3%95%E4%B8%8D%E7%85%A7%E6%90%AC%E6%89%A7%E8%A1%8C%E5%8D%95%E4%BD%8D" aria-label="链接到从 NPU 经验迁移：保留分析方法，不照搬执行单位">#</a></h3>
+<p>已有算子经验最值得保留的是分析顺序：先确定数据依赖与工作划分，再预算片上资源，组织搬运与计算，最后验证吞吐。换到 GPU 后，这个顺序仍然成立，但每一步要回答新的硬件问题。</p>
+<table>
+<thead>
+<tr>
+<th>已有分析问题</th>
+<th>在 CUDA 中继续追问</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>一个计算块负责哪些输出？</td>
+<td>输出tile如何分到thread、warp和CTA，grid是否有足够任务？</td>
+</tr>
+<tr>
+<td>输入搬入片上后复用多少次？</td>
+<td>哪些值留在寄存器，哪些放shared，哪些请求依靠L1/L2缓存？</td>
+</tr>
+<tr>
+<td>搬运能否覆盖计算等待？</td>
+<td>是主机侧stream重叠，还是kernel内异步copy？哪一个完成事件允许消费和复用buffer？</td>
+</tr>
+<tr>
+<td>扩大tile是否能提高复用？</td>
+<td>累加器和共享内存是否使驻留减少？lane到地址的映射是否仍有效？</td>
+</tr>
+<tr>
+<td>增加计算核心能否提高并行？</td>
+<td>block是否足够多，尾波次是否过短，实际eligible warp是否足够？</td>
+</tr>
+</tbody></table>
+<p>NPU上熟悉的“显式搬运后复用”可以帮助理解shared staging，但不能推断每次global load都会访问显存，因为GPU缓存可能已服务该请求。Vector/Cube的职责类比也不能变成CUDA Core/Tensor Core的一一等价：指令粒度、线程协作方式、可见存储和同步协议都要重新查证。</p>
+<aside class="callout callout-important" aria-label="迁移的是优化推理，不是硬件名称"><div class="callout-title">迁移的是优化推理，不是硬件名称</div><div class="callout-body"><p><strong>Tiling、复用、流水线与资源预算的思路可以迁移；执行单位、地址映射与同步协议必须以CUDA为准。</strong> 新平台上的结果仍须由目标设备的编译产物与测量支持。</p>
+</div></aside><p><strong>一个 SM 有很多 CUDA Core，启动同样多线程就能跑满吗？</strong></p>
+<p>不能。线程数是软件组织，算术单元数是某类物理资源。线程受 block 组织、资源需求、指令类型、依赖和访存等待约束。先说明没有永久一一对应，再定义“跑满”是在看哪条管线、哪种指令和什么指标，而不是给出核心数相等公式。</p>
+<p><strong>为什么同一个 kernel 可在 SM 数量不同的设备上运行？</strong></p>
+<p>程序把工作分为可独立调度的线程块，运行时安排到可用 SM。更多 SM 可承接更多工作，不改变索引的定义。前提是设备支持相应功能且单块资源可启动；单块需求超限时，即使算法可分块，也可能启动失败。</p>
+<p><strong>同一 block 在一个 SM 上，是不是同时执行？</strong></p>
+<p>“同一 SM”与“同一时刻执行同一条机器指令”不同。一个 block 有多个 warp，SM 还可能驻留多个块，实际发射受就绪工作与管线资源约束。块内协作通过规定的同步机制正确进行，不依赖所有线程恰好齐步完成。</p>
+<p><strong>为什么 3×5 例子共 32 个线程，却不是一个 warp？</strong></p>
+<p>它们分在 4 个 block，每块 8 线程。warp 不跨块拼接，因此是 4 个部分有效 warp，不是一个跨块 warp。这是软件分组影响硬件利用的直接例子。</p>
+<p><strong>把 CPU 指针传给 kernel，会自动复制吗？</strong></p>
+<p>不会。启动传参数值，不自动搬运任意指向数组。设备能否合法访问取决于分配、映射/统一内存与系统能力。本例显式 device allocation 与 H2D，不把特定统一内存系统的现象推广到所有主机数组。</p>
+<p><strong>更新 Toolkit 能让旧 GPU 使用新硬件指令吗？</strong></p>
+<p>更新软件不会创造硬件单元。工具可能增加支持、改进代码生成，也可能移除旧目标。回答须区分工具支持、驱动兼容、设备能力和程序二进制覆盖。</p>
+<p><strong>cudaGetLastError 成功，为什么后面还报错？</strong></p>
+<p>启动异步，检查当时错误状态不代表设备工作完成。执行期间错误可在后续同步或 API 返回。此外还须数值比较：运行时不报错不代表算法正确。</p>
+<p><strong>怎样证明理解了地址 tile，而不是只背语法？</strong></p>
+<p>手算具体行列索引广播后的元素偏移、每个位置的 mask 与合法地址，再说明指针和值不同。随后指出这仍是逻辑层：每线程实际访问哪些位置要检查编译布局与指令，而不是从广播语法猜硬件。</p>
+<h2 id="知识总结与延伸阅读">知识总结与延伸阅读<a class="heading-anchor" href="#%E7%9F%A5%E8%AF%86%E6%80%BB%E7%BB%93%E4%B8%8E%E5%BB%B6%E4%BC%B8%E9%98%85%E8%AF%BB" aria-label="链接到知识总结与延伸阅读">#</a></h2>
+<p>主要依据本地手册 §1.1、§1.2、§1.3、§2.1。在线入口：<a href="https://docs.nvidia.com/cuda/cuda-programming-guide/01-introduction/introduction.html">Introduction</a>、<a href="https://docs.nvidia.com/cuda/cuda-programming-guide/01-introduction/programming-model.html">Programming Model</a>、<a href="https://docs.nvidia.com/cuda/cuda-programming-guide/01-introduction/cuda-platform.html">The CUDA platform</a>。API 同步边界另见正文 Runtime API 参考。</p>
+<p>读完本章后，应能区分 CPU 与 GPU 的角色、grid/block/thread 与 SM 的层次、逻辑 tile 与物理执行、元素步长与字节步长，以及 Toolkit、驱动、计算能力和目标代码之间的关系。后续学习可以从 CUDA Programming Guide 的 Programming Model、CUDA C++ Memory Model 和对应架构调优指南继续深入。</p>
+<h2 id="参考阅读">参考阅读<a class="heading-anchor" href="#%E5%8F%82%E8%80%83%E9%98%85%E8%AF%BB" aria-label="链接到参考阅读">#</a></h2>
+<p><a href="../../../../../../../../../downloads/cuda-programming-guide.pdf">CUDA Programming Guide 13.3</a>。</p>
+<h2 id="章节导航">章节导航<a class="heading-anchor" href="#%E7%AB%A0%E8%8A%82%E5%AF%BC%E8%88%AA" aria-label="链接到章节导航">#</a></h2>
+<p><a href="../README.html">返回第一篇</a> · <a href="https://docs.nvidia.com/cuda/cuda-programming-guide/index.html">CUDA Programming Guide</a> · <a href="https://docs.nvidia.com/cuda/cuda-programming-guide/01-introduction/programming-model.html">CUDA C++ Programming Guide: Programming Model</a></p>
+</div></main><script src="../../../../../reader.js"></script></body></html>

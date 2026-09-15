@@ -1,0 +1,82 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GEMM 初步完成 + 仓库重组 — 2026-06-22 ~ 2026-06-25 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · weekly/2026-06-25-gemm-done.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E5%81%9A%E4%BA%86%E4%BB%80%E4%B9%88">做了什么</a></li><li><a href="#%E7%AE%97%E5%AD%90%E7%BA%BF">算子线</a></li><li><a href="#%E4%BB%93%E5%BA%93%E9%87%8D%E7%BB%842026-06-24--2026-06-25">仓库重组（2026-06-24  2026-06-25）</a></li><li><a href="#%E7%90%86%E8%AE%BA%E7%BA%BF%E5%90%AF%E5%8A%A8">理论线启动</a></li><li><a href="#%E5%85%B3%E9%94%AE%E6%95%B0%E6%8D%AE">关键数据</a></li><li><a href="#%E5%8D%A1%E7%82%B9--%E6%80%8E%E4%B9%88%E8%A7%A3%E5%86%B3%E7%9A%84">卡点 / 怎么解决的</a></li><li><a href="#%E9%9D%A2%E8%AF%95%E5%8F%AF%E7%94%A8%E7%82%B9">面试可用点</a></li><li><a href="#%E4%B8%8B%E4%B8%80%E6%AD%A5">下一步</a></li></ol></nav><div class="markdown-body"><h1 id="gemm-初步完成--仓库重组--2026-06-22--2026-06-25">GEMM 初步完成 + 仓库重组 — 2026-06-22 ~ 2026-06-25<a class="heading-anchor" href="#gemm-%E5%88%9D%E6%AD%A5%E5%AE%8C%E6%88%90--%E4%BB%93%E5%BA%93%E9%87%8D%E7%BB%84--2026-06-22--2026-06-25" aria-label="链接到GEMM 初步完成 + 仓库重组 — 2026-06-22  2026-06-25">#</a></h1>
+<blockquote><p>算子线 A2/A3 · 理论线启动 · 仓库从周教程升级为知识地图</p>
+</blockquote><h2 id="做了什么">做了什么<a class="heading-anchor" href="#%E5%81%9A%E4%BA%86%E4%BB%80%E4%B9%88" aria-label="链接到做了什么">#</a></h2>
+<h3 id="算子线">算子线<a class="heading-anchor" href="#%E7%AE%97%E5%AD%90%E7%BA%BF" aria-label="链接到算子线">#</a></h3>
+<ul>
+<li><strong>GEMM float naive</strong>（A2）：LeetGPU <code>2_matrix_multiplication</code> 跑通（2026-06-16），2D grid 16×16</li>
+<li><strong>GEMM fp16 naive</strong>（A2+）：LeetGPU <code>22_gemm</code> fp16 跑通（2026-06-22），alpha/beta BLAS 形式</li>
+<li><strong>GEMM fp16 tiled</strong>（A3+）：LeetGPU 跑通（2026-06-22），TILE=32 shared memory，双 <code>__syncthreads</code></li>
+<li>仓库里的参考代码整理进 <code>reference/cuda/</code>，自己写的整理进 <code>solutions/cuda/</code></li>
+</ul>
+<h3 id="仓库重组2026-06-24--2026-06-25">仓库重组（2026-06-24 ~ 2026-06-25）<a class="heading-anchor" href="#%E4%BB%93%E5%BA%93%E9%87%8D%E7%BB%842026-06-24--2026-06-25" aria-label="链接到仓库重组（2026-06-24  2026-06-25）">#</a></h3>
+<ul>
+<li>从&quot;固定周教程&quot;改成<strong>拉模式</strong>：PATH.md（知识地图 + 进度）+ NOW.md（当前焦点驾驶舱）</li>
+<li>两条平行路径：算子线（动手写代码）+ 理论线（学算法/理论，6 子类）</li>
+<li>6 节主题课（lessons/）、8 条理论笔记（notes/algorithms/）、6 篇论文深度精读（papers/）</li>
+<li>Agent 从&quot;教练&quot;改为&quot;轻专家&quot;</li>
+<li>未来阶段统一收进 roadmap/</li>
+</ul>
+<h3 id="理论线启动">理论线启动<a class="heading-anchor" href="#%E7%90%86%E8%AE%BA%E7%BA%BF%E5%90%AF%E5%8A%A8" aria-label="链接到理论线启动">#</a></h3>
+<ul>
+<li>学完 online softmax + parallel reduce（给 Softmax 铺路）</li>
+<li>写了 INT8/FP8 量化基础、MoE 推理、Speculative Decoding、PD 分离、MLA 等笔记</li>
+</ul>
+<h2 id="关键数据">关键数据<a class="heading-anchor" href="#%E5%85%B3%E9%94%AE%E6%95%B0%E6%8D%AE" aria-label="链接到关键数据">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>算子</th>
+<th>平台</th>
+<th align="center">状态</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>GEMM float naive</td>
+<td>LeetGPU</td>
+<td align="center">✅</td>
+<td>2026-06-16，2D grid</td>
+</tr>
+<tr>
+<td>GEMM fp16 naive</td>
+<td>LeetGPU <code>22_gemm</code></td>
+<td align="center">✅</td>
+<td>2026-06-22，alpha/beta</td>
+</tr>
+<tr>
+<td>GEMM fp16 tiled</td>
+<td>LeetGPU <code>22_gemm</code></td>
+<td align="center">✅</td>
+<td>2026-06-22，TILE=32</td>
+</tr>
+<tr>
+<td>加速比验证</td>
+<td>—</td>
+<td align="center">⚠️</td>
+<td>LeetGPU K=16 太小，待 4090 大 K 测</td>
+</tr>
+</tbody></table>
+<h2 id="卡点--怎么解决的">卡点 / 怎么解决的<a class="heading-anchor" href="#%E5%8D%A1%E7%82%B9--%E6%80%8E%E4%B9%88%E8%A7%A3%E5%86%B3%E7%9A%84" aria-label="链接到卡点 / 怎么解决的">#</a></h2>
+<ol>
+<li><p><strong>LeetGPU GEMM fp16 tiled K=16</strong>：K 维太小（只有16），shared memory tiling 的加速比无法体现——naive 和 tiled 的 GFLOPS 几乎一样，因为 K=16 时 naive 的复用率已经够高了。需要本地 4090 上跑大 K（如 1024+）才能看到显著加速。<strong>解法</strong>：正确性验证通过即可，性能测试标记为待做。</p>
+</li>
+<li><p><strong>仓库混乱</strong>：两套计划（README + MAIN）打架、参考代码和我的代码混在一起、进度散在五处。<strong>解法</strong>：彻底重组——PATH 唯一进度源，NOW 当前焦点，reference/solutions 分离，roadmap 收未来阶段。</p>
+</li>
+<li><p><strong>理论线是空的</strong>：notes/algorithms/ 只有一个 README。<strong>解法</strong>：4 条基础笔记（online softmax / parallel reduce / flash attention 机制 / 量化基础）+ 4 条高阶笔记（MoE / SpecDecode / PD分离 / MLA）。</p>
+</li>
+</ol>
+<h2 id="面试可用点">面试可用点<a class="heading-anchor" href="#%E9%9D%A2%E8%AF%95%E5%8F%AF%E7%94%A8%E7%82%B9" aria-label="链接到面试可用点">#</a></h2>
+<ul>
+<li>GEMM naive → tiled 的优化路径（算术强度 0.25 → TILE/2，10× 提速）</li>
+<li>shared memory tiling 的 Ascend 类比（L1 Buffer 完全同构）</li>
+<li>GQA 理解（LLaMA 2 70B G=8，KV cache 节省 87.5%）</li>
+<li>Flash Attention 面试必考题全备（tiling + online softmax + recomputation）</li>
+<li>PagedAttention / vLLM / continuous batching 原理能讲</li>
+</ul>
+<h2 id="下一步">下一步<a class="heading-anchor" href="#%E4%B8%8B%E4%B8%80%E6%AD%A5" aria-label="链接到下一步">#</a></h2>
+<ul>
+<li>算子线：A4 Softmax（naive → online → warp reduce）</li>
+<li>理论线：读完 GQA → MLA 论文</li>
+<li>待做：4090 本地跑 tiled GEMM 大 K 验证加速比</li>
+</ul>
+</div></main><script src="../../reader.js"></script></body></html>

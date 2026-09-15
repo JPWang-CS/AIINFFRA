@@ -1,0 +1,289 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Warp 调度与同步 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · notes/cuda/warp-and-sync.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#1-%E4%BB%80%E4%B9%88%E6%98%AF-warp">1. 什么是 Warp</a></li><li><a href="#warp-scheduler-%E7%9A%84%E7%89%A9%E7%90%86%E5%9B%BE%E6%99%AF">Warp Scheduler 的物理图景</a></li><li><a href="#2-warp-divergence--%E9%9D%A2%E8%AF%95-%E9%AB%98%E9%A2%91%E9%A2%98">2. Warp Divergence — [面试] 高频题</a></li><li><a href="#21-%E9%97%AE%E9%A2%98">2.1 问题</a></li><li><a href="#22-%E5%93%AA%E4%BA%9B%E6%83%85%E5%86%B5%E4%BC%9A%E5%AF%BC%E8%87%B4-divergence">2.2 哪些情况会导致 divergence</a></li><li><a href="#23-%E5%88%A4%E6%96%AD%E6%96%B9%E6%B3%95">2.3 判断方法</a></li><li><a href="#3-syncthreads--block-%E7%BA%A7%E5%90%8C%E6%AD%A5">3. syncthreads() — Block 级同步</a></li><li><a href="#31-%E8%AF%AD%E4%B9%89">3.1 语义</a></li><li><a href="#32-%E8%87%B4%E5%91%BD%E9%99%B7%E9%98%B1">3.2 致命陷阱</a></li><li><a href="#33-%E6%80%A7%E8%83%BD%E4%BB%A3%E4%BB%B7">3.3 性能代价</a></li><li><a href="#4-warp-shuffle--warp-%E5%86%85%E9%80%9A%E4%BF%A1">4. Warp Shuffle — Warp 内通信</a></li><li><a href="#41-%E4%B8%BA%E4%BB%80%E4%B9%88%E9%9C%80%E8%A6%81-shuffle">4.1 为什么需要 Shuffle</a></li><li><a href="#42-shuffle-%E6%8C%87%E4%BB%A4">4.2 Shuffle 指令</a></li><li><a href="#43-reduction-%E8%8C%83%E4%BE%8B">4.3 Reduction 范例</a></li><li><a href="#44-%E8%B7%A8-warp-reduceblock-%E7%BA%A7">4.4 跨 Warp Reduce（Block 级）</a></li><li><a href="#5-warp-scheduling-%E5%92%8C-occupancy-%E7%9A%84%E5%85%B3%E7%B3%BB">5. Warp Scheduling 和 Occupancy 的关系</a></li><li><a href="#6-%E5%B8%B8%E8%A7%81-warp-%E7%9B%B8%E5%85%B3%E7%9A%84-bug">6. 常见 Warp 相关的 Bug</a></li><li><a href="#%E7%9B%B8%E5%85%B3%E6%96%87%E6%A1%A3">相关文档</a></li></ol></nav><div class="markdown-body"><h1 id="warp-调度与同步">Warp 调度与同步<a class="heading-anchor" href="#warp-%E8%B0%83%E5%BA%A6%E4%B8%8E%E5%90%8C%E6%AD%A5" aria-label="链接到Warp 调度与同步">#</a></h1>
+<blockquote><p>理解 warp 是写出高效 CUDA 代码的关键。本文覆盖 warp 调度模型、divergence、shuffle 和 block 级同步。
+API 速查 → <a href="cuda-cheatsheet.html">cuda-cheatsheet.md</a> | 内存模型 → <a href="memory-model.html">memory-model.md</a></p>
+</blockquote><hr>
+<h2 id="1-什么是-warp">1. 什么是 Warp<a class="heading-anchor" href="#1-%E4%BB%80%E4%B9%88%E6%98%AF-warp" aria-label="链接到1. 什么是 Warp">#</a></h2>
+<p><strong>一个 warp = 32 个 thread 的组。SM 以 warp 为单位调度线程。</strong></p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">Block of 256 threads = 8 warps</span>
+<span class="code-line" data-line="2"></span>
+<span class="code-line" data-line="3">Warp 0: thread 0-31</span>
+<span class="code-line" data-line="4">Warp 1: thread 32-63</span>
+<span class="code-line" data-line="5">...</span>
+<span class="code-line" data-line="6">Warp 7: thread 224-255</span></code></pre></div>
+<p>SM 上有 warp scheduler，每个周期选一个就绪的 warp 发射指令。如果当前 warp 在等 memory，scheduler 切换另一个 warp——这就是 GPU 隐藏 memory 延迟的核心机制。</p>
+<blockquote><p><strong>Ascend 对照</strong>：Ascend 没有 warp 的概念。它的 Vector Unit 有 SIMD 宽度（一次处理多个数据），但没有 warp 级别的调度和 divergence 问题。warp 是 CUDA 独有的设计。</p>
+</blockquote><h3 id="warp-scheduler-的物理图景">Warp Scheduler 的物理图景<a class="heading-anchor" href="#warp-scheduler-%E7%9A%84%E7%89%A9%E7%90%86%E5%9B%BE%E6%99%AF" aria-label="链接到Warp Scheduler 的物理图景">#</a></h3>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">SM 上有 4 个 warp scheduler（A100 为例）</span>
+<span class="code-line" data-line="2">每个 scheduler 管理一组 warp</span>
+<span class="code-line" data-line="3">每个周期：</span>
+<span class="code-line" data-line="4">  1. 从自己的 warp pool 中选一个就绪的 warp</span>
+<span class="code-line" data-line="5">  2. 发射一条指令</span>
+<span class="code-line" data-line="6">  3. 如果所有 warp 都在等 memory → SM 空闲（低 occupancy 的代价）</span>
+<span class="code-line" data-line="7"></span>
+<span class="code-line" data-line="8">Occupancy 高 = 更多 warp = scheduler 有更多选择 = 更容易隐藏延迟</span></code></pre></div>
+<hr>
+<h2 id="2-warp-divergence--面试-高频题">2. Warp Divergence — <code>[面试]</code> 高频题<a class="heading-anchor" href="#2-warp-divergence--%E9%9D%A2%E8%AF%95-%E9%AB%98%E9%A2%91%E9%A2%98" aria-label="链接到2. Warp Divergence — [面试] 高频题">#</a></h2>
+<h3 id="21-问题">2.1 问题<a class="heading-anchor" href="#21-%E9%97%AE%E9%A2%98" aria-label="链接到2.1 问题">#</a></h3>
+<p><strong>同一 warp 内的 32 个 thread 共享一个 program counter（PC）。如果它们走不同分支，硬件只能串行执行。</strong></p>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-comment">// ❌ 严重的 warp divergence</span></span>
+<span class="code-line" data-line="2"><span class="hljs-keyword">if</span> (threadIdx.x % <span class="hljs-number">2</span> == <span class="hljs-number">0</span>) {</span>
+<span class="code-line" data-line="3">    <span class="hljs-comment">// 偶数 thread 走这（执行时奇数 thread 被 masked）</span></span>
+<span class="code-line" data-line="4">    <span class="hljs-built_in">expensive_func_a</span>();</span>
+<span class="code-line" data-line="5">} <span class="hljs-keyword">else</span> {</span>
+<span class="code-line" data-line="6">    <span class="hljs-comment">// 奇数 thread 走这（执行时偶数 thread 被 masked）</span></span>
+<span class="code-line" data-line="7">    <span class="hljs-built_in">expensive_func_b</span>();</span>
+<span class="code-line" data-line="8">}</span>
+<span class="code-line" data-line="9"><span class="hljs-comment">// 两个分支串行执行，有效吞吐 = 50%</span></span>
+<span class="code-line" data-line="10"></span>
+<span class="code-line" data-line="11"><span class="hljs-comment">// ✅ 按 warp 对齐的分支（无 divergence）</span></span>
+<span class="code-line" data-line="12"><span class="hljs-keyword">if</span> (threadIdx.x / <span class="hljs-number">32</span> == <span class="hljs-number">0</span>) {  <span class="hljs-comment">// warp 0</span></span>
+<span class="code-line" data-line="13">    <span class="hljs-built_in">func_a</span>();</span>
+<span class="code-line" data-line="14">} <span class="hljs-keyword">else</span> {                      <span class="hljs-comment">// 其他 warp</span></span>
+<span class="code-line" data-line="15">    <span class="hljs-built_in">func_b</span>();</span>
+<span class="code-line" data-line="16">}</span>
+<span class="code-line" data-line="17"><span class="hljs-comment">// 不同 warp 走不同分支没问题——每个 warp 内部同路</span></span></code></pre></div>
+<h3 id="22-哪些情况会导致-divergence">2.2 哪些情况会导致 divergence<a class="heading-anchor" href="#22-%E5%93%AA%E4%BA%9B%E6%83%85%E5%86%B5%E4%BC%9A%E5%AF%BC%E8%87%B4-divergence" aria-label="链接到2.2 哪些情况会导致 divergence">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>情况</th>
+<th align="center">是否 divergence</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>if-else on <code>threadIdx.x</code></td>
+<td align="center">⚠️ 可能</td>
+<td>取决于条件模式</td>
+</tr>
+<tr>
+<td>if-else on <code>blockIdx.x</code></td>
+<td align="center">✅ 安全</td>
+<td>不同 block = 不同 warp</td>
+</tr>
+<tr>
+<td>loop with variable bound for different threads</td>
+<td align="center">⚠️ 可能</td>
+<td>部分 thread 早退出</td>
+</tr>
+<tr>
+<td>early return on input-dependent condition</td>
+<td align="center">⚠️ 可能</td>
+<td>数据依赖的 divergence</td>
+</tr>
+</tbody></table>
+<h3 id="23-判断方法">2.3 判断方法<a class="heading-anchor" href="#23-%E5%88%A4%E6%96%AD%E6%96%B9%E6%B3%95" aria-label="链接到2.3 判断方法">#</a></h3>
+<p><strong>规则：看条件是否在 warp 内变化。</strong></p>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-comment">// 安全 — 同一 warp 内 threadIdx.x / 32 相同</span></span>
+<span class="code-line" data-line="2"><span class="hljs-keyword">if</span> (threadIdx.x / <span class="hljs-number">32</span> == <span class="hljs-number">0</span>) { ... }</span>
+<span class="code-line" data-line="3"></span>
+<span class="code-line" data-line="4"><span class="hljs-comment">// 可能 divergence — 需要看 N 是否 &lt; 32</span></span>
+<span class="code-line" data-line="5"><span class="hljs-keyword">if</span> (threadIdx.x &lt; N) { ... }</span>
+<span class="code-line" data-line="6"></span>
+<span class="code-line" data-line="7"><span class="hljs-comment">// 安全 — 同一 warp 的 32 个 thread 相邻，有边界时只有边缘 warp 受影响</span></span>
+<span class="code-line" data-line="8"><span class="hljs-type">int</span> idx = blockIdx.x * blockDim.x + threadIdx.x;</span>
+<span class="code-line" data-line="9"><span class="hljs-keyword">if</span> (idx &lt; N) { ... }  <span class="hljs-comment">// 最多 W-1 个 warp 完全激活，最后一个 warp 部分激活（不可避免）</span></span></code></pre></div>
+<blockquote><p>边界判断 <code>if (idx &lt; N)</code> 引起的 divergence 是<strong>不可避免且代价可接受</strong>的。不要因此不用边界检查。</p>
+</blockquote><hr>
+<h2 id="3-syncthreads--block-级同步">3. <code>__syncthreads()</code> — Block 级同步<a class="heading-anchor" href="#3-syncthreads--block-%E7%BA%A7%E5%90%8C%E6%AD%A5" aria-label="链接到3. syncthreads() — Block 级同步">#</a></h2>
+<h3 id="31-语义">3.1 语义<a class="heading-anchor" href="#31-%E8%AF%AD%E4%B9%89" aria-label="链接到3.1 语义">#</a></h3>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1">__syncthreads();</span>
+<span class="code-line" data-line="2"><span class="hljs-comment">// 这是一个 barrier：</span></span>
+<span class="code-line" data-line="3"><span class="hljs-comment">// 1. block 内所有 thread 必须到达此处</span></span>
+<span class="code-line" data-line="4"><span class="hljs-comment">// 2. 当前 thread 在此暂停，直到所有 thread 都到达</span></span>
+<span class="code-line" data-line="5"><span class="hljs-comment">// 3. 所有 thread 在 __syncthreads 之前的 shared memory 写入对所有线程可见</span></span></code></pre></div>
+<blockquote><p><strong>Ascend 对照</strong>：<code>__syncthreads()</code> ≈ <code>pipe_barrier()</code> / <code>block_sync()</code>。语义完全一致——确保所有参与方的数据写入在后续读取前完成。</p>
+</blockquote><h3 id="32-致命陷阱">3.2 致命陷阱<a class="heading-anchor" href="#32-%E8%87%B4%E5%91%BD%E9%99%B7%E9%98%B1" aria-label="链接到3.2 致命陷阱">#</a></h3>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-comment">// ❌ 死锁！有些 thread 不会到达 barrier</span></span>
+<span class="code-line" data-line="2"><span class="hljs-keyword">if</span> (threadIdx.x % <span class="hljs-number">2</span> == <span class="hljs-number">0</span>) {</span>
+<span class="code-line" data-line="3">    tile[threadIdx.x] = data;</span>
+<span class="code-line" data-line="4">    __syncthreads();   <span class="hljs-comment">// 只有偶数 thread 走这里 → 奇数 thread 永远等不到</span></span>
+<span class="code-line" data-line="5">}</span>
+<span class="code-line" data-line="6"></span>
+<span class="code-line" data-line="7"><span class="hljs-comment">// ❌ 死锁！嵌套在不同 block 范围</span></span>
+<span class="code-line" data-line="8"><span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; <span class="hljs-number">10</span>; i++) {</span>
+<span class="code-line" data-line="9">    <span class="hljs-keyword">if</span> (i &lt; <span class="hljs-number">5</span>) {</span>
+<span class="code-line" data-line="10">        __syncthreads();  <span class="hljs-comment">// 只有某些迭代到达</span></span>
+<span class="code-line" data-line="11">        <span class="hljs-comment">// 不同线程可能有不同的 i 值 → 死锁</span></span>
+<span class="code-line" data-line="12">    }</span>
+<span class="code-line" data-line="13">}</span>
+<span class="code-line" data-line="14"></span>
+<span class="code-line" data-line="15"><span class="hljs-comment">// ✅ 正确用法</span></span>
+<span class="code-line" data-line="16"><span class="hljs-keyword">if</span> (row &lt; M &amp;&amp; col &lt; N) {</span>
+<span class="code-line" data-line="17">    tile[threadIdx.y][threadIdx.x] = data;</span>
+<span class="code-line" data-line="18">}</span>
+<span class="code-line" data-line="19">__syncthreads();  <span class="hljs-comment">// barrier 在条件外面，所有 thread 到达</span></span></code></pre></div>
+<h3 id="33-性能代价">3.3 性能代价<a class="heading-anchor" href="#33-%E6%80%A7%E8%83%BD%E4%BB%A3%E4%BB%B7" aria-label="链接到3.3 性能代价">#</a></h3>
+<p><code>__syncthreads()</code> 本身很快（几个周期），但会导致所有 warp 互相等待——最快的 warp 要等最慢的 warp。所以不必要的 barrier 会降低性能。</p>
+<p><strong>GEMM tiled kernel 中的两次 <code>__syncthreads()</code> 是必要的</strong>：</p>
+<ul>
+<li>第一次：确保 tile 加载完毕再开始计算</li>
+<li>第二次：确保计算完成再加载下一个 tile（覆写 shared memory 前）</li>
+</ul>
+<hr>
+<h2 id="4-warp-shuffle--warp-内通信">4. Warp Shuffle — Warp 内通信<a class="heading-anchor" href="#4-warp-shuffle--warp-%E5%86%85%E9%80%9A%E4%BF%A1" aria-label="链接到4. Warp Shuffle — Warp 内通信">#</a></h2>
+<h3 id="41-为什么需要-shuffle">4.1 为什么需要 Shuffle<a class="heading-anchor" href="#41-%E4%B8%BA%E4%BB%80%E4%B9%88%E9%9C%80%E8%A6%81-shuffle" aria-label="链接到4.1 为什么需要 Shuffle">#</a></h3>
+<p>Shared memory 做 reduction（求和/求最大值）需要多步读写 + <code>__syncthreads()</code>。Warp shuffle 允许同一 warp 内的 thread 直接交换寄存器值——不需要 shared memory，不需要 barrier。</p>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-comment">// Warp 内求和的 reduction（比 shared memory 版本快 2-3×）</span></span>
+<span class="code-line" data-line="2"><span class="hljs-type">float</span> val = input[idx];</span>
+<span class="code-line" data-line="3"></span>
+<span class="code-line" data-line="4"><span class="hljs-comment">// 递归减半，每个 step 拿相邻 lane 的值</span></span>
+<span class="code-line" data-line="5"><span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> offset = <span class="hljs-number">16</span>; offset &gt; <span class="hljs-number">0</span>; offset /= <span class="hljs-number">2</span>) {</span>
+<span class="code-line" data-line="6">    val += __shfl_down_sync(<span class="hljs-number">0xffffffff</span>, val, offset);</span>
+<span class="code-line" data-line="7">}</span>
+<span class="code-line" data-line="8"><span class="hljs-comment">// 执行后，lane 0 持有 warp 内所有线程的 val 之和</span></span></code></pre></div>
+<h3 id="42-shuffle-指令">4.2 Shuffle 指令<a class="heading-anchor" href="#42-shuffle-%E6%8C%87%E4%BB%A4" aria-label="链接到4.2 Shuffle 指令">#</a></h3>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-comment">// __shfl_down_sync(mask, val, delta)</span></span>
+<span class="code-line" data-line="2"><span class="hljs-comment">// 当前 thread 拿到 lane_id + delta 的 thread 的 val</span></span>
+<span class="code-line" data-line="3"><span class="hljs-comment">// mask: 哪些 thread 参与（通常是 0xffffffff = 全 warp）</span></span>
+<span class="code-line" data-line="4"></span>
+<span class="code-line" data-line="5"><span class="hljs-comment">// lane 分布和 __shfl_down(offset=4):</span></span>
+<span class="code-line" data-line="6"><span class="hljs-comment">// lane:  0  1  2  3  4  5  6  7  ...</span></span>
+<span class="code-line" data-line="7"><span class="hljs-comment">// val:   3  7  1  9  2  4  6  8  ...</span></span>
+<span class="code-line" data-line="8"><span class="hljs-comment">//         ↓  ↓  ↓  ↓</span></span>
+<span class="code-line" data-line="9"><span class="hljs-comment">// 4:     2  4  6  8  ... (每个拿到自己+4 的值)</span></span>
+<span class="code-line" data-line="10"></span>
+<span class="code-line" data-line="11"><span class="hljs-comment">// 其他 shuffle 变体：</span></span>
+<span class="code-line" data-line="12">__shfl_up_sync(mask, val, delta);    <span class="hljs-comment">// 从 lane_id - delta 拿</span></span>
+<span class="code-line" data-line="13">__shfl_xor_sync(mask, val, mask2);   <span class="hljs-comment">// 从 lane_id ^ mask2 拿</span></span>
+<span class="code-line" data-line="14">__shfl_sync(mask, val, src_lane);    <span class="hljs-comment">// 从指定 src_lane 拿（broadcast）</span></span></code></pre></div>
+<h3 id="43-reduction-范例">4.3 Reduction 范例<a class="heading-anchor" href="#43-reduction-%E8%8C%83%E4%BE%8B" aria-label="链接到4.3 Reduction 范例">#</a></h3>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-comment">// Softmax 中需要找最大值 + 求指数和</span></span>
+<span class="code-line" data-line="2"><span class="hljs-comment">// 这个 pattern 非常常见</span></span>
+<span class="code-line" data-line="3"><span class="hljs-function">__inline__ __device__ <span class="hljs-type">float</span> <span class="hljs-title">warp_reduce_max</span><span class="hljs-params">(<span class="hljs-type">float</span> val)</span> </span>{</span>
+<span class="code-line" data-line="4">    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> offset = <span class="hljs-number">16</span>; offset &gt; <span class="hljs-number">0</span>; offset /= <span class="hljs-number">2</span>) {</span>
+<span class="code-line" data-line="5">        <span class="hljs-type">float</span> other = __shfl_down_sync(<span class="hljs-number">0xffffffff</span>, val, offset);</span>
+<span class="code-line" data-line="6">        <span class="hljs-keyword">if</span> (other &gt; val) val = other;  <span class="hljs-comment">// 取最大</span></span>
+<span class="code-line" data-line="7">    }</span>
+<span class="code-line" data-line="8">    <span class="hljs-keyword">return</span> val;  <span class="hljs-comment">// 所有 lane 的 val 是 warp-max</span></span>
+<span class="code-line" data-line="9">}</span>
+<span class="code-line" data-line="10"></span>
+<span class="code-line" data-line="11"><span class="hljs-function">__inline__ __device__ <span class="hljs-type">float</span> <span class="hljs-title">warp_reduce_sum</span><span class="hljs-params">(<span class="hljs-type">float</span> val)</span> </span>{</span>
+<span class="code-line" data-line="12">    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> offset = <span class="hljs-number">16</span>; offset &gt; <span class="hljs-number">0</span>; offset /= <span class="hljs-number">2</span>) {</span>
+<span class="code-line" data-line="13">        val += __shfl_down_sync(<span class="hljs-number">0xffffffff</span>, val, offset);</span>
+<span class="code-line" data-line="14">    }</span>
+<span class="code-line" data-line="15">    <span class="hljs-keyword">return</span> val;  <span class="hljs-comment">// lane 0 持有 sum</span></span>
+<span class="code-line" data-line="16">}</span></code></pre></div>
+<blockquote><p><strong>Ascend 对照</strong>：Ascend 的 Vector Unit 有硬件 reduce 指令，不需要手动 shuffle。CUDA 用 warp shuffle 模拟同样的效果。本质都是为了&quot;一个 compute group 内的快速 reduce&quot;。</p>
+</blockquote><h3 id="44-跨-warp-reduceblock-级">4.4 跨 Warp Reduce（Block 级）<a class="heading-anchor" href="#44-%E8%B7%A8-warp-reduceblock-%E7%BA%A7" aria-label="链接到4.4 跨 Warp Reduce（Block 级）">#</a></h3>
+<p>Warp shuffle 只在一个 warp 内工作。要跨 warp reduce，需要 shared memory 收集每个 warp 的结果：</p>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-comment">// 每个 warp 先在内部 reduce 到一个值</span></span>
+<span class="code-line" data-line="2"><span class="hljs-type">float</span> warp_result = <span class="hljs-built_in">warp_reduce_sum</span>(my_val);  <span class="hljs-comment">// lane 0 有结果</span></span>
+<span class="code-line" data-line="3"></span>
+<span class="code-line" data-line="4"><span class="hljs-comment">// 每个 warp 的 lane 0 写入 shared memory</span></span>
+<span class="code-line" data-line="5">__shared__ <span class="hljs-type">float</span> warp_results[<span class="hljs-number">32</span>];  <span class="hljs-comment">// 最多 32 个 warp/block</span></span>
+<span class="code-line" data-line="6"><span class="hljs-keyword">if</span> (lane == <span class="hljs-number">0</span>) {</span>
+<span class="code-line" data-line="7">    warp_results[warp_id] = warp_result;</span>
+<span class="code-line" data-line="8">}</span>
+<span class="code-line" data-line="9">__syncthreads();</span>
+<span class="code-line" data-line="10"></span>
+<span class="code-line" data-line="11"><span class="hljs-comment">// 用 thread 0（或一个 warp）对 warp_results 做最后的 merge</span></span>
+<span class="code-line" data-line="12"><span class="hljs-keyword">if</span> (threadIdx.x &lt; num_warps) {</span>
+<span class="code-line" data-line="13">    <span class="hljs-type">float</span> block_result = warp_results[threadIdx.x];</span>
+<span class="code-line" data-line="14">    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; num_warps; i++) {</span>
+<span class="code-line" data-line="15">        block_result += warp_results[i];</span>
+<span class="code-line" data-line="16">    }</span>
+<span class="code-line" data-line="17">    <span class="hljs-comment">// block_result 现在是 block 级结果</span></span>
+<span class="code-line" data-line="18">}</span></code></pre></div>
+<hr>
+<h2 id="5-warp-scheduling-和-occupancy-的关系">5. Warp Scheduling 和 Occupancy 的关系<a class="heading-anchor" href="#5-warp-scheduling-%E5%92%8C-occupancy-%E7%9A%84%E5%85%B3%E7%B3%BB" aria-label="链接到5. Warp Scheduling 和 Occupancy 的关系">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">隐藏 memory 延迟的原理：</span>
+<span class="code-line" data-line="2">  Warp A 发起 global memory load → 等待 600 cycles</span>
+<span class="code-line" data-line="3">  Scheduler 切换到 Warp B → 执行其他指令</span>
+<span class="code-line" data-line="4">  Scheduler 切换到 Warp C ...</span>
+<span class="code-line" data-line="5">  ...</span>
+<span class="code-line" data-line="6">  Warp A 的数据回来了 → 继续执行</span>
+<span class="code-line" data-line="7"></span>
+<span class="code-line" data-line="8">关键：如果 SM 上同时驻留的 warp 不够多，scheduler 没有足够的&quot;其他工作&quot;来填充等待时间。</span>
+<span class="code-line" data-line="9">→ SM 空闲 → 低性能</span>
+<span class="code-line" data-line="10">→ 这就是为什么 occupancy 重要</span></code></pre></div>
+<table>
+<thead>
+<tr>
+<th align="center">Occupancy</th>
+<th>效果</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="center">&lt; 25%</td>
+<td>严重不足，难以隐藏延迟</td>
+</tr>
+<tr>
+<td align="center">25-50%</td>
+<td>基本够用</td>
+</tr>
+<tr>
+<td align="center">50-75%</td>
+<td>良好，latency hiding 充分</td>
+</tr>
+<tr>
+<td align="center">&gt; 75%</td>
+<td>足够，再提高通常无额外收益</td>
+</tr>
+</tbody></table>
+<p><strong>Trade-off</strong>：增大 block size / shared memory → register 用量增加 → occupancy 下降 → 调 tile size 找 sweet spot。</p>
+<hr>
+<h2 id="6-常见-warp-相关的-bug">6. 常见 Warp 相关的 Bug<a class="heading-anchor" href="#6-%E5%B8%B8%E8%A7%81-warp-%E7%9B%B8%E5%85%B3%E7%9A%84-bug" aria-label="链接到6. 常见 Warp 相关的 Bug">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>Bug</th>
+<th>症状</th>
+<th>原因</th>
+<th>解法</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Deadlock</td>
+<td>kernel 不返回</td>
+<td><code>__syncthreads</code> 在条件分支里</td>
+<td>确保所有 thread reach barrier</td>
+</tr>
+<tr>
+<td>Divergence 性能差</td>
+<td>吞吐低于预期</td>
+<td>同一 warp 内分支不同</td>
+<td>对齐到 warp 边界</td>
+</tr>
+<tr>
+<td>Shuffle 读到垃圾</td>
+<td>计算结果错误</td>
+<td>active mask 不包含所有线程</td>
+<td>用 <code>__activemask()</code> 代替硬编码 mask</td>
+</tr>
+<tr>
+<td>低 occupancy</td>
+<td>SM 利用率低</td>
+<td>register/shared mem 过量</td>
+<td>减 tile size 或拆分 kernel</td>
+</tr>
+<tr>
+<td>Bank conflict in shuffle</td>
+<td>N/A</td>
+<td>shuffle 不走 shared memory！不涉及 bank</td>
+<td>别混淆——shuffle 没有 bank conflict</td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="相关文档">相关文档<a class="heading-anchor" href="#%E7%9B%B8%E5%85%B3%E6%96%87%E6%A1%A3" aria-label="链接到相关文档">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>文档</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><a href="cuda-cheatsheet.html">cuda-cheatsheet.md</a></td>
+<td>API 速查、代码模板</td>
+</tr>
+<tr>
+<td><a href="memory-model.html">memory-model.md</a></td>
+<td>内存层级、coalescing、bank conflict</td>
+</tr>
+<tr>
+<td><a href="gpu-architecture.html">gpu-architecture.md</a></td>
+<td>NVIDIA vs Da Vinci 架构对比</td>
+</tr>
+</tbody></table>
+</div></main><script src="../../../reader.js"></script></body></html>

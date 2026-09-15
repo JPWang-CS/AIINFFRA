@@ -1,0 +1,187 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Triton 实现 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · solutions/triton/README.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E5%BD%93%E5%89%8D%E8%BF%9B%E5%BA%A6">当前进度</a></li><li><a href="#matmul-leetgpu-%E5%85%A5%E5%8F%A3">MatMul LeetGPU 入口</a></li><li><a href="#matmul-leetgpu-%E5%BD%92%E6%A1%A3%E7%BB%93%E6%9E%9C">MatMul LeetGPU 归档结果</a></li><li><a href="#vector-add-benchmark">Vector Add benchmark</a></li><li><a href="#matmul-benchmark">MatMul benchmark</a></li><li><a href="#matmul-%E9%85%8D%E7%BD%AE-sweep2026-08-26">MatMul 配置 sweep（2026-08-26）</a></li><li><a href="#matmul-nsight-systems-p0-lite2026-08-30">MatMul Nsight Systems P0-lite（2026-08-30）</a></li><li><a href="#%E8%A7%84%E5%88%99">规则</a></li><li><a href="#%E9%AA%8C%E8%AF%81%E5%91%BD%E4%BB%A4">验证命令</a></li><li><a href="#%E5%8F%82%E8%80%83">参考</a></li></ol></nav><div class="markdown-body"><h1 id="triton-实现">Triton 实现<a class="heading-anchor" href="#triton-%E5%AE%9E%E7%8E%B0" aria-label="链接到Triton 实现">#</a></h1>
+<blockquote><p>位置：这里保存用户的可执行版本和明确标记的 <code>WIP</code> 快照；当前单元的题目、代码快照和验收入口见 <a href="../../lessons/08-triton-fused-softmax.html">Lesson 08</a>。
+计划入口：<a href="../../roadmap/ai-infra-curriculum.html">roadmap/ai-infra-curriculum.md</a> M2</p>
+</blockquote><h2 id="当前进度">当前进度<a class="heading-anchor" href="#%E5%BD%93%E5%89%8D%E8%BF%9B%E5%BA%A6" aria-label="链接到当前进度">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>文件</th>
+<th>功能</th>
+<th>LeetGPU 原始代码</th>
+<th>验收</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><a href="vector_add.py"><code>vector_add.py</code></a></td>
+<td>Triton Vector Add</td>
+<td><strong>原始 LeetGPU <code>solve</code> 尚未单独归档</strong>；当前文件是本地验证/benchmark wrapper</td>
+<td><code>GPU_VALIDATED</code>：LeetGPU 通过；AutoDL RTX 3090，Triton 840.1 GB/s，<code>torch.add</code> 843.0 GB/s</td>
+</tr>
+<tr>
+<td><a href="matmul_leetgpu.py"><code>matmul_leetgpu.py</code></a></td>
+<td>Triton tiled GEMM：LeetGPU 最终原始 <code>solve</code>/kernel 归档</td>
+<td><code>LEETGPU_PASS</code>：LeetGPU #02，Triton，2026-08-28；SuccessPublicTrace</td>
+<td>A100-80GB，24.54 ms，55.3th percentile</td>
+</tr>
+<tr>
+<td><a href="matmul_leetgpu_wip.py"><code>matmul_leetgpu_wip.py</code></a></td>
+<td>Triton tiled GEMM：历史平台代码快照</td>
+<td>历史 <code>WIP</code>：默认 TF32 精度失败案例，保留用于复盘</td>
+<td>4×4 case 最大绝对误差 <code>0.1275177001953125</code>；IEEE 版本后平台通过</td>
+</tr>
+<tr>
+<td><a href="matmul.py"><code>matmul.py</code></a></td>
+<td>Triton tiled GEMM：服务器验证版</td>
+<td>基于 MatMul 逻辑的本地适配，不是平台原始归档</td>
+<td><code>GPU_VALIDATED</code> baseline：RTX 3090正确性通过；s3/s2 Nsight Systems P0-lite已完成；后续接入第三篇完整优化课程</td>
+</tr>
+<tr>
+<td><a href="fused_softmax.py"><code>fused_softmax.py</code></a></td>
+<td>Triton Softmax：LeetGPU #5 原始通过版</td>
+<td><code>LEETGPU_PASS</code>：用户通过代码已归档；SuccessPublicTrace</td>
+<td>2026-09-01 00:37:33，0.29 ms，47.0th percentile；下一步 RTX 3090 二维 row-wise baseline</td>
+</tr>
+<tr>
+<td><code>flash_attention.py</code></td>
+<td>Triton Flash Attention</td>
+<td>GPU主课基础后进入；对比PyTorch/官方强基线、显存、速度和profiler；FA2阅读完成但实现待做</td>
+<td></td>
+</tr>
+<tr>
+<td><code>gqa.py</code> / <code>fused_mlp.py</code></td>
+<td>模型结构组件</td>
+<td>正确性 + autotune</td>
+<td></td>
+</tr>
+</tbody></table>
+<h3 id="matmul-leetgpu-入口">MatMul LeetGPU 入口<a class="heading-anchor" href="#matmul-leetgpu-%E5%85%A5%E5%8F%A3" aria-label="链接到MatMul LeetGPU 入口">#</a></h3>
+<p>当前 MatMul 题目是 <a href="https://leetgpu.com/challenges/matrix-multiplication">LeetGPU Matrix Multiplication</a>，题目规格见 <a href="https://github.com/HaoyangPing0324/LeetGPU/blob/main/problems/02_Matrix_Multiplication.md">02_Matrix_Multiplication.md</a>。要求是 FP32、row-major、A(M×N) × B(N×K) = C(M×K)，性能形状为 M=8192、N=6144、K=4096。平台原始代码已归档为 <a href="matmul_leetgpu.py"><code>matmul_leetgpu.py</code></a>，服务器适配版继续独立记录真实性能。</p>
+<p>LeetGPU 最终代码与服务器适配版分开保存：<a href="matmul_leetgpu.py"><code>matmul_leetgpu.py</code></a> 是通过后原样归档的原始平台 <code>solve</code>/kernel；<a href="matmul.py"><code>matmul.py</code></a> 是服务器正确性和性能验证版。历史 <a href="matmul_leetgpu_wip.py"><code>matmul_leetgpu_wip.py</code></a> 保留默认 TF32 导致精度失败的过程证据。</p>
+<h3 id="matmul-leetgpu-归档结果">MatMul LeetGPU 归档结果<a class="heading-anchor" href="#matmul-leetgpu-%E5%BD%92%E6%A1%A3%E7%BB%93%E6%9E%9C" aria-label="链接到MatMul LeetGPU 归档结果">#</a></h3>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">题目: #02 Matrix Multiplication</span>
+<span class="code-line" data-line="2">语言: Triton</span>
+<span class="code-line" data-line="3">状态: LEETGPU_PASS</span>
+<span class="code-line" data-line="4">SuccessPublicTrace: A100-80GB，2026-08-28 22:23:16，24.54 ms，55.3th percentile</span>
+<span class="code-line" data-line="5">精度修正: tl.dot(..., input_precision=&#x27;ieee&#x27;)</span>
+<span class="code-line" data-line="6">失败证据: 历史 WIP 默认 TF32 在 4×4 case 的最大绝对误差为 0.1275177001953125</span></code></pre></div>
+<p><code>matmul_leetgpu.py</code> 以 <code>matmul_leetgpu_wip.py</code> 为精确基线，仅增加归档说明，并将 <code>tl.dot(tile_a, tile_b)</code> 指定为 IEEE 输入精度；kernel 和 <code>solve</code> 逻辑没有其他变化。</p>
+<h3 id="vector-add-benchmark">Vector Add benchmark<a class="heading-anchor" href="#vector-add-benchmark" aria-label="链接到Vector Add benchmark">#</a></h3>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">vector_add (2026-08-23)</span>
+<span class="code-line" data-line="2">- N=2^25, BLOCK_SIZE=256, RTX 3090 (AutoDL)</span>
+<span class="code-line" data-line="3">- 正确性: assert_close OK (N=1/256/257/1000/2^20)</span>
+<span class="code-line" data-line="4">- 带宽: 840.1 GB/s (torch.add: 843.0 GB/s)</span>
+<span class="code-line" data-line="5">- 结论: 内存带宽瓶颈，BLOCK_SIZE=256 最优；Triton 达到 torch.add 的 99.7%</span></code></pre></div>
+<blockquote><p>说明：本次 benchmark 验证了 kernel 在 AutoDL 上的正确性和性能；代码归属与运行验证分开记录。</p>
+</blockquote><h3 id="matmul-benchmark">MatMul benchmark<a class="heading-anchor" href="#matmul-benchmark" aria-label="链接到MatMul benchmark">#</a></h3>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">matmul (2026-08-26)</span>
+<span class="code-line" data-line="2">- GPU: NVIDIA GeForce RTX 3090 (AutoDL)</span>
+<span class="code-line" data-line="3">- shape: M=8192, N=6144, K=4096</span>
+<span class="code-line" data-line="4">- 正确性: M/N/K = (1,1,1), (64,32,64), (65,33,67), (257,513,129) 全部 OK</span>
+<span class="code-line" data-line="5">- 精度口径: FP32，tl.dot(input_precision=&quot;ieee&quot;)，PyTorch allow_tf32=False</span>
+<span class="code-line" data-line="6">- Triton: 24.681 ms，16,706.0 GFLOPS</span>
+<span class="code-line" data-line="7">- torch.mm: 17.120 ms，24,083.3 GFLOPS</span>
+<span class="code-line" data-line="8">- 对比: Triton 为 torch.mm 的约 69.4%，耗时约慢 1.44x</span>
+<span class="code-line" data-line="9">- 结论: 服务器版正确性通过；初始 tile/config 仍有调优空间</span></code></pre></div>
+<blockquote><p>这组数字属于服务器适配版，状态为<code>GPU_VALIDATED</code>；LeetGPU原始版本已另行归档为<code>LEETGPU_PASS</code>。MatMul当前按baseline阶段性收口；后续按<a href="../../roadmap/curriculum/performance/README.html">第三篇极致性能课程</a>继续，不改变本页既有数字。</p>
+</blockquote><h3 id="matmul-配置-sweep2026-08-26">MatMul 配置 sweep（2026-08-26）<a class="heading-anchor" href="#matmul-%E9%85%8D%E7%BD%AE-sweep2026-08-26" aria-label="链接到MatMul 配置 sweep（2026-08-26）">#</a></h3>
+<p>固定 IEEE FP32、GPU 和 shape，只比较 tile、warp、stage：</p>
+<table>
+<thead>
+<tr>
+<th>配置</th>
+<th align="right">结果</th>
+<th align="right">相对 <code>torch.mm</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>64×32×64, w4, s3</code></td>
+<td align="right">24.924 ms / 16,542.7 GFLOPS</td>
+<td align="right">68.8%</td>
+</tr>
+<tr>
+<td><code>128×32×64, w4, s3</code></td>
+<td align="right">22.298 ms / 18,491.3 GFLOPS</td>
+<td align="right">76.9%</td>
+</tr>
+<tr>
+<td><code>128×32×128, w4, s3</code></td>
+<td align="right">28.354 ms / 14,541.8 GFLOPS</td>
+<td align="right">60.4%</td>
+</tr>
+<tr>
+<td><code>128×64×128, w4, s3</code></td>
+<td align="right">编译失败：shared memory 需要 131,072 B，硬件上限 101,376 B</td>
+<td align="right">—</td>
+</tr>
+<tr>
+<td><code>128×32×256, w8, s3</code></td>
+<td align="right"><strong>22.033 ms / 18,713.5 GFLOPS</strong></td>
+<td align="right"><strong>77.8%</strong></td>
+</tr>
+<tr>
+<td><code>128×32×256, w8, s2</code></td>
+<td align="right">Nsight Systems 60 次 mean：22.362 ms / 18,438.6 GFLOPS</td>
+<td align="right">同次 CUTLASS 的 74.6%</td>
+</tr>
+</tbody></table>
+<p>结论：<code>BLOCK_M=128, BLOCK_N=32, BLOCK_K=256, num_warps=8, num_stages=3</code> 是当前测试集最佳配置；相对 baseline 64×32×64，耗时下降约 11.6%，GFLOPS 提升约 13.1%。<code>BLOCK_N=64</code> 的配置因 shared memory 超限，说明 tile 和 stages 不能只看算力，还要受片上资源约束。</p>
+<p>详细硬件机制、profiler 观察项和后续 P0–P4 优化顺序见：<a href="../../notes/triton/matmul-performance-analysis.html">MatMul 性能分析记录</a>。</p>
+<h3 id="matmul-nsight-systems-p0-lite2026-08-30">MatMul Nsight Systems P0-lite（2026-08-30）<a class="heading-anchor" href="#matmul-nsight-systems-p0-lite2026-08-30" aria-label="链接到MatMul Nsight Systems P0-lite（2026-08-30）">#</a></h3>
+<p>AutoDL 禁止 NCU hardware counters，因此使用 Nsight Systems 对同一 <code>128×32×256, w8</code> 配置只改变 <code>num_stages</code>：</p>
+<table>
+<thead>
+<tr>
+<th>配置</th>
+<th align="right">Triton mean / median（60 次大 shape）</th>
+<th align="right">Reg/Trd</th>
+<th align="right">DymSMem</th>
+<th align="right">同次 CUTLASS mean</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>s3</td>
+<td align="right">21.208 / 21.163 ms</td>
+<td align="right">255</td>
+<td align="right">0.098 MB</td>
+<td align="right">16.716 ms</td>
+<td>当前更快</td>
+</tr>
+<tr>
+<td>s2</td>
+<td align="right">22.362 / 22.317 ms</td>
+<td align="right">255</td>
+<td align="right">0.049 MB</td>
+<td align="right">16.682 ms</td>
+<td>shared memory 减半但慢 5.44%</td>
+</tr>
+</tbody></table>
+<p>s2 没有降低 Reg/Trd，因此静态寄存器约束仍近似为 1 block/SM；减少 pipeline stage 没有换来驻留改善，反而损失延迟隐藏。完整分析与原始证据：<a href="../../notes/triton/matmul-nsys-p0-lite-2026-08-30.html">P0-lite 分析</a> · <a href="../../notes/triton/logs/2026-08-29-matmul-k256-s3-nsys.txt">s3 raw</a> · <a href="../../notes/triton/logs/2026-08-30-matmul-k256-s2-nsys.txt">s2 raw</a>。</p>
+<p>MatMul当前baseline出口：RTX 3090最佳20.830 ms / 19,794.1 GFLOPS / <code>torch.mm</code> 80.3%。剩余NCU、PTX/SASS、spill/occupancy、低精度和多shape进入第三篇完整优化课程，已有证据不清零。</p>
+<h2 id="规则">规则<a class="heading-anchor" href="#%E8%A7%84%E5%88%99" aria-label="链接到规则">#</a></h2>
+<ol>
+<li>先看完原理，直接在 LeetGPU 题目编辑器从题目模板开始写，不直接复制 <code>reference/triton/</code>。</li>
+<li>两个验收章节：<strong>LeetGPU 正确性与代码归档 → 服务器真实性能</strong>；默认先过 LeetGPU，平台不可运行时允许用独立服务器适配版验证，但必须分开记录状态。</li>
+<li>每个文件开头写一行说明：算子、版本、关键优化。</li>
+<li>跑不通、没有数字的文件不要标完成；Agent 草稿一律不算完成。</li>
+</ol>
+<h2 id="验证命令">验证命令<a class="heading-anchor" href="#%E9%AA%8C%E8%AF%81%E5%91%BD%E4%BB%A4" aria-label="链接到验证命令">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>BASH</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-bash"><span class="code-line" data-line="1">python vector_add.py</span>
+<span class="code-line" data-line="2">python matmul.py</span>
+<span class="code-line" data-line="3"><span class="hljs-comment"># fused_softmax.py：LeetGPU #5 原始通过版已归档；服务器二维 row-wise baseline 待做</span></span>
+<span class="code-line" data-line="4">python flash_attention.py</span></code></pre></div>
+<blockquote><p>LeetGPU 在线判题优先（支持 Triton）；本机无 GPU 时解释器只用来验正确性，不产出性能结论。</p>
+</blockquote><p>无 GPU 时可用（脚本检测不到 CUDA 会自动切）：</p>
+<div class="code-panel"><div class="code-caption"><span>BASH</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-bash"><span class="code-line" data-line="1">TRITON_INTERPRET=1 python xxx.py</span></code></pre></div>
+<p>本机 Windows 无 GPU 环境（2026-08-10 已搭好）：</p>
+<div class="code-panel"><div class="code-caption"><span>POWERSHELL</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-powershell"><span class="code-line" data-line="1">py <span class="hljs-literal">-m</span> venv .venv   <span class="hljs-comment"># 用 Python 3.12</span></span>
+<span class="code-line" data-line="2">.venv\Scripts\python.exe <span class="hljs-literal">-m</span> pip install torch <span class="hljs-literal">--index-url</span> https://download.pytorch.org/whl/cpu</span>
+<span class="code-line" data-line="3">.venv\Scripts\python.exe <span class="hljs-literal">-m</span> pip install triton<span class="hljs-literal">-windows</span> numpy <span class="hljs-literal">--index-url</span> https://pypi.org/simple</span>
+<span class="code-line" data-line="4">.venv\Scripts\python.exe vector_add.py</span></code></pre></div>
+<h2 id="参考">参考<a class="heading-anchor" href="#%E5%8F%82%E8%80%83" aria-label="链接到参考">#</a></h2>
+<ul>
+<li><a href="../../notes/triton/triton-cheatsheet.html">Triton 语法速查</a></li>
+<li><a href="../../reference/triton/README.html">reference/triton</a></li>
+<li><a href="../../lessons/06-triton-intro.html">Lesson 06</a></li>
+</ul>
+</div></main><script src="../../../reader.js"></script></body></html>

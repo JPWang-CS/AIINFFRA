@@ -1,0 +1,580 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第三章 vLLM 应用：把算子能力放进真实请求路径 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · roadmap/curriculum/systems/README.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#1-%E4%BB%8E%E8%AF%B7%E6%B1%82%E5%88%B0%E8%AE%BE%E5%A4%87%E6%89%A7%E8%A1%8C">1. 从请求到设备执行</a></li><li><a href="#2-token-%E9%A2%84%E7%AE%97%E4%B8%8D%E6%98%AF%E8%AF%B7%E6%B1%82%E6%95%B0%E9%87%8F">2. token 预算不是请求数量</a></li><li><a href="#3-kv-%E5%AE%B9%E9%87%8F%E4%B8%8E%E5%89%8D%E7%BC%80%E5%A4%8D%E7%94%A8">3. KV 容量与前缀复用</a></li><li><a href="#%E7%9B%B8%E5%90%8C-token-%E7%89%87%E6%AE%B5%E4%B8%8D%E4%B8%80%E5%AE%9A%E5%AF%B9%E5%BA%94%E7%9B%B8%E5%90%8C-kv">相同 token 片段不一定对应相同 KV</a></li><li><a href="#offload-%E4%B8%8E-pd-%E5%88%86%E7%A6%BB">Offload 与 PD 分离</a></li><li><a href="#4-%E7%A1%AE%E8%AE%A4%E7%9C%9F%E5%AE%9E-backend%E5%86%8D%E6%9B%BF%E6%8D%A2-kernel">4. 确认真实 backend，再替换 kernel</a></li><li><a href="#5-%E5%AE%9E%E8%B7%B5%E6%9C%AC%E5%9C%B0%E6%A8%A1%E5%9E%8B%E4%B8%8E%E5%90%8C%E6%9D%A1%E4%BB%B6%E5%9F%BA%E7%BA%BF">5. 实践：本地模型与同条件基线</a></li><li><a href="#6-%E5%88%A4%E6%96%AD%E4%BC%98%E5%8C%96%E6%98%AF%E5%90%A6%E7%9C%9F%E6%AD%A3%E7%94%9F%E6%95%88">6. 判断优化是否真正生效</a></li><li><a href="#7-%E6%95%B4%E7%BD%91%E4%B8%8E%E7%AE%97%E5%AD%90%E4%BB%8E%E8%AF%B7%E6%B1%82%E5%BD%A2%E7%8A%B6%E8%BF%BD%E5%88%B0%E8%AE%BE%E5%A4%87%E6%89%A7%E8%A1%8C">7. 整网与算子：从请求形状追到设备执行</a></li><li><a href="#%E7%94%A8%E4%B8%80%E5%B1%82%E6%A8%A1%E5%9E%8B%E6%8A%8A-shape-%E8%BF%BD%E5%88%B0%E5%BA%95">用一层模型把 shape 追到底</a></li><li><a href="#8-%E5%90%8C%E4%B8%80%E5%93%81%E7%89%8C%E4%B8%8D%E5%90%8C%E6%A8%A1%E5%9E%8Bembedded-7b-%E4%B8%8E-openpangu-20">8. 同一品牌，不同模型：Embedded-7B 与 openPangu 2.0</a></li><li><a href="#20-%E6%96%B9%E6%B3%95%E5%A6%82%E4%BD%95%E6%98%A0%E5%B0%84%E5%88%B0%E7%B3%BB%E7%BB%9F%E6%88%90%E6%9C%AC">2.0 方法如何映射到系统成本</a></li><li><a href="#9-%E6%89%8B%E7%AE%97%E5%AE%B9%E9%87%8F%E6%9D%83%E9%87%8D%E4%B8%8E-kv-%E5%88%86%E5%BC%80">9. 手算容量：权重与 KV 分开</a></li><li><a href="#10-%E8%AF%81%E6%8D%AE%E8%BE%B9%E7%95%8C%E6%A8%A1%E5%9E%8B%E6%BA%90%E7%A0%81backend-%E4%B8%8E%E8%BF%90%E8%A1%8C%E8%AE%B0%E5%BD%95">10. 证据边界：模型源码、backend 与运行记录</a></li><li><a href="#%E5%8F%82%E8%80%83%E9%98%85%E8%AF%BB">参考阅读</a></li><li><a href="#%E7%AB%A0%E8%8A%82%E5%AF%BC%E8%88%AA">章节导航</a></li></ol></nav><div class="markdown-body"><h1 id="第三章-vllm-应用把算子能力放进真实请求路径">第三章 vLLM 应用：把算子能力放进真实请求路径<a class="heading-anchor" href="#%E7%AC%AC%E4%B8%89%E7%AB%A0-vllm-%E5%BA%94%E7%94%A8%E6%8A%8A%E7%AE%97%E5%AD%90%E8%83%BD%E5%8A%9B%E6%94%BE%E8%BF%9B%E7%9C%9F%E5%AE%9E%E8%AF%B7%E6%B1%82%E8%B7%AF%E5%BE%84" aria-label="链接到第三章 vLLM 应用：把算子能力放进真实请求路径">#</a></h1>
+<p>vLLM 将请求转成 token 批次，安排模型执行，管理 KV，并将结果提交给请求。调度决策会改变 kernel 形状、缓存占用和等待时间。</p>
+<p>分析从一次请求的调用路径开始：确认执行的 backend、输入布局和计时范围，再比较替换算子前后的单步与端到端结果。</p>
+<h2 id="1-从请求到设备执行">1. 从请求到设备执行<a class="heading-anchor" href="#1-%E4%BB%8E%E8%AF%B7%E6%B1%82%E5%88%B0%E8%AE%BE%E5%A4%87%E6%89%A7%E8%A1%8C" aria-label="链接到1. 从请求到设备执行">#</a></h2>
+<p>文本请求经过输入处理、tokenization、调度、模型执行、采样和输出处理。请求进入服务时，GPU 不一定立即执行，还要满足 token 预算、活动请求数与 KV 容量。</p>
+<p>下面是教学伪代码，省略执行器通信、异步返回和错误处理，不是可直接替换框架的 API：</p>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1">request = prepare_input(raw_request)</span>
+<span class="code-line" data-line="2">scheduler.add_request(request)</span>
+<span class="code-line" data-line="3"><span class="hljs-keyword">while</span> scheduler.has_work():</span>
+<span class="code-line" data-line="4">    plan = scheduler.schedule()</span>
+<span class="code-line" data-line="5">    outputs = model_runner.execute_model(plan)</span>
+<span class="code-line" data-line="6">    scheduler.update_from_output(plan, outputs)</span>
+<span class="code-line" data-line="7">    emit_ready_outputs(outputs)</span></code></pre></div>
+<p>plan 要说明计算哪些位置、每个请求已有多少 KV、结果写到哪里。模型返回后再推进计算与生成状态。计算若干输入 token，不代表返回相同数量的输出 token；未完成的 Prefill chunk 可能还没有可采样输出。</p>
+<p>具体安装版本的引擎、scheduler、worker/model runner、模型层与 Attention backend 可能有不同调用方式。类名相同也不保证同步/异步行为相同，需要结合实际配置和时间线确认。</p>
+<h2 id="2-token-预算不是请求数量">2. token 预算不是请求数量<a class="heading-anchor" href="#2-token-%E9%A2%84%E7%AE%97%E4%B8%8D%E6%98%AF%E8%AF%B7%E6%B1%82%E6%95%B0%E9%87%8F" aria-label="链接到2. token 预算不是请求数量">#</a></h2>
+<p>一个 Decode 请求可能只需计算一个新位置，Prefill 请求则可能还剩数百个位置。限制最多几个请求，与限制本轮计算几个 token，是不同约束。</p>
+<!-- source-check: examples/scheduler_reference.py -->
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1"><span class="hljs-keyword">def</span> <span class="hljs-title function_">allocate_tokens</span>(<span class="hljs-params">demands, budget</span>):</span>
+<span class="code-line" data-line="2">    <span class="hljs-keyword">if</span> budget &lt; <span class="hljs-number">0</span> <span class="hljs-keyword">or</span> <span class="hljs-built_in">any</span>(n&lt;<span class="hljs-number">0</span> <span class="hljs-keyword">for</span> _,n <span class="hljs-keyword">in</span> demands):</span>
+<span class="code-line" data-line="3">        <span class="hljs-keyword">raise</span> ValueError(<span class="hljs-string">&quot;nonnegative demand and budget required&quot;</span>)</span>
+<span class="code-line" data-line="4">    <span class="hljs-keyword">if</span> <span class="hljs-built_in">len</span>({name <span class="hljs-keyword">for</span> name,_ <span class="hljs-keyword">in</span> demands}) != <span class="hljs-built_in">len</span>(demands):</span>
+<span class="code-line" data-line="5">        <span class="hljs-keyword">raise</span> ValueError(<span class="hljs-string">&quot;request identities must be unique&quot;</span>)</span>
+<span class="code-line" data-line="6">    assignments=[]</span>
+<span class="code-line" data-line="7">    <span class="hljs-keyword">for</span> name,need <span class="hljs-keyword">in</span> demands:</span>
+<span class="code-line" data-line="8">        take=<span class="hljs-built_in">min</span>(need,budget)</span>
+<span class="code-line" data-line="9">        <span class="hljs-keyword">if</span> take:</span>
+<span class="code-line" data-line="10">            assignments.append((name,take))</span>
+<span class="code-line" data-line="11">        budget-=take</span>
+<span class="code-line" data-line="12">    <span class="hljs-keyword">return</span> assignments</span></code></pre></div>
+<p>预算为 4，先处理一个需求为 1 的 Decode，再处理需求为 8 的 Prefill，分配为 1+3；反过来则 Prefill 占满 4。这个模型演示顺序与预算的影响，不代表 vLLM 固定采用某一种优先级。</p>
+<p>Chunked Prefill 把长输入拆小，为其他请求留下调度机会。块太小可能增加调度与 kernel 开销，块太大则延长其他请求的等待；要同时观察 TTFT、TPOT、吞吐与长尾。</p>
+<p>Continuous batching 在步与步之间加入或移除请求。batch 行号可以变化，请求身份不能丢：length、位置、KV 映射、采样状态和输出归属需要一起更新。</p>
+<h2 id="3-kv-容量与前缀复用">3. KV 容量与前缀复用<a class="heading-anchor" href="#3-kv-%E5%AE%B9%E9%87%8F%E4%B8%8E%E5%89%8D%E7%BC%80%E5%A4%8D%E7%94%A8" aria-label="链接到3. KV 容量与前缀复用">#</a></h2>
+<p>在无共享和 COW 的简单情形下，已有长度 L、每页 T 个位置，追加 n 个位置需要的新页数为</p>
+<div class="equation"><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi mathvariant="normal">Δ</mi><mi>P</mi><mo>=</mo><mrow><mo fence="true">⌈</mo><mfrac><mrow><mi>L</mi><mo>+</mo><mi>n</mi></mrow><mi>T</mi></mfrac><mo fence="true">⌉</mo></mrow><mo>−</mo><mrow><mo fence="true">⌈</mo><mfrac><mi>L</mi><mi>T</mi></mfrac><mo fence="true">⌉</mo></mrow><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">\Delta P=\left\lceil\frac{L+n}{T}\right\rceil-
+\left\lceil\frac{L}{T}\right\rceil.</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:0.6833em;"></span><span class="mord">Δ</span><span class="mord mathnormal" style="margin-right:0.1389em;">P</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:2.4em;vertical-align:-0.95em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size3">⌈</span></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3603em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.1389em;">T</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal">L</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord mathnormal">n</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size3">⌉</span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:2.4em;vertical-align:-0.95em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size3">⌈</span></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3603em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.1389em;">T</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal">L</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size3">⌉</span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">.</span></span></span></span></span></div>
+<p>T=16，L=16 再追加一个位置需要新页，L=17 再追加一个可能仍使用尾页。共享前缀、投机预留与不同层的 cache 结构还会改变预算，不能只统计当前有效 token。</p>
+<h3 id="相同-token-片段不一定对应相同-kv">相同 token 片段不一定对应相同 KV<a class="heading-anchor" href="#%E7%9B%B8%E5%90%8C-token-%E7%89%87%E6%AE%B5%E4%B8%8D%E4%B8%80%E5%AE%9A%E5%AF%B9%E5%BA%94%E7%9B%B8%E5%90%8C-kv" aria-label="链接到相同 token 片段不一定对应相同 KV">#</a></h3>
+<p>KV 依赖前面的上下文、模型权重、位置规则和 adapter。两个末尾 block 的 token 相同，之前的 prefix 不同，hidden state 也可能不同；按 block 缓存时，需要父前缀身份，而不只 hash 当前 block。</p>
+<p>下面用完整 prefix 演示身份组成，不是 vLLM 内部 hash 协议：</p>
+<!-- source-check: examples/scheduler_reference.py -->
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1"><span class="hljs-keyword">def</span> <span class="hljs-title function_">prefix_identity</span>(<span class="hljs-params">tokens, model_revision, adapter, position_base, tenant</span>):</span>
+<span class="code-line" data-line="2">    <span class="hljs-comment"># tokens is the complete prefix here; block-based caches also need parent identity.</span></span>
+<span class="code-line" data-line="3">    payload=[<span class="hljs-built_in">list</span>(tokens),model_revision,adapter,position_base,tenant]</span>
+<span class="code-line" data-line="4">    <span class="hljs-keyword">return</span> hashlib.sha256(json.dumps(payload,separators=(<span class="hljs-string">&quot;,&quot;</span>,<span class="hljs-string">&quot;:&quot;</span>)).encode()).hexdigest()</span></code></pre></div>
+<p>model_revision 应覆盖影响计算的权重与配置，adapter 和位置也须一致；需要租户隔离时加入相应隔离域。多模态还要考虑图像、音频等状态。本例只处理文本，hash 不替代访问控制。</p>
+<p>前缀命中主要减少重复 Prefill。普通 Decode 仍要访问 Attention 所需的历史 KV，不能把“省去重算”理解为“后面不用读”。</p>
+<h3 id="offload-与-pd-分离">Offload 与 PD 分离<a class="heading-anchor" href="#offload-%E4%B8%8E-pd-%E5%88%86%E7%A6%BB" aria-label="链接到Offload 与 PD 分离">#</a></h3>
+<p>KV offload 改变容量与传输路径，恢复时可能增加等待、预取与设备临时空间。H2D、网络和 HBM 带宽不是同一个指标。</p>
+<p>Prefill/Decode 分离让两阶段独立配置资源，但必须交接 KV 和请求状态。收益可能来自减少干扰或独立扩缩容，代价包括传输、排队与调度；短请求、低并发下未必划算，应和同条件共置基线比较。</p>
+<h2 id="4-确认真实-backend再替换-kernel">4. 确认真实 backend，再替换 kernel<a class="heading-anchor" href="#4-%E7%A1%AE%E8%AE%A4%E7%9C%9F%E5%AE%9E-backend%E5%86%8D%E6%9B%BF%E6%8D%A2-kernel" aria-label="链接到4. 确认真实 backend，再替换 kernel">#</a></h2>
+<p>Attention 路径可能随 dtype、head dimension、cache layout、设备架构和 Prefill/Decode 阶段变化。先从启动配置与时间线确认实际 kernel，再检查调用处的 shape、stride、mask、输出与 workspace。</p>
+<p>捕获一组相同输入，先对比局部结果，再替换实现并检查模型输出与请求指标。连续 FP32 Attention 不能直接替代需要分页、低精度和动态长度的 backend；适配增加的 transpose、cast 和 copy 必须计入成本。</p>
+<p>CUDA Graph 能减少部分 host launch 开销，但地址和执行结构有约束。动态 shape 通常需要 buffer 复用、形状分档或回退；图回放不表示数学工作量消失。比较 eager 与图执行时，保持其他条件不变。</p>
+<h2 id="5-实践本地模型与同条件基线">5. 实践：本地模型与同条件基线<a class="heading-anchor" href="#5-%E5%AE%9E%E8%B7%B5%E6%9C%AC%E5%9C%B0%E6%A8%A1%E5%9E%8B%E4%B8%8E%E5%90%8C%E6%9D%A1%E4%BB%B6%E5%9F%BA%E7%BA%BF" aria-label="链接到5. 实践：本地模型与同条件基线">#</a></h2>
+<p>以下命令在自己的 GPU 环境中执行。先准备能放入设备的本地模型，再核对当前版本参数；不自动下载安装，也不修改公共配置。</p>
+<div class="code-panel"><div class="code-caption"><span>BASH</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-bash"><span class="code-line" data-line="1">python -c <span class="hljs-string">&quot;import importlib.metadata as m; print(m.version(&#x27;vllm&#x27;))&quot;</span></span>
+<span class="code-line" data-line="2">vllm serve --<span class="hljs-built_in">help</span></span>
+<span class="code-line" data-line="3">vllm bench serve --<span class="hljs-built_in">help</span></span></code></pre></div>
+<p>启动只监听本机的服务示例：</p>
+<div class="code-panel"><div class="code-caption"><span>BASH</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-bash"><span class="code-line" data-line="1">MODEL_DIR=/data/models/your-model</span>
+<span class="code-line" data-line="2">vllm serve <span class="hljs-string">&quot;<span class="hljs-variable">$MODEL_DIR</span>&quot;</span> \</span>
+<span class="code-line" data-line="3">  --served-model-name teaching \</span>
+<span class="code-line" data-line="4">  --host 127.0.0.1 --port 8000 \</span>
+<span class="code-line" data-line="5">  --dtype auto --max-model-len 2048 \</span>
+<span class="code-line" data-line="6">  --gpu-memory-utilization 0.8</span></code></pre></div>
+<p>MODEL_DIR 是需要替换的本地路径。模型支持、dtype 和容量取决于环境，这不是任意模型都能启动的保证。服务保持运行，在另一个终端设置同一模型路径，先检查小请求再基准测试：</p>
+<div class="code-panel"><div class="code-caption"><span>BASH</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-bash"><span class="code-line" data-line="1">MODEL_DIR=/data/models/your-model</span>
+<span class="code-line" data-line="2">curl http://127.0.0.1:8000/v1/models</span>
+<span class="code-line" data-line="3">curl http://127.0.0.1:8000/v1/completions \</span>
+<span class="code-line" data-line="4">  -H <span class="hljs-string">&quot;Content-Type: application/json&quot;</span> \</span>
+<span class="code-line" data-line="5">  -d <span class="hljs-string">&#x27;{&quot;model&quot;:&quot;teaching&quot;,&quot;prompt&quot;:&quot;Hello&quot;,&quot;max_tokens&quot;:8,&quot;temperature&quot;:0}&#x27;</span></span>
+<span class="code-line" data-line="6">vllm bench serve \</span>
+<span class="code-line" data-line="7">  --backend openai \</span>
+<span class="code-line" data-line="8">  --base-url http://127.0.0.1:8000 \</span>
+<span class="code-line" data-line="9">  --model teaching --tokenizer <span class="hljs-string">&quot;<span class="hljs-variable">$MODEL_DIR</span>&quot;</span> \</span>
+<span class="code-line" data-line="10">  --dataset-name random \</span>
+<span class="code-line" data-line="11">  --random-input-len 128 --random-output-len 64 \</span>
+<span class="code-line" data-line="12">  --random-range-ratio 0 \</span>
+<span class="code-line" data-line="13">  --num-prompts 32 --request-rate 4 \</span>
+<span class="code-line" data-line="14">  --save-result --result-dir ./results/vllm-small</span></code></pre></div>
+<p>先检查单请求返回的文本、finish_reason 和 usage；/v1/models 能访问不代表模型前向已经成功。用 help 确认安装版本参数。随机输入用于控制长度和压力，不代表业务质量；需要记录实际生成长度、EOS、错误、warmup 和 cache 状态。request rate 是到达速率，不保证服务吞吐达到该值，并发限制也可能压低实际发送速率。</p>
+<p>比较前缀缓存时，分别控制重复/不同前缀以及冷/热状态。不要同时换模型、dtype、输入长度和调度参数，再把结果归因于一个 kernel。</p>
+<h2 id="6-判断优化是否真正生效">6. 判断优化是否真正生效<a class="heading-anchor" href="#6-%E5%88%A4%E6%96%AD%E4%BC%98%E5%8C%96%E6%98%AF%E5%90%A6%E7%9C%9F%E6%AD%A3%E7%94%9F%E6%95%88" aria-label="链接到6. 判断优化是否真正生效">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>观察</th>
+<th>需要排除的混淆</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>TTFT 下降</td>
+<td>前缀命中、排队或输入长度变化</td>
+</tr>
+<tr>
+<td>TPOT 下降</td>
+<td>batch、输出长度、采样或结束策略变化</td>
+</tr>
+<tr>
+<td>吞吐增加</td>
+<td>错误增加、SLO 超限、实际生成 token 减少</td>
+</tr>
+<tr>
+<td>显存下降</td>
+<td>cache 变小，导致更多重算或换出</td>
+</tr>
+<tr>
+<td>kernel 更快</td>
+<td>层外新增转换、通信或同步</td>
+</tr>
+</tbody></table>
+<p>SLO（Service Level Objective，服务等级目标）约束下的有效吞吐，比无约束峰值更有意义。保存输入配置、软件版本、设备身份和逐请求结果，按同一边界比较。</p>
+<p>无 GPU 时可以先核对预算与缓存身份：</p>
+<div class="code-panel"><div class="code-caption"><span>BASH</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-bash"><span class="code-line" data-line="1">python roadmap/curriculum/systems/examples/scheduler_reference.py</span></code></pre></div>
+<p>系统组合没有对应的 LeetGPU 题。局部题面正确，还要在这里验证 backend 与请求路径；能返回文本不等于性能优化有效。</p>
+<h2 id="7-整网与算子从请求形状追到设备执行">7. 整网与算子：从请求形状追到设备执行<a class="heading-anchor" href="#7-%E6%95%B4%E7%BD%91%E4%B8%8E%E7%AE%97%E5%AD%90%E4%BB%8E%E8%AF%B7%E6%B1%82%E5%BD%A2%E7%8A%B6%E8%BF%BD%E5%88%B0%E8%AE%BE%E5%A4%87%E6%89%A7%E8%A1%8C" aria-label="链接到7. 整网与算子：从请求形状追到设备执行">#</a></h2>
+<p>一次推理不是一次 kernel launch，而是跨越请求状态、模型张量、框架调度和设备执行的多层路径：</p>
+<table>
+<thead>
+<tr>
+<th>层次</th>
+<th>主要工作</th>
+<th>需要观察的对象</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>请求与调度</td>
+<td>接收 token、选择本轮请求与 token 预算</td>
+<td>请求状态、Prefill/Decode 阶段、KV 位置</td>
+</tr>
+<tr>
+<td>ModelRunner</td>
+<td>整理输入、位置与 Attention 元数据</td>
+<td>输入 shape、slot/block 映射、采样位置</td>
+</tr>
+<tr>
+<td>模型层</td>
+<td>执行投影、归一化、Attention、MLP 与采样</td>
+<td>张量维度、dtype、mask、残差数据流</td>
+</tr>
+<tr>
+<td>框架执行</td>
+<td>按配置走 eager、编译或图回放</td>
+<td>捕获/编译范围、shape 分桶、CPU 提交间隙</td>
+</tr>
+<tr>
+<td>设备执行</td>
+<td>运行 kernel，并按需传输或集合通信</td>
+<td>kernel、copy、通信、同步与空闲时间</td>
+</tr>
+</tbody></table>
+<p>GPU 与昇腾的分层可以用来互相理解，但接口和实现不能直接互换：</p>
+<table>
+<thead>
+<tr>
+<th>观察层</th>
+<th>昇腾常见组成</th>
+<th>NVIDIA GPU 上的对应问题</th>
+<th>可迁移的判断方法</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>请求与批处理</td>
+<td>推理服务、调度器、ModelRunner</td>
+<td>服务入口、Scheduler、ModelRunner</td>
+<td>本轮处理多少 token、请求状态和 KV 映射是否一致</td>
+</tr>
+<tr>
+<td>图与执行</td>
+<td>PyTorch、CANN Runtime、GE/ACLGraph 等路径</td>
+<td>PyTorch、CUDA Runtime、编译或 CUDA Graph 等路径</td>
+<td>图是否捕获目标工作、动态形状如何处理、CPU 是否仍逐算子调度</td>
+</tr>
+<tr>
+<td>计算算子</td>
+<td>CANN 算子、Ascend C、自定义 NPU 算子</td>
+<td>CUDA/Triton kernel、CUDA 库或融合算子</td>
+<td>输入输出 shape、stride、dtype、mask、workspace 和数值合同</td>
+</tr>
+<tr>
+<td>设备通信</td>
+<td>HCCL 与实际 NPU 互连</td>
+<td>NCCL 与实际 GPU 互连</td>
+<td>通信量、拓扑、同步点及其与计算的重叠</td>
+</tr>
+<tr>
+<td>设备内存</td>
+<td>NPU HBM、片上存储与 KV 分配</td>
+<td>GPU HBM、SMEM/寄存器与 KV 分配</td>
+<td>读写字节、驻留时间、临时 buffer、碎片和并发容量</td>
+</tr>
+</tbody></table>
+<p>这张表是分析视角的对应，不是 API 或硬件单元的一对一映射。比如，知道算子“可以入图”还不等于当前请求真的走了图执行；需核对启动配置、shape 分桶、编译/捕获日志和设备时间线。eager 下小 Decode kernel 可能被 CPU launch 间隙隔开；图执行可能压低重复提交开销，但不会减少 Attention 必须读取的历史信息，也不能证明某个 kernel 更快。</p>
+<h3 id="用一层模型把-shape-追到底">用一层模型把 shape 追到底<a class="heading-anchor" href="#%E7%94%A8%E4%B8%80%E5%B1%82%E6%A8%A1%E5%9E%8B%E6%8A%8A-shape-%E8%BF%BD%E5%88%B0%E5%BA%95" aria-label="链接到用一层模型把 shape 追到底">#</a></h3>
+<p>本地 openPangu-Embedded-7B-V1.1 配置给出隐藏维度 <code>H=4096</code>、34 层、32 个 Query Head、8 个 KV Head、词表 153,376。每个 head 的宽度为</p>
+<div class="equation"><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>d</mi><mo>=</mo><mi>H</mi><mi mathvariant="normal">/</mi><mn>32</mn><mo>=</mo><mn>128.</mn></mrow><annotation encoding="application/x-tex">d=H/32=128.</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:0.6944em;"></span><span class="mord mathnormal">d</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.0813em;">H</span><span class="mord">/32</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.6444em;"></span><span class="mord">128.</span></span></span></span></span></div>
+<p>对 <code>T</code> 个 token，投影的逻辑形状为：</p>
+<table>
+<thead>
+<tr>
+<th>张量</th>
+<th align="right">形状</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>输入 <code>X</code></td>
+<td align="right"><code>[T, 4096]</code></td>
+<td>每个 token 一个 4096 维隐藏向量</td>
+</tr>
+<tr>
+<td><code>Q</code></td>
+<td align="right"><code>[T, 32, 128]</code></td>
+<td>32 个 Query Head</td>
+</tr>
+<tr>
+<td><code>K</code>、<code>V</code></td>
+<td align="right">各 <code>[T, 8, 128]</code></td>
+<td>每种张量 8 个 KV Head</td>
+</tr>
+<tr>
+<td>Attention 输出</td>
+<td align="right"><code>[T, 4096]</code></td>
+<td>拼接 32 个 head 后的隐藏维度</td>
+</tr>
+<tr>
+<td>LM Head logits</td>
+<td align="right"><code>[T, 153376]</code></td>
+<td>每个位置对应词表分数</td>
+</tr>
+</tbody></table>
+<p>Prefill 的 <code>T</code> 是本轮实际送进模型的 prompt token 数，chunked prefill 时不一定等于完整 prompt 长度。Decode 常见情形是每条活跃请求只添一个新位置，输入可写成 <code>[B,4096]</code>；它为本轮 token 生成 Q/K/V，同时从请求自己的 KV 映射读取历史上下文。每 4 个 Query Head 共享一组 KV Head，因此 GQA 减少 KV 的存储和读取量；它没有把每个 Query Head 的计算自动变成一个更短的历史序列。</p>
+<p>下面是 <code>vllm-ascend-pangu-v023</code> 中盘古适配类的源码原样短摘录，展示模型层如何把投影张量交给通用 <code>Attention</code> 模块。它不是 CUDA/NPU kernel，也没有固定某一个 Attention backend：</p>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1">qkv, _ = <span class="hljs-variable language_">self</span>.qkv_proj(hidden_states)</span>
+<span class="code-line" data-line="2">query, key, value = qkv.split(</span>
+<span class="code-line" data-line="3">    [<span class="hljs-variable language_">self</span>.q_size, <span class="hljs-variable language_">self</span>.kv_size, <span class="hljs-variable language_">self</span>.kv_size], dim=-<span class="hljs-number">1</span></span>
+<span class="code-line" data-line="4">)</span>
+<span class="code-line" data-line="5">query, key = <span class="hljs-variable language_">self</span>.rotary_emb(positions, query, key)</span>
+<span class="code-line" data-line="6">attn_output = <span class="hljs-variable language_">self</span>.attn(query, key, value)</span>
+<span class="code-line" data-line="7">output, _ = <span class="hljs-variable language_">self</span>.o_proj(attn_output)</span>
+<span class="code-line" data-line="8"><span class="hljs-keyword">return</span> output</span></code></pre></div>
+<p><strong>教学改写（伪代码，不是框架 API）：</strong></p>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1">q, k, v = project_and_split(x, query_heads=<span class="hljs-number">32</span>, kv_heads=<span class="hljs-number">8</span>, head_dim=<span class="hljs-number">128</span>)</span>
+<span class="code-line" data-line="2">q, k = apply_position_encoding(q, k, positions)</span>
+<span class="code-line" data-line="3">context = attention_backend(q, k, v, request_kv_map, mask)</span>
+<span class="code-line" data-line="4">y = output_projection(context)</span></code></pre></div>
+<p>第一段保留实际模型调用结构；第二段只把数据依赖摊开，明确 backend 还需要 KV 映射和 mask 等信息。源码调用 <code>self.attn(...)</code>，不等于模型类直接调用某个 <code>flash</code> 或 <code>paged</code> 函数。backend 会受软件版本、设备、dtype、shape、KV 布局、调度阶段和执行模式影响。对 GPU 也一样：读到模型层的 <code>Attention</code> 调用，只能说明模块边界，不能据此声称运行了 FlashAttention、PagedAttention 或某个特定 kernel。</p>
+<h2 id="8-同一品牌不同模型embedded-7b-与-openpangu-20">8. 同一品牌，不同模型：Embedded-7B 与 openPangu 2.0<a class="heading-anchor" href="#8-%E5%90%8C%E4%B8%80%E5%93%81%E7%89%8C%E4%B8%8D%E5%90%8C%E6%A8%A1%E5%9E%8Bembedded-7b-%E4%B8%8E-openpangu-20" aria-label="链接到8. 同一品牌，不同模型：Embedded-7B 与 openPangu 2.0">#</a></h2>
+<p>“盘古”是系列名，不代表模型结构相同。以下三列分开描述，不能把 2.0 的设计当成 Embedded-7B 的实现细节：</p>
+<table>
+<thead>
+<tr>
+<th>属性</th>
+<th>openPangu-Embedded-7B-V1.1</th>
+<th>openPangu-2.0-Flash</th>
+<th>openPangu-2.0-Pro</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>规模标称</td>
+<td>约 7B，配置可逐张量复算</td>
+<td>约 92B 总 / 6B 激活</td>
+<td>约 505B 总 / 18B 激活</td>
+</tr>
+<tr>
+<td>主体结构</td>
+<td>34 层 Dense decoder</td>
+<td>46 层 MoE</td>
+<td>50 层 MoE</td>
+</tr>
+<tr>
+<td>隐藏宽度</td>
+<td>4096</td>
+<td>2560</td>
+<td>5120</td>
+</tr>
+<tr>
+<td>Attention</td>
+<td>GQA：32 Q heads、8 KV heads、head dim 128</td>
+<td>MLA + DSA/SWA 混合，SWA:DSA=2:1</td>
+<td>MLA + DSA/SWA 混合，SWA:DSA=2:1</td>
+</tr>
+<tr>
+<td>MoE 路由</td>
+<td>无</td>
+<td>256 routed experts，每 token 选 8；另有 1 shared expert</td>
+<td>384 routed experts，每 token 选 8；另有 1 shared expert</td>
+</tr>
+<tr>
+<td>上下文配置</td>
+<td>32,768</td>
+<td>524,288</td>
+<td>524,288</td>
+</tr>
+</tbody></table>
+<p>教材中的 Flash/Pro 描述有混合之处；应以官方模型卡和配置按版本区分：Flash 是约 92B/6B、256 选 8，Pro 是约 505B/18B、384 选 8。两者的专家数不同，不能互相套用，也都不是本地 Embedded-7B Dense 模型。</p>
+<p>2.0 的 Attention 也不能用 Embedded-7B 的 GQA 公式代替。官方模型卡按 DSA:SWA=1:2 给出混合层配比，即 SWA:DSA=2:1。Flash 官方配置包含 <code>q_lora_rank=1024</code>、<code>kv_lora_rank=512</code>、<code>qk_nope_head_dim=128</code>、<code>qk_rope_head_dim=64</code>、48 个 attention heads；Pro 对应值为 Q rank 1536、KV rank 512、NoPE/RoPE 维度 128/64、64 heads。MLA 以低秩 latent 表达压缩 K/V 路径，DSA 再按索引选择稀疏上下文，SWA 只保留局部窗口。要把这些数字换算成真实 KV 分配，仍需跟随匹配版本的推理实现，检查每种层的 cache tensor、索引数据、dtype、block 组织和请求映射；不能只把 <code>kv_lora_rank</code> 乘层数就宣称是进程显存。</p>
+<h3 id="20-方法如何映射到系统成本">2.0 方法如何映射到系统成本<a class="heading-anchor" href="#20-%E6%96%B9%E6%B3%95%E5%A6%82%E4%BD%95%E6%98%A0%E5%B0%84%E5%88%B0%E7%B3%BB%E7%BB%9F%E6%88%90%E6%9C%AC" aria-label="链接到2.0 方法如何映射到系统成本">#</a></h3>
+<p>官方模型资料确认 2.0 使用 MLA、DSA/SWA 混合层、4-stream mHC、3 头 MTP；模型配置还给出 512K 上下文与 MoE 路由参数。把这些结构转换为系统问题时：</p>
+<ul>
+<li><strong>SWA 与 DSA</strong>：SWA 把可见上下文限制到窗口，数据访问较局部；DSA 先用索引机制选候选位置，随后对稀疏位置做 Attention，带来索引和不规则访问。两类层的 shape、读写和并行策略不同，不能用同一条 dense Attention kernel 时间代表整网。</li>
+<li><strong>MoE 384 选 8（Pro）/256 选 8（Flash）</strong>：一个 token 只路由到部分 routed expert，减少其 MLP 计算；但“激活参数少”不表示全部未激活专家权重都无需驻留。运行成本还包括 router、token 重排、专家分配、设备间 dispatch/combine、负载不均和同步。低并发时通信启动/同步占比可能重要，高并发时传输量与负载均衡也必须测量。</li>
+<li><strong>长上下文</strong>：512K 是模型支持的最大位置规模，不代表任意 batch 都能在单设备上保留全部状态。需要分别核算 KV/索引状态、临时 workspace、权重分片与并发请求，并以实际模型版本和部署配置的容量检查为准。</li>
+<li><strong>MTP</strong>：额外预测头改变候选 token 的产生与验证路径；端到端收益取决于接受率、额外计算和调度，不是把单个 decode kernel 的时间简单除以 3。</li>
+<li><strong>PD 分离与并行策略</strong>：官方 2.0 推理仓库把 Flash（92B）和 Pro（505B）分别配置；其公开 README 给出 A3 上 Flash 的 1P1D 示例与 Pro 的独立部署配置。这说明部署方案与版本绑定，不能拿旧 vLLM-Ascend 的 TP4 静态图当作 2.0 运行配置或性能证据。</li>
+</ul>
+<p>这些是从公开结构推导出的待验证系统变量；模型配置本身不能证明对应 backend 或 kernel 的运行方式和性能。切换到 GPU 时，分析仍要追踪张量布局、算术强度、内存流量、调度粒度、通信域与同步点；DSA/MoE backend、通信策略和 fused kernel 必须由目标 GPU 软件栈的实现与执行证据确认，不能从昇腾算子名推导 CUDA 路径。</p>
+<p>读 2.0 源码时要把模型定义与推理部署分开配对。HF 官方 Flash/Pro 各自的配置都声明 <code>OpenPanguV2ForCausalLM</code> / <code>openpangu_v2</code>，但 hidden width、层数、dense 起始层、DSA 层集合、专家总数和每 token top-k 必须从同一个模型目录读取；不能把 Flash 配置套在 Pro checkpoint 上。<code>architectures</code> 字符串是模型类声明，配置文件描述模型张量与结构；二者都不足以确定容器内实际载入的 adapter 或 kernel backend。</p>
+<p>官方 openPangu-2.0-Infer 仓库再按 92B Flash 与 505B Pro 分别提供部署目录：Flash 的示例拓扑是 1P1D（两台 A3），Pro 的示例拓扑是 2P1D（八台 A3），启动模板、inventory、镜像版本和 served model name 按模型分别匹配。README_EN 列出镜像内依赖 <code>omni-npu 0.2.0</code> 与 <code>vllm 0.14.0+empty</code>，并指定镜像 <code>omniinfer-a3-arm:release_1.2.1.post1-202607241407-vllm</code>；它建议用 <code>pip list</code> 并进入容器定位 omni-npu 安装路径以修改推理代码。可见 GitCode main commit <code>5ddd125e</code> 下的 <code>components/omni-npu</code> 目录为空或不存在；官方 Gitee 组织索引则列出 <code>omniai/omni-npu</code>，说明它是 vLLM out-of-tree NPU plugin。该 Gitee 仓库代码页面标注外部成员不可访问，公开 GitCode 树与 README_EN 未提供匹配镜像版本的 adapter 源码或 commit。由此，公开可访问的模型配置与部署 YAML 不能确定 backend；这不代表实现未公开或镜像内只有二进制。模型卡与部署 YAML 说明配置意图，不构成单请求执行轨迹；服务日志和 profiler 才能证明对应配置下的模型载入、请求成功、backend/kernel 分派与性能。</p>
+<p>在获准进入且与服务相同版本的容器后，可只查 Python distribution metadata 来定位安装文件；这不会 import <code>omni_npu</code>、初始化 NPU 或执行 adapter：</p>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1"><span class="hljs-keyword">from</span> importlib <span class="hljs-keyword">import</span> metadata</span>
+<span class="code-line" data-line="2"></span>
+<span class="code-line" data-line="3">dist = metadata.distribution(<span class="hljs-string">&quot;omni-npu&quot;</span>)</span>
+<span class="code-line" data-line="4"><span class="hljs-built_in">print</span>(<span class="hljs-string">&quot;distribution version:&quot;</span>, dist.version)</span>
+<span class="code-line" data-line="5"><span class="hljs-built_in">print</span>(<span class="hljs-string">&quot;distribution root:&quot;</span>, dist.locate_file(<span class="hljs-string">&quot;&quot;</span>))</span>
+<span class="code-line" data-line="6"></span>
+<span class="code-line" data-line="7">files = dist.files <span class="hljs-keyword">or</span> ()</span>
+<span class="code-line" data-line="8"><span class="hljs-built_in">print</span>(<span class="hljs-string">&quot;recorded file count:&quot;</span>, <span class="hljs-built_in">len</span>(files))</span>
+<span class="code-line" data-line="9"><span class="hljs-keyword">for</span> entry <span class="hljs-keyword">in</span> files:</span>
+<span class="code-line" data-line="10">    <span class="hljs-keyword">if</span> <span class="hljs-built_in">str</span>(entry).endswith((<span class="hljs-string">&quot;.py&quot;</span>, <span class="hljs-string">&quot;.so&quot;</span>, <span class="hljs-string">&quot;entry_points.txt&quot;</span>)):</span>
+<span class="code-line" data-line="11">        <span class="hljs-built_in">print</span>(dist.locate_file(entry))</span></code></pre></div>
+<p>此检查只能找到当前容器里安装的发行文件和版本；若要核对实际 model adapter，还需在该版本源码允许访问的前提下静态查看注册、load_weights、forward 与 vLLM 调用点。它本身不是执行轨迹，不能证明服务载入了哪个 adapter 或调用了哪个 backend。</p>
+<p>部署前需选定并记录官方仓库 commit，复用对应模型目录的 inventory 与服务模板，填入真实节点地址、持久日志目录、权重路径和 served model name；再按 README 创建容器并按 Flash/Pro 对应的 <code>run_server,run_proxy</code> 标签启动。应通过服务日志确认模型 ID、Prefill/Decode 分组、容器内框架版本和请求结束状态；启动命令返回 0 只证明编排步骤成功，不能代替设备端生成或性能验收。</p>
+<p>共享集群不得直接照抄下面的命令。执行前先审核 inventory 中的 P/D/C 节点、host/IP/device 列表、模板引用的 <code>DOCKER_NAME_*</code>、image tag、日志目录和 P/D 命令；确认同名容器的归属并得到节点/容器 owner 同意。官方 README 明确提示：相同镜像时重复 <code>run_docker</code> 会覆盖同名容器；<code>run_server,run_proxy</code> 除容器内 nginx/proxy 外，还会在 master host 启动 nginx。因此先在隔离且获准的执行环境确认宿主机影响与端口占用，不能在共享 host 上未经审核启动。源码修改也须先确认路径是在容器文件系统、挂载卷还是宿主机；仅改任务获准的容器工作副本，不改共享宿主机 <code>/etc</code>、启动服务或公共配置。以下命令体现相应部署入口和作用域风险，须经上述预检后才能在获准环境执行。</p>
+<p>在 A3 执行节点上，应按官方 README 中与模型规格匹配的 inventory 和模板执行：</p>
+<div class="code-panel"><div class="code-caption"><span>BASH</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-bash"><span class="code-line" data-line="1"><span class="hljs-comment"># Flash: use the 92B / 1P1D inventory and service template documented by that checkout</span></span>
+<span class="code-line" data-line="2">(<span class="hljs-built_in">cd</span> tools/ansible/92B &amp;&amp; ansible-playbook -i omni_infer_inventory_used_for_1P1D.yml omni_infer_server_template_performance1P1D_92B_bf16_open.yml --tags run_docker)</span>
+<span class="code-line" data-line="3">(<span class="hljs-built_in">cd</span> tools/ansible/92B &amp;&amp; ansible-playbook -i omni_infer_inventory_used_for_1P1D.yml omni_infer_server_template_performance1P1D_92B_bf16_open.yml --tags run_server,run_proxy)</span>
+<span class="code-line" data-line="4"></span>
+<span class="code-line" data-line="5"><span class="hljs-comment"># Pro: use the 505B / 2P1D inventory and its separate service template</span></span>
+<span class="code-line" data-line="6">(<span class="hljs-built_in">cd</span> tools/ansible/505B &amp;&amp; ansible-playbook -i omni_infer_inventory_used_for_2P1D.yml omni_infer_server_template_performance2P1D_505B_bf16_open.yml --tags run_docker)</span>
+<span class="code-line" data-line="7">(<span class="hljs-built_in">cd</span> tools/ansible/505B &amp;&amp; ansible-playbook -i omni_infer_inventory_used_for_2P1D.yml omni_infer_server_template_performance2P1D_505B_bf16_open.yml --tags run_server,run_proxy)</span></code></pre></div>
+<p>运行前必须在同一官方 checkout 中填好 inventory 的实际节点地址及模板环境值，不能把 Flash inventory 和 Pro template 混用。服务启动后先保存 commit、inventory、template、image tag 与日志目录，再用 README 的示例 API 请求做功能 smoke；只有目标设备日志和 profiler 证据才允许写设备通过或吞吐结果。</p>
+<h2 id="9-手算容量权重与-kv-分开">9. 手算容量：权重与 KV 分开<a class="heading-anchor" href="#9-%E6%89%8B%E7%AE%97%E5%AE%B9%E9%87%8F%E6%9D%83%E9%87%8D%E4%B8%8E-kv-%E5%88%86%E5%BC%80" aria-label="链接到9. 手算容量：权重与 KV 分开">#</a></h2>
+<p>对 Embedded-7B，权重参数可按实际结构逐项计数。令 <code>H=4096</code>、<code>I=12800</code>、<code>Hkv=8×128=1024</code>：</p>
+<div class="equation"><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi>P</mi><mrow><mi mathvariant="normal">a</mi><mi mathvariant="normal">t</mi><mi mathvariant="normal">t</mi><mi mathvariant="normal">n</mi></mrow></msub><mo>=</mo><mn>2</mn><msup><mi>H</mi><mn>2</mn></msup><mo>+</mo><mn>2</mn><mi>H</mi><msub><mi>H</mi><mrow><mi>k</mi><mi>v</mi></mrow></msub><mo separator="true">,</mo><mspace width="2em"/><msub><mi>P</mi><mrow><mi mathvariant="normal">a</mi><mi mathvariant="normal">t</mi><mi mathvariant="normal">t</mi><mi mathvariant="normal">n</mi><mtext> </mtext><mi mathvariant="normal">b</mi><mi mathvariant="normal">i</mi><mi mathvariant="normal">a</mi><mi mathvariant="normal">s</mi></mrow></msub><mo>=</mo><mn>2</mn><mi>H</mi><mo>+</mo><mn>2</mn><msub><mi>H</mi><mrow><mi>k</mi><mi>v</mi></mrow></msub><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">P_{\mathrm{attn}}=2H^2+2H H_{kv},\qquad P_{\mathrm{attn\ bias}}=2H+2H_{kv}.</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.1389em;">P</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathrm mtight">attn</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.9474em;vertical-align:-0.0833em;"></span><span class="mord">2</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0813em;">H</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8641em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.8778em;vertical-align:-0.1944em;"></span><span class="mord">2</span><span class="mord mathnormal" style="margin-right:0.0813em;">H</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0813em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span><span class="mord mathnormal mtight" style="margin-right:0.0359em;">v</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:2em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.1389em;">P</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathrm mtight">attn</span><span class="mspace mtight"><span class="mtight"> </span></span><span class="mord mathrm mtight">bias</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.7667em;vertical-align:-0.0833em;"></span><span class="mord">2</span><span class="mord mathnormal" style="margin-right:0.0813em;">H</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord">2</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0813em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span><span class="mord mathnormal mtight" style="margin-right:0.0359em;">v</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord">.</span></span></span></span></span></div>
+<p>前式包含 Q、O 两个 <code>H×H</code> 权重和 K、V 两个 <code>H×Hkv</code> 权重；后式是四个投影的 bias 数量。门控 MLP 与 RMSNorm 的参数量为</p>
+<div class="equation"><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi>P</mi><mrow><mi mathvariant="normal">M</mi><mi mathvariant="normal">L</mi><mi mathvariant="normal">P</mi></mrow></msub><mo>=</mo><mn>3</mn><mi>H</mi><mi>I</mi><mo separator="true">,</mo><mspace width="2em"/><msub><mi>P</mi><mrow><mi mathvariant="normal">n</mi><mi mathvariant="normal">o</mi><mi mathvariant="normal">r</mi><mi mathvariant="normal">m</mi></mrow></msub><mo>=</mo><mn>2</mn><mi>H</mi><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">P_{\mathrm{MLP}}=3HI,\qquad P_{\mathrm{norm}}=2H.</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.1389em;">P</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathrm mtight">MLP</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.8778em;vertical-align:-0.1944em;"></span><span class="mord">3</span><span class="mord mathnormal" style="margin-right:0.0813em;">H</span><span class="mord mathnormal" style="margin-right:0.0785em;">I</span><span class="mpunct">,</span><span class="mspace" style="margin-right:2em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.1389em;">P</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathrm mtight">norm</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.6833em;"></span><span class="mord">2</span><span class="mord mathnormal" style="margin-right:0.0813em;">H</span><span class="mord">.</span></span></span></span></span></div>
+<table>
+<thead>
+<tr>
+<th>参数组</th>
+<th align="right">每层/每矩阵计算</th>
+<th align="right">参数量</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Attention 投影权重</td>
+<td align="right"><code>2H²+2HHkv</code></td>
+<td align="right">41,943,040 / 层</td>
+</tr>
+<tr>
+<td>Attention bias</td>
+<td align="right"><code>2H+2Hkv</code></td>
+<td align="right">10,240 / 层</td>
+</tr>
+<tr>
+<td>MLP 权重</td>
+<td align="right"><code>3HI</code></td>
+<td align="right">157,286,400 / 层</td>
+</tr>
+<tr>
+<td>两个 RMSNorm</td>
+<td align="right"><code>2H</code></td>
+<td align="right">8,192 / 层</td>
+</tr>
+<tr>
+<td>Decoder Layer</td>
+<td align="right">上述四项之和</td>
+<td align="right">199,247,872 / 层</td>
+</tr>
+<tr>
+<td>34 个 Decoder Layer</td>
+<td align="right"><code>34×199,247,872</code></td>
+<td align="right">6,774,427,648</td>
+</tr>
+<tr>
+<td>Embedding 与 LM Head</td>
+<td align="right"><code>2×V×H</code>，因 <code>tie_word_embeddings=false</code></td>
+<td align="right">1,256,456,192</td>
+</tr>
+<tr>
+<td>Final RMSNorm</td>
+<td align="right"><code>H</code></td>
+<td align="right">4,096</td>
+</tr>
+<tr>
+<td><strong>总计</strong></td>
+<td align="right"><code>34×P_layer+2VH+H</code></td>
+<td align="right"><strong>8,030,887,936</strong></td>
+</tr>
+</tbody></table>
+<p>按 BF16 每参数 2 bytes，理论权重 payload 为 <code>16,061,775,872 bytes = 14.958694 GiB</code>。这是参数张量字节数，不包含运行时 workspace、allocator、图、通信 buffer、临时权重副本或对齐开销。</p>
+<p>GQA 的逻辑 KV 容量为：</p>
+<div class="equation"><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi>M</mi><mrow><mi>K</mi><mi>V</mi></mrow></msub><mo>=</mo><mi>B</mi><mo>×</mo><mi>S</mi><mo>×</mo><mi>L</mi><mo>×</mo><mn>2</mn><mo>×</mo><msub><mi>H</mi><mrow><mi>k</mi><mi>v</mi></mrow></msub><mo>×</mo><mi>d</mi><mo>×</mo><mi>b</mi><mo separator="true">,</mo></mrow><annotation encoding="application/x-tex">M_{KV}=B\times S\times L\times 2\times H_{kv}\times d\times b,</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.109em;">M</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:-0.109em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0715em;">K</span><span class="mord mathnormal mtight" style="margin-right:0.2222em;">V</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.7667em;vertical-align:-0.0833em;"></span><span class="mord mathnormal" style="margin-right:0.0502em;">B</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.7667em;vertical-align:-0.0833em;"></span><span class="mord mathnormal" style="margin-right:0.0576em;">S</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.7667em;vertical-align:-0.0833em;"></span><span class="mord mathnormal">L</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">2</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0813em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span><span class="mord mathnormal mtight" style="margin-right:0.0359em;">v</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.7778em;vertical-align:-0.0833em;"></span><span class="mord mathnormal">d</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">b</span><span class="mpunct">,</span></span></span></span></span></div>
+<p>其中 <code>B</code> 是请求数，<code>S</code> 是每条序列实际保留的 token 数，<code>L=34</code>，因子 2 表示 K 和 V，<code>b=2 bytes</code> 表示 BF16。故每个请求、每个 token、跨所有层需要 <code>34×2×8×128×2=139,264 bytes=136 KiB</code>；32,768 token 的未分页逻辑值是 4.25 GiB。若按 128-token block 分配，129 个有效 token 要占两个 block，即 256 个槽位；实际 allocator 还需考虑共享、预留、量化、元数据与其它工作区。</p>
+<p>2.0 的总参数量与激活参数量也不能混作容量。以 Pro 标称 505B 参数为例，若所有参数都以 BF16 常驻，单看参数 payload 的粗略下限就是 <code>505×10⁹×2 / 2³⁰ ≈ 940.64 GiB</code>；实际部署还需权重切分/量化、buffer 和 KV 空间。<code>18B active</code>描述每 token 参与计算的参数规模，不代表只需加载 18B 权重。Flash 的 92B/6B 同理，不能由 6B 激活直接推导出权重可驻留大小。</p>
+<p>核心账本只用整数算术即可复核形状、权重与 KV 的数量级：</p>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1">head_dim = HIDDEN // QUERY_HEADS</span>
+<span class="code-line" data-line="2">kv_width = KV_HEADS * head_dim</span>
+<span class="code-line" data-line="3">attention_weights = <span class="hljs-number">2</span> * HIDDEN**<span class="hljs-number">2</span> + <span class="hljs-number">2</span> * HIDDEN * kv_width</span>
+<span class="code-line" data-line="4">mlp_weights = <span class="hljs-number">3</span> * HIDDEN * INTERMEDIATE</span>
+<span class="code-line" data-line="5">layer_params = attention_weights + (<span class="hljs-number">2</span> * HIDDEN + <span class="hljs-number">2</span> * kv_width) + mlp_weights + <span class="hljs-number">2</span> * HIDDEN</span>
+<span class="code-line" data-line="6">total_params = LAYERS * layer_params + <span class="hljs-number">2</span> * VOCAB * HIDDEN + HIDDEN</span>
+<span class="code-line" data-line="7">kv_bytes_per_token = LAYERS * <span class="hljs-number">2</span> * KV_HEADS * head_dim * BYTES_PER_BF16</span>
+<span class="code-line" data-line="8"></span>
+<span class="code-line" data-line="9"><span class="hljs-keyword">def</span> <span class="hljs-title function_">require_integer</span>(<span class="hljs-params">name, value, minimum</span>):</span>
+<span class="code-line" data-line="10">    <span class="hljs-keyword">if</span> <span class="hljs-built_in">type</span>(value) <span class="hljs-keyword">is</span> <span class="hljs-keyword">not</span> <span class="hljs-built_in">int</span> <span class="hljs-keyword">or</span> value &lt; minimum:</span>
+<span class="code-line" data-line="11">        <span class="hljs-keyword">raise</span> ValueError(<span class="hljs-string">f&quot;<span class="hljs-subst">{name}</span> must be an integer &gt;= <span class="hljs-subst">{minimum}</span>&quot;</span>)</span>
+<span class="code-line" data-line="12"></span>
+<span class="code-line" data-line="13"><span class="hljs-keyword">def</span> <span class="hljs-title function_">paged_kv_bytes</span>(<span class="hljs-params">tokens, batch, block_size</span>):</span>
+<span class="code-line" data-line="14">    require_integer(<span class="hljs-string">&quot;tokens&quot;</span>, tokens, <span class="hljs-number">0</span>)</span>
+<span class="code-line" data-line="15">    require_integer(<span class="hljs-string">&quot;batch&quot;</span>, batch, <span class="hljs-number">1</span>)</span>
+<span class="code-line" data-line="16">    require_integer(<span class="hljs-string">&quot;block_size&quot;</span>, block_size, <span class="hljs-number">1</span>)</span>
+<span class="code-line" data-line="17">    blocks = (tokens + block_size - <span class="hljs-number">1</span>) // block_size</span>
+<span class="code-line" data-line="18">    <span class="hljs-keyword">return</span> blocks * block_size * batch * kv_bytes_per_token</span></code></pre></div>
+<p>完整程序只复算 Embedded-7B 的 shape、参数与分页账本，不加载权重、不依赖 PyTorch，也不访问加速器：</p>
+<details>
+<summary>展开完整 CPU 账本程序</summary><!-- source-check: examples/pangu_embedded7b_ledger.py -->
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1"><span class="hljs-string">&quot;&quot;&quot;CPU-only shape, BF16 weight, and KV-cache ledger for Embedded-7B.</span></span>
+<span class="code-line" data-line="2"><span class="hljs-string"></span></span>
+<span class="code-line" data-line="3"><span class="hljs-string">The constants below come from the checked-in openPangu-Embedded-7B-V1.1</span></span>
+<span class="code-line" data-line="4"><span class="hljs-string">config.json. This is arithmetic verification, not a model load or NPU/GPU run.</span></span>
+<span class="code-line" data-line="5"><span class="hljs-string">&quot;&quot;&quot;</span></span>
+<span class="code-line" data-line="6"></span>
+<span class="code-line" data-line="7">HIDDEN = <span class="hljs-number">4096</span></span>
+<span class="code-line" data-line="8">INTERMEDIATE = <span class="hljs-number">12800</span></span>
+<span class="code-line" data-line="9">LAYERS = <span class="hljs-number">34</span></span>
+<span class="code-line" data-line="10">QUERY_HEADS = <span class="hljs-number">32</span></span>
+<span class="code-line" data-line="11">KV_HEADS = <span class="hljs-number">8</span></span>
+<span class="code-line" data-line="12">VOCAB = <span class="hljs-number">153376</span></span>
+<span class="code-line" data-line="13">BYTES_PER_BF16 = <span class="hljs-number">2</span></span>
+<span class="code-line" data-line="14">BLOCK_SIZE = <span class="hljs-number">128</span></span>
+<span class="code-line" data-line="15"></span>
+<span class="code-line" data-line="16"></span>
+<span class="code-line" data-line="17"><span class="hljs-keyword">def</span> <span class="hljs-title function_">require_integer</span>(<span class="hljs-params">name, value, minimum</span>):</span>
+<span class="code-line" data-line="18">    <span class="hljs-keyword">if</span> <span class="hljs-built_in">type</span>(value) <span class="hljs-keyword">is</span> <span class="hljs-keyword">not</span> <span class="hljs-built_in">int</span> <span class="hljs-keyword">or</span> value &lt; minimum:</span>
+<span class="code-line" data-line="19">        <span class="hljs-keyword">raise</span> ValueError(<span class="hljs-string">f&quot;<span class="hljs-subst">{name}</span> must be an integer &gt;= <span class="hljs-subst">{minimum}</span>&quot;</span>)</span>
+<span class="code-line" data-line="20"></span>
+<span class="code-line" data-line="21"></span>
+<span class="code-line" data-line="22"><span class="hljs-keyword">def</span> <span class="hljs-title function_">calculate</span>():</span>
+<span class="code-line" data-line="23">    <span class="hljs-keyword">assert</span> HIDDEN % QUERY_HEADS == <span class="hljs-number">0</span></span>
+<span class="code-line" data-line="24">    <span class="hljs-keyword">assert</span> QUERY_HEADS % KV_HEADS == <span class="hljs-number">0</span></span>
+<span class="code-line" data-line="25">    head_dim = HIDDEN // QUERY_HEADS</span>
+<span class="code-line" data-line="26">    kv_width = KV_HEADS * head_dim</span>
+<span class="code-line" data-line="27"></span>
+<span class="code-line" data-line="28">    <span class="hljs-comment"># Q, K, V, O projection weights and their configured biases.</span></span>
+<span class="code-line" data-line="29">    attention_weights = <span class="hljs-number">2</span> * HIDDEN * HIDDEN + <span class="hljs-number">2</span> * HIDDEN * kv_width</span>
+<span class="code-line" data-line="30">    attention_bias = <span class="hljs-number">2</span> * HIDDEN + <span class="hljs-number">2</span> * kv_width</span>
+<span class="code-line" data-line="31">    mlp_weights = <span class="hljs-number">3</span> * HIDDEN * INTERMEDIATE  <span class="hljs-comment"># gate + up + down, no bias</span></span>
+<span class="code-line" data-line="32">    norm_weights = <span class="hljs-number">2</span> * HIDDEN</span>
+<span class="code-line" data-line="33">    layer_params = attention_weights + attention_bias + mlp_weights + norm_weights</span>
+<span class="code-line" data-line="34"></span>
+<span class="code-line" data-line="35">    embedding_params = VOCAB * HIDDEN</span>
+<span class="code-line" data-line="36">    lm_head_params = VOCAB * HIDDEN  <span class="hljs-comment"># tie_word_embeddings=false</span></span>
+<span class="code-line" data-line="37">    final_norm_params = HIDDEN</span>
+<span class="code-line" data-line="38">    total_params = LAYERS * layer_params + embedding_params + lm_head_params + final_norm_params</span>
+<span class="code-line" data-line="39"></span>
+<span class="code-line" data-line="40">    <span class="hljs-comment"># One K and one V vector per KV head, per layer, per token.</span></span>
+<span class="code-line" data-line="41">    kv_bytes_per_token = LAYERS * <span class="hljs-number">2</span> * KV_HEADS * head_dim * BYTES_PER_BF16</span>
+<span class="code-line" data-line="42"></span>
+<span class="code-line" data-line="43">    <span class="hljs-keyword">def</span> <span class="hljs-title function_">kv_bytes</span>(<span class="hljs-params">tokens, batch=<span class="hljs-number">1</span></span>):</span>
+<span class="code-line" data-line="44">        require_integer(<span class="hljs-string">&quot;tokens&quot;</span>, tokens, <span class="hljs-number">0</span>)</span>
+<span class="code-line" data-line="45">        require_integer(<span class="hljs-string">&quot;batch&quot;</span>, batch, <span class="hljs-number">1</span>)</span>
+<span class="code-line" data-line="46">        <span class="hljs-keyword">return</span> tokens * batch * kv_bytes_per_token</span>
+<span class="code-line" data-line="47"></span>
+<span class="code-line" data-line="48">    <span class="hljs-keyword">def</span> <span class="hljs-title function_">paged_kv_bytes</span>(<span class="hljs-params">tokens, batch=<span class="hljs-number">1</span>, block_size=BLOCK_SIZE</span>):</span>
+<span class="code-line" data-line="49">        require_integer(<span class="hljs-string">&quot;tokens&quot;</span>, tokens, <span class="hljs-number">0</span>)</span>
+<span class="code-line" data-line="50">        require_integer(<span class="hljs-string">&quot;batch&quot;</span>, batch, <span class="hljs-number">1</span>)</span>
+<span class="code-line" data-line="51">        require_integer(<span class="hljs-string">&quot;block_size&quot;</span>, block_size, <span class="hljs-number">1</span>)</span>
+<span class="code-line" data-line="52">        blocks = (tokens + block_size - <span class="hljs-number">1</span>) // block_size</span>
+<span class="code-line" data-line="53">        <span class="hljs-keyword">return</span> blocks * block_size * batch * kv_bytes_per_token</span>
+<span class="code-line" data-line="54"></span>
+<span class="code-line" data-line="55">    <span class="hljs-keyword">return</span> {</span>
+<span class="code-line" data-line="56">        <span class="hljs-string">&quot;head_dim&quot;</span>: head_dim,</span>
+<span class="code-line" data-line="57">        <span class="hljs-string">&quot;kv_width&quot;</span>: kv_width,</span>
+<span class="code-line" data-line="58">        <span class="hljs-string">&quot;attention_weights&quot;</span>: attention_weights,</span>
+<span class="code-line" data-line="59">        <span class="hljs-string">&quot;attention_bias&quot;</span>: attention_bias,</span>
+<span class="code-line" data-line="60">        <span class="hljs-string">&quot;mlp_weights&quot;</span>: mlp_weights,</span>
+<span class="code-line" data-line="61">        <span class="hljs-string">&quot;layer_params&quot;</span>: layer_params,</span>
+<span class="code-line" data-line="62">        <span class="hljs-string">&quot;embedding_params&quot;</span>: embedding_params,</span>
+<span class="code-line" data-line="63">        <span class="hljs-string">&quot;lm_head_params&quot;</span>: lm_head_params,</span>
+<span class="code-line" data-line="64">        <span class="hljs-string">&quot;final_norm_params&quot;</span>: final_norm_params,</span>
+<span class="code-line" data-line="65">        <span class="hljs-string">&quot;total_params&quot;</span>: total_params,</span>
+<span class="code-line" data-line="66">        <span class="hljs-string">&quot;weight_bytes&quot;</span>: total_params * BYTES_PER_BF16,</span>
+<span class="code-line" data-line="67">        <span class="hljs-string">&quot;kv_bytes_per_token&quot;</span>: kv_bytes_per_token,</span>
+<span class="code-line" data-line="68">        <span class="hljs-string">&quot;kv_bytes&quot;</span>: kv_bytes,</span>
+<span class="code-line" data-line="69">        <span class="hljs-string">&quot;paged_kv_bytes&quot;</span>: paged_kv_bytes,</span>
+<span class="code-line" data-line="70">    }</span>
+<span class="code-line" data-line="71"></span>
+<span class="code-line" data-line="72"></span>
+<span class="code-line" data-line="73"><span class="hljs-keyword">def</span> <span class="hljs-title function_">gibibytes</span>(<span class="hljs-params">byte_count</span>):</span>
+<span class="code-line" data-line="74">    <span class="hljs-keyword">return</span> byte_count / (<span class="hljs-number">1024</span>**<span class="hljs-number">3</span>)</span>
+<span class="code-line" data-line="75"></span>
+<span class="code-line" data-line="76"></span>
+<span class="code-line" data-line="77"><span class="hljs-keyword">def</span> <span class="hljs-title function_">main</span>():</span>
+<span class="code-line" data-line="78">    ledger = calculate()</span>
+<span class="code-line" data-line="79"></span>
+<span class="code-line" data-line="80">    <span class="hljs-keyword">def</span> <span class="hljs-title function_">assert_rejected</span>(<span class="hljs-params">call</span>):</span>
+<span class="code-line" data-line="81">        <span class="hljs-keyword">try</span>:</span>
+<span class="code-line" data-line="82">            call()</span>
+<span class="code-line" data-line="83">        <span class="hljs-keyword">except</span> ValueError:</span>
+<span class="code-line" data-line="84">            <span class="hljs-keyword">return</span></span>
+<span class="code-line" data-line="85">        <span class="hljs-keyword">raise</span> AssertionError(<span class="hljs-string">&quot;invalid ledger input was accepted&quot;</span>)</span>
+<span class="code-line" data-line="86"></span>
+<span class="code-line" data-line="87">    <span class="hljs-keyword">assert</span> ledger[<span class="hljs-string">&quot;head_dim&quot;</span>] == <span class="hljs-number">128</span></span>
+<span class="code-line" data-line="88">    <span class="hljs-keyword">assert</span> ledger[<span class="hljs-string">&quot;kv_width&quot;</span>] == <span class="hljs-number">1024</span></span>
+<span class="code-line" data-line="89">    <span class="hljs-keyword">assert</span> ledger[<span class="hljs-string">&quot;layer_params&quot;</span>] == <span class="hljs-number">199_247_872</span></span>
+<span class="code-line" data-line="90">    <span class="hljs-keyword">assert</span> ledger[<span class="hljs-string">&quot;total_params&quot;</span>] == <span class="hljs-number">8_030_887_936</span></span>
+<span class="code-line" data-line="91">    <span class="hljs-keyword">assert</span> ledger[<span class="hljs-string">&quot;kv_bytes_per_token&quot;</span>] == <span class="hljs-number">139_264</span></span>
+<span class="code-line" data-line="92">    <span class="hljs-keyword">assert</span> ledger[<span class="hljs-string">&quot;kv_bytes&quot;</span>](<span class="hljs-number">32768</span>) == <span class="hljs-number">4.25</span> * (<span class="hljs-number">1024</span>**<span class="hljs-number">3</span>)</span>
+<span class="code-line" data-line="93">    <span class="hljs-keyword">assert</span> ledger[<span class="hljs-string">&quot;kv_bytes&quot;</span>](<span class="hljs-number">0</span>) == <span class="hljs-number">0</span></span>
+<span class="code-line" data-line="94">    <span class="hljs-keyword">assert</span> ledger[<span class="hljs-string">&quot;paged_kv_bytes&quot;</span>](<span class="hljs-number">0</span>) == <span class="hljs-number">0</span></span>
+<span class="code-line" data-line="95">    <span class="hljs-keyword">assert</span> ledger[<span class="hljs-string">&quot;paged_kv_bytes&quot;</span>](<span class="hljs-number">128</span>) == <span class="hljs-number">128</span> * ledger[<span class="hljs-string">&quot;kv_bytes_per_token&quot;</span>]</span>
+<span class="code-line" data-line="96">    <span class="hljs-keyword">assert</span> ledger[<span class="hljs-string">&quot;paged_kv_bytes&quot;</span>](<span class="hljs-number">129</span>) == <span class="hljs-number">256</span> * ledger[<span class="hljs-string">&quot;kv_bytes_per_token&quot;</span>]</span>
+<span class="code-line" data-line="97">    <span class="hljs-keyword">assert</span> ledger[<span class="hljs-string">&quot;paged_kv_bytes&quot;</span>](<span class="hljs-number">256</span>) == <span class="hljs-number">256</span> * ledger[<span class="hljs-string">&quot;kv_bytes_per_token&quot;</span>]</span>
+<span class="code-line" data-line="98">    huge_tokens = <span class="hljs-number">10</span>**<span class="hljs-number">100</span></span>
+<span class="code-line" data-line="99">    huge_slots = ((huge_tokens + BLOCK_SIZE - <span class="hljs-number">1</span>) // BLOCK_SIZE) * BLOCK_SIZE</span>
+<span class="code-line" data-line="100">    <span class="hljs-keyword">assert</span> ledger[<span class="hljs-string">&quot;paged_kv_bytes&quot;</span>](huge_tokens) == huge_slots * ledger[<span class="hljs-string">&quot;kv_bytes_per_token&quot;</span>]</span>
+<span class="code-line" data-line="101"></span>
+<span class="code-line" data-line="102">    <span class="hljs-keyword">for</span> invalid_call <span class="hljs-keyword">in</span> (</span>
+<span class="code-line" data-line="103">        <span class="hljs-keyword">lambda</span>: ledger[<span class="hljs-string">&quot;kv_bytes&quot;</span>](-<span class="hljs-number">1</span>),</span>
+<span class="code-line" data-line="104">        <span class="hljs-keyword">lambda</span>: ledger[<span class="hljs-string">&quot;kv_bytes&quot;</span>](<span class="hljs-number">1.5</span>),</span>
+<span class="code-line" data-line="105">        <span class="hljs-keyword">lambda</span>: ledger[<span class="hljs-string">&quot;kv_bytes&quot;</span>](<span class="hljs-literal">True</span>),</span>
+<span class="code-line" data-line="106">        <span class="hljs-keyword">lambda</span>: ledger[<span class="hljs-string">&quot;kv_bytes&quot;</span>](<span class="hljs-number">1</span>, batch=<span class="hljs-number">0</span>),</span>
+<span class="code-line" data-line="107">        <span class="hljs-keyword">lambda</span>: ledger[<span class="hljs-string">&quot;kv_bytes&quot;</span>](<span class="hljs-number">1</span>, batch=<span class="hljs-number">1.0</span>),</span>
+<span class="code-line" data-line="108">        <span class="hljs-keyword">lambda</span>: ledger[<span class="hljs-string">&quot;kv_bytes&quot;</span>](<span class="hljs-number">1</span>, batch=<span class="hljs-literal">True</span>),</span>
+<span class="code-line" data-line="109">        <span class="hljs-keyword">lambda</span>: ledger[<span class="hljs-string">&quot;paged_kv_bytes&quot;</span>](-<span class="hljs-number">1</span>),</span>
+<span class="code-line" data-line="110">        <span class="hljs-keyword">lambda</span>: ledger[<span class="hljs-string">&quot;paged_kv_bytes&quot;</span>](<span class="hljs-literal">True</span>),</span>
+<span class="code-line" data-line="111">        <span class="hljs-keyword">lambda</span>: ledger[<span class="hljs-string">&quot;paged_kv_bytes&quot;</span>](<span class="hljs-number">1.5</span>),</span>
+<span class="code-line" data-line="112">        <span class="hljs-keyword">lambda</span>: ledger[<span class="hljs-string">&quot;paged_kv_bytes&quot;</span>](<span class="hljs-number">1</span>, batch=<span class="hljs-number">0</span>),</span>
+<span class="code-line" data-line="113">        <span class="hljs-keyword">lambda</span>: ledger[<span class="hljs-string">&quot;paged_kv_bytes&quot;</span>](<span class="hljs-number">1</span>, batch=-<span class="hljs-number">1</span>),</span>
+<span class="code-line" data-line="114">        <span class="hljs-keyword">lambda</span>: ledger[<span class="hljs-string">&quot;paged_kv_bytes&quot;</span>](<span class="hljs-number">1</span>, batch=<span class="hljs-number">1.5</span>),</span>
+<span class="code-line" data-line="115">        <span class="hljs-keyword">lambda</span>: ledger[<span class="hljs-string">&quot;paged_kv_bytes&quot;</span>](<span class="hljs-number">1</span>, batch=<span class="hljs-literal">False</span>),</span>
+<span class="code-line" data-line="116">        <span class="hljs-keyword">lambda</span>: ledger[<span class="hljs-string">&quot;paged_kv_bytes&quot;</span>](<span class="hljs-number">1</span>, block_size=<span class="hljs-number">0</span>),</span>
+<span class="code-line" data-line="117">        <span class="hljs-keyword">lambda</span>: ledger[<span class="hljs-string">&quot;paged_kv_bytes&quot;</span>](<span class="hljs-number">1</span>, block_size=-<span class="hljs-number">1</span>),</span>
+<span class="code-line" data-line="118">        <span class="hljs-keyword">lambda</span>: ledger[<span class="hljs-string">&quot;paged_kv_bytes&quot;</span>](<span class="hljs-number">1</span>, block_size=<span class="hljs-number">1.5</span>),</span>
+<span class="code-line" data-line="119">        <span class="hljs-keyword">lambda</span>: ledger[<span class="hljs-string">&quot;paged_kv_bytes&quot;</span>](<span class="hljs-number">1</span>, block_size=<span class="hljs-literal">True</span>),</span>
+<span class="code-line" data-line="120">    ):</span>
+<span class="code-line" data-line="121">        assert_rejected(invalid_call)</span>
+<span class="code-line" data-line="122"></span>
+<span class="code-line" data-line="123">    <span class="hljs-built_in">print</span>(<span class="hljs-string">&quot;openPangu-Embedded-7B-V1.1 | config-derived CPU ledger&quot;</span>)</span>
+<span class="code-line" data-line="124">    <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;head_dim=<span class="hljs-subst">{ledger[<span class="hljs-string">&#x27;head_dim&#x27;</span>]}</span>; K/V width per projection=<span class="hljs-subst">{ledger[<span class="hljs-string">&#x27;kv_width&#x27;</span>]}</span>&quot;</span>)</span>
+<span class="code-line" data-line="125">    <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;attention projection weights/layer=<span class="hljs-subst">{ledger[<span class="hljs-string">&#x27;attention_weights&#x27;</span>]:,}</span> params&quot;</span>)</span>
+<span class="code-line" data-line="126">    <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;attention projection biases/layer=<span class="hljs-subst">{ledger[<span class="hljs-string">&#x27;attention_bias&#x27;</span>]:,}</span> params&quot;</span>)</span>
+<span class="code-line" data-line="127">    <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;MLP weights/layer=<span class="hljs-subst">{ledger[<span class="hljs-string">&#x27;mlp_weights&#x27;</span>]:,}</span> params&quot;</span>)</span>
+<span class="code-line" data-line="128">    <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;one decoder layer=<span class="hljs-subst">{ledger[<span class="hljs-string">&#x27;layer_params&#x27;</span>]:,}</span> params&quot;</span>)</span>
+<span class="code-line" data-line="129">    <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;all model weights=<span class="hljs-subst">{ledger[<span class="hljs-string">&#x27;total_params&#x27;</span>]:,}</span> params; BF16 payload=<span class="hljs-subst">{gibibytes(ledger[<span class="hljs-string">&#x27;weight_bytes&#x27;</span>]):<span class="hljs-number">.6</span>f}</span> GiB&quot;</span>)</span>
+<span class="code-line" data-line="130">    <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;KV/token across all layers=<span class="hljs-subst">{ledger[<span class="hljs-string">&#x27;kv_bytes_per_token&#x27;</span>]:,}</span> bytes&quot;</span>)</span>
+<span class="code-line" data-line="131">    <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;KV at 32,768 tokens, batch 1=<span class="hljs-subst">{gibibytes(ledger[<span class="hljs-string">&#x27;kv_bytes&#x27;</span>](<span class="hljs-number">32768</span>)):<span class="hljs-number">.2</span>f}</span> GiB&quot;</span>)</span>
+<span class="code-line" data-line="132">    <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;paged KV at 129 tokens, block <span class="hljs-subst">{BLOCK_SIZE}</span>=<span class="hljs-subst">{ledger[<span class="hljs-string">&#x27;paged_kv_bytes&#x27;</span>](<span class="hljs-number">129</span>):,}</span> bytes&quot;</span>)</span>
+<span class="code-line" data-line="133">    <span class="hljs-built_in">print</span>(<span class="hljs-string">&quot;PASS: arithmetic, page-boundary, large-integer, and invalid-input assertions&quot;</span>)</span>
+<span class="code-line" data-line="134">    <span class="hljs-built_in">print</span>(<span class="hljs-string">&quot;No model weights, framework, accelerator, or performance claim used&quot;</span>)</span>
+<span class="code-line" data-line="135"></span>
+<span class="code-line" data-line="136"></span>
+<span class="code-line" data-line="137"><span class="hljs-keyword">if</span> __name__ == <span class="hljs-string">&quot;__main__&quot;</span>:</span>
+<span class="code-line" data-line="138">    main()</span></code></pre></div>
+</details><p>运行以下命令可复算并执行程序中的断言：</p>
+<div class="code-panel"><div class="code-caption"><span>BASH</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-bash"><span class="code-line" data-line="1">python roadmap/curriculum/systems/examples/pangu_embedded7b_ledger.py</span></code></pre></div>
+<p>运行结果应包括 128 head dimension、1024 K/V 投影宽度、单层 199,247,872 参数、BF16 权重 14.958694 GiB、每 token 139,264 bytes 和 32K 上下文 4.25 GiB。这个检查验证算式与整数关系，不验证框架数值正确性、实际显存分配、性能或任意 2.0 部署。</p>
+<h2 id="10-证据边界模型源码backend-与运行记录">10. 证据边界：模型源码、backend 与运行记录<a class="heading-anchor" href="#10-%E8%AF%81%E6%8D%AE%E8%BE%B9%E7%95%8C%E6%A8%A1%E5%9E%8B%E6%BA%90%E7%A0%81backend-%E4%B8%8E%E8%BF%90%E8%A1%8C%E8%AE%B0%E5%BD%95" aria-label="链接到10. 证据边界：模型源码、backend 与运行记录">#</a></h2>
+<p>对本地 vLLM-Ascend 案例，检查架构名如何注册、类如何构造、Attention 如何分派，比仅看命令行或分析笔记更可靠。已核对的 <code>vllm-ascend-pangu-v023</code> checkout 中，<code>PanguEmbeddedForCausalLM</code> 显式映射到 <code>vllm_ascend.models.open_pangu:PanguEmbeddedForCausalLM</code>；模型类创建 <code>PanguEmbeddedAttention</code>，后者调用 vLLM <code>Attention</code> 抽象。NPU backend 的源码包含多种分支和条件，模型类本身并不硬编码“Prefill 必为 Flash、Decode 必为 paged”。需要有同版本、同配置的日志或 profiler 轨迹，才能把具体设备算子归属到一次真实执行。</p>
+<p>运行记录须按证据类型解读：</p>
+<ul>
+<li>**TP1 smoke 功能案例：**保存的成功日志尾段包含一条 Embedded-7B 请求的生成文本；运行命令记录的配置为 TP1/PP1、BF16、<code>enforce_eager=True</code>、单请求。这说明该次功能 smoke 返回过文本，不提供当前 checkout 的 commit、完整算子轨迹或性能基线。</li>
+<li>**加载失败案例：**一次较早的初始化日志显示 <code>make_layers</code> 用关键字 <code>prefix</code> 调用层构造函数时产生 <code>TypeError</code>，原因是该次构造 <code>lambda</code> 的参数签名不匹配。此记录说明该次加载未完成，不是成功执行证据；也不能用失败快照描述当前 checkout。</li>
+<li>另一份 TP4 材料是旧静态调用链分析；在没有相同 HEAD、启动参数、完整日志和硬件轨迹前，它不是 TP4 实测，更不能替代 TP1 smoke 或 2.0 Pro/Flash 的部署事实。</li>
+<li>参数与 KV 容量是 CPU 算术结果，不代表实际显存分配或性能；GPU/NPU 执行需在对应硬件、软件版本和配置下另行验证。</li>
+</ul>
+<p>将算子优化放进整网时，至少同时保存：模型配置与源码版本、设备和并行配置、eager/compile/graph 选择、输入/输出长度与并发、局部算子 shape 和数值误差、整网 TTFT/TPOT/吞吐/显存，以及 profiler 中的 kernel、copy、通信和 idle 区间。只有这些记录能把“硬件机制 → 代码旋钮 → 预期轨迹变化 → 实测结果”闭合起来。</p>
+<h2 id="参考阅读">参考阅读<a class="heading-anchor" href="#%E5%8F%82%E8%80%83%E9%98%85%E8%AF%BB" aria-label="链接到参考阅读">#</a></h2>
+<p><a href="https://docs.vllm.ai/en/latest/cli/serve/">vLLM 服务参数</a> · <a href="https://docs.vllm.ai/en/latest/cli/bench/serve/">vLLM 在线基准</a> · <a href="https://docs.vllm.ai/en/latest/features/automatic_prefix_caching/">自动前缀缓存</a> · <a href="../../../../../../../../downloads/%E5%A4%A7%E6%A8%A1%E5%9E%8B%E6%8E%A8%E7%90%86%E5%AE%9E%E8%B7%B5.pdf">大模型推理实践</a>（第 4、13 章） · <a href="https://huggingface.co/openpangu/openPangu-2.0-Flash/tree/510b2395075d6107985d74311d777e99e7564f13">openPangu-2.0-Flash 官方配置与模型卡（固定版本）</a> · <a href="https://huggingface.co/openpangu/openPangu-2.0-Pro/tree/6619c11f420ea5e2dfacf2438a81026302d873bb">openPangu-2.0-Pro 官方配置与模型卡（固定版本）</a> · <a href="https://gitcode.com/ascend-tribe/openPangu-2.0-Infer/blob/main/README_EN.md">openPangu-2.0-Infer 官方部署说明</a> · <a href="https://gitee.com/omniai/omni-npu">omniai/omni-npu 上游仓库入口（内容访问受限）</a></p>
+<h2 id="章节导航">章节导航<a class="heading-anchor" href="#%E7%AB%A0%E8%8A%82%E5%AF%BC%E8%88%AA" aria-label="链接到章节导航">#</a></h2>
+<ul>
+<li><a href="../../../../index.html?chapter=17">上一章：Mini Transformer</a></li>
+<li><a href="../../../../index.html?chapter=19">下一章：多 GPU 与通信</a></li>
+</ul>
+</div></main><script src="../../../../reader.js"></script></body></html>

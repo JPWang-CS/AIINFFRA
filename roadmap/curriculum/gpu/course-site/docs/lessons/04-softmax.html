@@ -1,0 +1,321 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Lesson 04 — Softmax (Naive + Warp Reduce) · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · lessons/04-softmax.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#part-0%E8%BF%99%E4%B8%AA%E7%AE%97%E5%AD%90%E5%9C%A8%E6%A8%A1%E5%9E%8B%E9%87%8C%E5%B9%B2%E5%98%9B">Part 0：这个算子在模型里干嘛？</a></li><li><a href="#part-1%E6%95%B0%E5%AD%A6%E5%AE%9A%E4%B9%89">Part 1：数学定义</a></li><li><a href="#part-2%E6%9C%B4%E7%B4%A0%E5%AE%9E%E7%8E%B03-pass">Part 2：朴素实现（3-pass）</a></li><li><a href="#part-3warp-reduce%E4%BC%98%E5%8C%96%E7%89%88">Part 3：Warp Reduce（优化版）</a></li><li><a href="#part-4leetgpu-%E4%B8%8A%E7%9A%84-softmax">Part 4：LeetGPU 上的 Softmax</a></li><li><a href="#part-5%E6%88%91%E7%9A%84%E5%AE%9E%E7%8E%B0%E5%B7%B2%E8%B7%91%E9%80%9A--3-pass-%E8%B7%A8-block">Part 5：我的实现（已跑通 · 3-pass 跨 block）</a></li><li><a href="#part-6%E4%BC%98%E5%8C%96%E5%BB%BA%E8%AE%AE%E4%B8%8B%E4%B8%80%E6%AD%A5">Part 6：优化建议（下一步）</a></li><li><a href="#part-7true-online-softmax-%E7%BB%83%E4%B9%A02026-07-10">Part 7：True Online Softmax 练习（2026-07-10）</a></li><li><a href="#%E6%9C%AC%E8%AF%BE%E6%A3%80%E9%AA%8C%E6%B8%85%E5%8D%95">✅ 本课检验清单</a></li><li><a href="#%E7%9F%A5%E8%AF%86%E5%BA%93%E7%B4%A2%E5%BC%95">知识库索引</a></li></ol></nav><div class="markdown-body"><h1 id="lesson-04--softmax-naive--warp-reduce">Lesson 04 — Softmax (Naive + Warp Reduce)<a class="heading-anchor" href="#lesson-04--softmax-naive--warp-reduce" aria-label="链接到Lesson 04 — Softmax (Naive + Warp Reduce)">#</a></h1>
+<blockquote><p>主题：写出 Softmax，理解 max trick、3-pass 结构、warp shuffle reduce
+前置：完成 <a href="03-gemm-tiled.html">Lesson 03</a>，理解 shared memory 和 <code>__syncthreads</code>
+平台：LeetGPU <code>5_softmax</code>
+状态：🚧 优化中 — 3-pass naive 已跑通（2026-07-01）。见 PATH.md / NOW.md
+<strong>本课验收分两段</strong>：LeetGPU 正确性与代码归档 → 真实 GPU benchmark；前一段未通过不进入后一段。不同版本的状态分别记录，不能用 Agent 草稿代替用户版本。</p>
+</blockquote><p>📚 <strong>本课涉及的底层知识</strong>：</p>
+<ul>
+<li><a href="../notes/cuda/warp-and-sync.html">Warp 与同步</a> — warp shuffle、<code>__shfl_down_sync</code></li>
+<li><a href="../notes/cuda/cuda-cheatsheet.html">CUDA API 速查</a> — shared memory、atomics</li>
+<li><a href="../notes/cuda/memory-model.html">内存层级详解</a> — bandwidth 分析</li>
+</ul>
+<p>🎯 <strong>这对理解 Triton 有什么用</strong>：</p>
+<ul>
+<li>warp shuffle → Triton 的 <code>tl.max</code>/<code>tl.sum</code> 底层用的就是这个</li>
+<li>online softmax（v1）→ <strong>Flash Attention 的核心</strong>，<a href="05-flash-attn-reading.html">Lesson 05</a> 会用到</li>
+<li>详细对照见 → <a href="../notes/cuda/triton-under-the-hood.html">Triton 底层 CUDA 对照</a></li>
+</ul>
+<hr>
+<h2 id="part-0这个算子在模型里干嘛">Part 0：这个算子在模型里干嘛？<a class="heading-anchor" href="#part-0%E8%BF%99%E4%B8%AA%E7%AE%97%E5%AD%90%E5%9C%A8%E6%A8%A1%E5%9E%8B%E9%87%8C%E5%B9%B2%E5%98%9B" aria-label="链接到Part 0：这个算子在模型里干嘛？">#</a></h2>
+<p>Softmax 是 <strong>Attention 的归一化层</strong>——把 raw attention scores 变成概率分布：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">Attention 计算流程（以 LLaMA 为例）：</span>
+<span class="code-line" data-line="2"></span>
+<span class="code-line" data-line="3">x (输入) → Q = x @ W_Q    ┐</span>
+<span class="code-line" data-line="4">          → K = x @ W_K    ├─ 三个 GEMM</span>
+<span class="code-line" data-line="5">          → V = x @ W_V    ┘</span>
+<span class="code-line" data-line="6">              ↓</span>
+<span class="code-line" data-line="7">S = Q @ K^T / √d_k          ← QK^T 点积，得到 raw scores (N×N 矩阵)</span>
+<span class="code-line" data-line="8">              ↓</span>
+<span class="code-line" data-line="9">P = softmax(S)              ← ⬅ Softmax！把每行变成概率（Σ=1）</span>
+<span class="code-line" data-line="10">              ↓</span>
+<span class="code-line" data-line="11">O = P @ V                   ← 加权求和，得到 attention output</span></code></pre></div>
+<p><strong>Softmax 的作用</strong>：</p>
+<ol>
+<li><strong>归一化</strong>：让每行（每个 query token 对所有 key token 的关注度）变成概率分布——权重和为 1</li>
+<li><strong>非线性</strong>：通过指数函数拉开差距（高分更高，低分更低）</li>
+<li><strong>可微</strong>：反向传播梯度流畅</li>
+</ol>
+<p><strong>什么模型用</strong>：所有使用 Attention 的模型——LLaMA/GPT/BERT/DeepSeek/Mistral/Qwen/Claude 系列。没有 softmax 就没有 self-attention。</p>
+<p><strong>注意</strong>：FFN 里的激活函数（SiLU/GELU/ReLU）看起来像但不同——它们也是 element-wise 归一化，但不需要 sum=1。&quot;softmax 和 GELU 的区别&quot;是面试高频题。</p>
+<blockquote><p><code>[面试]</code> 必问：&quot;softmax 在 Transformer 的哪里？&quot; → 在 Attention 里，把 scaled dot-product scores 变成概率权重。一个 N×N 矩阵，每行做一次 softmax。</p>
+</blockquote><h2 id="part-1数学定义">Part 1：数学定义<a class="heading-anchor" href="#part-1%E6%95%B0%E5%AD%A6%E5%AE%9A%E4%B9%89" aria-label="链接到Part 1：数学定义">#</a></h2>
+<div class="equation"><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mtext>softmax</mtext><mo stretchy="false">(</mo><msub><mi>x</mi><mi>i</mi></msub><mo stretchy="false">)</mo><mo>=</mo><mfrac><mrow><mi>exp</mi><mo>⁡</mo><mo stretchy="false">(</mo><msub><mi>x</mi><mi>i</mi></msub><mo>−</mo><mi>max</mi><mo>⁡</mo><mi>x</mi><mo stretchy="false">)</mo></mrow><mrow><munder><mo>∑</mo><mi>j</mi></munder><mi>exp</mi><mo>⁡</mo><mo stretchy="false">(</mo><msub><mi>x</mi><mi>j</mi></msub><mo>−</mo><mi>max</mi><mo>⁡</mo><mi>x</mi><mo stretchy="false">)</mo></mrow></mfrac></mrow><annotation encoding="application/x-tex">\text{softmax}(x_i) = \frac{\exp(x_i - \max x)}{\sum_j \exp(x_j - \max x)}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">softmax</span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:2.5488em;vertical-align:-1.1218em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.427em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mop"><span class="mop op-symbol small-op" style="position:relative;top:0em;">∑</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.162em;"><span style="top:-2.4003em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0572em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.4358em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop">exp</span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0572em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mop">max</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">x</span><span class="mclose">)</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mop">exp</span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mop">max</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">x</span><span class="mclose">)</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.1218em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span></span></div>
+<p>&quot;max trick&quot; 是必须的——不做减法，<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>exp</mi><mo>⁡</mo><mo stretchy="false">(</mo><mtext>大数</mtext><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">\exp(\text{大数})</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mop">exp</span><span class="mopen">(</span><span class="mord text"><span class="mord cjk_fallback">大数</span></span><span class="mclose">)</span></span></span></span> 会溢出到 inf。</p>
+<hr>
+<h2 id="part-2朴素实现3-pass">Part 2：朴素实现（3-pass）<a class="heading-anchor" href="#part-2%E6%9C%B4%E7%B4%A0%E5%AE%9E%E7%8E%B03-pass" aria-label="链接到Part 2：朴素实现（3-pass）">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-comment">// 每个 block 处理一行（或一组行）</span></span>
+<span class="code-line" data-line="2"><span class="hljs-comment">// 每个 thread 处理该行的部分元素</span></span>
+<span class="code-line" data-line="3"><span class="hljs-function">__global__ <span class="hljs-type">void</span> <span class="hljs-title">softmax_naive</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">float</span>* input, <span class="hljs-type">float</span>* output,</span></span></span>
+<span class="code-line" data-line="4"><span class="hljs-function"><span class="hljs-params">                               <span class="hljs-type">int</span> B, <span class="hljs-type">int</span> D)</span> </span>{</span>
+<span class="code-line" data-line="5">    <span class="hljs-type">int</span> row = blockIdx.x;</span>
+<span class="code-line" data-line="6">    <span class="hljs-keyword">if</span> (row &gt;= B) <span class="hljs-keyword">return</span>;</span>
+<span class="code-line" data-line="7"></span>
+<span class="code-line" data-line="8">    <span class="hljs-comment">// TODO Pass 1: 找 max</span></span>
+<span class="code-line" data-line="9">    <span class="hljs-comment">//   每个 thread 扫自己负责的列，记局部 max</span></span>
+<span class="code-line" data-line="10">    <span class="hljs-comment">//   然后用 reduce 合并成全局 max（见下面的&quot;临时方案&quot;）</span></span>
+<span class="code-line" data-line="11"></span>
+<span class="code-line" data-line="12">    <span class="hljs-comment">// TODO Pass 2: 算指数和</span></span>
+<span class="code-line" data-line="13">    <span class="hljs-comment">//   用全局 max 算 exp(x_i - max)，累加</span></span>
+<span class="code-line" data-line="14"></span>
+<span class="code-line" data-line="15">    <span class="hljs-comment">// TODO Pass 3: normalize + 写回</span></span>
+<span class="code-line" data-line="16">    <span class="hljs-comment">//   exp(x_i - max) / 全局和</span></span>
+<span class="code-line" data-line="17">}</span></code></pre></div>
+<p><strong>这个 kernel 缺什么</strong>：3 个 pass 都要做 block 内 reduce（把各线程的局部 max/sum 合并成全局值）。先不写 warp shuffle，用 thread 0 串行 reduce 让结果跑对：</p>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-comment">// 临时方案：thread 0 负责 reduce，其余线程等待</span></span>
+<span class="code-line" data-line="2"><span class="hljs-comment">// 1. 每个线程把局部值写到 shared memory</span></span>
+<span class="code-line" data-line="3"><span class="hljs-comment">// 2. __syncthreads()</span></span>
+<span class="code-line" data-line="4"><span class="hljs-comment">// 3. thread 0 串行遍历 shared memory，合并成全局值</span></span>
+<span class="code-line" data-line="5"><span class="hljs-comment">// 4. 全局值写回 shared memory</span></span>
+<span class="code-line" data-line="6"><span class="hljs-comment">// 5. __syncthreads()</span></span>
+<span class="code-line" data-line="7"><span class="hljs-comment">// 6. 所有线程读取全局值，继续计算</span></span>
+<span class="code-line" data-line="8"><span class="hljs-comment">// 提示：max 用 fmaxf，sum 用 +=</span></span>
+<span class="code-line" data-line="9"><span class="hljs-comment">// 更好的方案见 Part 3 的 warp reduce</span></span></code></pre></div>
+<hr>
+<h2 id="part-3warp-reduce优化版">Part 3：Warp Reduce（优化版）<a class="heading-anchor" href="#part-3warp-reduce%E4%BC%98%E5%8C%96%E7%89%88" aria-label="链接到Part 3：Warp Reduce（优化版）">#</a></h2>
+<p>thread 0 串行 reduce 太慢。用 warp shuffle 做 log(N) 级 reduce：</p>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-comment">// Warp-level reduce max</span></span>
+<span class="code-line" data-line="2"><span class="hljs-function">__inline__ __device__ <span class="hljs-type">float</span> <span class="hljs-title">warp_reduce_max</span><span class="hljs-params">(<span class="hljs-type">float</span> val)</span> </span>{</span>
+<span class="code-line" data-line="3">    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> offset = <span class="hljs-number">16</span>; offset &gt; <span class="hljs-number">0</span>; offset /= <span class="hljs-number">2</span>) {</span>
+<span class="code-line" data-line="4">        <span class="hljs-type">float</span> other = __shfl_down_sync(<span class="hljs-number">0xffffffff</span>, val, offset);</span>
+<span class="code-line" data-line="5">        <span class="hljs-keyword">if</span> (other &gt; val) val = other;</span>
+<span class="code-line" data-line="6">    }</span>
+<span class="code-line" data-line="7">    <span class="hljs-keyword">return</span> val;  <span class="hljs-comment">// warp 内所有 lane 拿到同一个 max</span></span>
+<span class="code-line" data-line="8">}</span>
+<span class="code-line" data-line="9"></span>
+<span class="code-line" data-line="10"><span class="hljs-comment">// 用法：每个 warp 先内部 reduce</span></span>
+<span class="code-line" data-line="11"><span class="hljs-type">float</span> w_max = <span class="hljs-built_in">warp_reduce_max</span>(my_local_max);</span>
+<span class="code-line" data-line="12"></span>
+<span class="code-line" data-line="13"><span class="hljs-comment">// 然后每个 warp 的 lane 0 把结果写到 shared memory</span></span>
+<span class="code-line" data-line="14"><span class="hljs-comment">// thread 0 对 warp_results 做最后一次 reduce</span></span>
+<span class="code-line" data-line="15"><span class="hljs-comment">// 完整代码见 → [warp-and-sync.md](../notes/cuda/warp-and-sync.md)</span></span></code></pre></div>
+<blockquote><p><strong>Ascend 对照</strong>：Ascend 的 Vector Unit 有硬件 reduce 指令。CUDA 用 warp shuffle 模拟同样的效果。都是把&quot;一组计算单元内的值快速聚合&quot;。</p>
+</blockquote><hr>
+<h2 id="part-4leetgpu-上的-softmax">Part 4：LeetGPU 上的 Softmax<a class="heading-anchor" href="#part-4leetgpu-%E4%B8%8A%E7%9A%84-softmax" aria-label="链接到Part 4：LeetGPU 上的 Softmax">#</a></h2>
+<p>LeetGPU <code>5_softmax</code> 题：</p>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-keyword">extern</span> <span class="hljs-string">&quot;C&quot;</span> <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">solve</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">float</span>* input, <span class="hljs-type">float</span>* output, <span class="hljs-type">int</span> N)</span> </span>{</span>
+<span class="code-line" data-line="2">    <span class="hljs-comment">// 注意：这题是 1D softmax（没有 batch 维度）</span></span>
+<span class="code-line" data-line="3">    <span class="hljs-comment">// N ≤ 500,000</span></span>
+<span class="code-line" data-line="4">    <span class="hljs-type">int</span> threadsPerBlock = <span class="hljs-number">256</span>;</span>
+<span class="code-line" data-line="5">    <span class="hljs-type">int</span> blocksPerGrid = <span class="hljs-number">1</span>;  <span class="hljs-comment">// 1D softmax 只需要查一个值</span></span>
+<span class="code-line" data-line="6">    <span class="hljs-comment">// 或者用多个 block，但需要 inter-block reduce</span></span>
+<span class="code-line" data-line="7">}</span></code></pre></div>
+<hr>
+<h2 id="part-5我的实现已跑通--3-pass-跨-block">Part 5：我的实现（已跑通 · 3-pass 跨 block）<a class="heading-anchor" href="#part-5%E6%88%91%E7%9A%84%E5%AE%9E%E7%8E%B0%E5%B7%B2%E8%B7%91%E9%80%9A--3-pass-%E8%B7%A8-block" aria-label="链接到Part 5：我的实现（已跑通 · 3-pass 跨 block）">#</a></h2>
+<blockquote><p>我自己写的，LeetGPU <code>5_softmax</code> 跑通（2026-07-01）。完整文件 → <a href="../solutions/cuda/softmax/softmax_naive.cu">solutions/cuda/softmax/softmax_naive.cu</a></p>
+<p>💻 <strong>本地/服务器测试</strong>（LeetGPU 通过后）：<code>cd solutions/cuda/softmax &amp;&amp; ./run.sh</code> —— harness 调你的 <code>solve</code>、对比 CPU 双精度参考验精度、测有效带宽。见同目录 <a href="../solutions/cuda/softmax/README.html">README.md</a>。平台暂时不可用时仅用于排障，不替代 LeetGPU 验收。</p>
+</blockquote><p>思路和 Part 2 的&quot;每 block 一行&quot;不同：这题是 <strong>1D softmax over N（N ≤ 500,000，跨多个 block）</strong>，所以做<strong>两级归约</strong>——每个 block 用 shared memory tree reduce 出局部值，再把各 block 的 partial 拷回 host 做最后一次归约。三个 kernel 串行：</p>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-comment">// Kernel 1：每个 block 求局部 max → partial_max[blockIdx]</span></span>
+<span class="code-line" data-line="2"><span class="hljs-function">__global__ <span class="hljs-type">void</span> <span class="hljs-title">findMax_kernel</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">float</span>* input, <span class="hljs-type">float</span>* partial_max, <span class="hljs-type">int</span> N)</span> </span>{</span>
+<span class="code-line" data-line="3">    <span class="hljs-type">int</span> tid = threadIdx.x;</span>
+<span class="code-line" data-line="4">    <span class="hljs-type">int</span> idx = blockIdx.x * blockDim.x + tid;</span>
+<span class="code-line" data-line="5"></span>
+<span class="code-line" data-line="6">    __shared__ <span class="hljs-type">float</span> inputMax[<span class="hljs-number">256</span>];</span>
+<span class="code-line" data-line="7">    inputMax[tid] = (idx &lt; N) ? input[idx] : -INFINITY;      <span class="hljs-comment">// 越界补 -INF，不污染 max</span></span>
+<span class="code-line" data-line="8">    __syncthreads();</span>
+<span class="code-line" data-line="9"></span>
+<span class="code-line" data-line="10">    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> s = blockDim.x / <span class="hljs-number">2</span>; s &gt; <span class="hljs-number">0</span>; s &gt;&gt;= <span class="hljs-number">1</span>) {           <span class="hljs-comment">// shared mem 树归约</span></span>
+<span class="code-line" data-line="11">        <span class="hljs-keyword">if</span> (tid &lt; s) inputMax[tid] = <span class="hljs-built_in">fmaxf</span>(inputMax[tid], inputMax[tid + s]);</span>
+<span class="code-line" data-line="12">        __syncthreads();</span>
+<span class="code-line" data-line="13">    }</span>
+<span class="code-line" data-line="14">    <span class="hljs-keyword">if</span> (tid == <span class="hljs-number">0</span>) partial_max[blockIdx.x] = inputMax[<span class="hljs-number">0</span>];</span>
+<span class="code-line" data-line="15">}</span>
+<span class="code-line" data-line="16"></span>
+<span class="code-line" data-line="17"><span class="hljs-comment">// Kernel 2：用全局 max 求局部 Σexp(x-max) → partial_sum[blockIdx]</span></span>
+<span class="code-line" data-line="18"><span class="hljs-function">__global__ <span class="hljs-type">void</span> <span class="hljs-title">countSum_kernel</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">float</span>* input, <span class="hljs-type">float</span>* partial_sum, <span class="hljs-type">float</span> global_max, <span class="hljs-type">int</span> N)</span> </span>{</span>
+<span class="code-line" data-line="19">    <span class="hljs-type">int</span> tid = threadIdx.x;</span>
+<span class="code-line" data-line="20">    <span class="hljs-type">int</span> idx = blockIdx.x * blockDim.x + tid;</span>
+<span class="code-line" data-line="21"></span>
+<span class="code-line" data-line="22">    __shared__ <span class="hljs-type">float</span> inputSum[<span class="hljs-number">256</span>];</span>
+<span class="code-line" data-line="23">    inputSum[tid] = (idx &lt; N) ? <span class="hljs-built_in">expf</span>(input[idx] - global_max) : <span class="hljs-number">0.0f</span>;   <span class="hljs-comment">// 越界补 0</span></span>
+<span class="code-line" data-line="24">    __syncthreads();</span>
+<span class="code-line" data-line="25"></span>
+<span class="code-line" data-line="26">    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> s = blockDim.x / <span class="hljs-number">2</span>; s &gt; <span class="hljs-number">0</span>; s &gt;&gt;= <span class="hljs-number">1</span>) {</span>
+<span class="code-line" data-line="27">        <span class="hljs-keyword">if</span> (tid &lt; s) inputSum[tid] += inputSum[tid + s];</span>
+<span class="code-line" data-line="28">        __syncthreads();</span>
+<span class="code-line" data-line="29">    }</span>
+<span class="code-line" data-line="30">    <span class="hljs-keyword">if</span> (tid == <span class="hljs-number">0</span>) partial_sum[blockIdx.x] = inputSum[<span class="hljs-number">0</span>];</span>
+<span class="code-line" data-line="31">}</span>
+<span class="code-line" data-line="32"></span>
+<span class="code-line" data-line="33"><span class="hljs-comment">// Kernel 3：归一化写回</span></span>
+<span class="code-line" data-line="34"><span class="hljs-function">__global__ <span class="hljs-type">void</span> <span class="hljs-title">softmax_kernel</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">float</span>* input, <span class="hljs-type">float</span>* output, <span class="hljs-type">float</span> global_max, <span class="hljs-type">float</span> global_sum, <span class="hljs-type">int</span> N)</span> </span>{</span>
+<span class="code-line" data-line="35">    <span class="hljs-type">int</span> idx = blockIdx.x * blockDim.x + threadIdx.x;</span>
+<span class="code-line" data-line="36">    <span class="hljs-keyword">if</span> (idx &lt; N) output[idx] = <span class="hljs-built_in">expf</span>(input[idx] - global_max) / global_sum;</span>
+<span class="code-line" data-line="37">}</span>
+<span class="code-line" data-line="38"></span>
+<span class="code-line" data-line="39"><span class="hljs-keyword">extern</span> <span class="hljs-string">&quot;C&quot;</span> <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">solve</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">float</span>* input, <span class="hljs-type">float</span>* output, <span class="hljs-type">int</span> N)</span> </span>{</span>
+<span class="code-line" data-line="40">    <span class="hljs-type">int</span> threadsPerBlock = <span class="hljs-number">256</span>;</span>
+<span class="code-line" data-line="41">    <span class="hljs-type">int</span> blocksPerGrid = (N + threadsPerBlock - <span class="hljs-number">1</span>) / threadsPerBlock;</span>
+<span class="code-line" data-line="42"></span>
+<span class="code-line" data-line="43">    <span class="hljs-type">float</span> *partial_max, *partial_sum;</span>
+<span class="code-line" data-line="44">    <span class="hljs-built_in">cudaMalloc</span>(&amp;partial_max, blocksPerGrid * <span class="hljs-keyword">sizeof</span>(<span class="hljs-type">float</span>));</span>
+<span class="code-line" data-line="45">    <span class="hljs-built_in">cudaMalloc</span>(&amp;partial_sum, blocksPerGrid * <span class="hljs-keyword">sizeof</span>(<span class="hljs-type">float</span>));</span>
+<span class="code-line" data-line="46">    <span class="hljs-type">float</span>* partial_host = (<span class="hljs-type">float</span>*)<span class="hljs-built_in">malloc</span>(blocksPerGrid * <span class="hljs-keyword">sizeof</span>(<span class="hljs-type">float</span>));</span>
+<span class="code-line" data-line="47"></span>
+<span class="code-line" data-line="48">    <span class="hljs-comment">// Step 1: 各 block 局部 max → 拷回 host 求全局 max</span></span>
+<span class="code-line" data-line="49">    findMax_kernel&lt;&lt;&lt;blocksPerGrid, threadsPerBlock&gt;&gt;&gt;(input, partial_max, N);</span>
+<span class="code-line" data-line="50">    <span class="hljs-built_in">cudaDeviceSynchronize</span>();</span>
+<span class="code-line" data-line="51">    <span class="hljs-built_in">cudaMemcpy</span>(partial_host, partial_max, blocksPerGrid * <span class="hljs-keyword">sizeof</span>(<span class="hljs-type">float</span>), cudaMemcpyDeviceToHost);</span>
+<span class="code-line" data-line="52">    <span class="hljs-type">float</span> global_max = -INFINITY;</span>
+<span class="code-line" data-line="53">    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; blocksPerGrid; i++) global_max = <span class="hljs-built_in">fmaxf</span>(global_max, partial_host[i]);</span>
+<span class="code-line" data-line="54"></span>
+<span class="code-line" data-line="55">    <span class="hljs-comment">// Step 2: 各 block 局部 sum → 拷回 host 求全局 sum</span></span>
+<span class="code-line" data-line="56">    countSum_kernel&lt;&lt;&lt;blocksPerGrid, threadsPerBlock&gt;&gt;&gt;(input, partial_sum, global_max, N);</span>
+<span class="code-line" data-line="57">    <span class="hljs-built_in">cudaDeviceSynchronize</span>();</span>
+<span class="code-line" data-line="58">    <span class="hljs-built_in">cudaMemcpy</span>(partial_host, partial_sum, blocksPerGrid * <span class="hljs-keyword">sizeof</span>(<span class="hljs-type">float</span>), cudaMemcpyDeviceToHost);</span>
+<span class="code-line" data-line="59">    <span class="hljs-type">float</span> global_sum = <span class="hljs-number">0.0f</span>;</span>
+<span class="code-line" data-line="60">    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; blocksPerGrid; i++) global_sum += partial_host[i];</span>
+<span class="code-line" data-line="61"></span>
+<span class="code-line" data-line="62">    <span class="hljs-comment">// Step 3: normalize</span></span>
+<span class="code-line" data-line="63">    softmax_kernel&lt;&lt;&lt;blocksPerGrid, threadsPerBlock&gt;&gt;&gt;(input, output, global_max, global_sum, N);</span>
+<span class="code-line" data-line="64">    <span class="hljs-built_in">cudaDeviceSynchronize</span>();</span>
+<span class="code-line" data-line="65"></span>
+<span class="code-line" data-line="66">    <span class="hljs-built_in">free</span>(partial_host);</span>
+<span class="code-line" data-line="67">    <span class="hljs-built_in">cudaFree</span>(partial_max);</span>
+<span class="code-line" data-line="68">    <span class="hljs-built_in">cudaFree</span>(partial_sum);</span>
+<span class="code-line" data-line="69">}</span></code></pre></div>
+<p><strong>正确性要点（都做对了）</strong>：max trick 防 <code>exp</code> 溢出、越界线程补 <code>-INF</code>/<code>0</code> 不污染归约、树归约步步 <code>__syncthreads</code>、写回用 <code>=</code>（每元素独占输出，无需累加）。</p>
+<hr>
+<h2 id="part-6优化建议下一步">Part 6：优化建议（下一步）<a class="heading-anchor" href="#part-6%E4%BC%98%E5%8C%96%E5%BB%BA%E8%AE%AE%E4%B8%8B%E4%B8%80%E6%AD%A5" aria-label="链接到Part 6：优化建议（下一步）">#</a></h2>
+<p>softmax 是 <strong>memory-bound</strong>，优化主线就一条：<strong>少读几遍 HBM</strong>。当前 3-pass 把大数组 <code>input</code> 读了 <strong>3 遍</strong>：</p>
+<table>
+<thead>
+<tr>
+<th align="center">Pass</th>
+<th>kernel</th>
+<th>读/写 HBM</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="center">1</td>
+<td>findMax</td>
+<td>读 input ×1</td>
+<td>求全局 max</td>
+</tr>
+<tr>
+<td align="center">2</td>
+<td>countSum</td>
+<td>读 input ×1</td>
+<td>求 Σexp（<code>exp</code> 第 1 次）</td>
+</tr>
+<tr>
+<td align="center">3</td>
+<td>softmax</td>
+<td>读 input ×1 + 写 output ×1</td>
+<td>归一化（<code>exp</code> 第 2 次）</td>
+</tr>
+</tbody></table>
+<p>三笔冗余成本 → 三个优化方向（对应 NOW.md 的 TODO）：</p>
+<p><strong>① fuse max+sum，用 online softmax 一趟出</strong> <code>[面试]</code>
+3-pass 的隐含依赖是&quot;先知道全局 max 才能算 sum&quot;。online softmax 打破它：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">m_new = max(m_old, x_i)</span>
+<span class="code-line" data-line="2">s_new = s_old * exp(m_old - m_new) + exp(x_i - m_new)   // max 变了就修正已累加的 sum</span></code></pre></div>
+<p>一趟同时维护 <code>(m, s)</code> → <strong>Kernel 1+2 合成一个</strong>，<code>input</code> 从读 3 遍降到 2 遍，省 1/3 HBM。
+这就是 <strong>Flash Attention 不把 attention matrix 落回 HBM 的同一个 trick</strong>，<a href="05-flash-attn-reading.html">Lesson 05</a> 会原样再见到。</p>
+<p><strong>② warp shuffle reduce</strong>（骨架见 Part 3）
+把 <code>for (s &gt;&gt;= 1)</code> 的 shared memory 树归约换成 <code>__shfl_down_sync</code>——warp 内（32 线程）寄存器直接交换，不走 shared memory、warp 内不用 <code>__syncthreads</code>。对应昇腾 Vector 单元的硬件 reduce 指令，只是 NV 要你用 shuffle 手动模拟。</p>
+<p><strong>③ 跨 block 归约挪回 GPU</strong> <code>[面试]</code>
+当前用 <code>cudaMemcpy</code> D2H + CPU 循环做最后一级归约 → 2 次 round-trip + 把 3 个 kernel 强制串行化。两条路，是 occupancy 和协调开销的权衡：</p>
+<ul>
+<li><strong>多 block + 两级归约</strong>：partial 用第二个小 kernel（或 atomic）在 GPU 上归约，别回 host。能打满带宽，但要处理 inter-block。</li>
+<li><strong>单 block + grid-stride loop</strong> 扫完整个 N：完全免掉 inter-block 归约和 host round-trip，但只用 1 个 SM，打不满 HBM 带宽——小 N 划算，大 N 不划算。</li>
+</ul>
+<p><strong>验收</strong>：三版（3-pass / online / warp shuffle）跑通后对比吞吐（GB/s），确认 online 版接近 HBM 带宽上限。</p>
+<blockquote><p>建议顺序：① online 融合（收益最大 + 扣题）→ ② warp shuffle → ③ 去 host 归约 → benchmark。</p>
+</blockquote><hr>
+<h2 id="part-7true-online-softmax-练习2026-07-10">Part 7：True Online Softmax 练习（2026-07-10）<a class="heading-anchor" href="#part-7true-online-softmax-%E7%BB%83%E4%B9%A02026-07-10" aria-label="链接到Part 7：True Online Softmax 练习（2026-07-10）">#</a></h2>
+<blockquote><p>LeetGPU 上实践 <code>maxSumkernel</code>：per-thread K-element online scan + block tree reduce merge (m,s) pair。2-pass（含 normalize）。</p>
+</blockquote><p><strong>核心 kernel 结构</strong>：</p>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-function">__global__ <span class="hljs-type">void</span> <span class="hljs-title">maxSumkernel</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">float</span>* input, <span class="hljs-type">float</span>* partial_sum, <span class="hljs-type">float</span>* partial_max, <span class="hljs-type">int</span> N)</span> </span>{</span>
+<span class="code-line" data-line="2">    <span class="hljs-comment">// ① 每个 thread 串行扫 chunkSize 个元素，逐元素维护 (m, s)</span></span>
+<span class="code-line" data-line="3">    <span class="hljs-type">float</span> m = -INFINITY, s = <span class="hljs-number">0.0f</span>;</span>
+<span class="code-line" data-line="4">    <span class="hljs-keyword">for</span> (<span class="hljs-type">int64_t</span> idx = chunkStart; idx &lt; chunkEnd; ++idx) {</span>
+<span class="code-line" data-line="5">        <span class="hljs-type">float</span> val   = input[idx];</span>
+<span class="code-line" data-line="6">        <span class="hljs-type">float</span> m_new = <span class="hljs-built_in">fmaxf</span>(m, val);</span>
+<span class="code-line" data-line="7">        s = s * <span class="hljs-built_in">expf</span>(m - m_new) + <span class="hljs-built_in">expf</span>(val - m_new);  <span class="hljs-comment">// online 公式</span></span>
+<span class="code-line" data-line="8">        m = m_new;</span>
+<span class="code-line" data-line="9">    }</span>
+<span class="code-line" data-line="10">    <span class="hljs-comment">// ② block 内 tree reduce 合并 256 个 (m, s) pair</span></span>
+<span class="code-line" data-line="11">    <span class="hljs-comment">// merge 公式：s_new = s_a·exp(m_a-m_new) + s_b·exp(m_b-m_new)  （交换律+结合律）</span></span>
+<span class="code-line" data-line="12">    <span class="hljs-comment">// ③ tid==0 写 partial_max[idx], partial_sum[idx]</span></span>
+<span class="code-line" data-line="13">}</span></code></pre></div>
+<p><strong>实践踩坑</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>坑</th>
+<th>现象</th>
+<th>解法</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>tree reduce 空线程 <code>-inf - (-inf)</code> → <code>expf(NaN)</code> → NaN 污染</td>
+<td>N&lt;256 时结果乱</td>
+<td><code>if (m_a == -INFINITY)</code> 跳过，不碰 expf</td>
+</tr>
+<tr>
+<td><code>__syncthreads()</code> 前部分线程提前 <code>return</code></td>
+<td>死锁 / UB</td>
+<td>空线程带哨兵走完全程</td>
+</tr>
+<tr>
+<td>device 指针在 host 直接读</td>
+<td>未定义行为</td>
+<td>必须 <code>cudaMemcpy</code></td>
+</tr>
+<tr>
+<td><code>cudaMalloc</code> 用 <code>free</code> 释放</td>
+<td>crash</td>
+<td>必须 <code>cudaFree</code></td>
+</tr>
+<tr>
+<td>normalize 单线程串行 N 个 expf</td>
+<td>1ms → 60ms</td>
+<td>必须 <code>normalize_kernel&lt;&lt;&lt;N blocks&gt;&gt;&gt;(...)</code> 多 block 并行</td>
+</tr>
+</tbody></table>
+<blockquote><p>当前 LeetGPU 通过方案：3-pass naive ~1ms。<code>maxSumkernel</code> 设计正确，待 parallelize normalize 步骤。</p>
+</blockquote><hr>
+<h2 id="本课检验清单">✅ 本课检验清单<a class="heading-anchor" href="#%E6%9C%AC%E8%AF%BE%E6%A3%80%E9%AA%8C%E6%B8%85%E5%8D%95" aria-label="链接到✅ 本课检验清单">#</a></h2>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> <code>softmax_naive</code> 跑通，结果正确（3-pass 跨 block，2026-07-01）</li>
+<li><input checked="" disabled="" type="checkbox"> 理解 max trick 为什么必须（防止 exp 溢出）</li>
+<li><input checked="" disabled="" type="checkbox"> <code>maxSumkernel</code> 实现：per-thread online scan + tree reduce merge (m,s) pair（2026-07-10）</li>
+<li><input disabled="" type="checkbox"> 理解 warp shuffle reduce 的原理和 <code>__shfl_down_sync</code> 的语义</li>
+<li><input disabled="" type="checkbox"> 知道 Triton 的 <code>tl.max</code>/<code>tl.sum</code> 底层就是用 warp shuffle 实现的</li>
+<li><input checked="" disabled="" type="checkbox"> 了解 online softmax（单 pass）的思路 → 通向 Flash Attention</li>
+</ul>
+<hr>
+<h2 id="知识库索引">知识库索引<a class="heading-anchor" href="#%E7%9F%A5%E8%AF%86%E5%BA%93%E7%B4%A2%E5%BC%95" aria-label="链接到知识库索引">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>想深入理解</th>
+<th>去看</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Warp shuffle 完整说明</td>
+<td><a href="../notes/cuda/warp-and-sync.html">warp-and-sync.md</a> §4</td>
+</tr>
+<tr>
+<td><code>__syncthreads</code> 的陷阱</td>
+<td><a href="../notes/cuda/warp-and-sync.html">warp-and-sync.md</a> §3.2</td>
+</tr>
+<tr>
+<td>LeetGPU Softmax 题</td>
+<td><a href="../notes/cuda/leetgpu-challenges.html">leetgpu-challenges.md</a> → <code>5_softmax</code></td>
+</tr>
+<tr>
+<td>Softmax 参考实现（含 online 版）</td>
+<td><a href="../reference/cuda/softmax/softmax.cu">reference/cuda/softmax/softmax.cu</a></td>
+</tr>
+<tr>
+<td>online softmax 在 attention 里的用法</td>
+<td><a href="05-flash-attn-reading.html">Lesson 05</a></td>
+</tr>
+</tbody></table>
+<hr>
+<p><em>Lesson 04 · Softmax · 源自原 week-03（后半）</em></p>
+</div></main><script src="../../reader.js"></script></body></html>

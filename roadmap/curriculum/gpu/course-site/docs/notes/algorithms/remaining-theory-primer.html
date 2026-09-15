@@ -1,0 +1,418 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>剩余理论主题速览：先懂再深钻 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · notes/algorithms/remaining-theory-primer.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E7%9B%AE%E5%BD%95">目录</a></li><li><a href="#a-gpu-%E4%BC%98%E5%8C%96%E7%AE%97%E6%B3%95">A. GPU 优化算法</a></li><li><a href="#a1-norm-%E7%9A%84-reduce-%E6%A8%A1%E5%BC%8Flayernorm--rmsnorm">A1. Norm 的 reduce 模式（LayerNorm / RMSNorm）</a></li><li><a href="#a2-work-partitioningflashattention-2-%E7%9A%84%E6%80%9D%E8%B7%AF">A2. Work partitioning（FlashAttention-2 的思路）</a></li><li><a href="#b-%E6%B3%A8%E6%84%8F%E5%8A%9B%E4%B8%8E%E5%BA%8F%E5%88%97%E5%BB%BA%E6%A8%A1">B. 注意力与序列建模</a></li><li><a href="#b1-mha---mqa---gqa---mla">B1. MHA -&gt; MQA -&gt; GQA -&gt; MLA</a></li><li><a href="#b2-%E7%BA%BF%E6%80%A7%E6%B3%A8%E6%84%8F%E5%8A%9B--ring-attention">B2. 线性注意力 / Ring Attention</a></li><li><a href="#b3-flashattention-123-%E5%AF%B9%E6%AF%94">B3. FlashAttention 1/2/3 对比</a></li><li><a href="#c-%E9%87%8F%E5%8C%96">C. 量化</a></li><li><a href="#c1-%E9%87%8F%E5%8C%96%E5%9F%BA%E7%A1%80int8--fp8">C1. 量化基础：INT8 / FP8</a></li><li><a href="#c2-gptq">C2. GPTQ</a></li><li><a href="#c3-awq">C3. AWQ</a></li><li><a href="#c4-smoothquant">C4. SmoothQuant</a></li><li><a href="#c5-kv-cache-%E9%87%8F%E5%8C%96">C5. KV cache 量化</a></li><li><a href="#c6-%E9%87%8F%E5%8C%96%E6%96%B9%E6%B3%95%E5%AF%B9%E6%AF%94%E8%A1%A8">C6. 量化方法对比表</a></li><li><a href="#d-%E6%8E%A8%E7%90%86%E7%B3%BB%E7%BB%9F">D. 推理系统</a></li><li><a href="#d1-prefill-vs-decode">D1. Prefill vs Decode</a></li><li><a href="#d2-continuous-batching--chunked-prefill">D2. Continuous Batching / Chunked Prefill</a></li><li><a href="#d3-prefix-cache--radixattention">D3. Prefix Cache / RadixAttention</a></li><li><a href="#d4-speculative-decoding">D4. Speculative Decoding</a></li><li><a href="#d5-pd-%E5%88%86%E7%A6%BB">D5. PD 分离</a></li><li><a href="#e-%E5%88%86%E5%B8%83%E5%BC%8F%E8%AE%AD%E7%BB%83">E. 分布式训练</a></li><li><a href="#e1-nccl--%E9%9B%86%E5%90%88%E9%80%9A%E4%BF%A1">E1. NCCL / 集合通信</a></li><li><a href="#e2-ddp--fsdp">E2. DDP / FSDP</a></li><li><a href="#e3-zero--fsdp">E3. ZeRO / FSDP</a></li><li><a href="#e4-tp--pp--ep-%E9%80%9A%E4%BF%A1">E4. TP / PP / EP 通信</a></li><li><a href="#e5-%E6%B7%B7%E5%90%88%E7%B2%BE%E5%BA%A6--activation-checkpointing">E5. 混合精度 / Activation Checkpointing</a></li><li><a href="#f-%E6%A8%A1%E5%9E%8B%E7%BB%93%E6%9E%84%E8%A1%A5%E5%85%85">F. 模型结构补充</a></li><li><a href="#f1-mamba--ssm">F1. Mamba / SSM</a></li><li><a href="#f2-mod--mtp">F2. MoD / MTP</a></li><li><a href="#%E6%80%8E%E4%B9%88%E4%BD%BF%E7%94%A8%E8%BF%99%E4%BB%BD%E9%80%9F%E8%A7%88">怎么使用这份速览</a></li><li><a href="#%E5%85%B3%E8%81%94%E5%85%A5%E5%8F%A3">关联入口</a></li></ol></nav><div class="markdown-body"><h1 id="剩余理论主题速览先懂再深钻">剩余理论主题速览：先懂再深钻<a class="heading-anchor" href="#%E5%89%A9%E4%BD%99%E7%90%86%E8%AE%BA%E4%B8%BB%E9%A2%98%E9%80%9F%E8%A7%88%E5%85%88%E6%87%82%E5%86%8D%E6%B7%B1%E9%92%BB" aria-label="链接到剩余理论主题速览：先懂再深钻">#</a></h1>
+<blockquote><p>目标：把 PATH 里还标着“待写”的主题按类别补齐入口，用“一句话 + 核心机制 + 最小验证 + 面试口径”讲清楚。
+定位：这是入门速览，不是替代每篇精读笔记。每个主题后续还要按 <a href="../../../index.html?chapter=25">notes 规则</a> 写成独立笔记。
+状态：<code>🚧 速览</code> 表示 Agent 已生成、用户还没消化，不计入“已学”。</p>
+</blockquote><hr>
+<h2 id="目录">目录<a class="heading-anchor" href="#%E7%9B%AE%E5%BD%95" aria-label="链接到目录">#</a></h2>
+<ol>
+<li><a href="#a-gpu-优化算法">A. GPU 优化算法</a></li>
+<li><a href="#b-注意力与序列建模">B. 注意力与序列建模</a></li>
+<li><a href="#c-量化">C. 量化</a></li>
+<li><a href="#d-推理系统">D. 推理系统</a></li>
+<li><a href="#e-分布式训练">E. 分布式训练</a></li>
+<li><a href="#f-模型结构补充">F. 模型结构补充</a></li>
+<li><a href="#怎么使用这份速览">怎么使用这份速览</a></li>
+</ol>
+<hr>
+<h2 id="a-gpu-优化算法">A. GPU 优化算法<a class="heading-anchor" href="#a-gpu-%E4%BC%98%E5%8C%96%E7%AE%97%E6%B3%95" aria-label="链接到A. GPU 优化算法">#</a></h2>
+<h3 id="a1-norm-的-reduce-模式layernorm--rmsnorm">A1. Norm 的 reduce 模式（LayerNorm / RMSNorm）<a class="heading-anchor" href="#a1-norm-%E7%9A%84-reduce-%E6%A8%A1%E5%BC%8Flayernorm--rmsnorm" aria-label="链接到A1. Norm 的 reduce 模式（LayerNorm / RMSNorm）">#</a></h3>
+<p><strong>一句话</strong>：Norm 是对每一行做一次规约，再按规约结果做 elementwise 缩放，所以它和 Softmax 一样是 memory-bound 算子。</p>
+<p><strong>为什么重要</strong>：几乎所有 LLM 都有 Norm；训练/推理框架里它是稳定存在的基础算子，也是面试手写 kernel 的常见题。</p>
+<p><strong>核心机制</strong>：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">LayerNorm: y = (x - mean) / sqrt(var + eps) * gamma + beta</span>
+<span class="code-line" data-line="2">RMSNorm:   y = x / sqrt(mean(x^2) + eps) * gamma</span></code></pre></div>
+<ul>
+<li>LayerNorm 需要 mean 和 variance 两次 reduce；RMSNorm 只算 mean(x²)。</li>
+<li>常见实现可以两遍读：先 reduce，再 normalize；也可以 fused，尽量少读 HBM。</li>
+<li>和 Softmax 的优化套路一致：shared memory tree reduce、warp shuffle、多 block 并行。</li>
+</ul>
+<p><strong>对 Infra 影响</strong>：</p>
+<ul>
+<li>Norm 在 decode 阶段也是 HBM 密集。</li>
+<li>融合 residual + norm + 下一个 GEMM 可以减少 kernel launch 和中间读写。</li>
+<li>Triton 写 Norm 比 CUDA 更简单，但要验证编译器是否真的少读了一遍。</li>
+</ul>
+<p><strong>最小验证</strong>：用 <a href="../../reference/cuda/layernorm/layernorm.cu">reference/cuda/layernorm/layernorm.cu</a> 对照，写一个 RMSNorm CUDA 或 Triton kernel，对比 PyTorch 输出并记录带宽。</p>
+<p><strong>面试口径</strong>：“Norm 是 row-wise reduce，瓶颈是 HBM；优化方向是减少 pass、warp reduce、尽量保持 coalesced access。”</p>
+<hr>
+<h3 id="a2-work-partitioningflashattention-2-的思路">A2. Work partitioning（FlashAttention-2 的思路）<a class="heading-anchor" href="#a2-work-partitioningflashattention-2-%E7%9A%84%E6%80%9D%E8%B7%AF" aria-label="链接到A2. Work partitioning（FlashAttention-2 的思路）">#</a></h3>
+<p><strong>一句话</strong>：FlashAttention-2 调整了 thread block 内的工作分配，减少非矩阵乘操作，让 tensor core 更忙。</p>
+<p><strong>为什么重要</strong>：FlashAttention V1 已经用 tiling + online softmax 解决显存；V2 主要解决“算力没打满”的问题。</p>
+<p><strong>核心机制</strong>：</p>
+<ul>
+<li>V1 每个 thread block 负责一个 Q tile，遍历所有 KV tile。</li>
+<li>V2 把 Q tile 拆得更细，每个 warp 负责一部分 Q rows，减少寄存器压力和同步。</li>
+<li>减少 <code>rescale</code> 和 <code>softmax</code> 等非 GEMM 操作在关键路径上的占比。</li>
+<li>V3 更偏向硬件调度、TMA 和 warp specialization，方向仍是“让算力更忙、访存更高效”。</li>
+</ul>
+<p><strong>对 Infra 影响</strong>：</p>
+<ul>
+<li>读 kernel 时，除了看 tiling，还要看每个 warp 负责多少行、同步点在哪。</li>
+<li>性能对比不能只看 kernel 数量，要看 tensor core 利用率和非 GEMM 开销。</li>
+</ul>
+<p><strong>最小验证</strong>：读 <a href="../../../index.html?chapter=23">flash-attention-2.md</a>，在笔记里画 V1/V2 的 tile 和 warp 分工图。</p>
+<p><strong>面试口径</strong>：“FlashAttention V1 解决 IO，V2 解决并行度和非 matmul 开销，核心是 tile 划分和工作分配。”</p>
+<hr>
+<h2 id="b-注意力与序列建模">B. 注意力与序列建模<a class="heading-anchor" href="#b-%E6%B3%A8%E6%84%8F%E5%8A%9B%E4%B8%8E%E5%BA%8F%E5%88%97%E5%BB%BA%E6%A8%A1" aria-label="链接到B. 注意力与序列建模">#</a></h2>
+<h3 id="b1-mha---mqa---gqa---mla">B1. MHA -&gt; MQA -&gt; GQA -&gt; MLA<a class="heading-anchor" href="#b1-mha---mqa---gqa---mla" aria-label="链接到B1. MHA -&gt; MQA -&gt; GQA -&gt; MLA">#</a></h3>
+<p><strong>一句话</strong>：Attention 的 KV 共享程度越来越高，KV cache 越来越小，是“省显存换少量计算/精度”的结构演进。</p>
+<p><strong>核心机制</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>变体</th>
+<th>K/V head 数</th>
+<th>KV cache 趋势</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>MHA</td>
+<td>每个 query head 一组 K/V</td>
+<td>最大</td>
+</tr>
+<tr>
+<td>MQA</td>
+<td>所有 query head 共享一组 K/V</td>
+<td>最小</td>
+</tr>
+<tr>
+<td>GQA</td>
+<td>分成 G 组共享</td>
+<td>折中</td>
+</tr>
+<tr>
+<td>MLA</td>
+<td>把 K/V 压成低秩 latent</td>
+<td>最省</td>
+</tr>
+</tbody></table>
+<p><strong>最小验证</strong>：手算三种结构的 KV cache 大小，例如 4096 seq、32 layers、head_dim=128、fp16。</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">KV = 2 * num_kv_heads * head_dim * seq_len * layers * 2 bytes</span></code></pre></div>
+<p><strong>面试口径</strong>：“从 MHA 到 GQA 是减少 KV head 数，MLA 是低秩压缩；都是为了减少 Decode 必须读的 KV 字节。”</p>
+<p>详细见 <a href="latest-model-architectures.html">最新模型与结构</a>。</p>
+<hr>
+<h3 id="b2-线性注意力--ring-attention">B2. 线性注意力 / Ring Attention<a class="heading-anchor" href="#b2-%E7%BA%BF%E6%80%A7%E6%B3%A8%E6%84%8F%E5%8A%9B--ring-attention" aria-label="链接到B2. 线性注意力 / Ring Attention">#</a></h3>
+<p><strong>一句话</strong>：线性注意力把 QK^T 的显式矩阵改成先合并 K/V，让复杂度从 O(seq²) 降到 O(seq)；Ring Attention 则用分块 + 通信支持超长序列。</p>
+<p><strong>核心机制</strong>：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">标准: out = softmax(QK^T) @ V</span>
+<span class="code-line" data-line="2">线性: out = Q @ (K^T @ V)   // 先合并 K/V</span></code></pre></div>
+<ul>
+<li>代价是表达能力受限，很多方案用局部 attention 或 SSM 混合补偿。</li>
+<li>Ring Attention 把序列切成块，在设备间环形传递 KV，避免一次放完整矩阵。</li>
+</ul>
+<p><strong>对 Infra 影响</strong>：</p>
+<ul>
+<li>长上下文 benchmark 更依赖这类实现。</li>
+<li>通信和计算可以 overlap，但调度复杂度高。</li>
+</ul>
+<p><strong>最小验证</strong>：手算 seq=4096 时标准 attention 和线性 attention 的 FLOPs/KV 对比；读一篇 linear attention 或 Ring Attention 论文摘要即可。</p>
+<p><strong>面试口径</strong>：“标准 attention 是 O(seq²) 显存/计算；线性 attention 通过改变结合顺序降复杂度，但精度和实现都更复杂。”</p>
+<hr>
+<h3 id="b3-flashattention-123-对比">B3. FlashAttention 1/2/3 对比<a class="heading-anchor" href="#b3-flashattention-123-%E5%AF%B9%E6%AF%94" aria-label="链接到B3. FlashAttention 1/2/3 对比">#</a></h3>
+<p><strong>一句话</strong>：FA1 解决显存和 IO，FA2 解决并行度和非 matmul 开销，FA3 更多利用 Hopper 硬件特性。</p>
+<table>
+<thead>
+<tr>
+<th>版本</th>
+<th>主要贡献</th>
+<th>关注点</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>FA1</td>
+<td>tiling + online softmax，O(N) 显存</td>
+<td>HBM 读写</td>
+</tr>
+<tr>
+<td>FA2</td>
+<td>warp/tile 分工优化</td>
+<td>tensor core 利用率</td>
+</tr>
+<tr>
+<td>FA3</td>
+<td>TMA / warp specialization / Hopper</td>
+<td>硬件调度</td>
+</tr>
+</tbody></table>
+<p><strong>面试口径</strong>：“FlashAttention 的演进从 IO 优化走向硬件适配。”</p>
+<hr>
+<h2 id="c-量化">C. 量化<a class="heading-anchor" href="#c-%E9%87%8F%E5%8C%96" aria-label="链接到C. 量化">#</a></h2>
+<h3 id="c1-量化基础int8--fp8">C1. 量化基础：INT8 / FP8<a class="heading-anchor" href="#c1-%E9%87%8F%E5%8C%96%E5%9F%BA%E7%A1%80int8--fp8" aria-label="链接到C1. 量化基础：INT8 / FP8">#</a></h3>
+<p><strong>一句话</strong>：用更低精度表示权重/激活/KV，省显存和带宽；不同方法解决不同精度问题。</p>
+<p><strong>核心机制</strong>：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">quantize(x) = round(x / scale) + zero_point</span>
+<span class="code-line" data-line="2">dequantize(q) = (q - zero_point) * scale</span></code></pre></div>
+<ul>
+<li>对称量化通常只算 scale，非对称量化还带 zero_point。</li>
+<li>FP8 有 E4M3/E5M2 两种格式，E4M3 精度更高、范围小，E5M2 范围大、精度低。</li>
+</ul>
+<p><strong>最小验证</strong>：读 <a href="../../../index.html?chapter=33">quantization-int8-fp8.md</a>，手算一个 tensor 的 scale/zero_point。</p>
+<p><strong>面试口径</strong>：“量化把数值域映射到低精度，重点是找对 scale 和量化粒度。”</p>
+<hr>
+<h3 id="c2-gptq">C2. GPTQ<a class="heading-anchor" href="#c2-gptq" aria-label="链接到C2. GPTQ">#</a></h3>
+<p><strong>一句话</strong>：训练后逐层量化权重，最小化权重量化误差，是 LLM 权重量化常用的 baseline。</p>
+<p><strong>核心机制</strong>：</p>
+<ul>
+<li>按 layer 收集输入激活，作为校准数据。</li>
+<li>用近似二阶信息（Hessian）逐列更新权重。</li>
+<li>一次量化一层，减少误差累积。</li>
+</ul>
+<p><strong>对 Infra 影响</strong>：</p>
+<ul>
+<li>通常只量化权重，激活仍是高精度。</li>
+<li>推理时加载 INT4/INT8 权重，能明显降显存和带宽。</li>
+<li>需要校准集，离线完成，不影响在线服务。</li>
+</ul>
+<p><strong>最小验证</strong>：在 vLLM 里用 AWQ/GPTQ 模型跑一次 benchmark，对比 FP16 的显存和 TPOT。</p>
+<p><strong>面试口径</strong>：“GPTQ 按 layer 逐层校准，用二阶信息做权重量化，目标是让量化后的权重尽量保持原输出。”</p>
+<hr>
+<h3 id="c3-awq">C3. AWQ<a class="heading-anchor" href="#c3-awq" aria-label="链接到C3. AWQ">#</a></h3>
+<p><strong>一句话</strong>：不只看权重，还看激活的重要性，保护少数重要 channel。</p>
+<p><strong>核心机制</strong>：</p>
+<ul>
+<li>统计每个 channel 的激活幅度。</li>
+<li>对重要 channel 用更小的 scale，降低量化误差。</li>
+<li>比 GPTQ 更少依赖校准数据，速度通常更快。</li>
+</ul>
+<p><strong>面试口径</strong>：“AWQ 认为权重重要性由激活决定，所以按激活统计保护重要 channel。”</p>
+<hr>
+<h3 id="c4-smoothquant">C4. SmoothQuant<a class="heading-anchor" href="#c4-smoothquant" aria-label="链接到C4. SmoothQuant">#</a></h3>
+<p><strong>一句话</strong>：把激活的难量化部分“迁移”到权重，解决激活离群值。</p>
+<p><strong>核心机制</strong>：</p>
+<ul>
+<li>激活离群值导致激活量化困难。</li>
+<li>通过数学变换把激活的 scale 迁移到权重，让两边都更容易量化。</li>
+<li>通常用于 W8A8 全量化。</li>
+</ul>
+<p><strong>面试口径</strong>：“SmoothQuant 把激活的量化难度转移到权重，使 W8A8 更可行。”</p>
+<hr>
+<h3 id="c5-kv-cache-量化">C5. KV cache 量化<a class="heading-anchor" href="#c5-kv-cache-%E9%87%8F%E5%8C%96" aria-label="链接到C5. KV cache 量化">#</a></h3>
+<p><strong>一句话</strong>：把 K/V 降到 INT8/FP8，省显存但需要校准和测试精度。</p>
+<p><strong>核心机制</strong>：</p>
+<ul>
+<li>按 token 或按 channel 选择 scale。</li>
+<li>精度敏感度因层而异，可以只量化部分层。</li>
+<li>和 GQA/MLA 可以叠加使用。</li>
+</ul>
+<p><strong>最小验证</strong>：在 vLLM 里开 KV cache 量化，跑不同 seq_len 对比显存和困惑度。</p>
+<p><strong>面试口径</strong>：“KV cache 量化省的是 Decode 带宽和显存，但要验证长上下文和低 bit 下的精度。”</p>
+<hr>
+<h3 id="c6-量化方法对比表">C6. 量化方法对比表<a class="heading-anchor" href="#c6-%E9%87%8F%E5%8C%96%E6%96%B9%E6%B3%95%E5%AF%B9%E6%AF%94%E8%A1%A8" aria-label="链接到C6. 量化方法对比表">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>方法</th>
+<th>量化对象</th>
+<th align="center">是否需要校准</th>
+<th>主要代价</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>GPTQ</td>
+<td>权重</td>
+<td align="center">是</td>
+<td>离线时间长</td>
+</tr>
+<tr>
+<td>AWQ</td>
+<td>权重</td>
+<td align="center">少</td>
+<td>对激活分布敏感</td>
+</tr>
+<tr>
+<td>SmoothQuant</td>
+<td>权重+激活</td>
+<td align="center">是</td>
+<td>需要重写 kernel</td>
+</tr>
+<tr>
+<td>KV cache 量化</td>
+<td>KV</td>
+<td align="center">是</td>
+<td>精度风险</td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="d-推理系统">D. 推理系统<a class="heading-anchor" href="#d-%E6%8E%A8%E7%90%86%E7%B3%BB%E7%BB%9F" aria-label="链接到D. 推理系统">#</a></h2>
+<h3 id="d1-prefill-vs-decode">D1. Prefill vs Decode<a class="heading-anchor" href="#d1-prefill-vs-decode" aria-label="链接到D1. Prefill vs Decode">#</a></h3>
+<p><strong>一句话</strong>：Prefill 一次处理完整 prompt，compute-bound；Decode 逐 token 生成，memory-bound。</p>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>Prefill</th>
+<th>Decode</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>计算量</td>
+<td>大，可并行</td>
+<td>小</td>
+</tr>
+<tr>
+<td>瓶颈</td>
+<td>算力</td>
+<td>HBM 带宽</td>
+</tr>
+<tr>
+<td>优化</td>
+<td>Flash Attention、chunked prefill</td>
+<td>权重量化、KV 优化、speculative decoding</td>
+</tr>
+</tbody></table>
+<p><strong>面试口径</strong>：“Prefill 是 compute-bound，Decode 是 memory-bound，所以两个阶段要分开优化。”</p>
+<hr>
+<h3 id="d2-continuous-batching--chunked-prefill">D2. Continuous Batching / Chunked Prefill<a class="heading-anchor" href="#d2-continuous-batching--chunked-prefill" aria-label="链接到D2. Continuous Batching / Chunked Prefill">#</a></h3>
+<p><strong>一句话</strong>：Continuous batching 让请求不按 batch 整体等待，iteration 级调度随时加入/退出；chunked prefill 把长 prefill 切块，避免长时间霸占 GPU。</p>
+<p><strong>核心机制</strong>：</p>
+<ul>
+<li>传统静态 batching 要等整批生成完，GPU 空闲多。</li>
+<li>Continuous batching 每个 iteration 重新组合请求，完成即退出，新请求即加入。</li>
+<li>Prefill 计算密集、Decode 带宽密集；chunked prefill 把 prefill 拆成小块和 decode 混跑。</li>
+</ul>
+<p><strong>最小验证</strong>：读 vLLM scheduler 源码，画出“一个 iteration 里 prefill/decode 请求如何混合”。</p>
+<p><strong>面试口径</strong>：“连续批处理用 iteration-level scheduling 提高 GPU 利用率；chunked prefill 解决 prefill 和 decode 互相干扰。”</p>
+<hr>
+<h3 id="d3-prefix-cache--radixattention">D3. Prefix Cache / RadixAttention<a class="heading-anchor" href="#d3-prefix-cache--radixattention" aria-label="链接到D3. Prefix Cache / RadixAttention">#</a></h3>
+<p><strong>一句话</strong>：多轮对话和 RAG 请求会重复相同前缀，前缀缓存复用这些 KV，RadixAttention 用树结构管理共享前缀。</p>
+<p><strong>核心机制</strong>：</p>
+<ul>
+<li>vLLM 的 prefix cache 常用 hash 精确匹配整段前缀。</li>
+<li>SGLang 的 RadixAttention 用 radix tree，允许部分前缀共享和 copy-on-write。</li>
+<li>代价是 KV 管理更复杂，需要 eviction、refcount、cache hit 调度。</li>
+</ul>
+<p><strong>最小验证</strong>：读 <a href="https://docs.sglang.ai/">SGLang 文档</a> 或源码，画一个多轮对话的 radix tree 变化。</p>
+<p><strong>面试口径</strong>：“前缀缓存复用重复 KV，RadixAttention 用树做最长前缀匹配，能省 prefill 但增加显存管理复杂度。”</p>
+<hr>
+<h3 id="d4-speculative-decoding">D4. Speculative Decoding<a class="heading-anchor" href="#d4-speculative-decoding" aria-label="链接到D4. Speculative Decoding">#</a></h3>
+<p><strong>一句话</strong>：小模型先 draft，大模型再 verify，让多个 token 在一次 forward 中验证。</p>
+<p><strong>核心机制</strong>：</p>
+<ul>
+<li>小模型快速生成候选 token。</li>
+<li>大模型一次验证多个候选，接受一致部分，回退不一致部分。</li>
+<li>收益取决于 draft 接受率和额外显存。</li>
+</ul>
+<p><strong>面试口径</strong>：“投机解码用 draft-verify 提高 token/s，但收益依赖 draft 模型质量和额外显存。”</p>
+<p>详细见 <a href="../../../index.html?chapter=34">投机解码</a>。</p>
+<hr>
+<h3 id="d5-pd-分离">D5. PD 分离<a class="heading-anchor" href="#d5-pd-%E5%88%86%E7%A6%BB" aria-label="链接到D5. PD 分离">#</a></h3>
+<p><strong>一句话</strong>：把 Prefill 和 Decode 放到不同 GPU/实例，避免两种 workload 互相干扰。</p>
+<p><strong>核心机制</strong>：</p>
+<ul>
+<li>Prefill 实例负责长 prompt 计算。</li>
+<li>Decode 实例负责低延迟生成。</li>
+<li>之间要传 KV cache 或中间状态，传输开销是主要挑战。</li>
+</ul>
+<p><strong>面试口径</strong>：“PD 分离用硬件隔离解决 prefill/decode 的资源争抢，但要处理 KV 传输。”</p>
+<p>详细见 <a href="../../../index.html?chapter=35">PD 分离</a>。</p>
+<hr>
+<h2 id="e-分布式训练">E. 分布式训练<a class="heading-anchor" href="#e-%E5%88%86%E5%B8%83%E5%BC%8F%E8%AE%AD%E7%BB%83" aria-label="链接到E. 分布式训练">#</a></h2>
+<h3 id="e1-nccl--集合通信">E1. NCCL / 集合通信<a class="heading-anchor" href="#e1-nccl--%E9%9B%86%E5%90%88%E9%80%9A%E4%BF%A1" aria-label="链接到E1. NCCL / 集合通信">#</a></h3>
+<p><strong>一句话</strong>：NCCL 是 GPU 间集合通信库，AllReduce/ReduceScatter/AllGather/All-to-All 是分布式训练的基础。</p>
+<p><strong>核心机制</strong>：</p>
+<ul>
+<li>AllReduce：所有卡得到完整结果。</li>
+<li>ReduceScatter：每卡得到部分结果。</li>
+<li>AllGather：每卡把部分结果广播成完整结果。</li>
+<li>All-to-All：每卡和所有卡交换不同数据。</li>
+</ul>
+<p><strong>最小验证</strong>：画 Ring AllReduce 的通信量，理解为什么通信量随卡数增长但每卡负载可控。</p>
+<p><strong>面试口径</strong>：“集合通信按数据分布和归约方式分，通信量和带宽是分布式训练的第一账本。”</p>
+<hr>
+<h3 id="e2-ddp--fsdp">E2. DDP / FSDP<a class="heading-anchor" href="#e2-ddp--fsdp" aria-label="链接到E2. DDP / FSDP">#</a></h3>
+<p><strong>一句话</strong>：DDP 复制模型、同步梯度；FSDP 分片参数，训练更大模型。</p>
+<table>
+<thead>
+<tr>
+<th>方案</th>
+<th>参数</th>
+<th>梯度</th>
+<th>优化器状态</th>
+<th>通信</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>DDP</td>
+<td>每卡全量</td>
+<td>每卡全量</td>
+<td>每卡全量</td>
+<td>AllReduce 梯度</td>
+</tr>
+<tr>
+<td>FSDP</td>
+<td>分片</td>
+<td>分片</td>
+<td>分片</td>
+<td>AllGather 参数 + ReduceScatter 梯度</td>
+</tr>
+</tbody></table>
+<p><strong>面试口径</strong>：“DDP 是数据并行 + 梯度同步；FSDP 是参数/梯度/优化器状态分片，省显存换通信。”</p>
+<hr>
+<h3 id="e3-zero--fsdp">E3. ZeRO / FSDP<a class="heading-anchor" href="#e3-zero--fsdp" aria-label="链接到E3. ZeRO / FSDP">#</a></h3>
+<p><strong>一句话</strong>：ZeRO 把优化器状态、梯度、参数分片到多卡，让单卡显存不再必须装下完整模型；FSDP 是 PyTorch 对 ZeRO-3 风格参数分片的实现。</p>
+<p><strong>核心机制</strong>：</p>
+<ul>
+<li>ZeRO-1：分片优化器状态。</li>
+<li>ZeRO-2：分片优化器状态 + 梯度。</li>
+<li>ZeRO-3：再分片参数，前向/反向时 all-gather 临时取回。</li>
+<li>FSDP 使用类似思路，把模型切成 flat parameter shards。</li>
+</ul>
+<p><strong>最小验证</strong>：手算 7B 模型 fp16 + AdamW 的显存账本：参数 14GB、梯度 14GB、fp32 master 28GB、Adam m/v 各 28GB，合计约 112GB；再算 ZeRO-3 分片后每卡多少。</p>
+<p><strong>面试口径</strong>：“ZeRO 按参数/梯度/优化器状态依次分片，FSDP 是 PyTorch 的 ZeRO-3 风格实现；分片越多显存越省，通信越贵。”</p>
+<hr>
+<h3 id="e4-tp--pp--ep-通信">E4. TP / PP / EP 通信<a class="heading-anchor" href="#e4-tp--pp--ep-%E9%80%9A%E4%BF%A1" aria-label="链接到E4. TP / PP / EP 通信">#</a></h3>
+<p><strong>一句话</strong>：张量并行把单个矩阵切成多卡算，流水线并行把层切到多卡，专家并行把 expert 分布到多卡；它们解决不同瓶颈，通信模式不同。</p>
+<p><strong>核心机制</strong>：</p>
+<ul>
+<li>TP：权重分片，forward 后需要 all-reduce；通信频率高，通常需要 NVLink。</li>
+<li>PP：层分片，卡间传 activation；通信次数少但延迟叠加，有 bubble。</li>
+<li>EP：MoE expert 分片，token 需要 AllToAll 到对应 expert 所在卡。</li>
+</ul>
+<p><strong>最小验证</strong>：画一个 2 卡 TP、4 卡 PP、MoE 8 expert 的通信图，标出每步传输的数据量。</p>
+<p><strong>面试口径</strong>：“TP 切权重、PP 切层、EP 切 expert；TP 通信最频繁，PP 有 bubble，EP 有 AllToAll 负载均衡问题。”</p>
+<hr>
+<h3 id="e5-混合精度--activation-checkpointing">E5. 混合精度 / Activation Checkpointing<a class="heading-anchor" href="#e5-%E6%B7%B7%E5%90%88%E7%B2%BE%E5%BA%A6--activation-checkpointing" aria-label="链接到E5. 混合精度 / Activation Checkpointing">#</a></h3>
+<p><strong>一句话</strong>：混合精度用 FP16/BF16/FP8 降低显存和加速；activation checkpointing 不存全部激活，反向时重算。</p>
+<p><strong>核心机制</strong>：</p>
+<ul>
+<li>FP16 范围小容易溢出，BF16 和 FP32 范围接近但精度低。</li>
+<li>梯度更新时通常保留 FP32 master copy。</li>
+<li>activation checkpointing 用“时间换显存”，重算代价约一个 forward。</li>
+</ul>
+<p><strong>面试口径</strong>：“混合精度省显存，激活 checkpointing 用重算换显存，适合大模型训练。”</p>
+<hr>
+<h2 id="f-模型结构补充">F. 模型结构补充<a class="heading-anchor" href="#f-%E6%A8%A1%E5%9E%8B%E7%BB%93%E6%9E%84%E8%A1%A5%E5%85%85" aria-label="链接到F. 模型结构补充">#</a></h2>
+<h3 id="f1-mamba--ssm">F1. Mamba / SSM<a class="heading-anchor" href="#f1-mamba--ssm" aria-label="链接到F1. Mamba / SSM">#</a></h3>
+<p><strong>一句话</strong>：SSM 用固定大小的 hidden state 做序列建模，推理时逐 token 更新状态，避免 Attention 的二次复杂度。</p>
+<p><strong>核心机制</strong>：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">h_t = A h_{t-1} + B x_t</span>
+<span class="code-line" data-line="2">y_t = C h_t</span></code></pre></div>
+<ul>
+<li>Mamba 的关键是 selective scan：根据输入动态选择保留/遗忘信息。</li>
+<li>混合架构（如 Jamba）把 Attention 和 SSM 层交替，兼顾长距离和表达力。</li>
+<li>GPU 上实现 SSM 需要专门 kernel，不是简单 PyTorch 循环。</li>
+</ul>
+<p><strong>面试口径</strong>：“SSM 是线性时间状态更新，长序列省显存；但状态容量有限，常见做法是和 Attention 混合。”</p>
+<h3 id="f2-mod--mtp">F2. MoD / MTP<a class="heading-anchor" href="#f2-mod--mtp" aria-label="链接到F2. MoD / MTP">#</a></h3>
+<ul>
+<li>MoD（Mixture-of-Depths）：不是每个 token 都经过每一层，减少激活计算。</li>
+<li>MTP（Multi-Token Prediction）：一次预测多个未来 token，训练和投机解码相关。</li>
+</ul>
+<p><strong>面试口径</strong>：“MoD 是稀疏计算，MTP 是训练目标/投机解码相关，两者都在改变‘每 token 必须算满每一层’的假设。”</p>
+<hr>
+<h2 id="怎么使用这份速览">怎么使用这份速览<a class="heading-anchor" href="#%E6%80%8E%E4%B9%88%E4%BD%BF%E7%94%A8%E8%BF%99%E4%BB%BD%E9%80%9F%E8%A7%88" aria-label="链接到怎么使用这份速览">#</a></h2>
+<ol>
+<li>每次只挑一个主题，从“一句话”开始，能不看原文讲出来。</li>
+<li>做“最小验证”：能算账就手算，能跑就写一个小 kernel/脚本。</li>
+<li>把“面试口径”改成自己的话，不要背模板。</li>
+<li>一个主题能讲 3 分钟后，再把它升级成独立精读笔记，并更新 PATH.md 状态。</li>
+</ol>
+<hr>
+<h2 id="关联入口">关联入口<a class="heading-anchor" href="#%E5%85%B3%E8%81%94%E5%85%A5%E5%8F%A3" aria-label="链接到关联入口">#</a></h2>
+<ul>
+<li><a href="latest-model-architectures.html">最新模型与结构</a> — 模型家族和组件全景</li>
+<li><a href="model-tracker.html">模型追踪表</a> — 最新模型、结构、学习状态</li>
+<li>PATH.md — 理论线全貌</li>
+<li><a href="../../roadmap/ai-infra-curriculum.html">roadmap/ai-infra-curriculum.md</a> — 怎么把这些主题排进学习节奏</li>
+</ul>
+</div></main><script src="../../../reader.js"></script></body></html>

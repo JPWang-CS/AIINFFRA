@@ -1,0 +1,65 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CUDA / GPU 底层知识入口 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · notes/cuda/README.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E7%9F%A5%E8%AF%86%E5%9C%B0%E5%9B%BE">知识地图</a></li><li><a href="#%E5%9B%BA%E5%AE%9A%E4%BD%BF%E7%94%A8%E6%96%B9%E5%BC%8F">固定使用方式</a></li><li><a href="#%E5%A4%96%E9%83%A8%E8%B5%84%E6%96%99%E8%81%8C%E8%B4%A3">外部资料职责</a></li></ol></nav><div class="markdown-body"><h1 id="cuda--gpu-底层知识入口">CUDA / GPU 底层知识入口<a class="heading-anchor" href="#cuda--gpu-%E5%BA%95%E5%B1%82%E7%9F%A5%E8%AF%86%E5%85%A5%E5%8F%A3" aria-label="链接到CUDA / GPU 底层知识入口">#</a></h1>
+<blockquote><p>路线和实验顺序以 <a href="../../roadmap/gpu-foundations.html">GPU 底层架构与性能优化课程</a> 为准；本目录保存可跨算子复用的知识，不维护独立进度。</p>
+</blockquote><h2 id="知识地图">知识地图<a class="heading-anchor" href="#%E7%9F%A5%E8%AF%86%E5%9C%B0%E5%9B%BE" aria-label="链接到知识地图">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>问题</th>
+<th>笔记</th>
+<th>用在何处</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>GPU 从整机到 SM、指令和架构代际</td>
+<td><a href="gpu-architecture-layers.html">gpu-architecture-layers.md</a></td>
+<td>全阶段总地图</td>
+</tr>
+<tr>
+<td>global/shared/register 与访问模式</td>
+<td><a href="memory-model.html">memory-model.md</a></td>
+<td>Vector Add、MatMul、Softmax</td>
+</tr>
+<tr>
+<td>warp、同步、reduction、divergence</td>
+<td><a href="warp-and-sync.html">warp-and-sync.md</a></td>
+<td>Softmax、Norm、Attention</td>
+</tr>
+<tr>
+<td>Triton 到 GPU 的编译和映射</td>
+<td><a href="triton-under-the-hood.html">triton-under-the-hood.md</a></td>
+<td>B1–B5</td>
+</tr>
+<tr>
+<td>LeetGPU 题目地图</td>
+<td><a href="leetgpu-challenges.html">leetgpu-challenges.md</a></td>
+<td>正确性门与代码归档</td>
+</tr>
+<tr>
+<td>CUDA 常用语法速查</td>
+<td><a href="cuda-cheatsheet.html">cuda-cheatsheet.md</a></td>
+<td>写题时查询</td>
+</tr>
+<tr>
+<td>FlashAttention CUDA 读码</td>
+<td><a href="flash-attn-reading.html">flash-attn-reading.md</a></td>
+<td>B3/FA2</td>
+</tr>
+</tbody></table>
+<p>旧的 <a href="gpu-architecture.html">gpu-architecture.md</a> 是早期 NVIDIA/昇腾速记；涉及架构事实时以新版分层笔记和 NVIDIA 官方文档为准。</p>
+<h2 id="固定使用方式">固定使用方式<a class="heading-anchor" href="#%E5%9B%BA%E5%AE%9A%E4%BD%BF%E7%94%A8%E6%96%B9%E5%BC%8F" aria-label="链接到固定使用方式">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">当前算子提出问题</span>
+<span class="code-line" data-line="2">-&gt; 从本页找到对应底层知识</span>
+<span class="code-line" data-line="3">-&gt; 回到 LeetGPU 从空题面实现并归档原始代码</span>
+<span class="code-line" data-line="4">-&gt; 真实服务器建立 baseline</span>
+<span class="code-line" data-line="5">-&gt; Nsight / PTX / SASS 找证据</span>
+<span class="code-line" data-line="6">-&gt; 单变量优化</span></code></pre></div>
+<p>知识笔记不能替代实验状态；只有对应 lesson 单元卡和 <code>PATH.md</code> 可以表达当前进度。</p>
+<h2 id="外部资料职责">外部资料职责<a class="heading-anchor" href="#%E5%A4%96%E9%83%A8%E8%B5%84%E6%96%99%E8%81%8C%E8%B4%A3" aria-label="链接到外部资料职责">#</a></h2>
+<ul>
+<li>NVIDIA Programming Guide / Tuning Guide：架构和编程语义的权威事实。</li>
+<li>Nsight 文档：counter、roofline 和诊断方法。</li>
+<li>GPU MODE / NVIDIA samples：最小实验和讲解。</li>
+<li>SGEMM_CUDA / CUTLASS / CCCL：通过后读码，对照生产级优化组织方式。</li>
+<li>LeetGPU：有对应题面时的正确性门；真实 GPU 服务器负责性能结论。</li>
+</ul>
+</div></main><script src="../../../reader.js"></script></body></html>

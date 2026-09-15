@@ -1,0 +1,137 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GPU 架构：NVIDIA vs Da Vinci（昇腾）对比 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · notes/cuda/gpu-architecture.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#1-%E6%95%B4%E4%BD%93%E6%9E%B6%E6%9E%84%E5%AF%B9%E6%AF%94">1. 整体架构对比</a></li><li><a href="#nvidia-gpu-eg-a100">NVIDIA GPU (e.g., A100)</a></li><li><a href="#%E6%98%87%E8%85%BE-da-vinci-eg-ascend-910b">昇腾 Da Vinci (e.g., Ascend 910B)</a></li><li><a href="#2-%E5%85%B3%E9%94%AE%E6%A6%82%E5%BF%B5%E6%98%A0%E5%B0%84">2. 关键概念映射</a></li><li><a href="#3-%E7%BC%96%E7%A8%8B%E6%A8%A1%E5%9E%8B%E5%B7%AE%E5%BC%82">3. 编程模型差异</a></li><li><a href="#cuda-simt-single-instruction-multiple-threads">CUDA: SIMT (Single Instruction, Multiple Threads)</a></li><li><a href="#ascend-c-%E6%98%BE%E5%BC%8F%E6%95%B0%E6%8D%AE%E6%90%AC%E8%BF%90--%E8%AE%A1%E7%AE%97%E6%B5%81%E6%B0%B4">Ascend C: 显式数据搬运 + 计算流水</a></li><li><a href="#4-%E5%86%85%E5%AD%98%E5%B1%82%E7%BA%A7%E5%AF%B9%E6%AF%94">4. 内存层级对比</a></li><li><a href="#5-%E5%AD%A6%E4%B9%A0%E8%A6%81%E7%82%B9">5. 学习要点</a></li></ol></nav><div class="markdown-body"><h1 id="gpu-架构nvidia-vs-da-vinci昇腾对比">GPU 架构：NVIDIA vs Da Vinci（昇腾）对比<a class="heading-anchor" href="#gpu-%E6%9E%B6%E6%9E%84nvidia-vs-da-vinci%E6%98%87%E8%85%BE%E5%AF%B9%E6%AF%94" aria-label="链接到GPU 架构：NVIDIA vs Da Vinci（昇腾）对比">#</a></h1>
+<p><em>CUDA 打底阶段笔记</em>
+<em>状态：📖 在读</em></p>
+<hr>
+<h2 id="1-整体架构对比">1. 整体架构对比<a class="heading-anchor" href="#1-%E6%95%B4%E4%BD%93%E6%9E%B6%E6%9E%84%E5%AF%B9%E6%AF%94" aria-label="链接到1. 整体架构对比">#</a></h2>
+<h3 id="nvidia-gpu-eg-a100">NVIDIA GPU (e.g., A100)<a class="heading-anchor" href="#nvidia-gpu-eg-a100" aria-label="链接到NVIDIA GPU (e.g., A100)">#</a></h3>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">GPU</span>
+<span class="code-line" data-line="2">├── GPC (Graphics Processing Cluster) × 8</span>
+<span class="code-line" data-line="3">│   └── TPC (Texture Processing Cluster) × 2</span>
+<span class="code-line" data-line="4">│       └── SM (Streaming Multiprocessor) × 2</span>
+<span class="code-line" data-line="5">│           ├── CUDA Cores (FP32/INT32)</span>
+<span class="code-line" data-line="6">│           ├── Tensor Cores (FP16/BF16/FP8/FP64)</span>
+<span class="code-line" data-line="7">│           ├── Register File (64K × 32-bit per SM)</span>
+<span class="code-line" data-line="8">│           ├── L1 Cache / Shared Memory (192 KB, configurable)</span>
+<span class="code-line" data-line="9">│           ├── Warp Scheduler × 4</span>
+<span class="code-line" data-line="10">│           └── Load/Store Units, SFU</span>
+<span class="code-line" data-line="11">├── L2 Cache (40 MB)</span>
+<span class="code-line" data-line="12">└── HBM2e (80 GB, ~2 TB/s bandwidth)</span></code></pre></div>
+<h3 id="昇腾-da-vinci-eg-ascend-910b">昇腾 Da Vinci (e.g., Ascend 910B)<a class="heading-anchor" href="#%E6%98%87%E8%85%BE-da-vinci-eg-ascend-910b" aria-label="链接到昇腾 Da Vinci (e.g., Ascend 910B)">#</a></h3>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">NPU</span>
+<span class="code-line" data-line="2">├── AiCore × 32 (compute unit)</span>
+<span class="code-line" data-line="3">│   ├── Cube Unit (矩阵乘，类似 Tensor Core)</span>
+<span class="code-line" data-line="4">│   ├── Vector Unit (向量计算，类似 CUDA Core)</span>
+<span class="code-line" data-line="5">│   ├── Scalar Unit</span>
+<span class="code-line" data-line="6">│   ├── L1 Buffer (1 MB)</span>
+<span class="code-line" data-line="7">│   ├── Unified Buffer</span>
+<span class="code-line" data-line="8">│   └── L0A/L0B/L0C (专用缓存)</span>
+<span class="code-line" data-line="9">├── L2 Cache</span>
+<span class="code-line" data-line="10">├── HBM (64 GB)</span>
+<span class="code-line" data-line="11">└── TS (Task Scheduler)</span></code></pre></div>
+<h2 id="2-关键概念映射">2. 关键概念映射<a class="heading-anchor" href="#2-%E5%85%B3%E9%94%AE%E6%A6%82%E5%BF%B5%E6%98%A0%E5%B0%84" aria-label="链接到2. 关键概念映射">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>概念</th>
+<th>NVIDIA CUDA</th>
+<th>Ascend CANN</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>计算单元</td>
+<td>SM (Streaming Multiprocessor)</td>
+<td>AiCore</td>
+<td>基本计算单元</td>
+</tr>
+<tr>
+<td>线程</td>
+<td>Thread</td>
+<td>-</td>
+<td>CUDA 更细粒度</td>
+</tr>
+<tr>
+<td>线程组</td>
+<td>Warp (32 threads)</td>
+<td>Block (多核协同)</td>
+<td>Ascend 的 block 概念不同于 CUDA block</td>
+</tr>
+<tr>
+<td>线程块</td>
+<td>Block (≤1024 threads)</td>
+<td>-</td>
+<td></td>
+</tr>
+<tr>
+<td>矩阵计算</td>
+<td>Tensor Core</td>
+<td>Cube Unit</td>
+<td>都做 FP16/BF16/INT8 的 MMA</td>
+</tr>
+<tr>
+<td>片上内存</td>
+<td>Shared Memory / L1</td>
+<td>L1 Buffer + Unified Buffer</td>
+<td>Ascend 的 buffer 层次更显式</td>
+</tr>
+<tr>
+<td>设备内存</td>
+<td>HBM (Global Memory)</td>
+<td>HBM (Global Memory)</td>
+<td>几乎一致</td>
+</tr>
+<tr>
+<td>同步</td>
+<td>__syncthreads()</td>
+<td>block_sync()</td>
+<td></td>
+</tr>
+<tr>
+<td>异步</td>
+<td>CUDA Stream</td>
+<td>Ascend Stream</td>
+<td>概念完全一致</td>
+</tr>
+<tr>
+<td>编译</td>
+<td>nvcc → PTX → SASS</td>
+<td>Ascend C → TBE → 二进制</td>
+<td></td>
+</tr>
+</tbody></table>
+<h2 id="3-编程模型差异">3. 编程模型差异<a class="heading-anchor" href="#3-%E7%BC%96%E7%A8%8B%E6%A8%A1%E5%9E%8B%E5%B7%AE%E5%BC%82" aria-label="链接到3. 编程模型差异">#</a></h2>
+<h3 id="cuda-simt-single-instruction-multiple-threads">CUDA: SIMT (Single Instruction, Multiple Threads)<a class="heading-anchor" href="#cuda-simt-single-instruction-multiple-threads" aria-label="链接到CUDA: SIMT (Single Instruction, Multiple Threads)">#</a></h3>
+<div class="code-panel"><div class="code-caption"><span>CUDA</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cuda"><span class="code-line" data-line="1">__global__ void kernel(float *data) {</span>
+<span class="code-line" data-line="2">    int tid = threadIdx.x + blockIdx.x * blockDim.x;</span>
+<span class="code-line" data-line="3">    // 每个 thread &quot;看起来是&quot; 独立执行的</span>
+<span class="code-line" data-line="4">    data[tid] = data[tid] * 2.0f;</span>
+<span class="code-line" data-line="5">}</span></code></pre></div>
+<h3 id="ascend-c-显式数据搬运--计算流水">Ascend C: 显式数据搬运 + 计算流水<a class="heading-anchor" href="#ascend-c-%E6%98%BE%E5%BC%8F%E6%95%B0%E6%8D%AE%E6%90%AC%E8%BF%90--%E8%AE%A1%E7%AE%97%E6%B5%81%E6%B0%B4" aria-label="链接到Ascend C: 显式数据搬运 + 计算流水">#</a></h3>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-comment">// Ascend C 把搬运(tpipe)和计算(pipe)显式分离</span></span>
+<span class="code-line" data-line="2"><span class="hljs-comment">// 通过 pipe 机制做 double/triple buffer 流水</span></span>
+<span class="code-line" data-line="3"><span class="hljs-keyword">class</span> <span class="hljs-title class_">Kernel</span> {</span>
+<span class="code-line" data-line="4">    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">Process</span><span class="hljs-params">()</span> </span>{</span>
+<span class="code-line" data-line="5">        <span class="hljs-comment">// CopyIn → Compute → CopyOut pipeline</span></span>
+<span class="code-line" data-line="6">    }</span>
+<span class="code-line" data-line="7">};</span></code></pre></div>
+<h2 id="4-内存层级对比">4. 内存层级对比<a class="heading-anchor" href="#4-%E5%86%85%E5%AD%98%E5%B1%82%E7%BA%A7%E5%AF%B9%E6%AF%94" aria-label="链接到4. 内存层级对比">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">NVIDIA A100:</span>
+<span class="code-line" data-line="2">  Register (256 KB/SM) → L1/Shared (192 KB/SM) → L2 (40 MB) → HBM (80 GB)</span>
+<span class="code-line" data-line="3"></span>
+<span class="code-line" data-line="4">Ascend 910B:</span>
+<span class="code-line" data-line="5">  L0 Buffer → L1 Buffer (1 MB/AiCore) → Unified Buffer → L2 → HBM (64 GB)</span></code></pre></div>
+<p>关键差异：</p>
+<ul>
+<li>NVIDIA 的 Shared Memory 是 programmer-managed cache，需要显式管理</li>
+<li>Ascend 的 L1/UB 也是 programmer-managed，理解成本类似</li>
+<li>两者都要关注 bank conflict、alignment、coalescing</li>
+</ul>
+<h2 id="5-学习要点">5. 学习要点<a class="heading-anchor" href="#5-%E5%AD%A6%E4%B9%A0%E8%A6%81%E7%82%B9" aria-label="链接到5. 学习要点">#</a></h2>
+<ul>
+<li><input disabled="" type="checkbox"> 理解 warp 调度和 divergence 的代价</li>
+<li><input disabled="" type="checkbox"> 理解 shared memory bank conflict</li>
+<li><input disabled="" type="checkbox"> 理解 tensor core 的 tile 尺寸和精度</li>
+<li><input disabled="" type="checkbox"> 写出正确使用 shared memory 的 tiled GEMM</li>
+<li><input disabled="" type="checkbox"> 用 Nsight Compute 分析 occupancy 和 memory throughput</li>
+</ul>
+</div></main><script src="../../../reader.js"></script></body></html>

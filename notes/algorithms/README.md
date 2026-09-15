@@ -1,135 +1,131 @@
-# Algorithms — 理论线（模型驱动主线 + 字典）
+# Algorithms — 独立论文与理论学习线
 
-> 主线决定"学什么"，字典按需查"某个概念是什么"。不再按概念平行推进——概念只有挂在模型/系统上才有位置。
-> 状态约定：`🚧 草稿/速览` 表示 Agent 已生成、用户还没消化，不计入"已学"。
-> 当前学哪条由 [NOW.md](../../NOW.md) 指定，全貌和进度在 [PATH.md](../../PATH.md) 理论线。
+> 论文线只负责阅读、公式推导、作者关键代码阅读和回答能力；它与实践线同级但独立，不要求每篇论文实现，也不与LeetGPU、服务器、当前算子或vLLM互设前置。当前主题由 [NOW.md](../../NOW.md) 指定，权威进度在 [PATH.md](../../PATH.md)。
 
-## 为什么是"主干 + 枝干 + 字典"
+## 1. 当前顺序
 
-按概念分类（注意力一列、量化一列）容易越学越散。主流做法是**跟模型/系统学**：拆一个开源模型，注意力、MoE、KV、投机解码、serving 全部自然出现。
+```text
+已完成：Online Softmax / Parallel Reduce / FlashAttention-1 / FlashAttention-2
+当前：MLA（DeepSeek-V2/V3）
+下一篇：DSA（DeepSeek-V3.2）
+之后：DeepSeek-V4增量、MoE、量化、推理系统、分布式与最新论文
+```
 
-- 两条主线 = 两个骨架模型：DeepSeek-V3.2 → V4（推理系统全家桶，V3.2 打底、V4 做增量）+ Qwen3.5（混合注意力 + 长上下文）
-- 字典 = 概念笔记，按 6 子类归档，每篇开头带 `> 挂靠：` 说明属于哪条主线/哪个系统
-- 主干 = 模型主线，决定顺序；枝干 = 必要小模块，挂在主干的具体步骤上，挂上就按顺序学、不推迟、不跳过（例：训练侧枝干 A1 挂在主线 A 第 7 步，serving 之后，不插队）
-- 铁律：**主干决定顺序，枝干是主干的必要延伸**；字典只做概念速查，不是学习路径。
+FA2于2026-09-02完成阅读，只代表理论学习完成，不代表Triton实现或GPU验证。MLA仍为`WIP`。
 
-## 笔记规则
+## 2. 阅读分级
 
-一条一页，固定四段 + 挂靠：
-
-> **解决什么问题 → 核心思路 → 关键数据/取舍 → 与我何干**，开头一行 `> 挂靠：<属于哪条主线/哪个系统/哪个阶段>`
-
-## 📌 和 papers/ 的边界（硬规矩）
-
-俩都是"读+理论"，容易混。规矩：
-
-> **单位是"一篇论文" → [papers/](../../papers/)；单位是"一个技术/概念" → 这里。**
-
-- **非论文技术**（online softmax、parallel reduce、continuous batching）→ 只在这里。散在多篇论文/博客/代码里的，本就没有单篇归属。
-- **有标志性论文的技术**（AWQ、GQA、ZeRO）→ 两边各一份，角度不同：
-  - `papers/xxx.md`：这篇论文讲了什么（精读，带 arxiv）
-  - 这里 `xxx.md`：机制 + 我会怎么实现/用，`[[链]]`到论文
-- 判断口诀：**"读论文" ≠ "会实现"**。前者进 papers，后者进这里。
-
----
-
-## 🧭 路由（怎么用这份 README）
-
-| 你现在在哪 | 去哪 |
+| 级别 | 要求 |
 |---|---|
-| 刚进来 / 不知道学什么 | 看 [NOW.md](../../NOW.md) 当前焦点 → 走对应主线 |
-| 主线学完一步 | 回到主线，走下一步 |
-| 主线里遇到不懂的概念 | 点步骤里的字典链接，或到下方字典按子类查 |
-| 想知道某个模型的状态 | [模型追踪表](model-tracker.md) |
-| 想知道全景/进度 | [PATH.md](../../PATH.md) 理论线 |
+| 速读 | 问题、前代、贡献、主要结果、是否值得精读 |
+| 精读 | 符号表、关键公式逐步推导、算法、实验、适用条件、局限 |
+| 精读+代码 | 将公式、伪代码和数据结构映射到作者关键代码、执行路径与硬件假设 |
 
----
+核心论文和重要最新论文至少达到“精读+代码”。代码阅读是理解作者实现，不等于自己复现；只有用户明确选择复现时，才在实践线创建任务。
 
-## 🚀 主线 A：DeepSeek-V3.2 → V4（从 config 到 serving）
+## 3. 每篇论文的完成标准
 
-> 目标：拆一个生产级 MoE 模型，把"注意力/KV/量化/投机/系统"一条线串完。
+必须能够脱离笔记回答：
 
-1. **config + 手算（热身）**：KV cache、权重显存、激活 FLOPs → [手算工作纸](deepseek-v32-handcalc.md)；目的：给第 2 步的 MLA/DSA 和第 3 步的 V4 增量提供数字基础（工作纸 §2 先讲清 KV cache 是什么再算账）
-2. **注意力（接 A5 / FA1）**：[FA2 机制](flash-attention-2.md) → MLA（[mla-deepseek.md](mla-deepseek.md)）→ DSA（[dsa-sparse-attention.md](dsa-sparse-attention.md)）
-   - 🪵 枝干 A2（KV 侧，必学）：GQA/MLA 对比 + KV 量化 / SmoothQuant（[速览](remaining-theory-primer.md)）
-3. **V4 增量（V3.2 打底之上，2026-08-13 正式版）**：CSA/HCA 混合注意力（[deepseek-v4.md](deepseek-v4.md)）→ mHC + [Muon 优化器](optimizers-adam.md) → MXFP4/混合精度；和 V3.2 的 DSA 对比，把 1M 上下文 27%/10% 的账算出来
-4. **MoE**：路由、显存、EP 通信（[moe-inference.md](moe-inference.md)）；对照 V4 的 MegaMoE 波次调度
-   - 🪵 枝干 A3（权重侧，必学）：AWQ / GPTQ / FP8 / MXFP4（[速览](remaining-theory-primer.md)）
-5. **投机解码**：MTP（[speculative-decoding.md](speculative-decoding.md)）
-6. **serving（C 阶段）**：vLLM sparse MLA / TRT-LLM MTP-3 / TileRT；V4 侧：磁盘 KV + 三档 SWA + TileLang/DeepGEMM → 相关 [PD 分离](pd-disaggregation.md)
-7. **横向扩展 · 枝干 A1（训练侧，必学）**：DeepSeek-V3 的 FP8 训练 → [优化器 Adam/AdamW](optimizers-adam.md)（显存账；Muon 已在第 3 步顺带看过）→ [ZeRO/FSDP](remaining-theory-primer.md) → TP/PP/EP 概念
+1. 解决什么问题，前代瓶颈是什么；
+2. 核心贡献和关键假设是什么；
+3. 各符号、张量shape和关键公式如何推导；
+4. 算法或系统流程如何执行；
+5. 作者关键代码如何对应公式和伪代码；
+6. 实验使用什么硬件、dtype、baseline、shape和指标；
+7. 收益在哪些条件下成立；
+8. 局限、代价和可能失败的场景；
+9. 与前代、同期和后续方法有什么区别；
+10. 面试中如何在1分钟和5分钟两个尺度讲清楚。
 
-## 🚀 主线 B：Qwen3.5（混合注意力 + 长上下文）
+论文精读存入 `papers/`；跨多篇论文的技术机制、推导和问答存入本目录。二者可以互链，但不复制两份相同正文。
 
-> 目标：理解"线性注意力 + full attention"为什么是 2026 架构模板。
+## 4. 经典主干
 
-1. **混合结构**：GDN 线性注意力（[gdn-linear-attention.md](gdn-linear-attention.md)）+ 3:1 成本账
-   - 🪵 枝干 B1（同族扩展，必学）：Mamba / SSM 家族（[速览](remaining-theory-primer.md) + [架构地图 §6](latest-model-architectures.md)）
-2. **MoE**：512+1 experts、top-10，激活 17B 的服务影响
-3. **长上下文对比**：GDN 的 recurrent state vs DSA 的 top-k KV（[dsa-sparse-attention.md](dsa-sparse-attention.md)）
-4. **serving（C 阶段）**：SGLang / vLLM 对 Qwen3.5 state 的管理
+### 4.1 数学与GPU算法基础
 
-> 两条主线共用字典：注意力实现侧（FA2/FA4/SageAttention3/Kascade）先挂在主线 A 的注意力步骤上，消化完再单独回看。
+| 主题 | 入口 | 状态 |
+|---|---|---|
+| Online Softmax | [online-softmax.md](online-softmax.md) | ✅ 已掌握 |
+| Parallel Reduce | [parallel-reduce.md](parallel-reduce.md) | ✅ 已掌握 |
+| Attention基础 | [Flash Attention机制](flash-attention-mechanism.md) | ✅ 已掌握FA1机制 |
 
----
+### 4.2 Attention演进
 
-# 字典（6 子类，按需查）
+| 主题 | 入口 | 状态 |
+|---|---|---|
+| FlashAttention-1 | [论文笔记](../../papers/attention/flash-attention.md) · [机制](flash-attention-mechanism.md) | ✅ 已消化并读CUDA |
+| FlashAttention-2 | [统一精读](flash-attention-2.md) | ✅ 2026-09-02阅读完成 |
+| MHA→MQA→GQA | [GQA论文](../../papers/attention/gqa.md) · [速览](remaining-theory-primer.md) | 🚧 待系统精读 |
+| MLA | [mla-deepseek.md](mla-deepseek.md) | 🚧 当前 |
+| DSA | [dsa-sparse-attention.md](dsa-sparse-attention.md) | 🚧 下一篇 |
+| FA3/FA4/FlexAttention | [FA4/FlexAttention](fa4-flexattention.md) · [观察池](../../papers/watchlist-2026.md) | 🚧 待读 |
+| SageAttention3/Kascade | [attention-2026-sage3-kascade.md](attention-2026-sage3-kascade.md) | 🚧 草稿 |
+| GDN/线性注意力/SSM | [gdn-linear-attention.md](gdn-linear-attention.md) · [速览](remaining-theory-primer.md) | 🚧 待读 |
 
-## GPU 优化算法
-| 主题 | 挂靠 | 状态 |
-|------|------|:--:|
-| [online softmax](online-softmax.md)（Flash 的心脏） | FA/Flash 全线 | ✅ |
-| [parallel reduce / prefix sum](parallel-reduce.md) | FA/Norm/softmax | ✅ |
-| Norm 的 reduce 模式（LayerNorm/RMSNorm，[速览](remaining-theory-primer.md)，料→[reference](../../reference/cuda/layernorm/layernorm.cu)） | 任意模型每层 | 🚧 速览 |
-| work partitioning（Flash 2 的思路） | 主线 A 前置 | 🚧 [速览](remaining-theory-primer.md) |
+### 4.3 模型架构与MoE
 
-## 量化
-| 主题 | 有论文? | 挂靠 | 状态 |
-|------|:--:|------|:--:|
-| [数值格式 INT8 / FP8](quantization-int8-fp8.md) | — | C4 量化通路 | 🚧 草稿 |
-| AWQ | ✔ 两边写 | C4 / 主线 A FP8 | 🚧 [速览](remaining-theory-primer.md) |
-| GPTQ | ✔ 两边写 | C4 | 🚧 [速览](remaining-theory-primer.md) |
-| SmoothQuant / KV Cache 量化 | 部分 | 主线 A KV | 🚧 [速览](remaining-theory-primer.md) |
-| [SageAttention3（FP4 量化注意力）](attention-2026-sage3-kascade.md) | ✔ | 主线 A 注意力实现侧 | 🚧 草稿 2026-08-13 |
+| 主题 | 入口 | 状态 |
+|---|---|---|
+| DeepSeek-V3.2手算 | [deepseek-v32-handcalc.md](deepseek-v32-handcalc.md) | ✅ 已完成 |
+| DeepSeek-V4增量 | [deepseek-v4.md](deepseek-v4.md) | 🚧 草稿 |
+| MoE路由、专家与推理 | [moe-inference.md](moe-inference.md) | 🚧 草稿 |
+| 最新模型架构 | [latest-model-architectures.md](latest-model-architectures.md) | 🚧 字典 |
+| 模型追踪 | [model-tracker.md](model-tracker.md) | 持续维护 |
 
-## 注意力演进
-| 主题 | 有论文? | 挂靠 | 状态 |
-|------|:--:|------|:--:|
-| MHA→MQA→GQA→MLA | ✔ [GQA](../../papers/attention/gqa.md) | 主线 A 第 2 步 | 🚧 [速览](remaining-theory-primer.md) |
-| [Flash Attention 机制](flash-attention-mechanism.md) | ✔ [FA1](../../papers/attention/flash-attention.md) · [FA2 统一笔记](flash-attention-2.md) | 主线 A 前置 · B3 | ✅ FA1 已消化（2026-08-10 A5）；FA2 🚧 用户阅读约 50%（仍未读完）；FA3 待补 |
-| [FA4 / FlexAttention](fa4-flexattention.md) | ✔ | 主线 A/B 注意力实现侧 | 🚧 草稿 2026-08-13 |
-| [DSA（DeepSeek-V3.2 / GLM-5）](dsa-sparse-attention.md) | ✔ | 主线 A 第 2 步 · 主线 B 第 3 步 | 🚧 草稿 2026-08-13 |
-| [SageAttention3 / Kascade](attention-2026-sage3-kascade.md) | ✔ SageAttention3 · Kascade | 主线 A 注意力实现侧 | 🚧 草稿 2026-08-13 |
-| [MLA（DeepSeek-V2/V3）](mla-deepseek.md) | ✔ DeepSeek-V2 | 主线 A 第 2 步 | 🚧 草稿 |
-| 线性注意力 / [GDN（Qwen3.5）](gdn-linear-attention.md) / Ring Attention | ✔ | 主线 B 第 1/3 步 | 🚧 [速览](remaining-theory-primer.md) + GDN 草稿 2026-08-13 |
+### 4.4 量化与低精度
 
-## 模型架构
-| 主题 | 挂靠 | 状态 |
-|------|------|:--:|
-| [最新模型架构地图](latest-model-architectures.md)（LLaMA/Qwen/DeepSeek/GPT/Claude/Gemini/MoE/SSM） | 所有主线第一步 | 🚧 草稿 |
-| [模型追踪表](model-tracker.md) | 所有主线的状态索引 | 🚧 草稿 |
-| [MoE 推理挑战](moe-inference.md) | 主线 A 第 4 步 | 🚧 草稿 |
-| [DeepSeek-V4（CSA + HCA）](deepseek-v4.md) | 主线 A 第 3 步（V3.2 打底、V4 增量） | 🚧 草稿 2026-08-14 |
-| Mamba / SSM | 主线 B 第 1 步（GDN 同族） | 🚧 [最新模型与结构](latest-model-architectures.md) |
+| 主题 | 入口 | 状态 |
+|---|---|---|
+| INT8/FP8数值基础 | [quantization-int8-fp8.md](quantization-int8-fp8.md) | 🚧 草稿 |
+| SmoothQuant/KV量化 | [remaining-theory-primer.md](remaining-theory-primer.md) | 🚧 速览 |
+| GPTQ/AWQ | [remaining-theory-primer.md](remaining-theory-primer.md) | 🚧 待建正式精读 |
+| FP4/SageAttention3 | [attention-2026-sage3-kascade.md](attention-2026-sage3-kascade.md) | 🚧 草稿 |
 
-## 推理系统技术
-| 主题 | 挂靠 | 状态 |
-|------|------|:--:|
-| continuous batching | C3 调度 | 🚧 [速览](remaining-theory-primer.md) |
-| chunked prefill / [PD 分离](pd-disaggregation.md) | 主线 A 第 5 步 · C 阶段 | 🚧 草稿 |
-| [投机解码 speculative decoding](speculative-decoding.md) | 主线 A 第 4 步 | 🚧 草稿 |
-| RadixAttention | C2/C3 | 🚧 [速览](remaining-theory-primer.md) |
+量化论文线要覆盖算法公式、calibration、scale粒度、误差机制、实验与作者代码；不因为实践线另有量化主课而省略论文学习。
 
-## 训练 / 并行
-| 主题 | 有论文? | 挂靠 | 状态 |
-|------|:--:|------|:--:|
-| [优化器：Adam / AdamW 与显存账](optimizers-adam.md) | 论文散（Adam/AdamW/ZeRO） | 🪵 枝干 A1 第 1 段（主线 A 第 7 步后；Muon 见第 3 步） | 🚧 草稿 2026-08-13 |
-| ZeRO / FSDP | ✔ [已有](../../papers/training/zero-paper.md) | 🪵 枝干 A1 第 2 段 | 🚧 [速览](remaining-theory-primer.md) |
-| TP / PP / EP 通信 | ✔ Megatron | 🪵 枝干 A1 第 3 段（概念） | 🚧 [速览](remaining-theory-primer.md) |
+### 4.5 推理系统
 
-> 看到新东西随时加一行，但新概念必须先挂到某条主线上，不挂不学。
+| 主题 | 入口 | 状态 |
+|---|---|---|
+| PagedAttention/vLLM | [PagedAttention精读](../../papers/inference/paged-attention.md) | 🚧 待读 |
+| Continuous/Chunked Prefill | [remaining-theory-primer.md](remaining-theory-primer.md) | 🚧 速览 |
+| Speculative Decoding | [speculative-decoding.md](speculative-decoding.md) | 🚧 草稿 |
+| PD分离 | [pd-disaggregation.md](pd-disaggregation.md) | 🚧 草稿 |
+| RadixAttention等 | [remaining-theory-primer.md](remaining-theory-primer.md) | 🚧 速览 |
 
-## 笔记索引（按掌握度更新）
+### 4.6 训练与分布式
 
-- ✅ 用户已掌握：**[Online Softmax](online-softmax.md)**、**[Parallel Reduce](parallel-reduce.md)**、**FA1 机制（2026-08-10 A5）**
-- 🚧 Agent 草稿，待消化：**[Flash Attention 机制](flash-attention-mechanism.md)**、**[FA2](flash-attention-2.md)（用户阅读约 50%，仍待消化）**、**[FA4/FlexAttention](fa4-flexattention.md)**、**[GDN（Qwen3.5）](gdn-linear-attention.md)**、**[DSA](dsa-sparse-attention.md)**、**[DeepSeek-V4（CSA+HCA）](deepseek-v4.md)**、**[SageAttention3/Kascade](attention-2026-sage3-kascade.md)**、**[优化器 Adam/AdamW](optimizers-adam.md)**、**[INT8 / FP8 量化基础](quantization-int8-fp8.md)**、**[MoE 推理挑战](moe-inference.md)**、**[Speculative Decoding](speculative-decoding.md)**、**[PD 分离](pd-disaggregation.md)**、**[MLA（DeepSeek）](mla-deepseek.md)**、**[最新模型与结构](latest-model-architectures.md)**、**[剩余理论主题速览](remaining-theory-primer.md)**、**[模型追踪表](model-tracker.md)**
+| 主题 | 入口 | 状态 |
+|---|---|---|
+| Adam/AdamW/Muon | [optimizers-adam.md](optimizers-adam.md) | 🚧 草稿 |
+| ZeRO/FSDP | [ZeRO论文](../../papers/training/zero-paper.md) · [速览](remaining-theory-primer.md) | 🚧 待精读 |
+| TP/PP/EP/CP与通信 | [remaining-theory-primer.md](remaining-theory-primer.md) · [观察池](../../papers/watchlist-2026.md) | 🚧 待读 |
+
+## 5. 最新论文线
+
+最新论文不必等待实践挂载点。候选先进入 [2026观察池](../../papers/watchlist-2026.md)，按价值决定速读、精读或精读+代码：
+
+- 是否提出新的算法、数据结构、调度或硬件映射；
+- 是否与GPU算子、低精度、Attention、MoE、推理系统或分布式直接相关；
+- 实验和baseline是否可信；
+- 是否有作者代码可读；
+- 是否改变已有认识，而不只是刷新单个模型数字。
+
+新论文阅读可以独立前进，但`NOW.md`一次只保留一个当前论文主题。
+
+## 5.1 本地报告来源
+
+[本地课程资料页](../../roadmap/curriculum/materials.md)收录了两份按页码定位的本地 PDF。DeepSeek 报告条目仅用于关联量化、KV Cache 与 Prefill/Decode 的资料核对；它不改变上面的论文顺序和状态，也不替代论文精读要求。
+
+- [DeepSeek-V4.1-Flash: Pushing the Limits of KV Cache Compression（本地 PDF）](../../downloads/DeepSeek_V41_Tech_Report.pdf)：本地文件 51 页；封面署名 DeepSeek-AI。资料页标注了 §2 架构、CED、CSA2、跨层 KV/index 复用、层次索引、FP4 Main KV、推理系统、PersistentKV 与 SWA BoundedReplay 的 PDF 页码。
+- [大模型推理实践（本地讲义）](../../downloads/大模型推理实践.pdf)：本地文件 84 页；资料页按 16 个主题提供页码入口，并区分昇腾/盘古案例与 NVIDIA CUDA 课程依据。
+
+## 6. 文件边界
+
+- `papers/`：以一篇论文为单位的精读；
+- `notes/algorithms/`：跨论文机制、公式教程、模型专题和问答；
+- `papers/inbox/`：未筛选候选；
+- `papers/watchlist-2026.md`：确认值得观察的最新论文；
+- `PATH.md`：论文进度权威；
+- `NOW.md`：当前论文主题。

@@ -1,6 +1,6 @@
 # 多机多卡专项路线：从拓扑到大模型并行
 
-> 对应 PATH D / M4。当前 Triton 主线完成阶段性目标后再进入；现在只建立索引，不并行开课。
+> 对应第六篇系统扩展。GPU架构、核心算子、量化与模型GPU分析形成基础后再进入；当前只建立索引，不抢算子性能主干。
 > 知识入口：[多机多卡知识地图](../notes/distributed/multi-node-gpu.md)。实验统一使用 [分布式记录模板](../templates/distributed-record.md)。
 
 ---

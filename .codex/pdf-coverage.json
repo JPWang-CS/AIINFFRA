@@ -1,0 +1,1383 @@
+{
+  "schema": 1,
+  "audit_date": "2026-09-14",
+  "scope": "教材融合覆盖追踪，不是用户学习进度；按主要知识单元登记，不宣称逐页穷尽。正文修改后须复核，pending_write不得计为已融入。",
+  "status_definitions": {
+    "partial": "有实质内容，但尚未逐项达到公式/代码/实验解释完整覆盖",
+    "pending_write": "已授权补写，尚未验收",
+    "not_integrated": "未找到正式课程中的对应完整讲解",
+    "explained": "本条明确范围已含解释与示例，非作者实现或GPU验证"
+  },
+  "sources": [
+    {
+      "path": "downloads/cuda-programming-guide.pdf",
+      "pages": 698,
+      "sha256": "1A0659B7324D10F1C0A57FC0C82AA83EE1ABA437FA85DABC90EE8F736E439BEA",
+      "units": [
+        {
+          "section": "1.1",
+          "pdf_pages": [
+            19,
+            19
+          ],
+          "topic": "GPU基础",
+          "status": "partial",
+          "target": "roadmap/curriculum/gpu/01-gpu-hardware-map-and-generations/README.md"
+        },
+        {
+          "section": "1.2",
+          "pdf_pages": [
+            20,
+            30
+          ],
+          "topic": "编程模型与tile概念",
+          "status": "partial",
+          "target": "roadmap/curriculum/gpu/01-gpu-hardware-map-and-generations/README.md"
+        },
+        {
+          "section": "1.3",
+          "pdf_pages": [
+            31,
+            34
+          ],
+          "topic": "平台与兼容性",
+          "status": "partial",
+          "target": "roadmap/curriculum/gpu/01-gpu-hardware-map-and-generations/README.md"
+        },
+        {
+          "section": "2.1",
+          "pdf_pages": [
+            35,
+            52
+          ],
+          "topic": "CUDA C++",
+          "status": "partial",
+          "target": "roadmap/curriculum/gpu/01-gpu-hardware-map-and-generations/README.md"
+        },
+        {
+          "section": "2.2",
+          "pdf_pages": [
+            53,
+            60
+          ],
+          "topic": "CUDA Python",
+          "status": "explained",
+          "target": "roadmap/curriculum/gpu/02-cuda-execution-and-scheduling/README.md",
+          "scope": "CUDA Python生态层次、Driver bindings生命周期、显式边界SIMT程序；使用真实库API修正手册样例，代码同页。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-cuda-execution.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "2.3",
+          "pdf_pages": [
+            61,
+            87
+          ],
+          "topic": "SIMT",
+          "status": "partial",
+          "target": "roadmap/curriculum/gpu/02-cuda-execution-and-scheduling/README.md"
+        },
+        {
+          "section": "2.4",
+          "pdf_pages": [
+            88,
+            116
+          ],
+          "topic": "Tile kernel编程",
+          "status": "explained",
+          "target": "roadmap/curriculum/gpu/02-cuda-execution-and-scheduling/README.md",
+          "scope": "Array/TiledView、traversal_steps、reshape/transpose/permute、逐元素atomic及scope/order、显式CPU坐标与设备例程；源码层布局不等于物理线程映射。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-cuda-execution.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "2.5",
+          "pdf_pages": [
+            117,
+            131
+          ],
+          "topic": "异步执行",
+          "status": "partial",
+          "target": "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/README.md"
+        },
+        {
+          "section": "2.6",
+          "pdf_pages": [
+            132,
+            141
+          ],
+          "topic": "Unified/System memory",
+          "status": "partial",
+          "target": "roadmap/curriculum/gpu/03-registers-and-memory-system/README.md"
+        },
+        {
+          "section": "2.7",
+          "pdf_pages": [
+            142,
+            150
+          ],
+          "topic": "NVCC",
+          "status": "partial",
+          "target": "roadmap/curriculum/gpu/02-cuda-execution-and-scheduling/README.md"
+        },
+        {
+          "section": "3.1",
+          "pdf_pages": [
+            151,
+            161
+          ],
+          "topic": "高级API概览",
+          "status": "explained",
+          "target": "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/README.md",
+          "scope": "高级API实质内容分配到原章节：launchEx、required/preferred cluster与blocks-as-clusters、stream/event/priority、PDL、batched copy/source生命周期及提交连接配置。无新增概览课。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-cuda-runtime.json",
+            "roadmap/curriculum/gpu/03-registers-and-memory-system/README.md",
+            "roadmap/curriculum/gpu/05-performance-analysis-and-optimization/README.md"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "3.2",
+          "pdf_pages": [
+            162,
+            179
+          ],
+          "topic": "高级kernel",
+          "status": "partial",
+          "target": "roadmap/curriculum/gpu/02-cuda-execution-and-scheduling/README.md"
+        },
+        {
+          "section": "3.3",
+          "pdf_pages": [
+            180,
+            186
+          ],
+          "topic": "Driver API",
+          "status": "partial",
+          "target": "roadmap/curriculum/gpu/02-cuda-execution-and-scheduling/README.md",
+          "scope": "Driver/PTX加载、primary context、参数地址和完整vectoradd；非全部Driver接口/链接器覆盖"
+        },
+        {
+          "section": "3.4",
+          "pdf_pages": [
+            187,
+            191
+          ],
+          "topic": "多GPU",
+          "status": "partial",
+          "target": "roadmap/curriculum/systems/multi-gpu/README.md"
+        },
+        {
+          "section": "3.5",
+          "pdf_pages": [
+            192,
+            196
+          ],
+          "topic": "CUDA功能总览",
+          "status": "explained",
+          "target": "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/README.md",
+          "scope": "功能分类已通过对应执行/存储/同步/性能章节解释；异步管线、CLC、GreenCtx、Graph、allocator、PDL、lazy loading、EGM、CDP、interop、IPC、VMM与日志各有落点，不另写序。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-cuda-execution.json",
+            ".codex/completion-evidence-cuda-runtime.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "4.1",
+          "pdf_pages": [
+            197,
+            224
+          ],
+          "topic": "Unified Memory",
+          "status": "partial",
+          "target": "roadmap/curriculum/gpu/03-registers-and-memory-system/README.md"
+        },
+        {
+          "section": "4.2",
+          "pdf_pages": [
+            225,
+            271
+          ],
+          "topic": "CUDA Graphs",
+          "status": "explained",
+          "target": "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/README.md",
+          "scope": "构图/更新/动态长度/捕获/内存，以及child/conditional/device launch代码与各自生命周期。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-cuda-runtime.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "4.3",
+          "pdf_pages": [
+            272,
+            284
+          ],
+          "topic": "Stream-Ordered Allocator",
+          "status": "explained",
+          "target": "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/README.md",
+          "scope": "已有跨stream生命周期、事件依赖、used/reserved、release threshold与复用策略；完整教学示例已内联。",
+          "content_remaining": [],
+          "additional_coverage": "同步章已补memory-pool专属导出/导入、单分配身份与importer/exporter释放顺序；与legacy IPC分开解释。"
+        },
+        {
+          "section": "4.4",
+          "pdf_pages": [
+            284,
+            291
+          ],
+          "topic": "Cooperative Groups",
+          "status": "partial",
+          "target": "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/README.md"
+        },
+        {
+          "section": "4.5",
+          "pdf_pages": [
+            292,
+            294
+          ],
+          "topic": "Programmatic Dependent Launch",
+          "status": "partial",
+          "target": "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/README.md",
+          "scope": "完整primary/secondary例与提前发射和数据就绪区别，Graph关系文字说明，GPU未执行"
+        },
+        {
+          "section": "4.6",
+          "pdf_pages": [
+            295,
+            315
+          ],
+          "topic": "Green Contexts",
+          "status": "explained",
+          "target": "roadmap/curriculum/gpu/03-registers-and-memory-system/README.md",
+          "scope": "Green Context资源分区、WQ/SM与MIG/priority差异、例外条件及完整roundtrip；所有H2D/计算在同一显式stream，校验资源与数值并检查清理错误。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-cuda-runtime.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "4.7",
+          "pdf_pages": [
+            316,
+            317
+          ],
+          "topic": "Lazy Loading",
+          "status": "partial",
+          "target": "roadmap/curriculum/gpu/02-cuda-execution-and-scheduling/README.md",
+          "scope": "Runtime初始化、预加载与错误定位、LAZY/EAGER验证入口，未做目标环境加载性能测量"
+        },
+        {
+          "section": "4.8",
+          "pdf_pages": [
+            318,
+            320
+          ],
+          "topic": "Error log",
+          "status": "explained",
+          "target": "roadmap/curriculum/gpu/02-cuda-execution-and-scheduling/README.md",
+          "scope": "Error Log环境变量、callback/iterator/dump、错误码与诊断文本区别及探针。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-cuda-execution.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "4.9",
+          "pdf_pages": [
+            320,
+            338
+          ],
+          "topic": "异步barrier",
+          "status": "explained",
+          "target": "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/README.md",
+          "scope": "barrier arrival/phase/transaction/last-consumer边界，配合cp.async/TMA管线与CPU状态检查。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-cuda-runtime.json",
+            ".codex/completion-evidence-operators.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "4.10",
+          "pdf_pages": [
+            339,
+            346
+          ],
+          "topic": "Pipelines",
+          "status": "explained",
+          "target": "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/README.md",
+          "scope": "环形stage、单/双缓冲、generation和数据可读/可覆写两种边界；同页代码与CPU协议检查。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-cuda-runtime.json",
+            ".codex/completion-evidence-operators.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "4.11",
+          "pdf_pages": [
+            347,
+            390
+          ],
+          "topic": "异步搬运/TMA",
+          "status": "explained",
+          "target": "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/README.md",
+          "scope": "1D/2D TMA、tensor map/swizzle、barrier/proxy fence、DSM/multicast以及GEMM作者消费路径。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-cuda-runtime.json",
+            ".codex/completion-evidence-operators.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "4.12",
+          "pdf_pages": [
+            391,
+            398
+          ],
+          "topic": "Cluster Launch Control",
+          "status": "explained",
+          "target": "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/README.md",
+          "scope": "固定工作/固定CTA/CLC取舍，取消失败禁重试与禁解码、proxy/phase协议、完整exact-cover程序及CPU调度枚举。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-cuda-runtime.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "4.13",
+          "pdf_pages": [
+            399,
+            403
+          ],
+          "topic": "L2 cache control",
+          "status": "partial",
+          "target": "roadmap/curriculum/gpu/03-registers-and-memory-system/README.md"
+        },
+        {
+          "section": "4.14",
+          "pdf_pages": [
+            404,
+            405
+          ],
+          "topic": "Memory synchronization domains",
+          "status": "partial",
+          "target": "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/README.md",
+          "scope": "logical/physical domain映射与跨域system-scope规则，launch示例；无实测干扰收益"
+        },
+        {
+          "section": "4.15",
+          "pdf_pages": [
+            406,
+            407
+          ],
+          "topic": "IPC",
+          "status": "explained",
+          "target": "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/README.md",
+          "scope": "legacy IPC、memory-pool导出/导入与单分配身份、exporter/importer释放顺序及OS句柄传递边界。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-cuda-runtime.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "4.16",
+          "pdf_pages": [
+            408,
+            425
+          ],
+          "topic": "Virtual Memory Management",
+          "status": "explained",
+          "target": "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/README.md",
+          "scope": "单设备完整VMM例，多GPU共享backing/独立VA/显式授权，fabric句柄与IMEX前提；不把可访问当同速。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-cuda-runtime.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "4.17",
+          "pdf_pages": [
+            426,
+            431
+          ],
+          "topic": "Extended GPU Memory",
+          "status": "explained",
+          "target": "roadmap/curriculum/gpu/03-registers-and-memory-system/README.md",
+          "scope": "EGM平台/NUMA ID、VMM与pool路径、权限/粒度/页与TLB代价、fabric访问边界；不是普通PCIe主机的通用HBM扩容。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-cuda-runtime.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "4.18",
+          "pdf_pages": [
+            431,
+            441
+          ],
+          "topic": "Dynamic Parallelism",
+          "status": "explained",
+          "target": "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/README.md",
+          "scope": "CDP2 parent/child生命周期、参数存储、tail/fire-and-forget语义；完整child launch状态与输出哨兵检查。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-cuda-runtime.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "4.19",
+          "pdf_pages": [
+            441,
+            474
+          ],
+          "topic": "Interoperability",
+          "status": "explained",
+          "target": "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/README.md",
+          "scope": "CUDA/graphics共享内存与信号量分开；Vulkan/GL/D3D12/NvSci的匹配/所有权/清理差异；binary与timeline提交条件区分。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-cuda-runtime.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "4.20",
+          "pdf_pages": [
+            474,
+            480
+          ],
+          "topic": "Driver entry points",
+          "status": "explained",
+          "target": "roadmap/curriculum/gpu/02-cuda-execution-and-scheduling/README.md",
+          "scope": "cudaTypedefs函数指针、精确ABI版本请求、返回状态与Driver版本区别；完整查询例。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-cuda-execution.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "5.1",
+          "pdf_pages": [
+            481,
+            488
+          ],
+          "topic": "Compute Capability",
+          "status": "partial",
+          "target": "roadmap/curriculum/gpu/01-gpu-hardware-map-and-generations/README.md"
+        },
+        {
+          "section": "5.2",
+          "pdf_pages": [
+            489,
+            496
+          ],
+          "topic": "环境变量",
+          "status": "partial",
+          "target": "roadmap/curriculum/gpu/05-performance-analysis-and-optimization/README.md"
+        },
+        {
+          "section": "5.3",
+          "pdf_pages": [
+            497,
+            560
+          ],
+          "topic": "C++语言支持",
+          "status": "explained",
+          "target": "roadmap/curriculum/gpu/02-cuda-execution-and-scheduling/README.md",
+          "scope": "host/device编译空间、模板/lambda、对象/指针/虚调用边界、storage、异常/RTTI/标准库限制及跨TU设备链接；完整C++教学例。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-cuda-execution.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "5.4",
+          "pdf_pages": [
+            561,
+            628
+          ],
+          "topic": "语言扩展与矩阵指令",
+          "status": "partial",
+          "target": "roadmap/curriculum/gpu/02-cuda-execution-and-scheduling/README.md",
+          "scope": "新增WMMA warp/对齐/尾块kernel、PTX m16n8k16 FP16坐标与exact-cover；其余语言扩展仍非全覆盖，CUDA未编译/运行"
+        },
+        {
+          "section": "5.5",
+          "pdf_pages": [
+            629,
+            656
+          ],
+          "topic": "浮点计算",
+          "status": "partial",
+          "target": "roadmap/curriculum/gpu/02-cuda-execution-and-scheduling/README.md"
+        },
+        {
+          "section": "5.6",
+          "pdf_pages": [
+            657,
+            686
+          ],
+          "topic": "Device APIs",
+          "status": "partial",
+          "target": "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/README.md"
+        },
+        {
+          "section": "5.7",
+          "pdf_pages": [
+            687,
+            690
+          ],
+          "topic": "CUDA memory model",
+          "status": "partial",
+          "target": "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/README.md"
+        },
+        {
+          "section": "5.8",
+          "pdf_pages": [
+            691,
+            696
+          ],
+          "topic": "CUDA execution model",
+          "status": "partial",
+          "target": "roadmap/curriculum/gpu/02-cuda-execution-and-scheduling/README.md"
+        }
+      ]
+    },
+    {
+      "path": "downloads/大模型推理实践.pdf",
+      "pages": 84,
+      "sha256": "3E3A3964D5C3CC1C4EBC2264D45B5973BBD67D5841550BB9D26877E172C349E9",
+      "units": [
+        {
+          "section": "1",
+          "pdf_pages": [
+            1,
+            5
+          ],
+          "topic": "推理过程",
+          "status": "partial",
+          "target": "roadmap/curriculum/model-analysis/README.md"
+        },
+        {
+          "section": "2",
+          "pdf_pages": [
+            6,
+            9
+          ],
+          "topic": "性能指标",
+          "status": "partial",
+          "target": "roadmap/curriculum/gpu/05-performance-analysis-and-optimization/README.md"
+        },
+        {
+          "section": "3",
+          "pdf_pages": [
+            10,
+            13
+          ],
+          "topic": "Scaling Law",
+          "status": "partial",
+          "target": "roadmap/curriculum/papers/inference-workloads.md",
+          "scope": "已补原理、公式和CPU教学例子；讲义提到的各框架/前沿方法尚未全部逐项主源核验，不能视为整章完整复现"
+        },
+        {
+          "section": "4",
+          "pdf_pages": [
+            14,
+            15
+          ],
+          "topic": "昇腾系统",
+          "status": "partial",
+          "target": "roadmap/curriculum/systems/README.md",
+          "scope": "框架/运行时/算子/通信分层与GPU对照；实际Embedded-7B配置和模型调用链；不把所有Ascend执行路径等同GE或图执行。"
+        },
+        {
+          "section": "5",
+          "pdf_pages": [
+            16,
+            22
+          ],
+          "topic": "推理框架",
+          "status": "partial",
+          "target": "roadmap/curriculum/systems/README.md"
+        },
+        {
+          "section": "6",
+          "pdf_pages": [
+            23,
+            32
+          ],
+          "topic": "训练与RL",
+          "status": "explained",
+          "target": "roadmap/curriculum/papers/inference-workloads.md",
+          "scope": "训练/rollout/长任务与投机的数学及版本化状态流；组归属、旧logp身份、工具等待、KV生命周期、候选提交/回滚有同页代码与CPU反例。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-papers-systems.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "7",
+          "pdf_pages": [
+            33,
+            38
+          ],
+          "topic": "并行策略",
+          "status": "partial",
+          "target": "roadmap/curriculum/systems/multi-gpu/README.md"
+        },
+        {
+          "section": "8",
+          "pdf_pages": [
+            39,
+            48
+          ],
+          "topic": "融合与图",
+          "status": "partial",
+          "target": "roadmap/curriculum/operators/04-activation-and-fusion/README.md"
+        },
+        {
+          "section": "9",
+          "pdf_pages": [
+            49,
+            51
+          ],
+          "topic": "KV Cache",
+          "status": "partial",
+          "target": "roadmap/curriculum/operators/06-decode-paged-attention/README.md"
+        },
+        {
+          "section": "10",
+          "pdf_pages": [
+            52,
+            54
+          ],
+          "topic": "量化",
+          "status": "explained",
+          "target": "roadmap/curriculum/operators/07-quantized-operators/README.md",
+          "scope": "已有量化算法与Mini Decoder；新增标准Llama选择性W4 local-only校准/验证/保存加载，QKV与gate/up共享fold、有效token、当前heldout重新评估、变更前完整校验和明确浮点例外。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-quantization.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "11",
+          "pdf_pages": [
+            55,
+            60
+          ],
+          "topic": "投机/MTP",
+          "status": "partial",
+          "target": "roadmap/curriculum/operators/09-sampling-kv/README.md"
+        },
+        {
+          "section": "12",
+          "pdf_pages": [
+            61,
+            63
+          ],
+          "topic": "整网瓶颈",
+          "status": "partial",
+          "target": "roadmap/curriculum/model-analysis/README.md"
+        },
+        {
+          "section": "13",
+          "pdf_pages": [
+            64,
+            73
+          ],
+          "topic": "盘古案例",
+          "status": "partial",
+          "target": "roadmap/curriculum/systems/README.md",
+          "scope": "Embedded-7B本地配置/代码/历史TP1证据与2.0 Flash/Pro分开；2.0固定配置、公开部署依赖与安全的容器内源码定位方法已补。",
+          "content_remaining": [],
+          "source_boundary": "匹配omni-npu0.2.0 adapter未从可访问来源取得；相关源码页访问受限，不推断未公开，也不以配置或部署YAML冒充实现/轨迹。",
+          "evidence": [
+            ".codex/completion-evidence-papers-systems.json"
+          ]
+        },
+        {
+          "section": "14",
+          "pdf_pages": [
+            74,
+            77
+          ],
+          "topic": "智能体长任务",
+          "status": "explained",
+          "target": "roadmap/curriculum/papers/inference-workloads.md",
+          "scope": "训练/rollout/长任务与投机的数学及版本化状态流；组归属、旧logp身份、工具等待、KV生命周期、候选提交/回滚有同页代码与CPU反例。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-papers-systems.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "15",
+          "pdf_pages": [
+            78,
+            80
+          ],
+          "topic": "RL Rollout",
+          "status": "explained",
+          "target": "roadmap/curriculum/papers/inference-workloads.md",
+          "scope": "训练/rollout/长任务与投机的数学及版本化状态流；组归属、旧logp身份、工具等待、KV生命周期、候选提交/回滚有同页代码与CPU反例。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-papers-systems.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "16",
+          "pdf_pages": [
+            81,
+            84
+          ],
+          "topic": "自适应投机",
+          "status": "explained",
+          "target": "roadmap/curriculum/papers/inference-workloads.md",
+          "scope": "训练/rollout/长任务与投机的数学及版本化状态流；组归属、旧logp身份、工具等待、KV生命周期、候选提交/回滚有同页代码与CPU反例。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-papers-systems.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        }
+      ]
+    },
+    {
+      "path": "downloads/DeepSeek_V41_Tech_Report.pdf",
+      "pages": 51,
+      "sha256": "BA68E2E40408125AE6D2F63A9A241B61C73910691C74EC1A2A7023C851EAC08D",
+      "units": [
+        {
+          "section": "2.1",
+          "pdf_pages": [
+            7,
+            8
+          ],
+          "topic": "架构与多模态",
+          "status": "explained",
+          "target": "roadmap/curriculum/papers/deepseek-v41.md",
+          "scope": "图像预处理、patch/ViT/2D RoPE、unshuffle/projector与语言token插入，固定作者代码与CPU轴顺序检查。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-papers-systems.json",
+            ".codex/completion-evidence-integration.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "2.2",
+          "pdf_pages": [
+            9,
+            9
+          ],
+          "topic": "CED",
+          "status": "explained",
+          "target": "roadmap/curriculum/papers/deepseek-v41.md",
+          "scope": "CED来源层、prefill工作代理、decoder局部状态与近似replay边界。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-papers-systems.json",
+            ".codex/completion-evidence-integration.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "2.3.1",
+          "pdf_pages": [
+            9,
+            11
+          ],
+          "topic": "CSA2与跨层复用",
+          "status": "explained",
+          "target": "roadmap/curriculum/papers/deepseek-v41.md",
+          "scope": "Full/Reindex/Reuse的KV与选择所有者、共享状态、固定作者数据流。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-papers-systems.json",
+            ".codex/completion-evidence-integration.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "2.3.2",
+          "pdf_pages": [
+            11,
+            12
+          ],
+          "topic": "层次索引器",
+          "status": "explained",
+          "target": "roadmap/curriculum/papers/deepseek-v41.md",
+          "scope": "候选池/最终top-k、因果与遗漏反例；明确Minimal先全域einsum再mask，不伪称有限候选算量已实现。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-papers-systems.json",
+            ".codex/completion-evidence-integration.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "2.4.1",
+          "pdf_pages": [
+            12,
+            13
+          ],
+          "topic": "Single-Pass mHC",
+          "status": "explained",
+          "target": "roadmap/curriculum/papers/deepseek-v41.md",
+          "scope": "Single-Pass公式；pre[1,n]/residual[n,n]/post[n,1]，comb source→destination需转置；Mega接口与F边界、BF16/FP8 scratch；CPU非对称矩阵校验。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-papers-systems.json",
+            ".codex/completion-evidence-integration.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "2.4.2",
+          "pdf_pages": [
+            13,
+            13
+          ],
+          "topic": "Engram",
+          "status": "explained",
+          "target": "roadmap/curriculum/papers/deepseek-v41.md",
+          "scope": "真实作者tokenizer/hash/lookup/gate/prefetch路径；玩具参数与作者方法分开；RMS/learned weight/signed sqrt/copysign门控及边界检查。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-papers-systems.json",
+            ".codex/completion-evidence-integration.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "2.4.3",
+          "pdf_pages": [
+            13,
+            14
+          ],
+          "topic": "DSpark",
+          "status": "explained",
+          "target": "roadmap/curriculum/papers/deepseek-v41.md",
+          "scope": "DSpark草稿网络/Markov head/条件接受概率、验证长度成本与提交回滚边界；不把confidence当精确接受概率证明。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-papers-systems.json",
+            ".codex/completion-evidence-integration.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "2.4.4",
+          "pdf_pages": [
+            14,
+            14
+          ],
+          "topic": "FP4 main KV",
+          "status": "explained",
+          "target": "roadmap/curriculum/papers/deepseek-v41.md",
+          "scope": "FP4 payload、scale与890 B/token推导；inplace反量化参考实现不等于物理packed KV。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-papers-systems.json",
+            ".codex/completion-evidence-integration.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "2.5",
+          "pdf_pages": [
+            14,
+            16
+          ],
+          "topic": "优化器与Sinkhorn",
+          "status": "explained",
+          "target": "roadmap/curriculum/papers/deepseek-v41.md",
+          "scope": "Muon/head-wise/AdamW/Sinkhorn分工、Nesterov与行列归一化、零行/误差/状态容量边界。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-papers-systems.json",
+            ".codex/completion-evidence-integration.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "3.1",
+          "pdf_pages": [
+            16,
+            18
+          ],
+          "topic": "多模态训练/共享状态/Engram通信",
+          "status": "explained",
+          "target": "roadmap/curriculum/papers/deepseek-v41.md",
+          "scope": "视觉与语言阶段、CP/PP共享状态/owner/shadow/梯度归属/重计算和Engram预取通信的执行依赖。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-papers-systems.json",
+            ".codex/completion-evidence-integration.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "3.2",
+          "pdf_pages": [
+            18,
+            20
+          ],
+          "topic": "推理与persistent/replay",
+          "status": "explained",
+          "target": "roadmap/curriculum/papers/deepseek-v41.md",
+          "scope": "Persistent global与SWA生命周期、encoder/decoder bounded replay及近似状态来源。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-papers-systems.json",
+            ".codex/completion-evidence-integration.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "4",
+          "pdf_pages": [
+            20,
+            25
+          ],
+          "topic": "数据构造/训练配置/评估",
+          "status": "explained",
+          "target": "roadmap/curriculum/papers/deepseek-v41.md",
+          "scope": "文本/多模态筛选与去重、7:1 token口径、packing样本隔离、优化器分组、视觉冻结/解冻及45T分段学习率，附CPU边界算式检查。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-papers-systems.json",
+            ".codex/completion-evidence-integration.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "5.1",
+          "pdf_pages": [
+            25,
+            30
+          ],
+          "topic": "任务/环境/DSec/effort",
+          "status": "explained",
+          "target": "roadmap/curriculum/papers/deepseek-v41.md",
+          "scope": "任务/环境/验证系统、DSec资源边界与effort机制及对应数学例。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-papers-systems.json",
+            ".codex/completion-evidence-integration.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "5.2",
+          "pdf_pages": [
+            30,
+            32
+          ],
+          "topic": "异步后训练与OPD",
+          "status": "explained",
+          "target": "roadmap/curriculum/papers/deepseek-v41.md",
+          "scope": "sample级派发不改变GRPO组身份，参数版本/旧logp/KV与异步OPD状态流和CPU反例。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-papers-systems.json",
+            ".codex/completion-evidence-integration.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "5.3",
+          "pdf_pages": [
+            32,
+            36
+          ],
+          "topic": "评估与多智能体",
+          "status": "explained",
+          "target": "roadmap/curriculum/papers/deepseek-v41.md",
+          "scope": "Base/Instruct/effort/scaffold/版本/多智能体对照，样本量、指标与预算条件；不虚构组件消融。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-papers-systems.json",
+            ".codex/completion-evidence-integration.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "6",
+          "pdf_pages": [
+            37,
+            37
+          ],
+          "topic": "局限性",
+          "status": "explained",
+          "target": "roadmap/curriculum/papers/deepseek-v41.md",
+          "scope": "稀疏遗漏、重放近似、测量与公开来源限制均显式解释。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-papers-systems.json",
+            ".codex/completion-evidence-integration.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "B",
+          "pdf_pages": [
+            47,
+            49
+          ],
+          "topic": "评估细节",
+          "status": "explained",
+          "target": "roadmap/curriculum/papers/deepseek-v41.md",
+          "scope": "公开评估设置、工具/上下文/采样与版本条件，未公开数据界限。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-papers-systems.json",
+            ".codex/completion-evidence-integration.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        },
+        {
+          "section": "C",
+          "pdf_pages": [
+            49,
+            51
+          ],
+          "topic": "effort惩罚推导",
+          "status": "explained",
+          "target": "roadmap/curriculum/papers/deepseek-v41.md",
+          "scope": "effort惩罚、截断与内部最优的前提及CPU检查。",
+          "content_remaining": [],
+          "evidence": [
+            ".codex/completion-evidence-papers-systems.json",
+            ".codex/completion-evidence-integration.json"
+          ],
+          "validation_boundary": "教材解释与代码/CPU或静态检查，不代表用户学习完成、CUDA编译、真实模型或设备验证。"
+        }
+      ]
+    }
+  ],
+  "remaining_priority": [
+    "用户学到对应课时执行CUDA/cuTile/Triton/CUTLASS与真实模型实验，记录目标环境结果。",
+    "保持未公开或未取得的内部数据/消融/匹配运行时源码边界，不捏造复现。",
+    "后续新增需求或阅读发现的具体勘误另行处理，不重复把已交付主题列为待补。"
+  ],
+  "non_adopted_claims": [
+    {
+      "source": "downloads/大模型推理实践.pdf",
+      "pdf_page": 13,
+      "claim": "MoE全部访存都由单token激活参数决定",
+      "handling": "改为分别计算总权重、批内专家覆盖、KV与通信"
+    },
+    {
+      "source": "downloads/大模型推理实践.pdf",
+      "pdf_page": 24,
+      "claim": "SFT只能模仿、RL必然超越或必需先SFT",
+      "handling": "不采用普遍化结论，按信号与优化过程解释"
+    },
+    {
+      "source": "downloads/大模型推理实践.pdf",
+      "pdf_page": 79,
+      "claim": "框架权重同步固定时延排名与旧策略误差保证",
+      "handling": "保留为待主源核验，不进入课程性能证据"
+    },
+    {
+      "source": "downloads/大模型推理实践.pdf",
+      "pdf_page": 80,
+      "claim": "早期层权重更新后KV天然可以继续复用",
+      "handling": "用K'=K+H*deltaW给出反例，区分精确与近似"
+    },
+    {
+      "source": "downloads/大模型推理实践.pdf",
+      "pdf_page": 81,
+      "claim": "分离架构始终更优、RL默认INT8、吞吐比例等于整轮收益",
+      "handling": "改为条件化架构/精度选择与Amdahl核算"
+    },
+    {
+      "source": "downloads/大模型推理实践.pdf",
+      "pdf_page": 83,
+      "claim": "GPU闲时验证再多草稿都无额外成本",
+      "handling": "改为测完整cycle与对其他请求的影响"
+    }
+  ],
+  "validation": {
+    "source_integrity": "SHA256 registry; run node .codex/check-pdf-coverage.cjs",
+    "cpu_examples": [
+      "roadmap/curriculum/papers/examples/v41_checks.py",
+      "roadmap/curriculum/papers/examples/workload_checks.py"
+    ],
+    "cuda_example": "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/examples/stream_ordered_lifetime.cu",
+    "cuda_status": "nvcc not found; no CUDA compile/device run",
+    "progress": "PATH.md and NOW.md unchanged by this continuation"
+  },
+  "gemm_pipeline_increment": {
+    "tutorials": [
+      "roadmap/curriculum/operators/03-gemm/README.md",
+      "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/README.md"
+    ],
+    "cuda_pdf_pages": [
+      339,
+      340,
+      341,
+      343,
+      344,
+      347,
+      363,
+      364,
+      365,
+      366,
+      367,
+      577,
+      623,
+      624,
+      625,
+      627
+    ],
+    "ptx_reference": "https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#warp-level-matrix-fragment-mma-16816-float",
+    "cpu_checks": [
+      "mma_layout_checks.py: 3 tests",
+      "tile_pipeline_model.py: 5 tests",
+      "existing cpu_gemm_checks.py regression"
+    ],
+    "validation_boundary": "CPU coordinates/protocol/arithmetic passed; nvcc unavailable, no GPU performance claims; original FP32 evidence unchanged"
+  },
+  "execution_policy": "CUDA/Triton examples are embedded now; GPU correctness and timing are performed with the user at the corresponding lesson, not a blocker for writing. No unrun example is marked GPU validated.",
+  "tma_wmma_increment": {
+    "tutorial": "roadmap/curriculum/operators/03-gemm/README.md",
+    "examples": [
+      "tma_wmma_pipeline.cu",
+      "tma_gemm_checks.py"
+    ],
+    "scope": "Complete one-warp TMA+WMMA one/two-stage padded GEMM and paired input readiness model",
+    "remaining": "已追加swizzle、WGMMA/CUTLASS作者路径、DSM/multicast与Attention代码深读；本次教材清单已补，剩余为用户现场设备验证及特定来源不可得项。",
+    "validation": "Source/API and CPU model checks only; no CUDA compilation or target-GPU measurement",
+    "record_role": "保留原增量范围；当前剩余工作以remaining_work为准。"
+  },
+  "wmma_double_buffer_increment": {
+    "tutorial": "roadmap/curriculum/operators/03-gemm/README.md",
+    "examples": [
+      "wmma_pipeline.cu",
+      "wmma_pipeline_checks.py"
+    ],
+    "scope": "Complete single-warp16x16x16 FP16/FP32 GEMM, one-stage versus two-stage cp.async scheduling, explicit host padding, CPU reference/guards, optional same-shape CUDA-event comparison",
+    "validation": "CPU ownership/address/schedule tests only; no nvcc/GPU run or speedup claim",
+    "remaining": "已追加swizzle、WGMMA/CUTLASS作者路径、DSM/multicast与Attention代码深读；本次教材清单已补，剩余为用户现场设备验证及特定来源不可得项。",
+    "record_role": "保留原增量范围；当前剩余工作以remaining_work为准。"
+  },
+  "tma_pipeline_increment": {
+    "tutorials": [
+      "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/README.md",
+      "roadmap/curriculum/operators/03-gemm/README.md",
+      "roadmap/curriculum/operators/05-prefill-attention/README.md"
+    ],
+    "example": "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/examples/tma_roundtrip.cu",
+    "covered": "Two completion boundaries, automatic transaction accounting, proxy fence and CTA handoff, explicit padding/guard, full-empty and generation protocol, aligned WGMMA warpgroup, K/V/P last use and ordered online Softmax state",
+    "remaining": "已追加swizzle、WGMMA/CUTLASS作者路径、DSM/multicast与Attention代码深读；本次教材清单已补，剩余为用户现场设备验证及特定来源不可得项。",
+    "validation_boundary": "Single-buffer 1D bulk TMA example only; not an overlap benchmark, no nvcc or device run",
+    "record_role": "保留原增量范围；当前剩余工作以remaining_work为准。"
+  },
+  "quantization_increment": {
+    "tutorial": "roadmap/curriculum/operators/07-quantized-operators/README.md",
+    "covered": [
+      "masked calibration statistics",
+      "group RTN and nibble layout",
+      "SmoothQuant with W8A8 numerical reference",
+      "AWQ-style scale-search subset",
+      "sequential and blocked GPTQ plus independent suffix reference",
+      "CPU packed matmul",
+      "Triton W4A16-style packed matmul and aligned benchmarks",
+      "Mini Decoder multi-layer calibration/shared folding/clipping/packed checkpoint/heldout teaching workflow",
+      "Local-only standard Llama selective-W4 overlay, pre-mutation validation and fresh heldout evaluation"
+    ],
+    "cpu_validation": "12 lab tests, odd-G byte boundary, W8A8 checks and original scalar semantics passed",
+    "gpu_validation": "deferred to on-lesson execution; syntax and no-GPU CLI behavior checked",
+    "remaining": [
+      "真实预训练模型实际运行与质量/性能结果由用户现场执行",
+      "生产部署必须使用匹配格式和低位kernel；选择性W4教学overlay明确不伪装为通用引擎checkpoint"
+    ],
+    "record_role": "教学模型流程已追加；旧未完成项按当前正文修正，非GPU验证状态。"
+  },
+  "paper_and_case_delivery": {
+    "date": "2026-09-14",
+    "v41": "Base/Instruct评估、effort/scaffold/multi-agent对照及作者Minimal Inference数据流；未找到独立组件数值消融，不虚构因果效应。",
+    "author_implementation_boundary": "固定作者提交的Indexer先全域einsum再候选mask；FP4 inplace路径写回反量化值。参考实现不构成候选池限算量或890 B/token物理packed缓存的证据。",
+    "pangu": "Embedded-7B实际配置/适配类、Flash与Pro官方配置区分、权重/KV/分页CPU账本；TP1 smoke与旧TP4静态材料分开。",
+    "validation_boundary": "CPU教学算式与源码核对，不新增设备实测；PDF覆盖保持partial，不把一个案例当成整份手册全部实现。"
+  },
+  "five_directions_delivery": {
+    "date": "2026-09-14",
+    "status": "教程及可执行教学例/固定官方集成已落地，不是用户学习或GPU验证状态",
+    "gemm": "swizzle坐标模型、CUTLASS3.8.0 WGMMA集成/producer-consumer解释及强基线口径",
+    "attention": "独立FP32 lookahead kernel、矩形solve、SDPA math对照和CPU recurrence",
+    "quantization": "多层Mini Decoder全流程校准/共享fold/clipping/packed checkpoint/heldout评估",
+    "cluster": "两CTA DSM完整示例与CUTLASS4.6.3 multicast集成、TMA/MMA完成区分",
+    "runtime": "Driver/lazy/VMM/IPC/PDL/domains/child-conditional-device Graph教学代码",
+    "boundary": "GPU编译/正确性/性能留到现场；量化随机未训练模型只验证流程，CUTLASS提供作者kernel，Triton实际overlap待编译产物确认"
+  },
+  "remaining_work": {
+    "definition": "本次已列出的教材补写完成；保留实际实验与不可取得证据。来源单元partial仍可表示资料覆盖范围更广，不直接当作新的已承诺待写清单。",
+    "unwritten_cuda": [],
+    "deepen_written": [],
+    "device_validation": [
+      "CUDA/cuTile/Triton示例：目标环境编译、正确性和数值合同。",
+      "WMMA/TMA/WGMMA/DSM/multicast：同条件baseline、Profiler、指令与overlap证据。",
+      "真实模型量化、vLLM/NPU系统和多卡案例：质量、容量及端到端性能；不改写已有用户实测。"
+    ],
+    "unavailable_evidence": [
+      "V4.1未公开的独立组件数值消融、内部heldout数据、完整训练或生产服务实现，不虚构。",
+      "公开Minimal Inference全域einsum后mask、FP4 inplace写回反量化数据，不能当生产算量与890 B/token物理驻留证明。",
+      "历史TP1功能记录不具备当前checkout完整设备轨迹，旧TP4静态分析不是TP4实测。",
+      "openPangu2.0 matching omni-npu0.2.0 adapter源码未从可访问资料取得；已提供版本配对与获准容器内只读定位流程，未绕过访问控制。"
+    ]
+  },
+  "coverage_reconciliation": {
+    "date": "2026-09-14",
+    "scope": "随真实正文补写更新本次已列主题；保留原PDF哈希、77个来源单元和用户学习状态。",
+    "evidence": "逐项对应五组completion-evidence及整合验收记录。",
+    "status_boundary": "explained是本条明确教学范围完成；不是用户已读或GPU/作者系统复现通过。"
+  },
+  "completed_authoring_work": {
+    "unwritten_cuda": [
+      {
+        "section": "2.2",
+        "topic": "CUDA Python",
+        "placement": "按执行/存储/同步/编译主题并入现有课程"
+      },
+      {
+        "section": "3.1",
+        "topic": "高级API概览",
+        "placement": "分配到现有相关章节，不新增概览或序章"
+      },
+      {
+        "section": "3.5",
+        "topic": "CUDA功能总览",
+        "placement": "分配到现有相关章节，不新增概览或序章"
+      },
+      {
+        "section": "4.6",
+        "topic": "Green Contexts",
+        "placement": "按执行/存储/同步/编译主题并入现有课程"
+      },
+      {
+        "section": "4.8",
+        "topic": "Error log",
+        "placement": "按执行/存储/同步/编译主题并入现有课程"
+      },
+      {
+        "section": "4.12",
+        "topic": "Cluster Launch Control",
+        "placement": "按执行/存储/同步/编译主题并入现有课程"
+      },
+      {
+        "section": "4.17",
+        "topic": "Extended GPU Memory",
+        "placement": "按执行/存储/同步/编译主题并入现有课程"
+      },
+      {
+        "section": "4.18",
+        "topic": "Dynamic Parallelism",
+        "placement": "按执行/存储/同步/编译主题并入现有课程"
+      },
+      {
+        "section": "4.19",
+        "topic": "Interoperability",
+        "placement": "按执行/存储/同步/编译主题并入现有课程"
+      },
+      {
+        "section": "4.20",
+        "topic": "Driver entry points",
+        "placement": "按执行/存储/同步/编译主题并入现有课程"
+      },
+      {
+        "section": "5.3",
+        "topic": "C++语言支持",
+        "placement": "按执行/存储/同步/编译主题并入现有课程"
+      }
+    ],
+    "deepen_written": [
+      {
+        "topic": "CUDA Tile高级view/atomic与API组合",
+        "target": "roadmap/curriculum/gpu/02-cuda-execution-and-scheduling/README.md"
+      },
+      {
+        "topic": "GEMM/Attention作者mainloop、warp分工、复杂layout与流水",
+        "targets": [
+          "roadmap/curriculum/operators/03-gemm/README.md",
+          "roadmap/curriculum/operators/05-prefill-attention/README.md"
+        ],
+        "already_present": "swizzle坐标、WMMA/TMA例程、固定CUTLASS WGMMA、FP32 lookahead均已有正文"
+      },
+      {
+        "topic": "VMM跨设备别名、fabric共享与allocator memory-pool IPC",
+        "target": "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/README.md"
+      },
+      {
+        "topic": "真实预训练模型量化/部署格式/校准与质量评估",
+        "target": "roadmap/curriculum/operators/07-quantized-operators/README.md",
+        "already_present": "随机未训练Mini Decoder全流程已写；不是完整AWQ或真实模型质量结论"
+      },
+      {
+        "topic": "V4.1视觉路径、Engram真实哈希/门控、mHC和DSpark作者代码",
+        "target": "roadmap/curriculum/papers/deepseek-v41.md",
+        "already_present": "核心缓存公式、评估对照与Minimal Inference关键路径已有正文"
+      },
+      {
+        "topic": "RL/Rollout/长任务状态流与盘古2.0匹配版本执行案例",
+        "targets": [
+          "roadmap/curriculum/papers/inference-workloads.md",
+          "roadmap/curriculum/systems/README.md"
+        ]
+      }
+    ],
+    "verification_records": [
+      ".codex/completion-evidence-cuda-execution.json",
+      ".codex/completion-evidence-cuda-runtime.json",
+      ".codex/completion-evidence-operators.json",
+      ".codex/completion-evidence-quantization.json",
+      ".codex/completion-evidence-papers-systems.json",
+      ".codex/completion-evidence-integration.json"
+    ],
+    "scope": "本次已列出的非实验教材工作；不是逐函数抄写CUDA手册或完整作者训练/服务复现。"
+  },
+  "non_experiment_delivery": {
+    "authoring": "complete_for_listed_scope",
+    "publication_validation": "passed_with_documented_visual_scope",
+    "source_unit_count": 77,
+    "not_claimed": [
+      "全文逐句或所有API逐函数改写",
+      "完整作者训练和生产服务复现",
+      "任何新GPU/NPU/真实模型实测",
+      "用户学习单元完成"
+    ]
+  }
+}

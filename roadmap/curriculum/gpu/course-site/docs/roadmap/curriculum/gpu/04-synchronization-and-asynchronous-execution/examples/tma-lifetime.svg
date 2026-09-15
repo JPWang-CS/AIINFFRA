@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 320" role="img" aria-labelledby="title desc">
+<title id="title">一个 shared buffer 的两次完成通知</title>
+<desc id="desc">加载完成后线程可以读，输出搬运读完源缓冲并通知其他线程后才可以覆写。两个完成点之间还有计算与发布写入。</desc>
+<defs><marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 8 4 0 8" fill="#64748b"/></marker></defs>
+<rect width="900" height="320" rx="16" fill="#f8fafc"/>
+<g font-family="system-ui,Segoe UI,Microsoft YaHei,sans-serif">
+<text x="28" y="36" fill="#0f172a" font-size="18" font-weight="650">同一块 shared memory · 两个不同的完成点</text>
+<path d="M70 96H828" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arr)"/>
+<g fill="#fff" stroke="#cbd5e1"><rect x="28" y="65" width="150" height="64" rx="10"/><rect x="204" y="65" width="145" height="64" rx="10"/><rect x="375" y="65" width="150" height="64" rx="10"/><rect x="551" y="65" width="145" height="64" rx="10"/><rect x="722" y="65" width="150" height="64" rx="10"/></g>
+<g text-anchor="middle" fill="#172b4d" font-size="15"><text x="103" y="94">global → shared</text><text x="103" y="115" font-size="12">搬入当前 tile</text><text x="276" y="94">barrier 完成</text><text x="276" y="115" font-size="12">所有到达 + 所有事务</text><text x="450" y="94">读取、计算、写入</text><text x="450" y="115" font-size="12">proxy fence + CTA 会合</text><text x="623" y="94">shared → global</text><text x="623" y="115" font-size="12">异步引擎仍可能读源</text><text x="797" y="94">源读取完成</text><text x="797" y="115" font-size="12">发起者等待 + CTA 会合</text></g>
+<path d="M276 130V156" stroke="#0284c7" stroke-width="2"/><rect x="174" y="156" width="205" height="45" rx="9" fill="#e0f2fe"/><text x="276" y="184" text-anchor="middle" font-size="15" fill="#075985">现在可以消费当前 tile</text>
+<path d="M797 130V156" stroke="#059669" stroke-width="2"/><rect x="688" y="156" width="184" height="45" rx="9" fill="#d1fae5"/><text x="780" y="184" text-anchor="middle" font-size="15" fill="#065f46">现在可以复用 buffer</text>
+<rect x="28" y="228" width="844" height="64" rx="10" fill="#fff" stroke="#cbd5e1"/><text x="48" y="254" font-size="15" fill="#334155">“搬入结束”不表示所有消费者已读完；“源读取结束”也不表示 CPU 已可读输出。</text><text x="48" y="278" font-size="14" fill="#64748b">CPU 检查输出仍需等待 kernel / stream 完成。本图说明依赖，不表示真实时间比例。</text>
+</g></svg>

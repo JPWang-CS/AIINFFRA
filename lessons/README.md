@@ -9,7 +9,7 @@
 
 | # | 课 | 主题 | 配套代码 | 状态 |
 |:-:|----|------|---------|------|
-| 01 | [cuda-basics](01-cuda-basics.md) | CUDA 编程模型 + Vector Add | [Lesson code](01-cuda-basics.md#22-在-leetgpu-上跑推荐) · 本地归档缺失 | ⚠️ |
+| 01 | [cuda-basics](01-cuda-basics.md) | CUDA 编程模型 + Vector Add | [Lesson code](01-cuda-basics.md#22-在-leetgpu-上跑推荐零环境配置) · 本地归档缺失 | ⚠️ |
 | 02 | [gemm-naive](02-gemm-naive.md) | Naive GEMM + 瓶颈分析 | [Lesson](02-gemm-naive.md) · [solutions/cuda/](../solutions/cuda/) | ✅ |
 | 03 | [gemm-tiled](03-gemm-tiled.md) | Shared memory tiling + bank conflict | [Lesson](03-gemm-tiled.md) · [solutions/cuda/](../solutions/cuda/) | ✅ |
 | 04 | [softmax](04-softmax.md) | Softmax 定义、稳定性、Online Softmax、Parallel Reduce、CUDA 实现 | [reference/cuda/softmax/](../reference/cuda/softmax/softmax.cu) | ✅ 知识完成 · ⭐旧债务 |
@@ -17,8 +17,9 @@
 | 06 | [triton-intro](06-triton-intro.md) | Triton Vector Add → MatMul（B1 baseline 已收口） | [Lesson code](06-triton-intro.md#本课代码与进度索引从这里一眼查看) · [solutions/triton/](../solutions/triton/) | ✅ 阶段性 |
 | 07 | [triton-debugging](07-triton-debugging.md) | Triton 调试：interpreter、打印、断言、sanitizer、数值误差 | [Lesson 06 MatMul](06-triton-intro.md#56-服务器真实性能) · [Triton Debugging](07-triton-debugging.md) | 配套 |
 | 08 | [triton-softmax 迁移](08-triton-fused-softmax.md) | CUDA → Triton 映射检查点（B2） | LeetGPU #5 → [`solutions/triton/fused_softmax.py`](../solutions/triton/fused_softmax.py) 已归档 → RTX 3090 row-wise baseline | `LEETGPU_PASS`；服务器待做 |
+| 09 | [GPU架构总论](09-gpu-environment-baseline.md) | 第一篇第一章兼容入口；单篇完整课程 | [`collect-gpu-environment-baseline.sh`](../scripts/collect-gpu-environment-baseline.sh) | `WIP`：阅读与服务器待验收 |
 
-> 01-05 是 CUDA 打底阶段；06-08 进入 Triton 实现阶段。Softmax 原理已在 Lesson 04 掌握；当前只做 Lesson 08 的 CUDA → Triton 迁移、LeetGPU #5 和 RTX 3090 baseline，完成后进入 B3；通用调试入口是 Lesson 07，详细任务见 [roadmap/ai-infra-curriculum.md](../roadmap/ai-infra-curriculum.md)。
+> 01-08是已完成或正在收尾的旧阶段课程，代码和证据全部保留。当前先完成Lesson 08的RTX 3090 baseline，随后执行第一篇第一章；第二章尚未讨论，不提前生成。通用调试入口是Lesson 07。
 
 ## 这些课怎么来的
 

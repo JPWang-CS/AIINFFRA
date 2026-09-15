@@ -1,0 +1,33 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Triton Vector Add — 2026-08-23～2026-08-24 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · weekly/2026-08-24-triton-vector-add.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E5%81%9A%E4%BA%86%E4%BB%80%E4%B9%88">做了什么</a></li><li><a href="#%E5%85%B3%E9%94%AE%E6%95%B0%E6%8D%AE">关键数据</a></li><li><a href="#%E5%8D%A1%E7%82%B9--%E6%80%8E%E4%B9%88%E8%A7%A3%E5%86%B3%E7%9A%84">卡点 / 怎么解决的</a></li><li><a href="#%E9%9D%A2%E8%AF%95%E5%8F%AF%E7%94%A8%E7%82%B9">面试可用点</a></li><li><a href="#%E4%B8%8B%E4%B8%80%E6%AD%A5">下一步</a></li></ol></nav><div class="markdown-body"><h1 id="triton-vector-add--2026-08-232026-08-24">Triton Vector Add — 2026-08-23～2026-08-24<a class="heading-anchor" href="#triton-vector-add--2026-08-232026-08-24" aria-label="链接到Triton Vector Add — 2026-08-23～2026-08-24">#</a></h1>
+<blockquote><p>算子线 · PATH B1 · AutoDL RTX 3090</p>
+</blockquote><h2 id="做了什么">做了什么<a class="heading-anchor" href="#%E5%81%9A%E4%BA%86%E4%BB%80%E4%B9%88" aria-label="链接到做了什么">#</a></h2>
+<ul>
+<li>完成 Triton Vector Add 的边界正确性验证：<code>N=1/256/257/1000/2^20</code>。</li>
+<li>在 AutoDL RTX 3090 上完成真实 GPU 运行和带宽 benchmark。</li>
+<li>修正 benchmark harness：GPU 环境使用 CUDA tensor，使用 <code>triton.testing.do_bench</code>，本地 CPU 环境只做解释器正确性验证。</li>
+<li>全盘复盘并统一 README、PATH、NOW、HISTORY、Lesson 06 的进度记录。</li>
+<li>开始阅读 Triton MatMul（Lesson 06 Part 5），尚未写代码。</li>
+</ul>
+<h2 id="关键数据">关键数据<a class="heading-anchor" href="#%E5%85%B3%E9%94%AE%E6%95%B0%E6%8D%AE" aria-label="链接到关键数据">#</a></h2>
+<ul>
+<li><code>N=2^25</code>，<code>BLOCK_SIZE=256</code>。</li>
+<li>Triton：<code>0.479 ms</code>，<code>840.1 GB/s</code>。</li>
+<li><code>torch.add</code>：<code>0.478 ms</code>，<code>843.0 GB/s</code>。</li>
+<li>Triton 达到 <code>torch.add</code> 的 <code>99.7%</code>；相对 RTX 3090 理论带宽约 <code>89.8%</code>。</li>
+<li>结论：Vector Add 是 memory-bound，继续微调的收益很小。</li>
+</ul>
+<h2 id="卡点--怎么解决的">卡点 / 怎么解决的<a class="heading-anchor" href="#%E5%8D%A1%E7%82%B9--%E6%80%8E%E4%B9%88%E8%A7%A3%E5%86%B3%E7%9A%84" aria-label="链接到卡点 / 怎么解决的">#</a></h2>
+<ul>
+<li>原 benchmark 在 GPU 机器上错误地创建了 CPU tensor，导致 Triton 报 <code>cpu tensor</code> pointer error。</li>
+<li>将性能段改为 CUDA tensor，并用 <code>do_bench</code> 处理 warmup 和 GPU 同步计时。</li>
+</ul>
+<h2 id="面试可用点">面试可用点<a class="heading-anchor" href="#%E9%9D%A2%E8%AF%95%E5%8F%AF%E7%94%A8%E7%82%B9" aria-label="链接到面试可用点">#</a></h2>
+<ul>
+<li>Vector Add 算术强度极低，瓶颈是 HBM 带宽而不是计算吞吐。</li>
+<li>纯 element-wise 算子要进一步提速，重点通常是 kernel fusion、减少中间结果写回，而不是继续堆算力。</li>
+</ul>
+<h2 id="下一步">下一步<a class="heading-anchor" href="#%E4%B8%8B%E4%B8%80%E6%AD%A5" aria-label="链接到下一步">#</a></h2>
+<ul>
+<li>下一次从空文件开始写 <code>solutions/triton/matmul.py</code>：单 tile → K 循环 → GFLOPS → autotune。</li>
+</ul>
+</div></main><script src="../../reader.js"></script></body></html>

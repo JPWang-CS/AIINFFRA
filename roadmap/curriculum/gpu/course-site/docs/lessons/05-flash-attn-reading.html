@@ -1,0 +1,169 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Lesson 05 — 读懂 Flash Attention 的 CUDA 实现 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · lessons/05-flash-attn-reading.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#part-0%E8%BF%99%E4%B8%AA%E7%AE%97%E5%AD%90%E5%9C%A8%E6%A8%A1%E5%9E%8B%E9%87%8C%E5%B9%B2%E5%98%9B">Part 0：这个算子在模型里干嘛？</a></li><li><a href="#part-1%E4%B8%BA%E4%BB%80%E4%B9%88%E8%AF%BB-flash-attention">Part 1：为什么读 Flash Attention</a></li><li><a href="#part-2%E6%A0%B8%E5%BF%83%E6%80%9D%E6%83%B33-%E5%8F%A5%E8%AF%9D">Part 2：核心思想（3 句话）</a></li><li><a href="#part-3%E5%AF%B9%E7%85%A7%E9%98%85%E8%AF%BB">Part 3：对照阅读</a></li><li><a href="#part-4%E8%BF%99%E4%BA%9B%E5%9C%A8-triton-%E9%87%8C%E6%80%8E%E4%B9%88%E5%86%99">Part 4：这些在 Triton 里怎么写</a></li><li><a href="#%E6%9C%AC%E8%AF%BE%E6%A3%80%E9%AA%8C%E6%B8%85%E5%8D%95">✅ 本课检验清单</a></li><li><a href="#%E7%9F%A5%E8%AF%86%E5%BA%93%E7%B4%A2%E5%BC%95">知识库索引</a></li></ol></nav><div class="markdown-body"><h1 id="lesson-05--读懂-flash-attention-的-cuda-实现">Lesson 05 — 读懂 Flash Attention 的 CUDA 实现<a class="heading-anchor" href="#lesson-05--%E8%AF%BB%E6%87%82-flash-attention-%E7%9A%84-cuda-%E5%AE%9E%E7%8E%B0" aria-label="链接到Lesson 05 — 读懂 Flash Attention 的 CUDA 实现">#</a></h1>
+<blockquote><p>主题：读懂 Flash Attention 的 CUDA 代码（不手写），认全里面的 CUDA 概念
+前置：完成 <a href="04-softmax.html">Lesson 04</a>，理解 shared memory tiling + online softmax
+状态：🚧 进行中（见 PATH.md）</p>
+</blockquote><p>📚 <strong>本课重点知识库</strong>：</p>
+<ul>
+<li><a href="../notes/cuda/triton-under-the-hood.html">Triton 底层 CUDA 对照</a> — Triton 代码对应什么 CUDA</li>
+<li><a href="../notes/cuda/memory-model.html">内存层级详解</a> — 回顾 tiling 原理</li>
+<li><a href="../papers/attention/flash-attention.html">Flash Attention 论文笔记</a></li>
+</ul>
+<p>🎯 <strong>这对理解 Triton 有什么用</strong>：
+读懂了 CUDA 实现，你就理解了 Triton 的 <code>tl.load</code> → <code>tl.dot</code> → online softmax → <code>tl.store</code> 流水线在做什么。</p>
+<hr>
+<hr>
+<h2 id="part-0这个算子在模型里干嘛">Part 0：这个算子在模型里干嘛？<a class="heading-anchor" href="#part-0%E8%BF%99%E4%B8%AA%E7%AE%97%E5%AD%90%E5%9C%A8%E6%A8%A1%E5%9E%8B%E9%87%8C%E5%B9%B2%E5%98%9B" aria-label="链接到Part 0：这个算子在模型里干嘛？">#</a></h2>
+<p>Flash Attention <strong>不是新算子</strong>——它和 naive attention 算的东西<strong>一模一样</strong>，改变的是<strong>怎么算</strong>：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">同样的数学公式：</span>
+<span class="code-line" data-line="2">  O = softmax(QK^T / √d) × V</span>
+<span class="code-line" data-line="3"></span>
+<span class="code-line" data-line="4">不同的执行策略：</span>
+<span class="code-line" data-line="5">  Naive Attention:   算完整 N×N 矩阵 → 存 HBM → 读回来 softmax → 写 HBM → 读回来 × V</span>
+<span class="code-line" data-line="6">                      ↑ O(N²) 显存，大量 HBM 读写</span>
+<span class="code-line" data-line="7">  </span>
+<span class="code-line" data-line="8">  Flash Attention:   把 Q 切成小块 → 每块循环遍历所有 K/V 块</span>
+<span class="code-line" data-line="9">                     → 用 online softmax 增量累加 O</span>
+<span class="code-line" data-line="10">                     → 不存中间 N×N 矩阵</span>
+<span class="code-line" data-line="11">                     ↑ O(N) 显存，HBM 读写大幅减少</span></code></pre></div>
+<p><strong>最终结果一样</strong>（数值误差 &lt; 1e-5），但显存从 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi><mo stretchy="false">(</mo><msup><mi>N</mi><mn>2</mn></msup><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">O(N^{2})</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:1.0641em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.0278em;">O</span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.109em;">N</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span></span><span class="mclose">)</span></span></span></span> 降到 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi><mo stretchy="false">(</mo><mi>N</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">O(N)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.0278em;">O</span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.109em;">N</span><span class="mclose">)</span></span></span></span>，速度提升 2-10×。</p>
+<p><strong>什么模型用</strong>：所有现代 LLM 的默认 attention 实现——LLaMA 2/3、GPT-4、DeepSeek-V2/V3、Mistral、Qwen、Claude。PyTorch 的 <code>torch.nn.functional.scaled_dot_product_attention</code> 内部自动走 Flash Attention（如果满足 dtype/causal 条件）。</p>
+<h2 id="part-1为什么读-flash-attention">Part 1：为什么读 Flash Attention<a class="heading-anchor" href="#part-1%E4%B8%BA%E4%BB%80%E4%B9%88%E8%AF%BB-flash-attention" aria-label="链接到Part 1：为什么读 Flash Attention">#</a></h2>
+<p>Flash Attention 是 Triton 生态的标志性算子。它融合了 tiling、online softmax、shared memory、causal mask——是 CUDA 优化技术的集大成者，也是面试的超级高频题。</p>
+<p>你不需要手写它（Triton 帮你写），但<strong>读懂了 CUDA 实现，你就理解了 Triton 的 <code>tl.load</code> → <code>tl.dot</code> → online softmax → <code>tl.store</code> 流水线在做什么</strong>。</p>
+<hr>
+<h2 id="part-2核心思想3-句话">Part 2：核心思想（3 句话）<a class="heading-anchor" href="#part-2%E6%A0%B8%E5%BF%83%E6%80%9D%E6%83%B33-%E5%8F%A5%E8%AF%9D" aria-label="链接到Part 2：核心思想（3 句话）">#</a></h2>
+<p>Standard Attention:</p>
+<div class="equation"><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable rowspacing="0.25em" columnalign="right left right left" columnspacing="0em 1em 0em"><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mi>S</mi></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mfrac><mrow><mi>Q</mi><msup><mi>K</mi><mi>T</mi></msup></mrow><msqrt><mi>d</mi></msqrt></mfrac></mrow></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow></mrow></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>→</mo><mi>O</mi><mo stretchy="false">(</mo><msup><mi>N</mi><mn>2</mn></msup><mo stretchy="false">)</mo><mtext> 显存（存整个 S 矩阵）</mtext></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mi>P</mi></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mtext>softmax</mtext><mo stretchy="false">(</mo><mi>S</mi><mo stretchy="false">)</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mi>O</mi></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mi>P</mi><mo>×</mo><mi>V</mi></mrow></mstyle></mtd></mtr></mtable><annotation encoding="application/x-tex">\begin{aligned}
+S &amp;= \frac{QK^{T}}{\sqrt{d}} &amp;&amp;\to O(N^{2})\text{ 显存（存整个 S 矩阵）} \\
+P &amp;= \text{softmax}(S) \\
+O &amp;= P \times V
+\end{aligned}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:5.4483em;vertical-align:-2.4742em;"></span><span class="mord"><span class="mtable"><span class="col-align-r"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:2.9742em;"><span style="top:-4.9742em;"><span class="pstrut" style="height:3.5183em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0576em;">S</span></span></span><span style="top:-2.9042em;"><span class="pstrut" style="height:3.5183em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.1389em;">P</span></span></span><span style="top:-1.4042em;"><span class="pstrut" style="height:3.5183em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0278em;">O</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:2.4742em;"><span></span></span></span></span></span><span class="col-align-l"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:2.9742em;"><span style="top:-4.9742em;"><span class="pstrut" style="height:3.5183em;"></span><span class="mord"><span class="mord"></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.5183em;"><span style="top:-2.1778em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord sqrt"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.9322em;"><span class="svg-align" style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord" style="padding-left:0.833em;"><span class="mord mathnormal">d</span></span></span><span style="top:-2.8922em;"><span class="pstrut" style="height:3em;"></span><span class="hide-tail" style="min-width:0.853em;height:1.08em;"><svg xmlns="http://www.w3.org/2000/svg" width="400em" height="1.08em" viewBox="0 0 400000 1080" preserveAspectRatio="xMinYMin slice"><path d="M95,702
+c-2.7,0,-7.17,-2.7,-13.5,-8c-5.8,-5.3,-9.5,-10,-9.5,-14
+c0,-2,0.3,-3.3,1,-4c1.3,-2.7,23.83,-20.7,67.5,-54
+c44.2,-33.3,65.8,-50.3,66.5,-51c1.3,-1.3,3,-2,5,-2c4.7,0,8.7,3.3,12,10
+s173,378,173,378c0.7,0,35.3,-71,104,-213c68.7,-142,137.5,-285,206.5,-429
+c69,-144,104.5,-217.7,106.5,-221
+l0 -0
+c5.3,-9.3,12,-14,20,-14
+H400000v40H845.2724
+s-225.272,467,-225.272,467s-235,486,-235,486c-2.7,4.7,-9,7,-19,7
+c-6,0,-10,-1,-12,-3s-194,-422,-194,-422s-65,47,-65,47z
+M834 80h400000v40h-400000z"/></svg></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.1078em;"><span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal">Q</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0715em;">K</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8413em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.1389em;">T</span></span></span></span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.93em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span><span style="top:-2.9042em;"><span class="pstrut" style="height:3.5183em;"></span><span class="mord"><span class="mord"></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mord text"><span class="mord">softmax</span></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.0576em;">S</span><span class="mclose">)</span></span></span><span style="top:-1.4042em;"><span class="pstrut" style="height:3.5183em;"></span><span class="mord"><span class="mord"></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mord mathnormal" style="margin-right:0.1389em;">P</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord mathnormal" style="margin-right:0.2222em;">V</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:2.4742em;"><span></span></span></span></span></span><span class="arraycolsep" style="width:1em;"></span><span class="col-align-r"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:2.9742em;"><span style="top:-4.9742em;"><span class="pstrut" style="height:3.5183em;"></span><span class="mord"></span></span></span></span></span></span><span class="col-align-l"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:2.9742em;"><span style="top:-4.9742em;"><span class="pstrut" style="height:3.5183em;"></span><span class="mord"><span class="mord"></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">→</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mord mathnormal" style="margin-right:0.0278em;">O</span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.109em;">N</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8641em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span></span><span class="mclose">)</span><span class="mord text"><span class="mord"> </span><span class="mord cjk_fallback">显存（存整个</span><span class="mord"> S </span><span class="mord cjk_fallback">矩阵）</span></span></span></span></span></span></span></span></span></span></span></span></span></span></div>
+<p>Flash Attention:</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">把 Q 按行分块（Q_tile），K/V 按列分块（K_tile/V_tile）</span>
+<span class="code-line" data-line="2">对每个 Q_tile，循环遍历所有 K_tile/V_tile：</span>
+<span class="code-line" data-line="3">  1. 加载 Q_tile, K_tile, V_tile 到 shared memory</span>
+<span class="code-line" data-line="4">  2. 用 online softmax 增量计算 attention</span>
+<span class="code-line" data-line="5">  3. 不存 S 矩阵 → O(N) 显存</span></code></pre></div>
+<hr>
+<h2 id="part-3对照阅读">Part 3：对照阅读<a class="heading-anchor" href="#part-3%E5%AF%B9%E7%85%A7%E9%98%85%E8%AF%BB" aria-label="链接到Part 3：对照阅读">#</a></h2>
+<p>打开仓库里的 Flash Attn 参考代码，和下面注释一起看：</p>
+<p>→ <a href="../reference/cuda/flash_attention/flash_attn.cu">reference/cuda/flash_attention/flash_attn.cu</a></p>
+<p><strong>阅读路线</strong>（按这个顺序理解）：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">1. 参数理解（28-29 行）:</span>
+<span class="code-line" data-line="2">   Q: N×d, K: N×d, V: N×d, O: N×d</span>
+<span class="code-line" data-line="3">   N = seq_len, d = head_dim</span>
+<span class="code-line" data-line="4">   causal: 是否 causal mask</span>
+<span class="code-line" data-line="5"></span>
+<span class="code-line" data-line="6">2. Tiling 策略（23-24 行）:</span>
+<span class="code-line" data-line="7">   BR = 32: Q 每次处理 32 行</span>
+<span class="code-line" data-line="8">   BC = 32: K/V 每次处理 32 行</span>
+<span class="code-line" data-line="9">   → Q 切成 ⌈N/BR⌉ 个块，K/V 切成 ⌈N/BC⌉ 个块</span>
+<span class="code-line" data-line="10"></span>
+<span class="code-line" data-line="11">3. 外层循环（79 行）:</span>
+<span class="code-line" data-line="12">   for kv_start in 0..N step BC:  ← 遍历 K/V 块</span>
+<span class="code-line" data-line="13">       每个 Q 块 × 所有 K/V 块</span>
+<span class="code-line" data-line="14"></span>
+<span class="code-line" data-line="15">4. 内层（106-131 行）:</span>
+<span class="code-line" data-line="16">   score = Q_row · K_row / sqrt(d)              ← 计算注意力分数</span>
+<span class="code-line" data-line="17">   m_new = max(m, score)                        ← online softmax: 更新 max</span>
+<span class="code-line" data-line="18">   p = exp(score - m_new)                       ← 对应当前要加上的项</span>
+<span class="code-line" data-line="19">   acc *= exp(m - m_new)                        ← 重新缩放旧累加器</span>
+<span class="code-line" data-line="20">   acc += p * V_row                             ← 加上当前项</span>
+<span class="code-line" data-line="21">   l = l * scale + p                            ← 重新缩放旧归一化因子</span>
+<span class="code-line" data-line="22">   m = m_new</span></code></pre></div>
+<p><strong>这个 kernel 的 CUDA 概念清单</strong>（看你能认出几个）：</p>
+<ul>
+<li>shared memory allocation（39-43 行）</li>
+<li><code>__syncthreads()</code>（55、101、132 行）</li>
+<li>thread 合作加载 tile（46-54 行、83-100 行）</li>
+<li>register 累加器（75 行，<code>acc[128]</code> 在寄存器里）</li>
+<li>online softmax（120-129 行）</li>
+</ul>
+<blockquote><p>如果能认出所有这些并且能解释作用 → CUDA B 级目标达成 ✓</p>
+</blockquote><hr>
+<h2 id="part-4这些在-triton-里怎么写">Part 4：这些在 Triton 里怎么写<a class="heading-anchor" href="#part-4%E8%BF%99%E4%BA%9B%E5%9C%A8-triton-%E9%87%8C%E6%80%8E%E4%B9%88%E5%86%99" aria-label="链接到Part 4：这些在 Triton 里怎么写">#</a></h2>
+<p>读完了 CUDA 版本，对比 Triton 版（伪代码）：</p>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1"><span class="hljs-meta">@triton.jit</span></span>
+<span class="code-line" data-line="2"><span class="hljs-keyword">def</span> <span class="hljs-title function_">flash_attn</span>(<span class="hljs-params">Q, K, V, O, N, d, BLOCK_Q, BLOCK_KV</span>):</span>
+<span class="code-line" data-line="3">    pid_q = tl.program_id(<span class="hljs-number">0</span>)</span>
+<span class="code-line" data-line="4">    q_start = pid_q * BLOCK_Q</span>
+<span class="code-line" data-line="5"></span>
+<span class="code-line" data-line="6">    <span class="hljs-comment"># 加载 Q block → triton 自动分配 shared memory</span></span>
+<span class="code-line" data-line="7">    q = tl.load(Q + q_start * d + ...)  <span class="hljs-comment"># BLOCK_Q × d</span></span>
+<span class="code-line" data-line="8"></span>
+<span class="code-line" data-line="9">    m = tl.full((BLOCK_Q,), -<span class="hljs-built_in">float</span>(<span class="hljs-string">&#x27;inf&#x27;</span>), dtype=tl.float32)</span>
+<span class="code-line" data-line="10">    l = tl.zeros((BLOCK_Q,), dtype=tl.float32)</span>
+<span class="code-line" data-line="11">    acc = tl.zeros((BLOCK_Q, d), dtype=tl.float32)</span>
+<span class="code-line" data-line="12"></span>
+<span class="code-line" data-line="13">    <span class="hljs-keyword">for</span> kv_start <span class="hljs-keyword">in</span> <span class="hljs-built_in">range</span>(<span class="hljs-number">0</span>, N, BLOCK_KV):</span>
+<span class="code-line" data-line="14">        k = tl.load(K + kv_start * d + ...)  <span class="hljs-comment"># BLOCK_KV × d</span></span>
+<span class="code-line" data-line="15">        v = tl.load(V + kv_start * d + ...)</span>
+<span class="code-line" data-line="16"></span>
+<span class="code-line" data-line="17">        scores = tl.dot(q, tl.trans(k)) * (<span class="hljs-number">1.0</span> / tl.sqrt(d))</span>
+<span class="code-line" data-line="18">        <span class="hljs-comment"># ... online softmax（和 CUDA 逻辑完全相同，只是用 triton 向量化）</span></span>
+<span class="code-line" data-line="19">        <span class="hljs-comment"># ... 累加</span></span>
+<span class="code-line" data-line="20"></span>
+<span class="code-line" data-line="21">    tl.store(O + q_start * d + ..., acc / l)</span></code></pre></div>
+<p><strong>关键差异</strong>：</p>
+<ul>
+<li>没有显式 <code>__shared__</code> → Triton 自动分配</li>
+<li>没有显式 <code>__syncthreads()</code> → Triton 自动插入</li>
+<li>没有手动 thread 合作 → <code>tl.load</code> 自动多 thread 合作</li>
+<li><code>tl.dot</code> 自动用 Tensor Core（如果硬件和 dtype 支持）</li>
+</ul>
+<hr>
+<h2 id="本课检验清单">✅ 本课检验清单<a class="heading-anchor" href="#%E6%9C%AC%E8%AF%BE%E6%A3%80%E9%AA%8C%E6%B8%85%E5%8D%95" aria-label="链接到✅ 本课检验清单">#</a></h2>
+<ul>
+<li><input disabled="" type="checkbox"> 读完了 Flash Attention CUDA 代码，能标注出每个 <code>__syncthreads</code> 的作用</li>
+<li><input disabled="" type="checkbox"> 能用自己的话解释 online softmax 的更新公式</li>
+<li><input disabled="" type="checkbox"> 理解了 Q 分块（BR）和 K/V 分块（BC）的 tiling 策略</li>
+<li><input disabled="" type="checkbox"> 能认出代码里的 shared memory / register 累加器 / online softmax 三个部分</li>
+</ul>
+<hr>
+<h2 id="知识库索引">知识库索引<a class="heading-anchor" href="#%E7%9F%A5%E8%AF%86%E5%BA%93%E7%B4%A2%E5%BC%95" aria-label="链接到知识库索引">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>想深入理解</th>
+<th>去看</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Flash Attention 论文笔记</td>
+<td><a href="../papers/attention/flash-attention.html">../papers/attention/flash-attention.md</a></td>
+</tr>
+<tr>
+<td>Triton → CUDA 底层实现</td>
+<td><a href="../notes/cuda/triton-under-the-hood.html">triton-under-the-hood.md</a></td>
+</tr>
+<tr>
+<td>Shared memory tiling 回顾</td>
+<td><a href="../notes/cuda/memory-model.html">memory-model.md</a></td>
+</tr>
+<tr>
+<td>Flash Attn 参考实现（CUDA）</td>
+<td><a href="../reference/cuda/flash_attention/flash_attn.cu">reference/cuda/flash_attention/flash_attn.cu</a></td>
+</tr>
+<tr>
+<td>Flash Attn 参考实现（Triton）</td>
+<td><a href="../reference/triton/flash_attention/flash_attn.py">reference/triton/flash_attention/flash_attn.py</a></td>
+</tr>
+<tr>
+<td>下一步：自己写 Triton kernel</td>
+<td><a href="06-triton-intro.html">Lesson 06</a></td>
+</tr>
+</tbody></table>
+<hr>
+<p><em>Lesson 05 · Flash Attention 阅读 · 源自原 week-04（前半）</em></p>
+</div></main><script src="../../reader.js"></script></body></html>

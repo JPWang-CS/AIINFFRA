@@ -1,0 +1,50 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Triton MatMul Nsight Systems P0-lite — 2026-08-30 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · weekly/2026-08-30-triton-matmul-nsys.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E6%9C%AC%E8%BD%AE%E5%AE%8C%E6%88%90">本轮完成</a></li><li><a href="#%E5%85%B3%E9%94%AE%E6%95%B0%E5%AD%97">关键数字</a></li><li><a href="#%E7%BB%93%E8%AE%BA">结论</a></li><li><a href="#%E8%AF%81%E6%8D%AE">证据</a></li></ol></nav><div class="markdown-body"><h1 id="triton-matmul-nsight-systems-p0-lite--2026-08-30">Triton MatMul Nsight Systems P0-lite — 2026-08-30<a class="heading-anchor" href="#triton-matmul-nsight-systems-p0-lite--2026-08-30" aria-label="链接到Triton MatMul Nsight Systems P0-lite — 2026-08-30">#</a></h1>
+<h2 id="本轮完成">本轮完成<a class="heading-anchor" href="#%E6%9C%AC%E8%BD%AE%E5%AE%8C%E6%88%90" aria-label="链接到本轮完成">#</a></h2>
+<ul>
+<li>在 AutoDL RTX 3090 上用 Nsight Systems 采集 <code>128×32×256, w8</code> 的 s3/s2 两组 timeline。</li>
+<li>将两份约 90 KB 原始日志完整归档，并用 SHA256 核对源文件与仓库副本一致。</li>
+<li>从 <code>cuda_gpu_trace</code> 按 Grid=64×16、Block=256 精确筛选 60 次大 shape，排除 4 次 correctness 小 kernel。</li>
+<li>分析 <code>cuda_gpu_kern_sum</code>、<code>cuda_api_sum</code>、Reg/Trd、dynamic shared memory 和静态驻留上限。</li>
+</ul>
+<h2 id="关键数字">关键数字<a class="heading-anchor" href="#%E5%85%B3%E9%94%AE%E6%95%B0%E5%AD%97" aria-label="链接到关键数字">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>配置</th>
+<th align="right">Triton mean / median</th>
+<th align="right">GFLOPS</th>
+<th align="right">Reg/Trd</th>
+<th align="right">DymSMem</th>
+<th align="right">同次 CUTLASS mean</th>
+<th align="right">相对 CUTLASS</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>128×32×256, w8, s3</code></td>
+<td align="right">21.208 / 21.163 ms</td>
+<td align="right">19,441.3</td>
+<td align="right">255</td>
+<td align="right">0.098 MB</td>
+<td align="right">16.716 ms</td>
+<td align="right">78.8%</td>
+</tr>
+<tr>
+<td><code>128×32×256, w8, s2</code></td>
+<td align="right">22.362 / 22.317 ms</td>
+<td align="right">18,438.6</td>
+<td align="right">255</td>
+<td align="right">0.049 MB</td>
+<td align="right">16.682 ms</td>
+<td align="right">74.6%</td>
+</tr>
+</tbody></table>
+<h2 id="结论">结论<a class="heading-anchor" href="#%E7%BB%93%E8%AE%BA" aria-label="链接到结论">#</a></h2>
+<p>s2 将 dynamic shared memory 减半，但没有降低 255 registers/thread。按静态资源推导，两组仍近似受限为 1 block/SM；s2 反而慢 5.44%，说明更浅 pipeline 的损失大于 shared-memory 减少的收益。<code>cudaLaunchKernel</code> median 只有微秒量级，相对 21–22 ms kernel 可忽略；Event/DeviceSynchronize 的累计时间主要是等待 GPU，不是独立计算瓶颈。</p>
+<p>这只是 P0-lite：没有 NCU hardware counters，不能声称测得 achieved occupancy、warp stall、L2 hit 或 DRAM throughput。下一步保持 w8/s3，只把输出列 tile从 256 降到 128，验证 accumulator/register pressure。</p>
+<h2 id="证据">证据<a class="heading-anchor" href="#%E8%AF%81%E6%8D%AE" aria-label="链接到证据">#</a></h2>
+<ul>
+<li><a href="../notes/triton/matmul-nsys-p0-lite-2026-08-30.html">详细逐块分析</a></li>
+<li><a href="../notes/triton/logs/2026-08-29-matmul-k256-s3-nsys.txt">s3 完整 raw log</a></li>
+<li><a href="../notes/triton/logs/2026-08-30-matmul-k256-s2-nsys.txt">s2 完整 raw log</a></li>
+</ul>
+</div></main><script src="../../reader.js"></script></body></html>

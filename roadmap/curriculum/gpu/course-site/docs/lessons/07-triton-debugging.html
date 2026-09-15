@@ -1,0 +1,218 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Lesson 07 — Triton Debugging：从“跑不通”到定位根因 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · lessons/07-triton-debugging.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E6%9C%AC%E8%AF%BE%E5%8D%95%E5%85%83%E5%8D%A1">本课单元卡</a></li><li><a href="#1-%E5%85%88%E5%88%A4%E6%96%AD%E6%98%AF%E5%93%AA%E4%B8%80%E7%B1%BB%E9%97%AE%E9%A2%98">1. 先判断是哪一类问题</a></li><li><a href="#2-%E5%85%88%E5%81%9A%E5%8F%AF%E5%A4%8D%E7%8E%B0%E7%9A%84%E6%9C%80%E5%B0%8F%E6%B5%8B%E8%AF%95">2. 先做可复现的最小测试</a></li><li><a href="#3-cpu-interpreter%E5%85%88%E7%9C%8B-triton-%E9%80%BB%E8%BE%91">3. CPU interpreter：先看 Triton 逻辑</a></li><li><a href="#4-%E6%89%93%E5%8D%B0-tile%E5%8F%AA%E6%89%93%E5%8D%B0%E4%B8%80%E4%B8%AA-program">4. 打印 tile：只打印一个 program</a></li><li><a href="#5-%E7%BC%96%E8%AF%91%E6%9C%9F%E5%92%8C%E8%BF%90%E8%A1%8C%E6%97%B6%E6%96%AD%E8%A8%80">5. 编译期和运行时断言</a></li><li><a href="#%E7%BC%96%E8%AF%91%E6%9C%9F%E6%96%AD%E8%A8%80">编译期断言</a></li><li><a href="#%E8%BF%90%E8%A1%8C%E6%97%B6%E6%96%AD%E8%A8%80">运行时断言</a></li><li><a href="#6-%E8%B6%8A%E7%95%8C%E5%92%8C%E9%9D%9E%E6%B3%95%E8%AE%BF%E9%97%AEcompute-sanitizer">6. 越界和非法访问：compute-sanitizer</a></li><li><a href="#7-%E6%95%B0%E5%80%BC%E8%AF%AF%E5%B7%AE%E4%B8%8D%E8%A6%81%E6%8A%8A-mask-%E9%94%99%E8%AF%AF%E5%92%8C-tf32-%E6%B7%B7%E5%9C%A8%E4%B8%80%E8%B5%B7">7. 数值误差：不要把 mask 错误和 TF32 混在一起</a></li><li><a href="#8-%E5%BD%93%E5%89%8D-matmul-%E7%9A%84%E5%AE%9E%E9%99%85%E8%B0%83%E8%AF%95%E8%AE%B0%E5%BD%95">8. 当前 MatMul 的实际调试记录</a></li><li><a href="#9-%E8%B0%83%E8%AF%95%E5%AE%8C%E6%88%90%E5%90%8E%E5%86%8D%E6%81%A2%E5%A4%8D-benchmark">9. 调试完成后再恢复 benchmark</a></li><li><a href="#%E6%9C%AC%E8%AF%BE%E9%AA%8C%E6%94%B6">本课验收</a></li><li><a href="#%E5%AE%98%E6%96%B9%E5%8F%82%E8%80%83">官方参考</a></li></ol></nav><div class="markdown-body"><h1 id="lesson-07--triton-debugging从跑不通到定位根因">Lesson 07 — Triton Debugging：从“跑不通”到定位根因<a class="heading-anchor" href="#lesson-07--triton-debugging%E4%BB%8E%E8%B7%91%E4%B8%8D%E9%80%9A%E5%88%B0%E5%AE%9A%E4%BD%8D%E6%A0%B9%E5%9B%A0" aria-label="链接到Lesson 07 — Triton Debugging：从“跑不通”到定位根因">#</a></h1>
+<blockquote><p>定位：Lesson 06 Triton 算子实现的配套调试课，不另起学习主线。
+当前案例：用 Triton MatMul 练习解释器、tile 打印、断言、内存检查和数值误差定位。
+前置：<a href="06-triton-intro.html">Lesson 06 — Triton 入门</a>。</p>
+</blockquote><h2 id="本课单元卡">本课单元卡<a class="heading-anchor" href="#%E6%9C%AC%E8%AF%BE%E5%8D%95%E5%85%83%E5%8D%A1" aria-label="链接到本课单元卡">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>项目</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>调试对象</td>
+<td><a href="../solutions/triton/matmul.py">solutions/triton/matmul.py</a>、<a href="../solutions/triton/matmul_leetgpu.py">LeetGPU 最终版</a> 与 <a href="../solutions/triton/matmul_leetgpu_wip.py">历史 TF32 失败快照</a></td>
+</tr>
+<tr>
+<td>目标</td>
+<td>区分编译错误、逻辑错误、越界错误、数值错误和性能问题</td>
+</tr>
+<tr>
+<td>当前状态</td>
+<td>配套教程；MatMul LeetGPU 已 <code>LEETGPU_PASS</code>，服务器版 <code>GPU_VALIDATED</code>，Nsight Systems P0-lite 已完成</td>
+</tr>
+<tr>
+<td>验收</td>
+<td>能用正确工具定位一次错误，并留下最小复现、原因和修复证据</td>
+</tr>
+<tr>
+<td>下一步</td>
+<td>回到 Lesson 06，缩小输出列 tile，验证 accumulator/register pressure；NCU counters 等待可用环境</td>
+</tr>
+</tbody></table>
+<h2 id="1-先判断是哪一类问题">1. 先判断是哪一类问题<a class="heading-anchor" href="#1-%E5%85%88%E5%88%A4%E6%96%AD%E6%98%AF%E5%93%AA%E4%B8%80%E7%B1%BB%E9%97%AE%E9%A2%98" aria-label="链接到1. 先判断是哪一类问题">#</a></h2>
+<p>不要一上来就调 <code>BLOCK_M</code>。先把错误归类：</p>
+<table>
+<thead>
+<tr>
+<th>现象</th>
+<th>优先怀疑</th>
+<th>第一工具</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>kernel 编译失败</td>
+<td>shape、dtype、constexpr、API 签名</td>
+<td><code>tl.static_print</code>、<code>tl.static_assert</code></td>
+</tr>
+<tr>
+<td>输出完全错</td>
+<td>pointer、stride、grid、mask、归约</td>
+<td>小尺寸 + CPU interpreter</td>
+</tr>
+<tr>
+<td>只有边界尺寸错</td>
+<td>mask 或 <code>other</code></td>
+<td>非整除 M/N/K case</td>
+</tr>
+<tr>
+<td>运行时报非法地址</td>
+<td>越界 load/store、异步错误</td>
+<td><code>CUDA_LAUNCH_BLOCKING=1</code>、<code>compute-sanitizer</code></td>
+</tr>
+<tr>
+<td>大归约维度误差变大</td>
+<td>TF32、累加顺序、dtype</td>
+<td>固定 seed + IEEE/TF32 对照</td>
+</tr>
+<tr>
+<td>正确但很慢</td>
+<td>tile、warps、stages、寄存器压力</td>
+<td>benchmark、Nsight Compute</td>
+</tr>
+</tbody></table>
+<p>调试顺序固定为：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">最小输入</span>
+<span class="code-line" data-line="2">→ CPU interpreter</span>
+<span class="code-line" data-line="3">→ 打印 pid/offset/mask</span>
+<span class="code-line" data-line="4">→ 非整除边界测试</span>
+<span class="code-line" data-line="5">→ 数值误差定位</span>
+<span class="code-line" data-line="6">→ compute-sanitizer</span>
+<span class="code-line" data-line="7">→ 最后才做性能分析</span></code></pre></div>
+<h2 id="2-先做可复现的最小测试">2. 先做可复现的最小测试<a class="heading-anchor" href="#2-%E5%85%88%E5%81%9A%E5%8F%AF%E5%A4%8D%E7%8E%B0%E7%9A%84%E6%9C%80%E5%B0%8F%E6%B5%8B%E8%AF%95" aria-label="链接到2. 先做可复现的最小测试">#</a></h2>
+<p>每次调试先固定随机数，并只跑一个 case：</p>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1">torch.manual_seed(<span class="hljs-number">0</span>)</span>
+<span class="code-line" data-line="2"></span>
+<span class="code-line" data-line="3">cases = [</span>
+<span class="code-line" data-line="4">    (<span class="hljs-number">1</span>, <span class="hljs-number">1</span>, <span class="hljs-number">1</span>),</span>
+<span class="code-line" data-line="5">    (<span class="hljs-number">64</span>, <span class="hljs-number">32</span>, <span class="hljs-number">64</span>),       <span class="hljs-comment"># 完全整除 tile</span></span>
+<span class="code-line" data-line="6">    (<span class="hljs-number">65</span>, <span class="hljs-number">33</span>, <span class="hljs-number">67</span>),       <span class="hljs-comment"># 三个维度都越界</span></span>
+<span class="code-line" data-line="7">    (<span class="hljs-number">257</span>, <span class="hljs-number">513</span>, <span class="hljs-number">129</span>),    <span class="hljs-comment"># 较大归约维度</span></span>
+<span class="code-line" data-line="8">]</span></code></pre></div>
+<p>不要一开始使用 <code>8192×6144×4096</code>。大输入只能告诉你“错了”，不能快速告诉你哪一个 tile 错了。</p>
+<p>正确性测试必须在 kernel 后同步：</p>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1">solve(a, b, out, M, N, K)</span>
+<span class="code-line" data-line="2">torch.cuda.synchronize()</span>
+<span class="code-line" data-line="3">torch.testing.assert_close(out, torch.matmul(a, b), rtol=<span class="hljs-number">1e-2</span>, atol=<span class="hljs-number">1e-2</span>)</span></code></pre></div>
+<p>GPU kernel 是异步发射的；没有 <code>synchronize()</code>，报错位置可能落在后面的无关操作上。</p>
+<h2 id="3-cpu-interpreter先看-triton-逻辑">3. CPU interpreter：先看 Triton 逻辑<a class="heading-anchor" href="#3-cpu-interpreter%E5%85%88%E7%9C%8B-triton-%E9%80%BB%E8%BE%91" aria-label="链接到3. CPU interpreter：先看 Triton 逻辑">#</a></h2>
+<p>Triton 官方提供解释模式：</p>
+<div class="code-panel"><div class="code-caption"><span>BASH</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-bash"><span class="code-line" data-line="1">TRITON_INTERPRET=1 python debug_matmul.py</span></code></pre></div>
+<p>解释器会跳过 GPU 编译，在 CPU 上逐个 program instance 模拟执行，适合查看 <code>offset</code>、<code>mask</code>、<code>tile</code> 和中间结果。官方调试说明见 <a href="https://triton-lang.org/main/programming-guide/chapter-3/debugging.html">Triton Debugging</a>。</p>
+<p>当前 <code>solutions/triton/matmul.py</code> 是 GPU benchmark 脚本，内部固定使用 <code>device=&quot;cuda&quot;</code>，所以不能直接当 interpreter harness。调试时单独写一个最小入口：</p>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1"><span class="hljs-keyword">import</span> os</span>
+<span class="code-line" data-line="2"></span>
+<span class="code-line" data-line="3">device = <span class="hljs-string">&quot;cpu&quot;</span> <span class="hljs-keyword">if</span> os.getenv(<span class="hljs-string">&quot;TRITON_INTERPRET&quot;</span>) == <span class="hljs-string">&quot;1&quot;</span> <span class="hljs-keyword">else</span> <span class="hljs-string">&quot;cuda&quot;</span></span>
+<span class="code-line" data-line="4">a = torch.randn((<span class="hljs-number">5</span>, <span class="hljs-number">7</span>), device=device, dtype=torch.float32)</span>
+<span class="code-line" data-line="5">b = torch.randn((<span class="hljs-number">7</span>, <span class="hljs-number">9</span>), device=device, dtype=torch.float32)</span>
+<span class="code-line" data-line="6">out = torch.empty((<span class="hljs-number">5</span>, <span class="hljs-number">9</span>), device=device, dtype=torch.float32)</span>
+<span class="code-line" data-line="7"></span>
+<span class="code-line" data-line="8">solve(a, b, out, <span class="hljs-number">5</span>, <span class="hljs-number">7</span>, <span class="hljs-number">9</span>)</span>
+<span class="code-line" data-line="9"><span class="hljs-built_in">print</span>(out)</span>
+<span class="code-line" data-line="10"><span class="hljs-built_in">print</span>(torch.matmul(a, b))</span></code></pre></div>
+<p>解释器的限制：它不是性能工具，且官方文档列出了 <code>bfloat16</code> 和间接内存访问等限制；所以 interpreter 通过只说明控制流/索引逻辑基本正确，不代表真 GPU 性能正确。</p>
+<h2 id="4-打印-tile只打印一个-program">4. 打印 tile：只打印一个 program<a class="heading-anchor" href="#4-%E6%89%93%E5%8D%B0-tile%E5%8F%AA%E6%89%93%E5%8D%B0%E4%B8%80%E4%B8%AA-program" aria-label="链接到4. 打印 tile：只打印一个 program">#</a></h2>
+<p>设备端打印很容易刷爆终端。只用极小输入，并限制到一个 program：</p>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1"><span class="hljs-comment"># 先把输入缩到只有一个 program，再打印，避免多个 program 同时刷屏。</span></span>
+<span class="code-line" data-line="2">tl.device_print(<span class="hljs-string">&quot;pid_m&quot;</span>, pid_m)</span>
+<span class="code-line" data-line="3">tl.device_print(<span class="hljs-string">&quot;pid_k&quot;</span>, pid_k)</span>
+<span class="code-line" data-line="4">tl.device_print(<span class="hljs-string">&quot;offset_m&quot;</span>, offset_m)</span>
+<span class="code-line" data-line="5">tl.device_print(<span class="hljs-string">&quot;offset_n&quot;</span>, offset_n)</span>
+<span class="code-line" data-line="6">tl.device_print(<span class="hljs-string">&quot;offset_k&quot;</span>, offset_k)</span>
+<span class="code-line" data-line="7">tl.device_print(<span class="hljs-string">&quot;mask_a&quot;</span>, mask_a)</span>
+<span class="code-line" data-line="8">tl.device_print(<span class="hljs-string">&quot;mask_b&quot;</span>, mask_b)</span>
+<span class="code-line" data-line="9">tl.device_print(<span class="hljs-string">&quot;tile_a&quot;</span>, tile_a)</span>
+<span class="code-line" data-line="10">tl.device_print(<span class="hljs-string">&quot;tile_b&quot;</span>, tile_b)</span></code></pre></div>
+<p>对当前 MatMul，重点核对：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">ptr_a[i,j] = A[offset_m[i], offset_n[j]]</span>
+<span class="code-line" data-line="2">ptr_b[i,j] = B[offset_n[i], offset_k[j]]</span>
+<span class="code-line" data-line="3">ptr_c[i,j] = C[offset_m[i], offset_k[j]]</span></code></pre></div>
+<p><code>tl.device_print</code> 是运行时打印；<code>tl.static_print</code> 用于打印 <code>BLOCK_M</code>、<code>BLOCK_N</code> 等编译期常量。参数必须是简单的字面量/标量/tensor，不要使用 Python f-string 拼运行时 tensor。参考：<a href="https://triton-lang.org/main/python-api/triton.language.html">Triton language API</a>。</p>
+<h2 id="5-编译期和运行时断言">5. 编译期和运行时断言<a class="heading-anchor" href="#5-%E7%BC%96%E8%AF%91%E6%9C%9F%E5%92%8C%E8%BF%90%E8%A1%8C%E6%97%B6%E6%96%AD%E8%A8%80" aria-label="链接到5. 编译期和运行时断言">#</a></h2>
+<h3 id="编译期断言">编译期断言<a class="heading-anchor" href="#%E7%BC%96%E8%AF%91%E6%9C%9F%E6%96%AD%E8%A8%80" aria-label="链接到编译期断言">#</a></h3>
+<p>用于检查 tile 配置，不需要启动 GPU：</p>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1">tl.static_print(<span class="hljs-string">&quot;BLOCK_M&quot;</span>, BLOCK_M)</span>
+<span class="code-line" data-line="2">tl.static_print(<span class="hljs-string">&quot;BLOCK_N&quot;</span>, BLOCK_N)</span>
+<span class="code-line" data-line="3">tl.static_print(<span class="hljs-string">&quot;BLOCK_K&quot;</span>, BLOCK_K)</span>
+<span class="code-line" data-line="4">tl.static_assert(BLOCK_M % <span class="hljs-number">16</span> == <span class="hljs-number">0</span>, <span class="hljs-string">&quot;BLOCK_M must be aligned&quot;</span>)</span></code></pre></div>
+<h3 id="运行时断言">运行时断言<a class="heading-anchor" href="#%E8%BF%90%E8%A1%8C%E6%97%B6%E6%96%AD%E8%A8%80" aria-label="链接到运行时断言">#</a></h3>
+<p>用于检查真正的运行时 invariant：</p>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1">tl.device_assert(M &gt; <span class="hljs-number">0</span>, <span class="hljs-string">&quot;M must be positive&quot;</span>)</span>
+<span class="code-line" data-line="2">tl.device_assert(N &gt; <span class="hljs-number">0</span>, <span class="hljs-string">&quot;N must be positive&quot;</span>)</span>
+<span class="code-line" data-line="3">tl.device_assert(K &gt; <span class="hljs-number">0</span>, <span class="hljs-string">&quot;K must be positive&quot;</span>)</span></code></pre></div>
+<p>运行：</p>
+<div class="code-panel"><div class="code-caption"><span>BASH</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-bash"><span class="code-line" data-line="1">TRITON_DEBUG=1 python debug_matmul.py</span></code></pre></div>
+<p><code>device_assert</code> 默认不开启，必须设置 <code>TRITON_DEBUG=1</code>；参考 <a href="https://triton-lang.org/main/python-api/generated/triton.language.device_assert.html">device_assert API</a>。</p>
+<p>注意：边界 tile 中 <code>offset_m &gt;= M</code> 或 <code>offset_k &gt;= K</code> 是预期现象，不能简单断言所有 offset 都小于维度。应该断言 mask 覆盖正确，或者只断言非边界 lane。</p>
+<h2 id="6-越界和非法访问compute-sanitizer">6. 越界和非法访问：compute-sanitizer<a class="heading-anchor" href="#6-%E8%B6%8A%E7%95%8C%E5%92%8C%E9%9D%9E%E6%B3%95%E8%AE%BF%E9%97%AEcompute-sanitizer" aria-label="链接到6. 越界和非法访问：compute-sanitizer">#</a></h2>
+<p>当怀疑 <code>tl.load</code> / <code>tl.store</code> 越界时：</p>
+<div class="code-panel"><div class="code-caption"><span>BASH</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-bash"><span class="code-line" data-line="1">CUDA_LAUNCH_BLOCKING=1 \</span>
+<span class="code-line" data-line="2">compute-sanitizer --tool memcheck \</span>
+<span class="code-line" data-line="3">python solutions/triton/matmul.py</span></code></pre></div>
+<p>它适合查：</p>
+<ul>
+<li>越界读写；</li>
+<li>非法地址；</li>
+<li>data race；</li>
+<li>异步 kernel 错误被延迟报告。</li>
+</ul>
+<p>代价是很慢，所以只跑一个最小 case，不要直接跑完整 benchmark。Triton 官方也把 NVIDIA GPU 的 <code>compute-sanitizer</code> 列为内存/竞态调试工具。</p>
+<h2 id="7-数值误差不要把-mask-错误和-tf32-混在一起">7. 数值误差：不要把 mask 错误和 TF32 混在一起<a class="heading-anchor" href="#7-%E6%95%B0%E5%80%BC%E8%AF%AF%E5%B7%AE%E4%B8%8D%E8%A6%81%E6%8A%8A-mask-%E9%94%99%E8%AF%AF%E5%92%8C-tf32-%E6%B7%B7%E5%9C%A8%E4%B8%80%E8%B5%B7" aria-label="链接到7. 数值误差：不要把 mask 错误和 TF32 混在一起">#</a></h2>
+<p>先输出最大绝对误差和位置：</p>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1">diff = (out - expected).<span class="hljs-built_in">abs</span>()</span>
+<span class="code-line" data-line="2">flat_idx = diff.argmax()</span>
+<span class="code-line" data-line="3"></span>
+<span class="code-line" data-line="4"><span class="hljs-built_in">print</span>(<span class="hljs-string">&quot;max_abs_error:&quot;</span>, diff.flatten()[flat_idx].item())</span>
+<span class="code-line" data-line="5"><span class="hljs-built_in">print</span>(<span class="hljs-string">&quot;out:&quot;</span>, out.flatten()[flat_idx].item())</span>
+<span class="code-line" data-line="6"><span class="hljs-built_in">print</span>(<span class="hljs-string">&quot;expected:&quot;</span>, expected.flatten()[flat_idx].item())</span></code></pre></div>
+<p>相对误差在 reference 接近 0 时可能很大，所以要同时看 <code>abs error</code> 和 <code>relative error</code>。</p>
+<p>对于 FP32 MatMul，先固定比较口径：</p>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1">torch.backends.cuda.matmul.allow_tf32 = <span class="hljs-literal">False</span></span></code></pre></div>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1">acc += tl.dot(</span>
+<span class="code-line" data-line="2">    tile_a,</span>
+<span class="code-line" data-line="3">    tile_b,</span>
+<span class="code-line" data-line="4">    input_precision=<span class="hljs-string">&quot;ieee&quot;</span>,</span>
+<span class="code-line" data-line="5">)</span></code></pre></div>
+<p>如果默认 <code>tl.dot</code> 使用 TF32，而 PyTorch reference 使用另一种 FP32/TF32 设置，大归约维度下就可能出现：小 case 通过，大 case 的最大误差超阈值。当前 MatMul 的 <code>N=513</code> case 就是这种调试路径：边界逻辑没错，问题在计算精度口径。</p>
+<h2 id="8-当前-matmul-的实际调试记录">8. 当前 MatMul 的实际调试记录<a class="heading-anchor" href="#8-%E5%BD%93%E5%89%8D-matmul-%E7%9A%84%E5%AE%9E%E9%99%85%E8%B0%83%E8%AF%95%E8%AE%B0%E5%BD%95" aria-label="链接到8. 当前 MatMul 的实际调试记录">#</a></h2>
+<p>本次调试得到的最小证据链：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">(1, 1, 1)       OK</span>
+<span class="code-line" data-line="2">(64, 32, 64)    OK</span>
+<span class="code-line" data-line="3">(65, 33, 67)    OK</span>
+<span class="code-line" data-line="4">(257, 513, 129) 初始 TF32 口径失败；切换 IEEE FP32 后 OK</span></code></pre></div>
+<p>服务器 benchmark：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">GPU: NVIDIA GeForce RTX 3090</span>
+<span class="code-line" data-line="2">shape: 8192 × 6144 × 4096</span>
+<span class="code-line" data-line="3">Triton: 24.681 ms，16,706.0 GFLOPS</span>
+<span class="code-line" data-line="4">torch.mm: 17.120 ms，24,083.3 GFLOPS</span></code></pre></div>
+<p>结论：当前 kernel 的 tile、pointer、边界 mask 和归约逻辑已经通过服务器正确性；性能差距属于后续调优问题，不要在还没有正确性证据时直接调参。</p>
+<h2 id="9-调试完成后再恢复-benchmark">9. 调试完成后再恢复 benchmark<a class="heading-anchor" href="#9-%E8%B0%83%E8%AF%95%E5%AE%8C%E6%88%90%E5%90%8E%E5%86%8D%E6%81%A2%E5%A4%8D-benchmark" aria-label="链接到9. 调试完成后再恢复 benchmark">#</a></h2>
+<p>调试代码必须临时关闭或隔离：</p>
+<ul>
+<li>删除 <code>device_print</code>；</li>
+<li>关闭 <code>TRITON_DEBUG</code>；</li>
+<li>不再使用 <code>compute-sanitizer</code>；</li>
+<li>保留固定 seed 的 correctness tests；</li>
+<li>再运行 warmup、GPU Event timing 和 GFLOPS benchmark。</li>
+</ul>
+<p>不要把带大量打印、断言或 sanitizer 的耗时当成性能数字。</p>
+<h2 id="本课验收">本课验收<a class="heading-anchor" href="#%E6%9C%AC%E8%AF%BE%E9%AA%8C%E6%94%B6" aria-label="链接到本课验收">#</a></h2>
+<ul>
+<li><input disabled="" type="checkbox"> 能用最小 case 区分 pointer/mask/shape/precision 问题</li>
+<li><input disabled="" type="checkbox"> 能用 <code>TRITON_INTERPRET=1</code> 查看一个 program 的中间结果</li>
+<li><input disabled="" type="checkbox"> 能用 <code>tl.device_print</code> 打印 offset 和 mask</li>
+<li><input disabled="" type="checkbox"> 能用 <code>tl.static_assert</code> / <code>tl.device_assert</code></li>
+<li><input disabled="" type="checkbox"> 能用 <code>compute-sanitizer</code> 排查 GPU 非法访问</li>
+<li><input checked="" disabled="" type="checkbox"> 能解释当前 MatMul 为什么需要 IEEE FP32 对照</li>
+<li><input checked="" disabled="" type="checkbox"> 能记录一次完整的正确性 + 性能调试证据</li>
+</ul>
+<h2 id="官方参考">官方参考<a class="heading-anchor" href="#%E5%AE%98%E6%96%B9%E5%8F%82%E8%80%83" aria-label="链接到官方参考">#</a></h2>
+<ul>
+<li><a href="https://triton-lang.org/main/programming-guide/chapter-3/debugging.html">Triton Debugging</a></li>
+<li><a href="https://triton-lang.org/main/python-api/triton.language.html">Triton language API</a></li>
+<li><a href="https://triton-lang.org/main/python-api/generated/triton.language.static_print.html">static_print</a></li>
+<li><a href="https://triton-lang.org/main/python-api/generated/triton.language.device_assert.html">device_assert</a></li>
+<li><a href="https://docs.nvidia.com/compute-sanitizer/ComputeSanitizer/index.html">NVIDIA compute-sanitizer</a></li>
+</ul>
+</div></main><script src="../../reader.js"></script></body></html>

@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="484" viewBox="0 0 960 484" role="img" aria-labelledby="title desc">
+<title id="title">主机与独立 GPU：任务提交与数据传输</title>
+<desc id="desc">左侧主机含 CPU 与主机内存，右侧 GPU 含多个 SM 与设备显存。CPU 提交 kernel；输入通过 H2D 到设备，结果通过 D2H 返回。kernel 参数中的设备指针不是数组复制。</desc>
+<defs>
+ <marker id="blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1L9 5L1 9" fill="none" stroke="#4169bc" stroke-width="1.6"/></marker>
+ <marker id="green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1L9 5L1 9" fill="none" stroke="#188777" stroke-width="1.6"/></marker>
+ <marker id="gray" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1 1L9 5L1 9" fill="none" stroke="#8393a8" stroke-width="1.5"/></marker>
+</defs>
+<rect width="960" height="484" rx="16" fill="#fff"/>
+<g font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif">
+ <rect x="24" y="24" width="300" height="414" rx="16" fill="#f6f8fc" stroke="#dde5ef"/>
+ <rect x="636" y="24" width="300" height="414" rx="16" fill="#f2faf7" stroke="#d7e9e3"/>
+ <text x="48" y="59" font-size="12" letter-spacing="1.6" fill="#65748b">HOST</text>
+ <text x="48" y="88" font-size="23" font-weight="650" fill="#1b2c45">主机</text>
+ <text x="660" y="59" font-size="12" letter-spacing="1.6" fill="#4b7e73">DEVICE</text>
+ <text x="660" y="88" font-size="23" font-weight="650" fill="#1b3c34">独立 GPU</text>
+ <rect x="44" y="111" width="260" height="108" rx="12" fill="#fff" stroke="#d7e1ef"/>
+ <text x="64" y="144" font-size="21" font-weight="650" fill="#273b5e">CPU</text>
+ <text x="64" y="173" font-size="15" fill="#56667d">运行 main · 准备参数</text>
+ <text x="64" y="197" font-size="15" fill="#56667d">提交计算与传输任务</text>
+ <rect x="656" y="111" width="260" height="108" rx="12" fill="#fff" stroke="#cce2d9"/>
+ <text x="676" y="144" font-size="21" font-weight="650" fill="#245b4e">多个 SM</text>
+ <text x="676" y="173" font-size="15" fill="#4f7067">执行 kernel 中的计算</text>
+ <text x="676" y="197" font-size="15" fill="#4f7067">读取输入 · 写入结果</text>
+ <path d="M334 169H626" stroke="#8393a8" stroke-width="1.7" stroke-dasharray="5 5" marker-end="url(#gray)"/>
+ <text x="480" y="136" text-anchor="middle" font-size="16" font-weight="600" fill="#46566e">提交 kernel</text>
+ <text x="480" y="157" text-anchor="middle" font-size="13" fill="#66758a">参数包含设备地址</text>
+ <path d="M174 229V253" stroke="#8393a8" stroke-width="1.5" marker-start="url(#gray)" marker-end="url(#gray)"/>
+ <path d="M786 229V253" stroke="#8393a8" stroke-width="1.5" marker-start="url(#gray)" marker-end="url(#gray)"/>
+ <rect x="44" y="263" width="260" height="151" rx="12" fill="#fff" stroke="#d7e1ef"/>
+ <rect x="656" y="263" width="260" height="151" rx="12" fill="#fff" stroke="#cce2d9"/>
+ <text x="64" y="294" font-size="18" font-weight="650" fill="#273b5e">主机内存</text>
+ <text x="676" y="294" font-size="18" font-weight="650" fill="#245b4e">设备显存</text>
+ <rect x="60" y="310" width="228" height="35" rx="7" fill="#edf2fc"/>
+ <rect x="672" y="310" width="228" height="35" rx="7" fill="#edf2fc"/>
+ <text x="76" y="333" font-size="15" fill="#365caa">h_a、h_b   输入数组</text>
+ <text x="688" y="333" font-size="15" fill="#365caa">d_a、d_b   输入数组</text>
+ <rect x="60" y="361" width="228" height="35" rx="7" fill="#eaf6f2"/>
+ <rect x="672" y="361" width="228" height="35" rx="7" fill="#eaf6f2"/>
+ <text x="76" y="384" font-size="15" fill="#197566">h_c          返回结果</text>
+ <text x="688" y="384" font-size="15" fill="#197566">d_c          计算结果</text>
+ <text x="480" y="262" text-anchor="middle" font-size="13" fill="#6b788b">主机—设备互联（如 PCIe）</text>
+ <path d="M334 334H626" stroke="#4169bc" stroke-width="2.2" marker-end="url(#blue)"/>
+ <text x="480" y="316" text-anchor="middle" font-size="16" font-weight="600" fill="#365caa">H2D · 输入送入 GPU</text>
+ <path d="M626 387H334" stroke="#188777" stroke-width="2.2" marker-end="url(#green)"/>
+ <text x="480" y="369" text-anchor="middle" font-size="16" font-weight="600" fill="#197566">D2H · 结果返回主机</text>
+ <text x="480" y="466" text-anchor="middle" font-size="13" fill="#637186">虚线表示任务提交，实线表示数据流；启动 kernel 不等于复制数组。</text>
+</g>
+</svg>

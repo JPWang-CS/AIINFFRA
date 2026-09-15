@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="266" viewBox="0 0 960 266" role="img" aria-labelledby="title desc">
+<title id="title">MoE 的任务展开与合并</title>
+<desc id="desc">输入 T 个 token，经路由与重排展开为 T 乘 k 条专家任务，按专家分组计算，再按原 token 加权合并为 T 行输出。</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M1 1L9 5L1 9" fill="none" stroke="#6d849e" stroke-width="1.6"/></marker></defs>
+<rect width="960" height="266" rx="16" fill="#fff"/>
+<g font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif">
+<text x="24" y="35" font-size="13" fill="#728198" letter-spacing="1">MoE · 行的数量与含义如何变化</text>
+<g stroke="#d5dfeb" fill="#f3f6fc"><rect x="24" y="61" width="192" height="151" rx="13"/><rect x="264" y="61" width="192" height="151" rx="13"/><rect x="504" y="61" width="192" height="151" rx="13"/></g>
+<rect x="744" y="61" width="192" height="151" rx="13" fill="#edf7f2" stroke="#cfe5d9"/>
+<g fill="#2a4162" font-size="20" font-weight="600" text-anchor="middle"><text x="120" y="97">输入 token</text><text x="360" y="97">路由与重排</text><text x="600" y="97">专家计算</text><text x="840" y="97">加权合并</text></g>
+<g fill="#566e8c" font-size="17" text-anchor="middle"><text x="120" y="137">T × D</text><text x="360" y="137">T × k 条任务</text><text x="600" y="137">每组 Mₑ × D</text><text x="840" y="137">T × D</text></g>
+<g fill="#6a7d94" font-size="13" text-anchor="middle"><text x="120" y="177">原 token 顺序</text><text x="360" y="177">保留编号、槽位与权重</text><text x="600" y="177">同一专家的行连续</text><text x="840" y="177">恢复原 token 顺序</text></g>
+<g fill="none" stroke="#6d849e" stroke-width="1.8" marker-end="url(#arrow)"><path d="M226 136H252"/><path d="M466 136H492"/><path d="M706 136H732"/></g>
+<text x="480" y="246" text-anchor="middle" font-size="13" fill="#667a92">不丢弃路由时，专家任务总数为 T × k；它不同于输入 token 数。</text>
+</g></svg>

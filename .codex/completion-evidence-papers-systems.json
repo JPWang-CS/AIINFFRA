@@ -1,0 +1,197 @@
+{
+  "scope": {
+    "formal_lessons": [
+      "roadmap/curriculum/papers/deepseek-v41.md",
+      "roadmap/curriculum/papers/inference-workloads.md",
+      "roadmap/curriculum/systems/README.md"
+    ],
+    "examples_added": [
+      "roadmap/curriculum/papers/examples/v41_tensor_walkthrough.py",
+      "roadmap/curriculum/papers/examples/v41_engram_state.py",
+      "roadmap/curriculum/papers/examples/workload_lifecycle.py"
+    ],
+    "status": "teaching content and CPU/static checks completed; no user experiment or device result added"
+  },
+  "sources": [
+    {
+      "topic": "DeepSeek-V4.1-Flash author reference implementation",
+      "repository": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash",
+      "revision": "dba1be0a40aa45a94ad051997016db3960a90277",
+      "revision_policy": "fixed as requested",
+      "paths": [
+        {
+          "path": "inference/model.py",
+          "use": "CED/CSA2 teaching context; Engram embedding/gate shapes; HF Minimal hc_pre/hc_post; DSpark draft and Markov-head boundaries"
+        },
+        {
+          "path": "inference/engram.py",
+          "use": "token normalization map, deterministic multipliers, prime bucket layout, DEAD/pad boundaries, chunked Prefill/Decode hash state"
+        },
+        {
+          "path": "inference/image_processor.py",
+          "use": "RGB preprocessing, resize/token budget, patch-grid creation, image span expansion and token types"
+        },
+        {
+          "path": "inference/vision.py",
+          "use": "patch projection, bidirectional ViT attention, 2D RoPE, aligner unshuffle and projector tensor order"
+        },
+        {
+          "path": "inference/kernel.py",
+          "use": "pinned source path confirmed; existing article's FP4 in-place quantize/dequantize boundary retained"
+        },
+        {
+          "path": "inference/config.json",
+          "use": "matching reference configuration locator"
+        },
+        {
+          "path": "inference/generate.py",
+          "use": "generation/reference directory boundary"
+        },
+        {
+          "path": "inference/README.md",
+          "use": "directory and reference implementation scope"
+        }
+      ],
+      "access_mode": "read-only public source inspection; no downloaded Python was executed"
+    },
+    {
+      "topic": "DeepGEMM Mega mHC production path",
+      "repository": "https://github.com/deepseek-ai/DeepGEMM",
+      "revision": "78b69000794d0937b47ae3387eff7663410264d1",
+      "revision_basis": "main agent queried and confirmed the official GitHub API endpoint /repos/deepseek-ai/DeepGEMM/commits/main; the immutable commit tree and API files were then inspected read-only",
+      "revision_check_url": "https://api.github.com/repos/deepseek-ai/DeepGEMM/commits/main",
+      "paths": [
+        "csrc/apis/mega_mhc.hpp",
+        "csrc/jit_kernels/impls/sm100_mega_mhc.hpp",
+        "deep_gemm/include/deep_gemm/impls/sm100_mega_mhc.cuh",
+        "deep_gemm/include/deep_gemm/layout/mega_mhc.cuh",
+        "deep_gemm/include/deep_gemm/scheduler/mega_mhc.cuh",
+        "deep_gemm/include/deep_gemm/epilogue/sm100_mega_mhc.cuh",
+        "tests/test_mega_mhc.py"
+      ],
+      "axis_cross_check": "the SM100 implementation flattens comb_idx as input_route_idx * kNumRoutes + output_route_idx, multiplies residual[input_route_idx], and accumulates output_route_idx; test_mega_mhc.py compares outputs with ref_mhc.mhc_reference and baseline",
+      "boundary": "API/kernel source paths were read-only inspected and are cited as distinct from HF Minimal hc_pre/hc_post; no local compilation, test, or SM100 execution is claimed"
+    },
+    {
+      "topic": "openPangu-2.0-Flash official HF configuration/model declaration",
+      "repository": "https://huggingface.co/openpangu/openPangu-2.0-Flash",
+      "revision": "510b2395075d6107985d74311d777e99e7564f13",
+      "paths": [
+        "config.json",
+        "configuration_openpangu_v2.py",
+        "README.md"
+      ],
+      "deployment_pair": "https://gitcode.com/ascend-tribe/openPangu-2.0-Infer, tools/ansible/92B, 1P1D example",
+      "modeling_source_status": "the accessible HF config and GitCode deployment records do not provide the matching versioned adapter body; see the bounded omni_npu_source_discovery record",
+      "boundary": "the accessible official sources did not provide a matching OpenPangu 2.0 adapter body; do not infer backend from config/deployment YAML and do not conclude that the implementation is unpublished"
+    },
+    {
+      "topic": "openPangu-2.0-Pro official HF configuration/model declaration",
+      "repository": "https://huggingface.co/openpangu/openPangu-2.0-Pro",
+      "revision": "6619c11f420ea5e2dfacf2438a81026302d873bb",
+      "paths": [
+        "config.json",
+        "configuration_openpangu_v2.py",
+        "README.md"
+      ],
+      "deployment_pair": "https://gitcode.com/ascend-tribe/openPangu-2.0-Infer, tools/ansible/505B, 2P1D example",
+      "modeling_source_status": "the accessible HF config and GitCode deployment records do not provide the matching versioned adapter body; see the bounded omni_npu_source_discovery record",
+      "boundary": "the accessible official sources did not provide a matching OpenPangu 2.0 adapter body; do not infer backend from config/deployment YAML and do not conclude that the implementation is unpublished"
+    },
+    {
+      "topic": "openPangu-2.0 inference deployment guide",
+      "repository": "https://gitcode.com/ascend-tribe/openPangu-2.0-Infer",
+      "revision": "main as observed during this task; operators must pin a commit for an actual deployment",
+      "paths": [
+        "README_EN.md",
+        "components/omni-npu (empty or missing under visible main commit 5ddd125e)",
+        "tools/ansible/92B/omni_infer_inventory_used_for_1P1D.yml",
+        "tools/ansible/92B/omni_infer_server_template_performance1P1D_92B_bf16_open.yml",
+        "tools/ansible/505B/omni_infer_inventory_used_for_2P1D.yml",
+        "tools/ansible/505B/omni_infer_server_template_performance2P1D_505B_bf16_open.yml"
+      ],
+      "boundary": "README_EN specifies omni-npu 0.2.0, vllm 0.14.0+empty and image release_1.2.1.post1-202607241407-vllm; its run_docker warning and host-nginx effects are reflected in the lesson, but no container was run"
+    },
+    {
+      "topic": "omni-npu implementation availability check",
+      "repository": "https://gitee.com/omniai/omni-npu.git",
+      "public_locator": "Gitee org repository metadata describes omni-npu as an out-of-tree vLLM platform plugin for Ascend/torch_npu",
+      "references": [
+        "https://gitcode.com/ascend-tribe/openPangu-2.0-Infer/tree/main/components/omni-npu",
+        "https://gitee.com/omniai/omni-npu/issues/IK3T6D"
+      ],
+      "attempts": [
+        "GitCode openPangu-2.0-Infer/components/omni-npu was inspected at visible main commit 5ddd125e; page states the path is empty or does not exist",
+        "Gitee omni-npu repository root/raw access was attempted and timed out or was rejected; an official Gitee issue page marks repository contents as risk-restricted and unavailable to external members",
+        "openPangu-2.0-Infer README_EN points to the preinstalled omni-npu package and instructs locating it inside the image before modifying code; the image/package was not retrieved or inspected",
+        "a read-only importlib.metadata.distribution locator was added to the lesson for use inside an authorized matching container; it does not import the device module and was not executed here"
+      ],
+      "disposition": "the matching adapter source for image dependency version 0.2.0 was not obtained from accessible sources; this is an access/version-mapping boundary, not a claim that the code is unpublished or binary-only",
+      "locator_snippet": "README lesson documents importlib.metadata.distribution('omni-npu') to inspect version/files/locate_file inside an authorized matching container; snippet is read-only and was not executed here",
+      "no_execution": true
+    }
+  ],
+  "local_pdf_evidence": [
+    {
+      "file": "downloads/DeepSeek_V41_Tech_Report.pdf",
+      "pages": 51,
+      "relevant_pages_one_based": [
+        "6-8: architecture overview and CED/CSA2 context",
+        "12-14: candidate restriction, Single-Pass mHC, Engram, DSpark and Markov drafting",
+        "17-18: training communication, shadow replicas and gradient aggregation",
+        "22-23: vision path and multimodal data",
+        "26: task/environment construction and asynchronous post-training context",
+        "31-32: checkpoint-spanning samples and routing replay context"
+      ],
+      "method": "pypdf text extraction and keyword page scan; pages 13-14 rendered with Poppler and visually inspected"
+    },
+    {
+      "file": "downloads/大模型推理实践.pdf",
+      "pages": 84,
+      "relevant_pages_one_based": [
+        "24-32: RL/rollout, behavior probabilities, grouping and weight synchronization",
+        "57-61: speculative decoding, candidate verification and KV considerations",
+        "64-74: system and openPangu-2.0 context",
+        "75-84: agent/tool waits, scheduling and long-task context"
+      ],
+      "method": "pypdf text extraction across pages with keyword-indexed excerpts; no performance number from this PDF was added as a new measured result"
+    }
+  ],
+  "verification": {
+    "cpu_commands": [
+      {
+        "command": "python -B -X utf8 roadmap/curriculum/papers/examples/v41_tensor_walkthrough.py",
+        "result": "PASS: visual tensor shapes/order plus mHC pre [d], post [n,d], and asymmetric comb source/destination transpose"
+      },
+      {
+        "command": "python -B -X utf8 roadmap/curriculum/papers/examples/v41_engram_state.py",
+        "result": "PASS: tokenizer-map example, chunked hash state, image boundary, lookup, HF Minimal signed-root gate with synthetic gamma weights, prefetch wait"
+      },
+      {
+        "command": "python -B -X utf8 roadmap/curriculum/papers/examples/workload_lifecycle.py",
+        "result": "PASS: out-of-order rollout grouping, old logp identity, candidate commit/rollback, tool barrier, KV version"
+      },
+      {
+        "command": "python -B -X utf8 roadmap/curriculum/papers/examples/v41_checks.py",
+        "result": "PASS: existing candidate, acceptance, load, toy hash, Sinkhorn, effort and payload checks"
+      },
+      {
+        "command": "python -B -X utf8 roadmap/curriculum/systems/examples/pangu_embedded7b_ledger.py",
+        "result": "PASS: existing CPU-only Embedded-7B shape, weight and KV arithmetic checks"
+      }
+    ],
+    "markdown_static": {
+      "display_math_delimiters": "all $$ lines are standalone and each target file has an even delimiter count",
+      "fenced_blocks": "all triple-tilde fence counts are even",
+      "trailing_whitespace": "none found in the three formal lesson files",
+      "local_source_links": "no Markdown hyperlinks to .py or .cu files; ordinary systems previous/next chapter links remain"
+    },
+    "git_diff_check": "no whitespace errors reported for tracked portions; target lesson files were pre-existing untracked files, so static line checks were also used"
+  },
+  "limits": [
+    "No CUDA compiler, PyTorch runtime, NVIDIA GPU, or Ascend 910C service was available in this workspace; no device correctness, compilation, profiler, throughput, or inference smoke result is claimed.",
+    "No model weights, tokenizer checkpoint, production Engram table, remote image/code execution, or actual RDMA transfer was used.",
+    "CPU examples use synthetic values and validate shapes, state transitions, and arithmetic only; they are not reproductions of author kernels or production trajectories.",
+    "The matching openPangu 2.0 omni-npu 0.2.0 adapter source was not accessible from the public GitCode tree or restricted Gitee code page; the container was not inspected, so this does not establish that the implementation is unpublished or binary-only."
+  ]
+}

@@ -121,7 +121,7 @@ correctness:
 
 一次只改变一个变量，例如 tile、`num_warps`、stages、fusion、bucket size、parallel degree。
 
-普通算子完成一次有证据的瓶颈定位即可；MatMul、Softmax/Norm、FlashAttention、Fused MLP/GQA 四类性能锚点继续执行 [P0–P8 极致性能阶梯](gpu-foundations.md#32-核心算子的极致性能阶梯)。每次改动必须记录“硬件假设 → 代码旋钮 → 预期 counter → 实测”，不能只保存 autotune 最优参数。
+普通算子完成一次有证据的瓶颈定位即可；核心锚点按[第三篇完整优化阶段](curriculum/performance/README.md)推进，覆盖GEMM、Reduction/Norm、Fused MLP、Prefill/Decode Attention、Quantized GEMM和MoE Grouped GEMM。每次改动必须记录“硬件假设 → 代码旋钮 → 预期 counter → 实测”，不能只保存autotune最优参数。
 
 | 场景 | 工具 | 至少回答 |
 |------|------|----------|
@@ -188,11 +188,11 @@ single process -> single GPU -> single-node multi-GPU
 ### 4.3 论文卡
 
 ```text
-inbox -> relevance triage -> attach to current PATH node
--> reproduce one claim/figure -> one-page note -> interview statement
+inbox → relevance triage → 速读/精读/精读+代码
+→ 关键公式与作者代码映射 → 论文笔记 → 1分钟/5分钟回答
 ```
 
-论文不因“进入 inbox”算已学；只有产生可验证输出才改变状态。
+论文线独立于实践线，不要求挂载当前算子，也不默认复现实验；只有用户明确选择复现时才生成实践任务。进入inbox不算已学。
 
 ---
 
@@ -214,16 +214,8 @@ scripts/       抓取、验证、benchmark 辅助工具
 
 ---
 
-## 6. 当前主线如何使用本流程
+## 6. 当前如何使用本流程
 
-当前仍是 Triton MatMul：
+实践线当前完成Triton Softmax服务器闭环：平台原始代码已`LEETGPU_PASS`，下一门槛是RTX3090二维row-wise正确性、ms、effective GB/s和证据归档。随后学习[第一篇GPU硬件与性能基础](curriculum/gpu/README.md)，从硬件总图开始，逐章绑定已有算子做最小实验。
 
-1. S0：写清 FP32 row-major 题面、FLOPs 与误差。
-2. S1：只学 program mapping、K tiling、`tl.dot`、mask。
-3. S2：从空文件做单 tile，再加 K loop。
-4. S3：LeetGPU #02 通过。
-5. S4：RTX 3090 记录至少 3 组 tile/`num_warps` 与 GFLOPS。
-6. S5：解释最快/最慢配置的资源和数据复用差异。
-7. S6：代码、表格、失败案例、1 分钟口径入库。
-
-GPU 架构补强按 [gpu-foundations.md](gpu-foundations.md) 挂载；不会另开一条并行大计划。
+论文线当前阅读MLA，按独立论文卡完成公式、数据流、作者关键代码和回答能力，不要求同步实现kernel。

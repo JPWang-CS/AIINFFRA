@@ -1,0 +1,112 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Triton vs CUDA 深度对比 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · notes/triton/triton-vs-cuda.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E7%BC%96%E7%A8%8B%E6%A8%A1%E5%9E%8B%E5%AF%B9%E6%AF%94">编程模型对比</a></li><li><a href="#cuda-%E4%BD%A0%E7%AE%A1%E4%B8%80%E5%88%87">CUDA: 你管一切</a></li><li><a href="#triton-%E4%BD%A0%E5%8F%AA%E7%AE%A1-block-%E9%80%BB%E8%BE%91">Triton: 你只管 block 逻辑</a></li><li><a href="#%E6%A0%B8%E5%BF%83%E5%B7%AE%E5%BC%82%E4%B8%80%E8%A7%88">核心差异一览</a></li><li><a href="#%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E7%94%A8%E5%93%AA%E4%B8%AA">什么时候用哪个</a></li><li><a href="#%E5%AD%A6%E4%B9%A0%E8%B7%AF%E5%BE%84">学习路径</a></li><li><a href="#%E9%9D%A2%E8%AF%95%E8%A6%81%E7%82%B9">面试要点</a></li></ol></nav><div class="markdown-body"><h1 id="triton-vs-cuda-深度对比">Triton vs CUDA 深度对比<a class="heading-anchor" href="#triton-vs-cuda-%E6%B7%B1%E5%BA%A6%E5%AF%B9%E6%AF%94" aria-label="链接到Triton vs CUDA 深度对比">#</a></h1>
+<p><em>Triton 阶段笔记（算子线 B）</em></p>
+<hr>
+<h2 id="编程模型对比">编程模型对比<a class="heading-anchor" href="#%E7%BC%96%E7%A8%8B%E6%A8%A1%E5%9E%8B%E5%AF%B9%E6%AF%94" aria-label="链接到编程模型对比">#</a></h2>
+<h3 id="cuda-你管一切">CUDA: 你管一切<a class="heading-anchor" href="#cuda-%E4%BD%A0%E7%AE%A1%E4%B8%80%E5%88%87" aria-label="链接到CUDA: 你管一切">#</a></h3>
+<div class="code-panel"><div class="code-caption"><span>CUDA</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cuda"><span class="code-line" data-line="1">__global__ void vec_add(const float *a, const float *b, float *c, int n) {</span>
+<span class="code-line" data-line="2">    int idx = blockIdx.x * blockDim.x + threadIdx.x;  // 手动算全局索引</span>
+<span class="code-line" data-line="3">    int stride = blockDim.x * gridDim.x;              // 手动做 grid-stride loop</span>
+<span class="code-line" data-line="4">    for (int i = idx; i &lt; n; i += stride) {</span>
+<span class="code-line" data-line="5">        c[i] = a[i] + b[i];</span>
+<span class="code-line" data-line="6">    }</span>
+<span class="code-line" data-line="7">}</span>
+<span class="code-line" data-line="8">// 你还得操心：</span>
+<span class="code-line" data-line="9">// - grid/block 大小设置多少？</span>
+<span class="code-line" data-line="10">// - shared memory 要不要用？</span>
+<span class="code-line" data-line="11">// - memory coalescing 满足吗？</span>
+<span class="code-line" data-line="12">// - bank conflict 有吗？</span>
+<span class="code-line" data-line="13">// - occupancy 够吗？</span></code></pre></div>
+<h3 id="triton-你只管-block-逻辑">Triton: 你只管 block 逻辑<a class="heading-anchor" href="#triton-%E4%BD%A0%E5%8F%AA%E7%AE%A1-block-%E9%80%BB%E8%BE%91" aria-label="链接到Triton: 你只管 block 逻辑">#</a></h3>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1"><span class="hljs-meta">@triton.jit</span></span>
+<span class="code-line" data-line="2"><span class="hljs-keyword">def</span> <span class="hljs-title function_">vec_add</span>(<span class="hljs-params">a_ptr, b_ptr, c_ptr, n, BLOCK: tl.constexpr</span>):</span>
+<span class="code-line" data-line="3">    pid = tl.program_id(<span class="hljs-number">0</span>)                    <span class="hljs-comment"># block ID</span></span>
+<span class="code-line" data-line="4">    offsets = pid * BLOCK + tl.arange(<span class="hljs-number">0</span>, BLOCK)  <span class="hljs-comment"># 元素偏移</span></span>
+<span class="code-line" data-line="5">    mask = offsets &lt; n</span>
+<span class="code-line" data-line="6">    a = tl.load(a_ptr + offsets, mask=mask)      <span class="hljs-comment"># 编译器决定怎么 load</span></span>
+<span class="code-line" data-line="7">    b = tl.load(b_ptr + offsets, mask=mask)</span>
+<span class="code-line" data-line="8">    tl.store(c_ptr + offsets, a + b, mask=mask)  <span class="hljs-comment"># 编译器决定怎么 store</span></span>
+<span class="code-line" data-line="9"><span class="hljs-comment"># 编译器自动处理：</span></span>
+<span class="code-line" data-line="10"><span class="hljs-comment"># - thread 分配</span></span>
+<span class="code-line" data-line="11"><span class="hljs-comment"># - shared memory 使用</span></span>
+<span class="code-line" data-line="12"><span class="hljs-comment"># - memory coalescing</span></span>
+<span class="code-line" data-line="13"><span class="hljs-comment"># - autotuning 搜索最优 BLOCK 大小</span></span></code></pre></div>
+<h2 id="核心差异一览">核心差异一览<a class="heading-anchor" href="#%E6%A0%B8%E5%BF%83%E5%B7%AE%E5%BC%82%E4%B8%80%E8%A7%88" aria-label="链接到核心差异一览">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>CUDA</th>
+<th>Triton</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>编程粒度</td>
+<td>Thread-level</td>
+<td>Block-level（tile）</td>
+</tr>
+<tr>
+<td>索引</td>
+<td>手动计算 threadIdx + blockIdx</td>
+<td><code>tl.program_id()</code> + <code>tl.arange()</code></td>
+</tr>
+<tr>
+<td>内存</td>
+<td>显式 <code>__shared__</code> / register</td>
+<td>编译器推断</td>
+</tr>
+<tr>
+<td>同步</td>
+<td><code>__syncthreads()</code></td>
+<td>隐式，block 边界自动同步</td>
+</tr>
+<tr>
+<td>优化</td>
+<td>手调 tile size, occupancy, bank conflict</td>
+<td>Autotuning</td>
+</tr>
+<tr>
+<td>调试</td>
+<td>Nsight Compute / printf</td>
+<td>较难（编译器中间层不透明）</td>
+</tr>
+<tr>
+<td>性能上限</td>
+<td>理论最优</td>
+<td>~90-95% 手写 CUDA</td>
+</tr>
+<tr>
+<td>可移植性</td>
+<td>NVIDIA only</td>
+<td>理论上可扩展（MLIR 后端）</td>
+</tr>
+</tbody></table>
+<h2 id="什么时候用哪个">什么时候用哪个<a class="heading-anchor" href="#%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E7%94%A8%E5%93%AA%E4%B8%AA" aria-label="链接到什么时候用哪个">#</a></h2>
+<p><strong>用 Triton（90% 的场景）</strong>：</p>
+<ul>
+<li>ML kernel（attention、MLP、norm、embedding）</li>
+<li>需要快速迭代，不追求极致性能</li>
+<li>融合多个小操作（element-wise + matmul）</li>
+<li>PyTorch 生态内</li>
+</ul>
+<p><strong>用 CUDA（10% 的场景）</strong>：</p>
+<ul>
+<li>需要精细控制 warp-level 操作（shuffle、ballot）</li>
+<li>对 occupancy / register pressure 有极致要求</li>
+<li>需要用到 Triton 不支持的特性（dynamic parallelism、texture memory）</li>
+<li>写底层通信库（NCCL 类）</li>
+</ul>
+<h2 id="学习路径">学习路径<a class="heading-anchor" href="#%E5%AD%A6%E4%B9%A0%E8%B7%AF%E5%BE%84" aria-label="链接到学习路径">#</a></h2>
+<ol>
+<li>先用 Triton 写熟悉的算子（matmul, softmax）</li>
+<li>用 <code>tl.constexpr</code> 和 autotuning 探索不同 tile size 的性能影响</li>
+<li>对比 CUDA 版本的性能，理解差距来源</li>
+<li>看 Triton 生成的 MLIR/PTX，理解编译器做了什么</li>
+</ol>
+<h2 id="面试要点">面试要点<a class="heading-anchor" href="#%E9%9D%A2%E8%AF%95%E8%A6%81%E7%82%B9" aria-label="链接到面试要点">#</a></h2>
+<p>面试中 Triton 相关的高频问题：</p>
+<ul>
+<li>&quot;Triton 的编程模型和 CUDA 有什么本质区别？&quot; → block-level vs thread-level</li>
+<li>&quot;Triton 如何保证 memory coalescing？&quot; → 编译器根据 access pattern 自动分配 thread 到连续地址</li>
+<li>&quot;Triton 的 autotuning 做了什么？&quot; → 网格搜索 tile size + num_warps + num_stages</li>
+</ul>
+</div></main><script src="../../../reader.js"></script></body></html>

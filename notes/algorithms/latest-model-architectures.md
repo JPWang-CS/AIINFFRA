@@ -14,7 +14,7 @@
 4. [Attention 家族：MHA / MQA / GQA / MLA](#4-attention-家族)
 5. [FFN 与 MoE](#5-ffn-与-moe)
 6. [SSM / Mamba 与混合架构](#6-ssm--mamba-与混合架构)
-7. [现代模型常见“新零件”](#7-现代模型常见新零件)
+7. [现代模型常见“新零件”](#7-现代模型常见新零件的实现影响)
 8. [KV cache 深挖](#8-kv-cache-深挖)
 9. [模型家族地图](#9-模型家族地图)
 10. [用 HuggingFace config 解码模型](#10-用-huggingface-config-解码模型)

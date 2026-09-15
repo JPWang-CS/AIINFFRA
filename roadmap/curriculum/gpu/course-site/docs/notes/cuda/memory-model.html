@@ -1,0 +1,296 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CUDA 内存层级详解 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · notes/cuda/memory-model.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#1-%E5%86%85%E5%AD%98%E5%B1%82%E7%BA%A7%E5%85%A8%E6%99%AF">1. 内存层级全景</a></li><li><a href="#%E5%90%84%E5%AD%98%E5%82%A8%E5%B1%82%E7%9A%84%E5%A4%A7%E5%B0%8F%E5%92%8C%E5%BB%B6%E8%BF%9F%E5%8F%82%E8%80%83-a100">各存储层的大小和延迟参考 (A100)</a></li><li><a href="#2-global-memory--%E4%BD%A0%E7%9A%84%E6%95%B0%E6%8D%AE%E9%BB%98%E8%AE%A4%E4%BD%8F%E5%9C%A8%E8%BF%99%E9%87%8C">2. Global Memory — 你的数据默认住在这里</a></li><li><a href="#21-%E5%B8%A6%E5%AE%BD%E5%92%8C%E5%BB%B6%E8%BF%9F">2.1 带宽和延迟</a></li><li><a href="#22-memory-coalescing%E5%90%88%E5%B9%B6%E8%AE%BF%E9%97%AE-%E9%9D%A2%E8%AF%95">2.2 Memory Coalescing（合并访问）— [面试]</a></li><li><a href="#23-%E5%AF%B9%E9%BD%90%E8%A6%81%E6%B1%82">2.3 对齐要求</a></li><li><a href="#3-shared-memory--%E4%BD%A0%E7%9A%84%E6%89%8B%E5%8A%A8%E7%BC%93%E5%AD%98">3. Shared Memory — 你的手动缓存</a></li><li><a href="#31-%E4%B8%BA%E4%BB%80%E4%B9%88%E9%9C%80%E8%A6%81-shared-memory">3.1 为什么需要 Shared Memory</a></li><li><a href="#32-%E5%A3%B0%E6%98%8E%E5%92%8C%E4%BD%BF%E7%94%A8">3.2 声明和使用</a></li><li><a href="#33-shared-memory-bank-conflict">3.3 Shared Memory Bank Conflict</a></li><li><a href="#34-%E5%AE%B9%E9%87%8F%E9%99%90%E5%88%B6%E5%92%8C-occupancy-%E6%9D%83%E8%A1%A1">3.4 容量限制和 Occupancy 权衡</a></li><li><a href="#4-register-%E5%92%8C-occupancy">4. Register 和 Occupancy</a></li><li><a href="#41-register-%E5%88%86%E9%85%8D">4.1 Register 分配</a></li><li><a href="#42-register-spilling">4.2 Register Spilling</a></li><li><a href="#43-occupancy-%E8%AE%A1%E7%AE%97">4.3 Occupancy 计算</a></li><li><a href="#5-%E5%88%A4%E6%96%AD-memory-bound-vs-compute-bound">5. 判断 Memory Bound vs Compute Bound</a></li><li><a href="#51-%E7%94%A8-nsight-compute-%E5%88%A4%E6%96%AD">5.1 用 Nsight Compute 判断</a></li><li><a href="#52-%E6%89%8B%E6%8C%87%E7%AE%97%E6%B3%95roofline-model">5.2 手指算法（Roofline Model）</a></li></ol></nav><div class="markdown-body"><h1 id="cuda-内存层级详解">CUDA 内存层级详解<a class="heading-anchor" href="#cuda-%E5%86%85%E5%AD%98%E5%B1%82%E7%BA%A7%E8%AF%A6%E8%A7%A3" aria-label="链接到CUDA 内存层级详解">#</a></h1>
+<blockquote><p>理解 GPU 内存体系是算子优化的核心。本文覆盖内存层级、访问模式、常见问题和优化方法。
+速查 API → <a href="cuda-cheatsheet.html">cuda-cheatsheet.md</a></p>
+</blockquote><hr>
+<h2 id="1-内存层级全景">1. 内存层级全景<a class="heading-anchor" href="#1-%E5%86%85%E5%AD%98%E5%B1%82%E7%BA%A7%E5%85%A8%E6%99%AF" aria-label="链接到1. 内存层级全景">#</a></h2>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">快 ┌─────────────────────────────────────────────┐</span>
+<span class="code-line" data-line="2">   │ Register (255 × 32-bit / thread)            │  ~0 cycle，每个 thread 私有</span>
+<span class="code-line" data-line="3">   │  — 编译器自动分配，程序员不能直接控制          │</span>
+<span class="code-line" data-line="4">   │  — 太多变量 → spill 到 local memory (慢)     │</span>
+<span class="code-line" data-line="5">   ├─────────────────────────────────────────────┤</span>
+<span class="code-line" data-line="6">   │ L1 / Shared Memory (192 KB / SM on A100)    │  ~30 cycles，block 内共享</span>
+<span class="code-line" data-line="7">   │  — 程序员显式管理 (__shared__)                │</span>
+<span class="code-line" data-line="8">   │  — L1 cache 和 shared memory 共享同一片 SRAM │</span>
+<span class="code-line" data-line="9">   │  — 可配置比例（如 64KB shared + 128KB L1）    │</span>
+<span class="code-line" data-line="10">   ├─────────────────────────────────────────────┤</span>
+<span class="code-line" data-line="11">   │ L2 Cache (40 MB on A100)                    │  ~200 cycles，所有 SM 共享</span>
+<span class="code-line" data-line="12">   │  — 硬件自动管理                                │</span>
+<span class="code-line" data-line="13">   │  — 全局内存的缓存                               │</span>
+<span class="code-line" data-line="14">   ├─────────────────────────────────────────────┤</span>
+<span class="code-line" data-line="15">   │ Global Memory / HBM (80 GB on A100)         │  ~600 cycles，所有 SM 共享</span>
+<span class="code-line" data-line="16">   │  — 容量最大，延迟最高                           │</span>
+<span class="code-line" data-line="17">   │  — 程序员显式管理 (cudaMalloc)                  │</span>
+<span class="code-line" data-line="18">慢 └─────────────────────────────────────────────┘</span>
+<span class="code-line" data-line="19">       ↑ 还有 Constant Memory / Texture Memory（已过时，不展开）</span></code></pre></div>
+<blockquote><p><strong>Ascend 对照</strong>：</p>
+<ul>
+<li>Shared Memory ≈ L1 Buffer / Unified Buffer — 都是片上、程序员显式管理</li>
+<li>L2 Cache ≈ L2 Cache — 完全一致</li>
+<li>Global Memory ≈ HBM — 完全一致</li>
+<li>Register ≈ Ascend 的 L0 Buffer — 最快的存储层</li>
+<li>CUDA 缺少 Ascend 的 L0A/L0B/L0C 专用缓存层</li>
+</ul>
+</blockquote><h3 id="各存储层的大小和延迟参考-a100">各存储层的大小和延迟参考 (A100)<a class="heading-anchor" href="#%E5%90%84%E5%AD%98%E5%82%A8%E5%B1%82%E7%9A%84%E5%A4%A7%E5%B0%8F%E5%92%8C%E5%BB%B6%E8%BF%9F%E5%8F%82%E8%80%83-a100" aria-label="链接到各存储层的大小和延迟参考 (A100)">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>层级</th>
+<th>容量</th>
+<th>延迟</th>
+<th>带宽</th>
+<th>作用域</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Register</td>
+<td>256 KB/SM</td>
+<td>~0</td>
+<td>~8 TB/s</td>
+<td>1 thread</td>
+</tr>
+<tr>
+<td>Shared Memory</td>
+<td>164 KB/SM</td>
+<td>~30 cycles</td>
+<td>~1.5 TB/s</td>
+<td>1 block</td>
+</tr>
+<tr>
+<td>L1 Cache</td>
+<td>64 KB/SM</td>
+<td>~30 cycles</td>
+<td>~1.5 TB/s</td>
+<td>1 SM</td>
+</tr>
+<tr>
+<td>L2 Cache</td>
+<td>40 MB</td>
+<td>~200 cycles</td>
+<td>~4 TB/s</td>
+<td>全 GPU</td>
+</tr>
+<tr>
+<td>HBM</td>
+<td>40/80 GB</td>
+<td>~600 cycles</td>
+<td>~1.6/2.0 TB/s</td>
+<td>全 GPU</td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="2-global-memory--你的数据默认住在这里">2. Global Memory — 你的数据默认住在这里<a class="heading-anchor" href="#2-global-memory--%E4%BD%A0%E7%9A%84%E6%95%B0%E6%8D%AE%E9%BB%98%E8%AE%A4%E4%BD%8F%E5%9C%A8%E8%BF%99%E9%87%8C" aria-label="链接到2. Global Memory — 你的数据默认住在这里">#</a></h2>
+<h3 id="21-带宽和延迟">2.1 带宽和延迟<a class="heading-anchor" href="#21-%E5%B8%A6%E5%AE%BD%E5%92%8C%E5%BB%B6%E8%BF%9F" aria-label="链接到2.1 带宽和延迟">#</a></h3>
+<p>Global memory 是 GPU 上最大的存储，也是<strong>最慢的</strong>。一个 warp 发起一次 global memory 访问，要等 ~600 个时钟周期。在这段时间里，计算单元是空闲的——这就是为什么 naive kernel 往往受限于 memory。</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">A100 理论 HBM 带宽：~2.0 TB/s = 2000 GB/s</span>
+<span class="code-line" data-line="2">实际能达到的使用率：70-85%（优化好的 kernel）</span>
+<span class="code-line" data-line="3"></span>
+<span class="code-line" data-line="4">你的 kernel 如果只用了 50 GB/s 的 bandwidth，</span>
+<span class="code-line" data-line="5">意味着你在用 GPU 的 2.5% 的带宽能力。</span></code></pre></div>
+<h3 id="22-memory-coalescing合并访问-面试">2.2 Memory Coalescing（合并访问）— <code>[面试]</code><a class="heading-anchor" href="#22-memory-coalescing%E5%90%88%E5%B9%B6%E8%AE%BF%E9%97%AE-%E9%9D%A2%E8%AF%95" aria-label="链接到2.2 Memory Coalescing（合并访问）— [面试]">#</a></h3>
+<p><strong>这是 CUDA 最重要的内存优化概念之一。</strong></p>
+<p>规则：<strong>同一 warp 内的 32 个线程访问的地址，如果能落在 128B 对齐的连续区间内，GPU 会合并成一次 transaction。</strong></p>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-comment">// ❌ 非合并访问（stride = N）</span></span>
+<span class="code-line" data-line="2"><span class="hljs-comment">// 每个线程读一个元素，但地址间隔 N×4B，远大于 128B</span></span>
+<span class="code-line" data-line="3"><span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> k = <span class="hljs-number">0</span>; k &lt; K; k++) {</span>
+<span class="code-line" data-line="4">    sum += A[row * K + k] * B[k * N + col];</span>
+<span class="code-line" data-line="5">    <span class="hljs-comment">// B 的访问：thread 间 stride = N，非连续！</span></span>
+<span class="code-line" data-line="6">}</span>
+<span class="code-line" data-line="7"></span>
+<span class="code-line" data-line="8"><span class="hljs-comment">// ✅ 合并访问</span></span>
+<span class="code-line" data-line="9"><span class="hljs-comment">// thread 0→A[0], thread 1→A[1], thread 2→A[2] ... 连续！</span></span>
+<span class="code-line" data-line="10"><span class="hljs-type">float</span> val = A[idx];  <span class="hljs-comment">// idx 在每个 thread 中递增 1</span></span></code></pre></div>
+<p><strong>图示</strong></p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">Warp 内 32 个 thread 访问 global memory：</span>
+<span class="code-line" data-line="2"></span>
+<span class="code-line" data-line="3">✅ 合并访问（一次 128B transaction 覆盖）：</span>
+<span class="code-line" data-line="4">Thread:  0     1     2     3     ... 31</span>
+<span class="code-line" data-line="5">Addr:   0x00  0x04  0x08  0x0C  ... 0x7C   ← 128B 连续</span>
+<span class="code-line" data-line="6"></span>
+<span class="code-line" data-line="7">❌ 跨步访问（32 次 transaction，浪费带宽）：</span>
+<span class="code-line" data-line="8">Thread:  0     1     2     3     ... 31</span>
+<span class="code-line" data-line="9">Addr:   0x00  0x400 0x800 0xC00 ... 0xF400  ← 间隔 1KB</span></code></pre></div>
+<h3 id="23-对齐要求">2.3 对齐要求<a class="heading-anchor" href="#23-%E5%AF%B9%E9%BD%90%E8%A6%81%E6%B1%82" aria-label="链接到2.3 对齐要求">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>类型</th>
+<th>大小</th>
+<th>对齐</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>float, int</td>
+<td>4B</td>
+<td>4B</td>
+</tr>
+<tr>
+<td>float2, int2</td>
+<td>8B</td>
+<td>8B</td>
+</tr>
+<tr>
+<td>float4, int4</td>
+<td>16B</td>
+<td>16B</td>
+</tr>
+</tbody></table>
+<p>128B 对齐的起始地址 + 连续访问 = 最优。使用 <code>float4</code> 可以一次读 16B，减少 transaction 次数。</p>
+<blockquote><p><code>[面试]</code> 高频考题：给一个 kernel 的访问模式，判断是否 coalesced。</p>
+</blockquote><hr>
+<h2 id="3-shared-memory--你的手动缓存">3. Shared Memory — 你的手动缓存<a class="heading-anchor" href="#3-shared-memory--%E4%BD%A0%E7%9A%84%E6%89%8B%E5%8A%A8%E7%BC%93%E5%AD%98" aria-label="链接到3. Shared Memory — 你的手动缓存">#</a></h2>
+<h3 id="31-为什么需要-shared-memory">3.1 为什么需要 Shared Memory<a class="heading-anchor" href="#31-%E4%B8%BA%E4%BB%80%E4%B9%88%E9%9C%80%E8%A6%81-shared-memory" aria-label="链接到3.1 为什么需要 Shared Memory">#</a></h3>
+<p>Global memory latency 太高。如果你的数据需要重复读（比如 GEMM 中每个 block 多次读 A 的同一行），<strong>先把数据搬到 shared memory，在片上高速读</strong>。</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">GEMM 中不加 tiling：</span>
+<span class="code-line" data-line="2">  每个 C[i][j] 要从 global memory 读 K 次 A + K 次 B</span>
+<span class="code-line" data-line="3">  → K=1024 时，每个输出元素要忍受 2048 次 global memory 延迟</span>
+<span class="code-line" data-line="4"></span>
+<span class="code-line" data-line="5">GEMM 加 tiling（TILE=32）：</span>
+<span class="code-line" data-line="6">  先搬 32×32 的 A_tile 到 shared memory（所有 thread 合作搬）</span>
+<span class="code-line" data-line="7">  在 shared memory 上计算 32×32 的部分积</span>
+<span class="code-line" data-line="8">  → 每个元素从 global memory 搬运一次，计算复用 32 次</span></code></pre></div>
+<blockquote><p><strong>Ascend 对照</strong>：这和 Ascend 的 L1 Buffer tiling 完全一样——把大矩阵切开，小块搬进片上内存再计算。区别是 Ascend 有 pipe 机制做搬运和计算的流水，CUDA 需要手动调用 <code>__syncthreads()</code> 控制同步点。</p>
+</blockquote><h3 id="32-声明和使用">3.2 声明和使用<a class="heading-anchor" href="#32-%E5%A3%B0%E6%98%8E%E5%92%8C%E4%BD%BF%E7%94%A8" aria-label="链接到3.2 声明和使用">#</a></h3>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-comment">// 静态大小</span></span>
+<span class="code-line" data-line="2"><span class="hljs-function">__global__ <span class="hljs-type">void</span> <span class="hljs-title">kernel</span><span class="hljs-params">()</span> </span>{</span>
+<span class="code-line" data-line="3">    __shared__ <span class="hljs-type">float</span> tile[<span class="hljs-number">32</span>][<span class="hljs-number">32</span>];    <span class="hljs-comment">// 32×32 = 1024 floats = 4 KB</span></span>
+<span class="code-line" data-line="4">    </span>
+<span class="code-line" data-line="5">    <span class="hljs-comment">// 加载数据</span></span>
+<span class="code-line" data-line="6">    tile[threadIdx.y][threadIdx.x] = A[row * K + col];</span>
+<span class="code-line" data-line="7">    __syncthreads();  <span class="hljs-comment">// ⚠️ 必须！确保所有 thread 都写完了</span></span>
+<span class="code-line" data-line="8">    </span>
+<span class="code-line" data-line="9">    <span class="hljs-comment">// 使用数据</span></span>
+<span class="code-line" data-line="10">    <span class="hljs-type">float</span> val = tile[threadIdx.y][threadIdx.x];</span>
+<span class="code-line" data-line="11">    __syncthreads();  <span class="hljs-comment">// ⚠️ 要再次写入 tile 之前，确保所有 thread 用完</span></span>
+<span class="code-line" data-line="12">}</span></code></pre></div>
+<p><strong>为什么 <code>__syncthreads()</code> 必须？</strong></p>
+<ul>
+<li>同一 block 内的 thread 物理上不是同时执行——它们在不同的 warp 上</li>
+<li>你 thread(0,0) 写完 tile 时，thread(0,1) 可能还没开始写</li>
+<li><code>__syncthreads()</code> 是一个 barrier：所有 thread 在这里等，直到 block 内所有 thread 都到达</li>
+<li>相当于 Ascend 的 <code>block_sync()</code> / <code>pipe_barrier</code></li>
+</ul>
+<blockquote><p><code>[面试]</code> 经典错误：在条件分支里用 <code>__syncthreads()</code>。如果 block 内有些 thread 不经过这个分支，barrier 就会死等 → 需要确保所有 thread（或没有 thread）到达同一个 <code>__syncthreads</code>。</p>
+</blockquote><h3 id="33-shared-memory-bank-conflict">3.3 Shared Memory Bank Conflict<a class="heading-anchor" href="#33-shared-memory-bank-conflict" aria-label="链接到3.3 Shared Memory Bank Conflict">#</a></h3>
+<p>Shared memory 由 32 个 bank 组成，每个 bank 4B 宽。每个时钟周期，一个 bank 只能服务一个 thread。如果同一 warp 内的多个 thread 访问同一个 bank 的不同地址 → 串行化 → bank conflict。</p>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-comment">// 一个 bank 的宽度是 4B（一个 float）</span></span>
+<span class="code-line" data-line="2"><span class="hljs-comment">// 地址映射：bank = (addr / 4) % 32</span></span>
+<span class="code-line" data-line="3"></span>
+<span class="code-line" data-line="4"><span class="hljs-comment">// ✅ 无 bank conflict：连续访问不同 bank</span></span>
+<span class="code-line" data-line="5">tile[<span class="hljs-number">0</span>][<span class="hljs-number">0</span>], tile[<span class="hljs-number">0</span>][<span class="hljs-number">1</span>], tile[<span class="hljs-number">0</span>][<span class="hljs-number">2</span>], ... tile[<span class="hljs-number">0</span>][<span class="hljs-number">31</span>]</span>
+<span class="code-line" data-line="6"><span class="hljs-comment">// bank:   0,        1,        2,    ...       31</span></span>
+<span class="code-line" data-line="7"></span>
+<span class="code-line" data-line="8"><span class="hljs-comment">// ❌ 2-way bank conflict：stride = 16 导致 2 threads/bank</span></span>
+<span class="code-line" data-line="9">tile[<span class="hljs-number">0</span>][<span class="hljs-number">0</span>], tile[<span class="hljs-number">1</span>][<span class="hljs-number">0</span>], tile[<span class="hljs-number">2</span>][<span class="hljs-number">0</span>], ... tile[<span class="hljs-number">31</span>][<span class="hljs-number">0</span>]</span>
+<span class="code-line" data-line="10"><span class="hljs-comment">// 每 16 列卷回同一个 bank（32 × 4B = 128B → 32 banks × 4B，重复）</span></span>
+<span class="code-line" data-line="11"></span>
+<span class="code-line" data-line="12"><span class="hljs-comment">// ✅ 常见解法：padding</span></span>
+<span class="code-line" data-line="13">__shared__ <span class="hljs-type">float</span> tile[<span class="hljs-number">32</span>][<span class="hljs-number">33</span>];  <span class="hljs-comment">// 多一列，打破 stride=32 的周期</span></span>
+<span class="code-line" data-line="14"><span class="hljs-comment">// 此时 tile[i][0] 和 tile[i+1][0] 的 bank 不同</span></span></code></pre></div>
+<blockquote><p><code>[面试]</code> 高频题：给一个 shared memory 的访问 pattern，判断是几 way bank conflict，怎么解决。</p>
+</blockquote><h3 id="34-容量限制和-occupancy-权衡">3.4 容量限制和 Occupancy 权衡<a class="heading-anchor" href="#34-%E5%AE%B9%E9%87%8F%E9%99%90%E5%88%B6%E5%92%8C-occupancy-%E6%9D%83%E8%A1%A1" aria-label="链接到3.4 容量限制和 Occupancy 权衡">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>GPU</th>
+<th>Shared Memory per SM</th>
+<th align="center">最大 block 数/SM</th>
+<th>限制因素</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>T4</td>
+<td>64 KB (default)</td>
+<td align="center">16</td>
+<td>block 的 shared mem 用得多 → 并发 block 数减少</td>
+</tr>
+<tr>
+<td>A100</td>
+<td>164 KB (max)</td>
+<td align="center">32</td>
+<td></td>
+</tr>
+</tbody></table>
+<p><strong>Occupancy = active warps / max warps per SM</strong>。shared memory 用太多 → occupancy 下降 → 隐藏延迟的能力下降。需要在 tile size 和 occupancy 之间权衡。</p>
+<blockquote><p>这是 CUDA 特有的 trade-off，Ascend 没有 occupancy 这个概念。</p>
+</blockquote><hr>
+<h2 id="4-register-和-occupancy">4. Register 和 Occupancy<a class="heading-anchor" href="#4-register-%E5%92%8C-occupancy" aria-label="链接到4. Register 和 Occupancy">#</a></h2>
+<h3 id="41-register-分配">4.1 Register 分配<a class="heading-anchor" href="#41-register-%E5%88%86%E9%85%8D" aria-label="链接到4.1 Register 分配">#</a></h3>
+<p>每个 thread 的 local variable 默认放 register（编译器决定）。一个 SM 上的 register 总数是固定的（A100: 65536 × 32-bit）。</p>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-comment">// 这个 thread 用了多少 register？</span></span>
+<span class="code-line" data-line="2"><span class="hljs-comment">// 可以用 nvcc --ptxas-options=-v 或 ncu 查看</span></span>
+<span class="code-line" data-line="3"><span class="hljs-function">__global__ <span class="hljs-type">void</span> <span class="hljs-title">kernel</span><span class="hljs-params">()</span> </span>{</span>
+<span class="code-line" data-line="4">    <span class="hljs-type">float</span> a, b, c, d;  <span class="hljs-comment">// 4 registers</span></span>
+<span class="code-line" data-line="5">    <span class="hljs-type">float</span> arr[<span class="hljs-number">128</span>];    <span class="hljs-comment">// 128 registers（一般会 spill 到 local memory）</span></span>
+<span class="code-line" data-line="6">}</span></code></pre></div>
+<h3 id="42-register-spilling">4.2 Register Spilling<a class="heading-anchor" href="#42-register-spilling" aria-label="链接到4.2 Register Spilling">#</a></h3>
+<p>当 thread 需要的 register 超过硬件上限时，编译器会把溢出的变量放到 <strong>local memory</strong>（没错，local memory 其实在 HBM 上，非常慢）。</p>
+<div class="code-panel"><div class="code-caption"><span>BASH</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-bash"><span class="code-line" data-line="1"><span class="hljs-comment"># 编译时查看 register 用量</span></span>
+<span class="code-line" data-line="2">nvcc -Xptxas -v kernel.cu</span>
+<span class="code-line" data-line="3"><span class="hljs-comment"># 输出：Used 64 registers, 0 bytes spill stores</span></span>
+<span class="code-line" data-line="4"><span class="hljs-comment"># 如果 spill stores &gt; 0，说明有变量被挤出 HBM，要优化</span></span></code></pre></div>
+<h3 id="43-occupancy-计算">4.3 Occupancy 计算<a class="heading-anchor" href="#43-occupancy-%E8%AE%A1%E7%AE%97" aria-label="链接到4.3 Occupancy 计算">#</a></h3>
+<div class="equation"><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mtext>Occupancy</mtext><mo>=</mo><mfrac><mtext>active_warps_per_SM</mtext><mtext>max_warps_per_SM</mtext></mfrac></mrow><annotation encoding="application/x-tex">\text{Occupancy} = \frac{\text{active\_warps\_per\_SM}}{\text{max\_warps\_per\_SM}}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:0.8778em;vertical-align:-0.1944em;"></span><span class="mord text"><span class="mord">Occupancy</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:2.3793em;vertical-align:-0.996em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3833em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord text"><span class="mord">max_warps_per_SM</span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.7em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord text"><span class="mord">active_warps_per_SM</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.996em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span></span></div>
+<p>限制因素（取最紧的那个）：</p>
+<ol>
+<li>Register per thread：<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mtext>active_warps</mtext><mo>=</mo><mo stretchy="false">⌊</mo><mn>65536</mn><mtext>  </mtext><mi mathvariant="normal">/</mi><mtext>  </mtext><mo stretchy="false">(</mo><mtext>reg_per_thread</mtext><mo>×</mo><mn>32</mn><mo stretchy="false">)</mo><mo stretchy="false">⌋</mo></mrow><annotation encoding="application/x-tex">\text{active\_warps} = \lfloor 65536 \;/\; (\text{reg\_per\_thread} \times 32) \rfloor</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:0.9779em;vertical-align:-0.31em;"></span><span class="mord text"><span class="mord">active_warps</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:1.06em;vertical-align:-0.31em;"></span><span class="mopen">⌊</span><span class="mord">65536</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mord">/</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mopen">(</span><span class="mord text"><span class="mord">reg_per_thread</span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">32</span><span class="mclose">)⌋</span></span></span></span></li>
+<li>Shared memory per block：<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mtext>active_blocks</mtext><mo>=</mo><mo stretchy="false">⌊</mo><mtext>shmem_per_SM</mtext><mtext>  </mtext><mi mathvariant="normal">/</mi><mtext>  </mtext><mtext>shmem_per_block</mtext><mo stretchy="false">⌋</mo></mrow><annotation encoding="application/x-tex">\text{active\_blocks} = \lfloor \text{shmem\_per\_SM} \;/\; \text{shmem\_per\_block} \rfloor</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:1.0044em;vertical-align:-0.31em;"></span><span class="mord text"><span class="mord">active_blocks</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:1.06em;vertical-align:-0.31em;"></span><span class="mopen">⌊</span><span class="mord text"><span class="mord">shmem_per_SM</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mord">/</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mord text"><span class="mord">shmem_per_block</span></span><span class="mclose">⌋</span></span></span></span></li>
+<li>Max blocks per SM：hardware limit (A100 = 32)</li>
+</ol>
+<p>A100 例子：</p>
+<ul>
+<li>reg/thread = 64，shared/block = 32 KB，block_size = 256 (=8 warps)</li>
+<li>Register 限制：<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">⌊</mo><mn>65536</mn><mi mathvariant="normal">/</mi><mo stretchy="false">(</mo><mn>64</mn><mo>×</mo><mn>32</mn><mo stretchy="false">)</mo><mo stretchy="false">⌋</mo><mo>=</mo><mn>32</mn></mrow><annotation encoding="application/x-tex">\lfloor 65536 / (64 \times 32) \rfloor = 32</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">⌊</span><span class="mord">65536/</span><span class="mopen">(</span><span class="mord">64</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">32</span><span class="mclose">)⌋</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.6444em;"></span><span class="mord">32</span></span></span></span> warps = 4 blocks</li>
+<li>Shared mem 限制：<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">⌊</mo><mn>164</mn><mtext>KB</mtext><mi mathvariant="normal">/</mi><mn>32</mn><mtext>KB</mtext><mo stretchy="false">⌋</mo><mo>=</mo><mn>5</mn></mrow><annotation encoding="application/x-tex">\lfloor 164\text{KB} / 32\text{KB} \rfloor = 5</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">⌊</span><span class="mord">164</span><span class="mord text"><span class="mord">KB</span></span><span class="mord">/32</span><span class="mord text"><span class="mord">KB</span></span><span class="mclose">⌋</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.6444em;"></span><span class="mord">5</span></span></span></span> blocks</li>
+<li>Block 限制：max 32</li>
+<li>最终：<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>min</mi><mo>⁡</mo><mo stretchy="false">(</mo><mn>4</mn><mo separator="true">,</mo><mn>5</mn><mo separator="true">,</mo><mn>32</mn><mo stretchy="false">)</mo><mo>=</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">\min(4, 5, 32) = 4</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mop">min</span><span class="mopen">(</span><span class="mord">4</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">5</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">32</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.6444em;"></span><span class="mord">4</span></span></span></span> blocks = 32 warps</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mtext>Occupancy</mtext><mo>=</mo><mn>32</mn><mi mathvariant="normal">/</mi><mn>64</mn><mo>=</mo><mn>50</mn><mi mathvariant="normal">%</mi></mrow><annotation encoding="application/x-tex">\text{Occupancy} = 32/64 = 50\%</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:0.8778em;vertical-align:-0.1944em;"></span><span class="mord text"><span class="mord">Occupancy</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">32/64</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.8056em;vertical-align:-0.0556em;"></span><span class="mord">50%</span></span></span></span></li>
+</ul>
+<blockquote><p><strong>Ascend 对照</strong>：Ascend 没有 occupancy 概念，因为它的任务调度模型不同。但调 register/shared memory 用量来最大化并行度的思路是通用的。</p>
+</blockquote><hr>
+<h2 id="5-判断-memory-bound-vs-compute-bound">5. 判断 Memory Bound vs Compute Bound<a class="heading-anchor" href="#5-%E5%88%A4%E6%96%AD-memory-bound-vs-compute-bound" aria-label="链接到5. 判断 Memory Bound vs Compute Bound">#</a></h2>
+<h3 id="51-用-nsight-compute-判断">5.1 用 Nsight Compute 判断<a class="heading-anchor" href="#51-%E7%94%A8-nsight-compute-%E5%88%A4%E6%96%AD" aria-label="链接到5.1 用 Nsight Compute 判断">#</a></h3>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">关键指标：</span>
+<span class="code-line" data-line="2">- Memory Throughput / Peak Memory Bandwidth → 接近 100% = memory bound</span>
+<span class="code-line" data-line="3">- SM Utilization / Peak Compute Throughput → 接近 100% = compute bound</span></code></pre></div>
+<h3 id="52-手指算法roofline-model">5.2 手指算法（Roofline Model）<a class="heading-anchor" href="#52-%E6%89%8B%E6%8C%87%E7%AE%97%E6%B3%95roofline-model" aria-label="链接到5.2 手指算法（Roofline Model）">#</a></h3>
+<div class="equation"><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mtext>Arithmetic Intensity (AI)</mtext><mo>=</mo><mfrac><mtext>Total FLOPs</mtext><mtext>Total Bytes Moved</mtext></mfrac></mrow><annotation encoding="application/x-tex">\text{Arithmetic Intensity (AI)} = \frac{\text{Total FLOPs}}{\text{Total Bytes Moved}}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">Arithmetic Intensity (AI)</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:2.2519em;vertical-align:-0.8804em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3714em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord text"><span class="mord">Total Bytes Moved</span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord text"><span class="mord">Total FLOPs</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.8804em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span></span></div>
+<p>GEMM 例子：</p>
+<ul>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mo>=</mo><mi>N</mi><mo>=</mo><mi>K</mi><mo>=</mo><mn>1024</mn></mrow><annotation encoding="application/x-tex">M=N=K=1024</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.109em;">M</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.109em;">N</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.0715em;">K</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.6444em;"></span><span class="mord">1024</span></span></span></span>，FLOPs <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><mn>2.1</mn><mtext>G</mtext></mrow><annotation encoding="application/x-tex">= 2.1\text{G}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:0.3669em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.6833em;"></span><span class="mord">2.1</span><span class="mord text"><span class="mord">G</span></span></span></span></span>，Bytes <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><mo>∼</mo><mtext> ⁣</mtext><mn>12</mn><mtext> MB</mtext></mrow><annotation encoding="application/x-tex">= \sim\!12\text{ MB}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:0.3669em;"></span><span class="mrel">=∼</span><span class="mspace" style="margin-right:-0.1667em;"></span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.6833em;"></span><span class="mord">12</span><span class="mord text"><span class="mord"> MB</span></span></span></span></span></li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mtext>AI</mtext><mo>=</mo><mn>2.1</mn><mtext>G</mtext><mtext>  </mtext><mi mathvariant="normal">/</mi><mtext>  </mtext><mn>12</mn><mtext>M</mtext><mo>≈</mo><mn>175</mn><mtext> FLOP/byte</mtext></mrow><annotation encoding="application/x-tex">\text{AI} = 2.1\text{G} \;/\; 12\text{M} \approx 175 \text{ FLOP/byte}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:0.6833em;"></span><span class="mord text"><span class="mord">AI</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">2.1</span><span class="mord text"><span class="mord">G</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mord">/</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mord">12</span><span class="mord text"><span class="mord">M</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">175</span><span class="mord text"><span class="mord"> FLOP/byte</span></span></span></span></span></li>
+<li>A100: <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>312</mn><mtext> TFLOPS</mtext><mtext>  </mtext><mi mathvariant="normal">/</mi><mtext>  </mtext><mn>2000</mn><mtext> GB/s</mtext><mo>≈</mo><mn>156</mn><mtext> FLOP/byte</mtext></mrow><annotation encoding="application/x-tex">312 \text{ TFLOPS} \;/\; 2000 \text{ GB/s} \approx 156 \text{ FLOP/byte}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">312</span><span class="mord text"><span class="mord"> TFLOPS</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mord">/</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mord">2000</span><span class="mord text"><span class="mord"> GB/s</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">156</span><span class="mord text"><span class="mord"> FLOP/byte</span></span></span></span></span> ← 转折点</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mtext>AI</mtext><mo>&gt;</mo><mn>156</mn><mo>→</mo></mrow><annotation encoding="application/x-tex">\text{AI} &gt; 156 \to</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:0.7224em;vertical-align:-0.0391em;"></span><span class="mord text"><span class="mord">AI</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">&gt;</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.6444em;"></span><span class="mord">156</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">→</span></span></span></span> compute bound；<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mtext>AI</mtext><mo>&lt;</mo><mn>156</mn><mo>→</mo></mrow><annotation encoding="application/x-tex">\text{AI} &lt; 156 \to</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:0.7224em;vertical-align:-0.0391em;"></span><span class="mord text"><span class="mord">AI</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">&lt;</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.6444em;"></span><span class="mord">156</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">→</span></span></span></span> memory bound</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1024</mn><mo>×</mo><mn>1024</mn><mo>×</mo><mn>1024</mn></mrow><annotation encoding="application/x-tex">1024 \times 1024 \times 1024</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">1024</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">1024</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.6444em;"></span><span class="mord">1024</span></span></span></span> GEMM：<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mtext>AI</mtext><mo>=</mo><mn>175</mn><mo>&gt;</mo><mn>156</mn><mo>→</mo></mrow><annotation encoding="application/x-tex">\text{AI} = 175 &gt; 156 \to</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:0.6833em;"></span><span class="mord text"><span class="mord">AI</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.6835em;vertical-align:-0.0391em;"></span><span class="mord">175</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">&gt;</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.6444em;"></span><span class="mord">156</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">→</span></span></span></span> compute bound ✓</li>
+</ul>
+<p>Vector Add 例子：</p>
+<ul>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mo>=</mo><mn>1</mn><mtext>M</mtext></mrow><annotation encoding="application/x-tex">N=1\text{M}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.109em;">N</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.6833em;"></span><span class="mord">1</span><span class="mord text"><span class="mord">M</span></span></span></span></span>，FLOPs <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><mn>1</mn><mtext>M</mtext></mrow><annotation encoding="application/x-tex">= 1\text{M}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:0.3669em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.6833em;"></span><span class="mord">1</span><span class="mord text"><span class="mord">M</span></span></span></span></span>，Bytes <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><mn>12</mn><mtext> MB</mtext></mrow><annotation encoding="application/x-tex">= 12\text{ MB}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:0.3669em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.6833em;"></span><span class="mord">12</span><span class="mord text"><span class="mord"> MB</span></span></span></span></span></li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mtext>AI</mtext><mo>=</mo><mn>1</mn><mtext>M</mtext><mtext>  </mtext><mi mathvariant="normal">/</mi><mtext>  </mtext><mn>12</mn><mtext>M</mtext><mo>=</mo><mn>0.083</mn><mtext> FLOP/byte</mtext></mrow><annotation encoding="application/x-tex">\text{AI} = 1\text{M} \;/\; 12\text{M} = 0.083 \text{ FLOP/byte}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:0.6833em;"></span><span class="mord text"><span class="mord">AI</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">1</span><span class="mord text"><span class="mord">M</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mord">/</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mord">12</span><span class="mord text"><span class="mord">M</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">0.083</span><span class="mord text"><span class="mord"> FLOP/byte</span></span></span></span></span></li>
+<li>远远 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>&lt;</mo><mn>156</mn><mo>→</mo></mrow><annotation encoding="application/x-tex">&lt; 156 \to</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:0.5782em;vertical-align:-0.0391em;"></span><span class="mrel">&lt;</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.6444em;"></span><span class="mord">156</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">→</span></span></span></span> 严重 memory bound ✗</li>
+</ul>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1"></span>
+<span class="code-line" data-line="2">&gt; FLOPs 计算：乘加算 2 FLOP</span>
+<span class="code-line" data-line="3">&gt; Bytes 计算：A(读) + B(读) + C(写) = 3N × 4B = 12N bytes</span>
+<span class="code-line" data-line="4"></span>
+<span class="code-line" data-line="5">---</span>
+<span class="code-line" data-line="6"></span>
+<span class="code-line" data-line="7">## 6. 常见内存优化策略速查</span>
+<span class="code-line" data-line="8"></span>
+<span class="code-line" data-line="9">| 问题 | 症状 | 解法 |</span>
+<span class="code-line" data-line="10">|------|------|------|</span>
+<span class="code-line" data-line="11">| 非 coalesced 访问 | 低 bandwidth 利用率 | 调整 thread→数据映射，让同一 warp 访问连续地址 |</span>
+<span class="code-line" data-line="12">| 重复读 global memory | 高 latency，低 compute 利用率 | shared memory tiling |</span>
+<span class="code-line" data-line="13">| Bank conflict | Nsight 显示 shared memory 吞吐低 | padding（加一列）或重排访问模式 |</span>
+<span class="code-line" data-line="14">| Register spill | local memory 访问多 | 减少局部变量，拆分复杂表达式 |</span>
+<span class="code-line" data-line="15">| 低 occupancy | SM 上 active warp 太少 | 减小 shared memory 或 register 用量 |</span>
+<span class="code-line" data-line="16"></span>
+<span class="code-line" data-line="17">---</span>
+<span class="code-line" data-line="18"></span>
+<span class="code-line" data-line="19">## 相关文档</span>
+<span class="code-line" data-line="20"></span>
+<span class="code-line" data-line="21">| 文档 | 内容 |</span>
+<span class="code-line" data-line="22">|------|------|</span>
+<span class="code-line" data-line="23">| [cuda-cheatsheet.md](./cuda-cheatsheet.md) | API 速查、代码模板 |</span>
+<span class="code-line" data-line="24">| [warp-and-sync.md](./warp-and-sync.md) | Warp 调度、divergence、shuffle |</span>
+<span class="code-line" data-line="25">| [gpu-architecture.md](./gpu-architecture.md) | NVIDIA vs Da Vinci 架构对比 |</span></code></pre></div>
+</div></main><script src="../../../reader.js"></script></body></html>

@@ -1,0 +1,12 @@
+{
+  "name": "aiinffra-cuda-course",
+  "private": true,
+  "scripts": { "build": "node build.cjs", "check": "node check.cjs", "test:navigation": "node navigation.test.cjs", "test:papers": "node paper-reader.test.cjs", "test:fonts": "node font-anchor.test.cjs", "test:editorial": "node editorial-audit.cjs", "test:links": "node link-audit.cjs" },
+  "engines": { "node": "^22.22.2 || ^24.15.0 || >=26.0.0" },
+  "devDependencies": { "jsdom": "30.0.1" },
+  "dependencies": {
+    "marked": "18.0.12",
+    "katex": "0.18.7",
+    "highlight.js": "11.12.0"
+  }
+}

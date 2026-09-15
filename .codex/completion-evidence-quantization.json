@@ -1,0 +1,106 @@
+{
+  "scope": "roadmap/curriculum/operators/07-quantized-operators/README.md; roadmap/curriculum/operators/07-quantized-operators/examples (new files only); .codex/completion-evidence-quantization.json",
+  "status": "scope_complete",
+  "source_audit": {
+    "repository_rules": "AGENTS.md and HISTORY.md/PATH.md/NOW.md plus curriculum entrypoints read; PATH/NOW/HISTORY are read-only in this task",
+    "existing_chapter": "roadmap/curriculum/operators/07-quantized-operators/README.md; existing Mini Decoder reports random untrained weights and existing heldout numbers as pipeline-only demonstrations",
+    "existing_lab": "examples/quantization_lab.py awq_style_search and grouped INT4 helpers; examples/model_quantization_lab.py documents Mini Decoder's parallel shared-consumer topology",
+    "local_reference_mapping_review": "No standalone local markdown/source-path reference-mapping block exists in this chapter. The chapter retains stable previous/next navigation and its closing references now point only to a small set of official docs, primary papers and author repositories.",
+    "final_body_review": [
+      "Shell example uses one backslash per Bash continuation line.",
+      "Llama reference is a fixed Transformers v4.48.0 official model-doc entry; no chapter-end .py hyperlink remains.",
+      "Shared Llama inputs, consumer projections, shapes and fold actions are in a table rather than an ASCII topology drawing.",
+      "Mask hook cleanup uses inference_mode and try/finally; floating weight copy is guarded by no_grad.",
+      "Real calibration, manifest preflight, application and full harness appear inline with six source-check markers; full harness is inside details with its marker immediately after summary."
+    ],
+    "local_pdf": {
+      "file": "downloads/大模型推理实践.pdf",
+      "title": "第10章 量化与低比特推理",
+      "pages_1_based": {
+        "chapter_10_1": 53,
+        "chapter_10_2": 53,
+        "chapter_10_3": 54,
+        "chapter_10_4": 55
+      },
+      "read_method": "pypdf outline/text extraction plus Poppler render and visual inspection of pages 53-55",
+      "visual_review": "Content and diagrams are legible; Poppler emitted malformed-name-token warnings on these pages, but rendered text/figures were intact."
+    },
+    "official_sources": [
+      {
+        "topic": "Transformers AWQ loader and compatibility note",
+        "url": "https://huggingface.co/docs/transformers/quantization/awq",
+        "version_evidence": "live official documentation; page states AutoAWQ downgrades Transformers to 4.47.1; re-check runtime version when user executes"
+      },
+      {
+        "topic": "Transformers Auto Classes local loading",
+        "url": "https://huggingface.co/docs/transformers/model_doc/auto",
+        "version_evidence": "live official docs route checked; local_files_only prevents trying to download missing model files and trust_remote_code defaults to false; script records the installed runtime version"
+      },
+      {
+        "topic": "Transformers Llama architecture source",
+        "url": "https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/modeling_llama.py",
+        "version_evidence": "official main branch checked live, intentionally unpinned/moving; source shows separate q_proj/k_proj/v_proj, input_layernorm and post_attention_layernorm, RoPE after Q/K projections, residual additions, and tied lm_head key"
+      },
+      {
+        "topic": "Pinned Transformers Llama model documentation used in the chapter references",
+        "url": "https://huggingface.co/docs/transformers/v4.48.0/en/model_doc/llama",
+        "version_evidence": "official v4.48.0 documentation route; the live page identifies itself as v4.48.0 and notes newer docs separately"
+      },
+      {
+        "topic": "Transformers official quantization API",
+        "url": "https://huggingface.co/docs/transformers/main_classes/quantization",
+        "version_evidence": "live main documentation route checked; exact runtime library version is recorded in the overlay"
+      },
+      {
+        "topic": "AWQ authors' implementation and method boundary",
+        "url": "https://github.com/mit-han-lab/llm-awq",
+        "version_evidence": "official author repository main branch; current README separates pseudo quantization, real packed weights and inference kernel; branch is moving and not treated as a pinned release"
+      },
+      {
+        "topic": "GPTQ authors' implementation",
+        "url": "https://github.com/IST-DASLab/gptq",
+        "version_evidence": "official author repository checked live; its README historical tested environment is Transformers 4.21.2, PyTorch 1.10.1+cu111 and CUDA 11.4 for 3-bit extensions; not used as this harness dependency lock"
+      },
+      {
+        "topic": "Transformers versioned GPTQ guide",
+        "url": "https://huggingface.co/docs/transformers/v4.48.0/quantization/gptq",
+        "version_evidence": "official v4.48.0 documentation route describes the AutoGPTQ integration; this teaching harness does not invoke that integration"
+      },
+      {
+        "topic": "AWQ original paper",
+        "url": "https://arxiv.org/abs/2306.00978",
+        "version_evidence": "original paper entry"
+      },
+      {
+        "topic": "GPTQ original paper",
+        "url": "https://arxiv.org/abs/2210.17323",
+        "version_evidence": "original paper entry"
+      }
+    ]
+  },
+  "files": {
+    "roadmap/curriculum/operators/07-quantized-operators/README.md": "completed detailed local pre-trained standard Llama selective-W4 tutorial; stable existing headings and chapter navigation retained; source mapping audit complete; full 737-line harness is folded inline",
+    "roadmap/curriculum/operators/07-quantized-operators/examples/hf_quant_contracts.py": "completed NumPy-only topology, strict mask, shared-fold, integer storage-size and manifest/array validation contracts",
+    "roadmap/curriculum/operators/07-quantized-operators/examples/test_hf_quant_contracts.py": "completed eight CPU-only tests for topology, masks, fold invariance/counterexample, actual packed layout/storage and manifest/array rejection",
+    "roadmap/curriculum/operators/07-quantized-operators/examples/hf_local_llama_quantization.py": "completed local-only Llama calibration, overlay create/load validation, heldout layer/logit/NLL/PPL and optional greedy exact-match workflow",
+    ".codex/completion-evidence-quantization.json": "source/version/PDF/verification record; maintenance-only"
+  },
+  "verification": {
+    "cpu_contract_tests": "PASS: test_hf_quant_contracts.py, 8 tests",
+    "python_ast_and_syntax": "PASS: Python AST parsed hf_quant_contracts.py, test_hf_quant_contracts.py and hf_local_llama_quantization.py",
+    "cli_surface": "PASS: hf_local_llama_quantization.py --help",
+    "overlay_pre_mutation_contract": "PASS: NumPy tests reject non-uint8 packed payload, non-finite scale, bad fold width and duplicated shared consumer before any model dependency",
+    "markdown_and_math_static_checks": "PASS: 22 display-math blocks, standalone $$ delimiters, paired Markdown fences, no chapter-end .py hyperlink, JSON parse and no trailing whitespace",
+    "inline_source_sync": "PASS: six source-check blocks exactly match the NumPy contract/harness sources, including the complete folded harness",
+    "scoped_diff_whitespace_check": "PASS: git diff --check plus explicit whitespace scan over README, evidence JSON and all three new Python files",
+    "real_local_weights_or_model_execution": "not performed; no model was downloaded, opened or executed",
+    "torch_or_transformers_runtime": "not exercised; verified absent in the supplied Python runtime",
+    "cuda_compile_or_gpu_execution": "not available; verified nvcc and nvidia-smi absent; no compilation, performance or device result claimed"
+  },
+  "boundaries": [
+    "No change to PATH.md, NOW.md, HISTORY.md, shared course coverage/index, course-site, original notes/solutions/reference or source PDFs.",
+    "No external checkpoint, remote model code, API secret, or model weight was downloaded or opened by this task.",
+    "The new NPZ design is a teaching overlay bound to a local base checkpoint, not a Transformers/vLLM-compatible deployment checkpoint.",
+    "Packed INT4 storage and fake-quantized floating execution do not prove a low-bit kernel or speedup."
+  ]
+}

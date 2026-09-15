@@ -39,10 +39,10 @@ Agent 只做 review，不代写代码。本课最后有参考答案，但要求�
 | LeetGPU | [5.5 LeetGPU：正确性与代码归档](#55-leetgpu正确性与代码归档) | 题目通过、原始 `solve`、本地代码、lesson 快照 | `LEETGPU_PASS`：A100-80GB，24.54 ms，55.3th percentile |
 | 服务器 | [5.6 服务器：真实性能](#56-服务器真实性能) | 实际 GPU 型号、正确性复核、GFLOPS、配置对比 | `GPU_VALIDATED`：RTX 3090 已验证 |
 | P0-lite | [Nsight Systems 逐块分析](../notes/triton/matmul-nsys-p0-lite-2026-08-30.md) | timeline、launch metadata、s3/s2 单变量实验、完整 raw logs | ✅ 完成；NCU counters 被 AutoDL 权限阻塞 |
-| 收口 | 阶段性冻结 MatMul baseline；剩余 P0–P8 转入 [GPU 优化篇](../roadmap/gpu-foundations.md#matmul-优化债务池-deferred-backlog) | 当前最佳 20.830 ms / 19,794.1 GFLOPS / `torch.mm` 80.3% | `GPU_VALIDATED` |
+| 收口 | 阶段性冻结MatMul baseline；剩余内容转入[第三篇极致性能课程](../roadmap/curriculum/performance/README.md) | 当前最佳20.830 ms / 19,794.1 GFLOPS / `torch.mm` 80.3% | `GPU_VALIDATED` |
 | 下一课 | [Lesson 08 — Triton Softmax 迁移检查点](08-triton-fused-softmax.md) | 10 分钟 CUDA → Triton 映射后直接进入 LeetGPU #5 | 当前焦点 |
 
-> LeetGPU 已通过并归档，服务器真实 GPU 已验证，Nsight Systems P0-lite 已完成；MatMul 的 NCU counters、PTX/SASS、spill/occupancy、多 shape 回归和完整 P0–P8 闭环作为优化债务延期至 GPU 优化篇，不再阻塞 B2。
+> LeetGPU已通过并归档，服务器真实GPU已验证，Nsight Systems P0-lite已完成；NCU、PTX/SASS、spill/occupancy、低精度和多shape在新极致性能主课继续深化，不重复既有baseline。
 
 ---
 

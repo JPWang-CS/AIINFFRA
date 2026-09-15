@@ -1,0 +1,166 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>2026 AI Infra 论文与项目观察池 · AIINFFRA 附属文档</title><link rel="stylesheet" href="../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../styles.css?v=2fccc56073fa"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../index.html?chapter=1">返回课程</a></nav></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · papers/watchlist-2026.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#attention%E4%B8%8E%E6%A8%A1%E5%9E%8B%E5%BD%93%E5%89%8D%E5%BA%8F%E5%88%97">Attention与模型当前序列</a></li><li><a href="#%E5%A4%9A%E6%9C%BA%E5%A4%9A%E5%8D%A1%E4%B8%8E%E7%BD%91%E7%BB%9C">多机多卡与网络</a></li><li><a href="#%E5%AE%98%E6%96%B9%E9%A1%B9%E7%9B%AE%E8%A7%82%E5%AF%9F">官方项目观察</a></li><li><a href="#%E7%AD%9B%E9%80%89%E8%A7%84%E5%88%99">筛选规则</a></li></ol></nav><div class="markdown-body"><h1 id="2026-ai-infra-论文与项目观察池">2026 AI Infra 论文与项目观察池<a class="heading-anchor" href="#2026-ai-infra-%E8%AE%BA%E6%96%87%E4%B8%8E%E9%A1%B9%E7%9B%AE%E8%A7%82%E5%AF%9F%E6%B1%A0" aria-label="链接到2026 AI Infra 论文与项目观察池">#</a></h1>
+<blockquote><p>核对日期：2026-08-25。这里维护“值得观察的增量”，不维护学习进度。
+论文线独立于实践线；优先级表示阅读价值，不表示必须等某个算子或系统阶段。最新不等于当前必须读。</p>
+</blockquote><h2 id="attention与模型当前序列">Attention与模型当前序列<a class="heading-anchor" href="#attention%E4%B8%8E%E6%A8%A1%E5%9E%8B%E5%BD%93%E5%89%8D%E5%BA%8F%E5%88%97" aria-label="链接到Attention与模型当前序列">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>条目</th>
+<th>日期</th>
+<th>类型</th>
+<th align="center">优先级</th>
+<th>为什么值得看</th>
+<th>阅读关系</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><a href="https://arxiv.org/abs/2603.05451">FlashAttention-4</a></td>
+<td>2026-03</td>
+<td>paper</td>
+<td align="center">P1</td>
+<td>Blackwell 非对称流水、异步 MMA、2-CTA/TMEM、CuTe DSL</td>
+<td>FA1/2经典主干后的架构增量</td>
+</tr>
+<tr>
+<td><a href="https://arxiv.org/abs/2512.02556">DeepSeek-V3.2</a></td>
+<td>2025-12</td>
+<td>paper</td>
+<td align="center">P0</td>
+<td>DSA indexer、稀疏 attention 与 serving 影响</td>
+<td>当前MLA之后的下一篇</td>
+</tr>
+<tr>
+<td><a href="https://arxiv.org/abs/2505.11594">SageAttention3</a></td>
+<td>2025-05</td>
+<td>paper</td>
+<td align="center">P1</td>
+<td>FP4/低比特 attention 与精度取舍</td>
+<td>Attention与量化交叉专题</td>
+</tr>
+<tr>
+<td><a href="https://arxiv.org/abs/2512.16391">Kascade</a></td>
+<td>2025-12</td>
+<td>paper</td>
+<td align="center">P1</td>
+<td>跨层 top-k 复用与稀疏 attention</td>
+<td>DSA之后的稀疏Attention扩展</td>
+</tr>
+</tbody></table>
+<h2 id="多机多卡与网络">多机多卡与网络<a class="heading-anchor" href="#%E5%A4%9A%E6%9C%BA%E5%A4%9A%E5%8D%A1%E4%B8%8E%E7%BD%91%E7%BB%9C" aria-label="链接到多机多卡与网络">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>条目</th>
+<th>日期</th>
+<th>类型</th>
+<th align="center">优先级</th>
+<th>学习重点</th>
+<th>挂载</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><a href="https://arxiv.org/abs/2608.15118">Collective Communication for Distributed LLM Systems</a></td>
+<td>2026-08-15</td>
+<td>survey/tutorial</td>
+<td align="center">P1</td>
+<td>planning、runtime adaptation、compute-communication coordination 三层 taxonomy</td>
+<td>D1–D5 总览</td>
+</tr>
+<tr>
+<td><a href="https://arxiv.org/abs/2608.04450">CommBench</a></td>
+<td>2026-08-05</td>
+<td>benchmark</td>
+<td align="center">P2</td>
+<td>P2P、collective、EP、融合通信任务与正确性/性能联合评价</td>
+<td>D1 后选题库</td>
+</tr>
+<tr>
+<td><a href="https://arxiv.org/abs/2603.13606">NCCL EP</a></td>
+<td>2026-03</td>
+<td>paper/system</td>
+<td align="center">P1</td>
+<td>LL decode、HT prefill/training、hierarchical EP dispatch/combine</td>
+<td>D5</td>
+</tr>
+<tr>
+<td><a href="https://arxiv.org/abs/2601.22585">HetCCL</a></td>
+<td>2026-01</td>
+<td>paper/system</td>
+<td align="center">P2</td>
+<td>NVIDIA/AMD 异构 collective 与 RDMA</td>
+<td>了解生态边界</td>
+</tr>
+<tr>
+<td><a href="https://arxiv.org/abs/2510.15882">FlexLink</a></td>
+<td>2025-10</td>
+<td>paper/system</td>
+<td align="center">P2</td>
+<td>聚合 NVLink、PCIe、RDMA 异构链路</td>
+<td>D4 进阶</td>
+</tr>
+<tr>
+<td><a href="https://arxiv.org/abs/2502.21231">ByteScale</a></td>
+<td>2025-02</td>
+<td>paper/system</td>
+<td align="center">P1</td>
+<td>12k GPU 长上下文、动态 mesh、DP/CP 统一与负载均衡</td>
+<td>D4/CP</td>
+</tr>
+<tr>
+<td><a href="https://arxiv.org/abs/2402.15627">MegaScale</a></td>
+<td>2024-02</td>
+<td>NSDI paper</td>
+<td align="center">P0</td>
+<td>10k+ GPU 的通信重叠、网络调优、可观测性、故障与 straggler</td>
+<td>D3–D4</td>
+</tr>
+</tbody></table>
+<h2 id="官方项目观察">官方项目观察<a class="heading-anchor" href="#%E5%AE%98%E6%96%B9%E9%A1%B9%E7%9B%AE%E8%A7%82%E5%AF%9F" aria-label="链接到官方项目观察">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>项目</th>
+<th>当前关注点</th>
+<th>学习挂载</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><a href="https://github.com/NVIDIA/nccl">NCCL</a> / <a href="https://github.com/NVIDIA/nccl-tests">nccl-tests</a></td>
+<td>topology、multi-NIC、IB/RoCE、MNNVL、collective baseline</td>
+<td>D1–D3</td>
+</tr>
+<tr>
+<td><a href="https://docs.pytorch.org/tutorials/beginner/dist_overview.html">PyTorch distributed</a></td>
+<td>DeviceMesh、DTensor、FSDP2、TP</td>
+<td>D2–D4</td>
+</tr>
+<tr>
+<td><a href="https://github.com/NVIDIA/Megatron-LM">Megatron-LM</a></td>
+<td>TP/PP/CP/EP、distributed optimizer、overlap</td>
+<td>D4</td>
+</tr>
+<tr>
+<td><a href="https://github.com/deepseek-ai/DeepEP">DeepEP</a></td>
+<td>EP V2、NCCL Gin、low-SM/zero-SM、NVLink+RDMA</td>
+<td>D5</td>
+</tr>
+<tr>
+<td><a href="https://github.com/deepseek-ai/profile-data">DeepSeek profile-data</a></td>
+<td>V3/R1 prefill/decode communication-compute overlap</td>
+<td>D5</td>
+</tr>
+<tr>
+<td><a href="https://github.com/vllm-project/vllm/blob/main/docs/serving/expert_parallel_deployment.md">vLLM EP deployment</a></td>
+<td>多节点 EP backend 与部署参数</td>
+<td>EP/分布式推理论文专题参考</td>
+</tr>
+</tbody></table>
+<h2 id="筛选规则">筛选规则<a class="heading-anchor" href="#%E7%AD%9B%E9%80%89%E8%A7%84%E5%88%99" aria-label="链接到筛选规则">#</a></h2>
+<ul>
+<li>P0：论文线核心，至少精读+作者关键代码；不默认要求复现实验。</li>
+<li>P1：重要扩展，至少精读；有高价值作者代码时升级为精读+代码。</li>
+<li>P2：观察项，先速读；若改变当前认知或被用户选中再升级。</li>
+<li>项目 README/博客的性能数字不能替代论文、官方文档或目标集群实测。</li>
+<li>新条目先进入 <a href="inbox/README.html">inbox</a>，核验后才进入本页。</li>
+</ul>
+</div></main><script src="../../reader.js"></script></body></html>
