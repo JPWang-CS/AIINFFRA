@@ -6,7 +6,7 @@
 
 ## 课程网页
 
-- [当前实践：第一篇第一章《从 CUDA 程序看 GPU 的整体结构》](http://127.0.0.1:8765/roadmap/curriculum/gpu/course-site/index.html?chapter=1)
+- [当前实践：第一篇第一章《从 CUDA 程序看 GPU 的整体结构》→ 3.《完整程序：沿着一次计算走一遍》](http://127.0.0.1:8765/roadmap/curriculum/gpu/course-site/index.html?chapter=1#chapter-1-section-11)
 - [当前论文：MLA（低维缓存与权重吸收）](http://127.0.0.1:8765/roadmap/curriculum/gpu/course-site/index.html?chapter=25)
 
 本机服务入口：若一条打不开，从仓库根目录运行 `python -m http.server 8765 --bind 127.0.0.1`。
@@ -15,9 +15,11 @@
 
 当前从《从 CUDA 程序看 GPU 的整体结构》开始学习。用户会自行跳过已经掌握的内容；这次回到第一篇只改变课程入口，不清零既有实验。PATH/HISTORY 中已有的 `LEETGPU_PASS`、`GPU_VALIDATED`、原始代码与性能证据继续有效，经过对应章节时直接复盘或跳过；遇到验收缺口、环境变化需复测或明确的后续优化，再按对应流程补齐。
 
-- 当前课：[第一篇第一章：从 CUDA 程序看 GPU 的整体结构](http://127.0.0.1:8765/roadmap/curriculum/gpu/course-site/index.html?chapter=1)
+- 当前课：[第一篇第一章：从 CUDA 程序看 GPU 的整体结构 → 3.《完整程序：沿着一次计算走一遍》](http://127.0.0.1:8765/roadmap/curriculum/gpu/course-site/index.html?chapter=1#chapter-1-section-11)
 - 课程总入口：[GPU 硬件与性能基础](./roadmap/curriculum/gpu/README.md)
 - Softmax 服务器真实性能验证仍是历史未完成项，但不再作为当前入口；后续在对应算子章按验收补齐
+
+- 2026-09-17 已阅读完成第一章从开头到 2.4；第 3 节《完整程序：沿着一次计算走一遍》尚未阅读，下一入口为该节。当前课程状态保持 `WIP`，本次仅推进阅读。
 
 MatMul 已阶段性收口为 RTX 3090 `GPU_VALIDATED` baseline；已有数据不清零，NCU、PTX/SASS、spill/occupancy、低精度和多 shape 将在 GEMM 章内继续深化。
 

@@ -14,7 +14,7 @@
 
 ## 当前动作
 
-实践：从[第一篇第一章 GPU硬件总图与架构代际](curriculum/gpu/01-gpu-hardware-map-and-generations/README.md)重新学习；已掌握内容由用户自行跳过，既有状态与实测证据不清零、不降级，未新增完成事实。论文：继续MLA。准确状态只看[PATH](../PATH.md)与[NOW](../NOW.md)。
+实践：从[第一篇第一章 GPU硬件总图与架构代际](curriculum/gpu/01-gpu-hardware-map-and-generations/README.md)继续学习；第一章从开头到 2.4 已读，当前从第 3 节《完整程序：沿着一次计算走一遍》继续（课程站锚点 `chapter=1#chapter-1-section-11`）。已掌握内容由用户自行跳过，既有状态与实测证据不清零、不降级，未新增 GPU 验证事实。论文：继续MLA。准确状态只看[PATH](../PATH.md)与[NOW](../NOW.md)。
 
 ## 按需查阅
 
