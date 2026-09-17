@@ -7,6 +7,8 @@
 
 ## 0. 最后更新
 
+- 2026-09-17（用户已阅读完成第一章从开头到 4.5；第 5 节《架构、芯片、产品与软件版本》尚未阅读，下一入口定位至 `chapter=1#chapter-1-section-23`。本次仅同步 PATH/NOW/HISTORY，不新增实验或 GPU 验证；实践整体保持 `WIP`，既有 GPU/LeetGPU 状态与 MLA 论文线保持不变。用户询问过 `dim3(4,2)`：参数为 `(x,y)`，在 x 映射列、y 映射行的示例中覆盖 2 行 4 列；仅作讨论说明，不宣称已掌握。）
+
 - 2026-09-17（用户已阅读完成第一章从开头到 2.4；第 3 节《完整程序：沿着一次计算走一遍》尚未阅读，下一入口定位至 `chapter=1#chapter-1-section-11`。本次只推进阅读，不新增实验或 GPU 验证。）
 
 - 2026-09-15（用户决定从模块化课程第一篇第一章重新学习；本次将既有 CUDA/Triton Vector Add、早期 CUDA GEMM（FP32/FP16 LeetGPU 归档与 RTX4090 大 K 对照）、Triton MatMul、Softmax 实验、原始代码与测量证据融入访存/归约/GEMM对应课程章节，课程经过时直接复盘或跳过，不清零、不降级。A1 CUDA Vector Add 的 LeetGPU 技术正确性已完成，Lesson 01/weekly 还记录本地 RTX4090 `696 GB/s / 0 error`（1M FP32、256 threads/block），但仅有 Lesson 01 快照、无独立原始 `solve` 归档，PATH 保持 `WIP（平台正确性已完成，归档缺口）`，不伪称 `LEETGPU_PASS`；该结果与 Triton RTX3090 840.1/843.0 GB/s 不是同一次实验。保留 CUDA GEMM RTX4090 K=2048 naive 5033 vs tiled 3118 GFLOPS（约0.6x，K=8192方向相同）、MatMul 的 A100 LeetGPU 24.54 ms/55.3th 与 RTX3090 GPU_VALIDATED/Nsys、Softmax #5 的 0.29 ms/47.0th；未产生新的 GPU 成绩，Softmax RTX3090 服务器验证仍待补，论文线继续 MLA。）
