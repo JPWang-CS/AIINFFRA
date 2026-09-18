@@ -532,29 +532,153 @@ TMA（Tensor Memory Accelerator，张量内存加速器）这里只作代际示�
 
 ### 5.3 从 CUDA 源码到设备执行，中间有哪些软件
 
-CUDA Toolkit 包含开发所需头文件、库与工具，nvcc 是其中的编译驱动，主机 C++ 部分还需要主机编译器。NVIDIA 驱动提供设备访问与运行支持，它与 Toolkit 不是同一个软件包，也不是同一个版本号。
+CUDA C++ 的一个重要特点是：host（主机）代码和 device（设备）代码可以写在同一个 `.cu` 源文件里，但它们并不会被同一个编译器路径当成同一种代码处理。`main`、文件 I/O、指针管理和 kernel launch 属于 CPU 路径；标有 `__global__`、`__device__` 的函数以及它们调用到的 device 函数属于 GPU 路径。源文件“同源”只说明它们共享类型、宏和调用关系，不表示 CPU 和 GPU 最终执行同一份机器指令。
 
-CUDA Runtime API（运行时应用程序编程接口）提供 cudaMalloc、cudaMemcpy 等接口，建立在较低层的 CUDA Driver API（驱动应用程序编程接口）之上。采用 Runtime API 并不绕过驱动，而是使用更高层的管理接口。
+`nvcc`（NVIDIA CUDA Compiler）更准确地说是编译驱动（compiler driver）。它负责拆分 host/device 部分，调用用户指定的 host compiler（主机编译器）生成 CPU 代码，同时调用 GPU compiler 生成 PTX，再协调 `ptxas` 将 PTX 汇编为目标 GPU 的二进制，并在需要时完成 device link、host link 和打包。CUDA Toolkit 提供这些开发工具、头文件和库；NVIDIA driver 则负责设备访问、代码加载以及运行时 JIT。Toolkit 和 driver 是两个不同的软件层，版本号也不能混为一谈。
 
-设备代码可经过 PTX（Parallel Thread Execution，并行线程执行虚拟指令集），再编译成目标 GPU 机器代码。PTX 不是硬件直接执行的最终指令。GPU 二进制通常称 cubin（CUDA binary）；fatbin（fat binary，胖二进制容器）可容纳多个目标的 cubin 与 PTX。
+例如 Runtime API（运行时应用程序编程接口）的 `cudaMalloc`、`cudaMemcpy` 和 kernel launch 看起来由 CUDA C++ 程序直接调用，实际仍由 CUDA Runtime library（运行时库）把请求转给更低层的 Driver API（驱动应用程序编程接口）。因此“使用 Runtime API”不等于绕过 driver；它只是选择了更高层的资源管理和加载接口。
 
-| 阶段 | 输入与处理 | 产物或动作 |
+#### 5.3.1 同一个 `.cu` 文件怎样走两条编译路径
+
+一份 CUDA 源码可以把 host wrapper、多个 kernel 和 device helper 放在一起。编译时可以把它想成两条在链接处重新汇合的流水线：
+
+| 源码部分 | 编译路径 | 主要产物 |
 |---|---|---|
-| 主机编译 | 主机 C++ 编译器处理 host 部分 | CPU 机器代码 |
-| 设备编译 | 设备工具链处理 kernel，可经过 PTX 等中间表示 | 目标 GPU 的 cubin，也可保留 PTX 供运行时编译 |
-| 打包与链接 | 将 host 代码和包含设备目标的 fatbin 组织进程序 | 可执行程序或库 |
-| 运行时加载 | 根据目标设备和驱动能力选择兼容 cubin，必要时 JIT 编译 PTX | 可供该设备执行的机器代码 |
-| 设备执行 | host 提交 kernel，设备按执行配置安排线程块 | GPU 执行加载后的代码，而不是直接解释 PTX 文本 |
+| `main`、`launch_*`、普通 C++ 函数 | host compiler（如 GCC、Clang 或 MSVC） | CPU object code，再链接成可执行文件或库 |
+| `__global__` kernel 及其 device call graph | GPU compiler → PTX → `ptxas` | PTX、cubin，或保留在 fatbin 中 |
+| 不含 device symbol 的纯 host 编译单元 | 可直接交给 host compiler，也可和 `nvcc` 产生的 object 一起链接 | host object |
+| 跨 `.cu` 文件的 device symbol | 按需使用 `-dc`/`-rdc=true` 做 device link | 重新组织后的 device code |
 
-JIT（Just-In-Time compilation，即时编译）是在运行时完成编译。驱动可以编译程序内 PTX 并缓存结果，第一次运行可能含编译开销，后续则命中缓存。不能拿首次运行总时间比较已预热的库 kernel 时间。
+`nvcc` 的 `-v` 可以把这条协调链路打印出来，`--keep` 可以保留编译中间文件。观察中间文件很有价值：它能告诉你某个目标到底生成了什么 PTX、调用了哪个 `ptxas`、最后打包了哪些目标；但看到 PTX 文件本身仍不等于 GPU 已经执行了它。
 
-PTX 还有两个容易混淆的“版本”：语言有自己的 ISA（Instruction Set Architecture，指令集架构）版本，设备目标用 compute_XX 等形式表达能力要求。GPU 足够新，不代表旧驱动一定能解析新工具生成的 PTX 语言版本。
+#### 5.3.2 PTX、cubin 和 fatbin 各自是什么
+
+<strong>PTX（Parallel Thread Execution，并行线程执行）</strong>是 NVIDIA GPU 的版本化 virtual ISA（virtual Instruction Set Architecture，虚拟指令集架构），也可以把它理解为面向 GPU 的 high-level assembly（较高层汇编）。它比 CUDA C++ 更接近硬件，但仍然是物理 GPU ISA 之上的抽象层。GPU compiler、领域专用语言和其他编译器都可以把代码生成 PTX，然后由离线编译或运行时 JIT 生成某一代 GPU 真正可执行的二进制。
+
+所以 PTX 不是 GPU 最终直接执行的机器码。运行时若选择 PTX，driver 会把它编译成当前设备的机器代码；离线阶段若用 `ptxas`，则会把 PTX 汇编成对应目标的 cubin。PTX 的“版本”至少有两个维度不能混写：
+
+| 名称 | 它描述什么 | 例子 |
+|---|---|---|
+| PTX ISA version | PTX 语言本身的语法、指令和语义版本；由工具链/driver 是否理解决定 | 某个 CUDA 工具链生成的 PTX ISA 版本 |
+| `compute_XX` | 生成 PTX 时所针对的 virtual architecture（虚拟架构）和能力下限 | `compute_80` |
+| `sm_XX` | 生成 cubin 时所针对的 real hardware ISA（真实硬件指令集） | `sm_86`、`sm_90` |
+
+手册把支持 compute capability 8.0 特性的 PTX 称为 `compute_80`，这不等于“PTX ISA version 就是 8.0”。同样，`sm_86` 是一个目标硬件二进制的简称，不是 PTX 语言版本。设备很新也不意味着旧 driver 一定能解析由新工具链生成的 PTX ISA version；JIT 的前提还包括 driver 能理解该 PTX 版本。
+
+<strong>cubin（CUDA binary）</strong>是面向某个具体 SM（Streaming Multiprocessor，流式多处理器）目标的 GPU 二进制代码对象，例如 `sm_86` cubin。它不是一个完整的 CPU 程序，也不是“一个 kernel 的另一种叫法”。一个 cubin 可以包含同一编译目标下的多个 kernel、device function、常量/全局 device data 以及相关元数据。因此“这个 cubin 里有三个 kernel”是完全正常的；cubin 的边界是设备代码对象/目标，而不是 kernel 数量。
+
+<strong>fatbin（fat binary，胖二进制容器）</strong>是设备代码容器。它通常被嵌入最终 executable（可执行文件）或 shared library（共享库）中，也可以作为独立的设备代码产物检查。一个 fatbin 可以同时放入多个 `sm_XX` cubin，也可以放入一个或多个 `compute_XX` PTX。它并不是整个 `.exe`：CPU binary、导入表、资源和 fatbin 是程序中的不同部分；fatbin 只承载 GPU 代码及其相关数据。
+
+<figure class="diagram-frame">
+<img src="assets/cuda-code-packaging.svg" alt="CUDA 设备代码打包与运行时选择：CPU 代码和 fatbin 汇合，fatbin 内含多个 cubin 与 PTX，运行时只加载一个可用目标或把 PTX JIT 成当前 GPU 机器码。">
+<figcaption>图 5.3-1　可执行文件或库同时包含 CPU code 与 GPU fatbin；CPU 通过 runtime/driver 发起加载，driver 在 fatbin 内选择目标，不会把 fatbin 本身交给 GPU 执行。</figcaption>
+</figure>
+
+#### 5.3.3 一个 fatbin 怎样服务多个 kernel 和多个 GPU
+
+假设一个程序有三个入口：`vec_add`、`softmax_row` 和 `matmul_tile`。编译器可以把三个 kernel 的 `sm_86` 版本放在一个 cubin，把它们的 `sm_90` 版本放在另一个 cubin，再把三个 kernel 的 `compute_80` PTX 放进同一个 fatbin。这里的“版本”是同一个逻辑 kernel 针对不同目标生成的代码，不是运行时把三个版本同时发射。
+
+当 CPU 调用 `softmax_row<<<...>>>` 时，launch 只指定逻辑入口和执行配置。Runtime/Driver 根据当前 GPU 和 fatbin 中的目标做选择，然后把所选 cubin 中的 `softmax_row` 代码加载到设备；如果没有可直接加载的 cubin，才会在有合适 PTX 的情况下把 `softmax_row` 的 PTX JIT 成当前设备机器码。`vec_add` 和 `matmul_tile` 也按同一规则各自查找自己的入口。也就是说，fatbin 中可以有多个 kernel、每个 kernel 可以有多个目标版本，但一次 kernel load 最终只会选用一条可执行路径，不会把多份目标代码叠加执行。
+
+可以把这个过程写成四个分支：
+
+1. 有与当前 GPU 兼容的 cubin：driver 直接加载它，跳过 PTX JIT。
+2. 没有兼容 cubin，但有设备能力足够的 PTX，且 driver 能理解该 PTX ISA version：driver JIT 生成当前 GPU 的机器码，再加载执行；JIT 结果通常进入 compute cache。
+3. 没有可用 cubin，也没有合适 PTX：kernel load 失败。
+4. 即使 fatbin 中“看起来有代码”，如果 cubin 目标不兼容，且当前设备低于 PTX 的 `compute_xx` 要求、Driver 无法解析该 PTX ISA version，或 JIT 被诊断开关禁用，仍然会失败，而不是自动跨过这些约束。
+
+普通 cubin 的兼容规则要写得精确：在同一个 compute capability major 版本内，设备 minor 版本大于或等于 cubin 目标 minor 版本时，才有二进制兼容保证。例如 `sm_86` cubin 可以在 8.6 或 8.9 设备上加载；不能去 8.0，因为设备 minor `0` 小于目标 `6`；也不能去 9.0，因为 major 版本不同。反过来不能把“新卡”笼统理解成“任何旧 cubin 都能直接跑”。
+
+PTX 的方向不同：例如 `compute_80` PTX 可以在满足条件的更高 compute capability 上由 driver JIT，甚至生成更新的 SM 机器码；但 driver 必须理解该 PTX ISA version，且 PTX 不能使用目标设备不具备的前提之外的特性。PTX 提供的是一种面向未来目标的可能性，不是对所有未来 GPU 的无条件保证。
+
+#### 5.3.4 用 `nvcc` 观察具体产物
+
+下面命令以 Linux 的 POSIX shell 为例，路径和变量写法不与 Windows PowerShell 混用。可以把本章第 3 节已经展示的完整 Vector Add 程序保存为 `vector_add.cu` 后直接观察；kernel 数量不会改变 PTX、cubin 与 fatbin 的层次关系。
+
+先分别生成一个面向 `sm_86` 的 cubin 和一个面向 `compute_80` 的 PTX：
+
+```bash
+nvcc -std=c++17 -O2 \
+  -arch=compute_80 -gpu-code=sm_86 \
+  -cubin vector_add.cu -o vector_add_sm86.cubin
+
+nvcc -std=c++17 -O2 \
+  -arch=compute_80 \
+  -ptx vector_add.cu -o vector_add_compute80.ptx
+```
+
+如果要制作一个可嵌入程序的多目标 fatbin，可以把多个 real target 和一个 PTX target 写进 `-gencode`：
+
+```bash
+nvcc -std=c++17 -O2 \
+  -gencode=arch=compute_80,code=sm_86 \
+  -gencode=arch=compute_80,code=sm_89 \
+  -gencode=arch=compute_80,code=compute_80 \
+  -fatbin vector_add.cu -o vector_add_multi.fatbin
+```
+
+这里每个 `-gencode` 都说明“以哪个 virtual architecture 生成中间代码，再保留为哪个 real architecture 或 PTX”。`sm_86`/`sm_89` 是 cubin 目标，`compute_80` 是保留下来的 PTX 目标。`-arch=sm_86` 这类简写也可以生成特定 real target，但部署需要多个目标时，显式 `-gencode` 更容易审查。
+
+去掉 `-fatbin` 并正常链接，便得到同时包含 CPU 程序和内嵌 fatbin 的可执行文件：
+
+```bash
+nvcc -std=c++17 -O2 \
+  -gencode=arch=compute_80,code=sm_86 \
+  -gencode=arch=compute_80,code=compute_80 \
+  vector_add.cu -o vector_add
+```
+
+要观察 `nvcc` 的中间件和完整调用，可以保留当前构建的中间文件：
+
+```bash
+mkdir -p build/keep
+nvcc -std=c++17 -O2 --keep --keep-dir build/keep -v \
+  -gencode=arch=compute_80,code=sm_86 \
+  -gencode=arch=compute_80,code=compute_80 \
+  -fatbin vector_add.cu -o build/vector_add.fatbin
+```
+
+`--keep`/`--keep-dir` 让中间 PTX、device object 和临时文件留下来，`-v` 显示 host compiler、device compiler、`ptxas` 和链接步骤。这个命令只是在离线阶段生成目标，不能替代在目标 GPU 上运行。
+
+用 `cuobjdump` 检查设备代码容器时，分别看三类信息：
+
+```bash
+cuobjdump --list-elf vector_add
+cuobjdump --dump-ptx vector_add
+cuobjdump --dump-sass vector_add
+```
+
+`--list-elf` 列出容器内的 ELF/device code object，`--dump-ptx` 查看嵌入的 PTX，`--dump-sass` 查看已经生成的 SASS（Streaming ASSembler，GPU 机器指令）。在实际 executable 或 shared library 上也可以对该文件运行同样的检查。检查结果应回答“有哪些目标、有哪些 kernel、是否真的嵌入 PTX”，而不是只看文件名猜测。不同 Toolkit 版本的输出排版可能不同，但命令的检查对象分别是容器/ELF、PTX 和 SASS。
+
+#### 5.3.5 JIT、cache 与诊断开关
+
+首次加载 PTX 时，driver 需要把 PTX 编译成当前设备机器码，这会增加 application load time。生成的 binary 通常写入 compute cache，后续相同条件的加载可以复用缓存；driver 升级可能使缓存失效，以便使用新 driver 中的 JIT compiler。因而 benchmark 至少要区分 cold load、首次 kernel launch、cache warm 后的 launch 和稳定迭代时间，不能拿“第一次包含 JIT 的总时间”与“已经预热的库 kernel”直接比较。
+
+为了验证 fatbin 中是否真的带了 PTX、PTX JIT 是否可用，可以在诊断运行中设置 `CUDA_FORCE_PTX_JIT=1`。这个开关会忽略嵌入的 cubin，强制使用嵌入的 PTX；若 PTX 缺失、版本不受支持或 JIT 路径有问题，加载就会暴露出来。相反，`CUDA_DISABLE_PTX_JIT=1` 会禁用嵌入 PTX 的 JIT，只允许使用兼容 cubin；它适合验证“每个 kernel 是否有直接可加载的 cubin”。这两个变量是验证工具，不是生产部署中用来宣称性能的默认配置。做性能测试时应移除它们，并明确记录 cold load、cache warm 与稳定迭代分别采用什么口径。
+
+在 Linux shell 中可以这样做：
+
+```bash
+CUDA_FORCE_PTX_JIT=1 ./vector_add
+CUDA_DISABLE_PTX_JIT=1 ./vector_add
+```
+
+Windows PowerShell 使用对应的进程级写法，避免把 POSIX 的 `VAR=value command` 原样复制过去：
+
+```powershell
+$env:CUDA_FORCE_PTX_JIT = "1"; .\vector_add.exe
+$env:CUDA_FORCE_PTX_JIT = $null
+$env:CUDA_DISABLE_PTX_JIT = "1"; .\vector_add.exe
+$env:CUDA_DISABLE_PTX_JIT = $null
+```
+
+若禁用 PTX JIT 后某个 kernel load 失败，结论是“当前 fatbin 没有该 kernel 的兼容 cubin”，而不是“CUDA 源码不能运行”。若强制 PTX JIT 后失败，首先检查 PTX 是否被嵌入、`compute_XX` 是否满足目标能力、driver 是否理解 PTX ISA version，再检查 kernel 本身。
+
+这几层产物的取舍也很实际：多放 cubin 可以减少首次 JIT 并让已覆盖的目标直接加载，但会增大程序或库体积，且每个新增目标都要构建和测试；只放 PTX 可以缩小目标组合并给新 GPU 留出 JIT 路径，但首次加载有额外延迟，性能还受 driver 的 JIT 编译器影响；同时放常用 cubin 和一个合适的 PTX，通常是在加载延迟、包体积和未来适配之间做折中。最终应根据部署 GPU 范围决定目标集合，而不是把“目标越多”当成无条件更好。
 
 ### 5.4 “能运行”与“按目标优化”不是同一个结论
 
-手册 §1.3.4 解释普通目标的二进制兼容方向。例如面向 sm_86 的 cubin 可用于相应兼容的 8.6、8.9 设备，但不能直接当作 8.0 或 9.0 的机器代码。兼容不对称，也不能跨主版本简单推断。
-
-若程序携带合适 PTX，驱动支持其版本、设备满足其特性要求，就可能通过 JIT 在其他受支持目标运行。架构专用 a 目标与 family-specific f 目标还有更具体的兼容规则，不能拿普通目标的概括覆盖它们，实际部署须查对应指南。
+前一节解决的是设备代码能否加载：兼容 cubin 可以直接加载，合适 PTX 可以经过 JIT。架构专用 `a` 目标与 family-specific `f` 目标还有更具体的兼容规则，不能拿普通 `sm_xx` 的概括覆盖它们，实际部署须查对应指南。本节进一步追问：代码即使能够加载，是否真的针对目标硬件优化？
 
 即使旧代码能运行，也不等于自动用上新架构全部能力。没有表达合适的张量搬运或矩阵计算的程序，不会仅因换卡就必然成为精心设计的新流水线。编译器能优化，但能否生成目标指令、生成后是否更快，还需看代码、编译结果与实测。
 

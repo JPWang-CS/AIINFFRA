@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 650" role="img" aria-labelledby="title desc">
+  <title id="title">CUDA 设备代码打包与运行时选择</title>
+  <desc id="desc">可执行文件或库包含 CPU code 和 GPU fatbin，fatbin 内含 sm80 与 sm90 cubin 以及 compute80 PTX。运行时优先匹配兼容 cubin，否则把 PTX JIT 成当前 GPU 机器码。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#94a3b8"/>
+    </marker>
+    <style>
+      .box { fill: none; stroke: #7dd3fc; stroke-width: 2; }
+      .inner { fill: none; stroke: #a78bfa; stroke-width: 2; }
+      .ptx { fill: none; stroke: #fbbf24; stroke-width: 2; stroke-dasharray: 7 5; }
+      .flow { fill: none; stroke: #94a3b8; stroke-width: 2.5; marker-end: url(#arrow); }
+      .label { fill: #e2e8f0; font: 600 22px system-ui, sans-serif; }
+      .small { fill: #cbd5e1; font: 17px system-ui, sans-serif; }
+      .accent { fill: #bae6fd; font: 600 18px system-ui, sans-serif; }
+      .note { fill: #fef3c7; font: 600 17px system-ui, sans-serif; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="650" rx="20" fill="#0f1b2a"/>
+
+  <rect x="28" y="35" width="270" height="580" rx="18" class="box"/>
+  <text x="58" y="82" class="label">exe / shared library</text>
+  <rect x="58" y="130" width="210" height="120" rx="12" class="inner"/>
+  <text x="83" y="180" class="accent">CPU code</text>
+  <text x="83" y="211" class="small">main / launch wrapper</text>
+  <rect x="58" y="310" width="210" height="210" rx="12" class="inner"/>
+  <text x="83" y="352" class="accent">GPU fatbin</text>
+  <text x="83" y="386" class="small">device code container</text>
+  <text x="83" y="418" class="small">cubin + PTX + metadata</text>
+
+  <rect x="360" y="70" width="265" height="145" rx="16" class="inner"/>
+  <text x="390" y="116" class="accent">sm_80 cubin</text>
+  <text x="390" y="151" class="small">multiple kernels</text>
+  <text x="390" y="181" class="small">direct-load candidate</text>
+  <rect x="360" y="255" width="265" height="145" rx="16" class="inner"/>
+  <text x="390" y="301" class="accent">sm_90 cubin</text>
+  <text x="390" y="336" class="small">multiple kernels</text>
+  <text x="390" y="366" class="small">direct-load candidate</text>
+  <rect x="360" y="440" width="265" height="145" rx="16" class="ptx"/>
+  <text x="390" y="486" class="note">compute_80 PTX</text>
+  <text x="390" y="521" class="small">virtual ISA</text>
+  <text x="390" y="551" class="small">JIT fallback / future target</text>
+
+  <rect x="725" y="170" width="420" height="285" rx="18" class="box"/>
+  <text x="755" y="215" class="label">runtime selection</text>
+  <text x="755" y="253" class="small">current GPU + driver inspect fatbin</text>
+  <path d="M625 142 C670 142 682 270 725 270" class="flow"/>
+  <path d="M625 327 C670 327 690 310 725 310" class="flow"/>
+  <path d="M625 512 C670 512 682 350 725 350" class="flow"/>
+  <path d="M935 455 C935 520 770 570 680 570" class="flow"/>
+  <text x="765" y="310" class="accent">compatible cubin?</text>
+  <text x="765" y="345" class="small">yes → load selected kernel</text>
+  <text x="765" y="380" class="note">otherwise: PTX JIT</text>
+  <text x="765" y="415" class="small">driver → current GPU machine code</text>
+  <text x="764" y="500" class="small">one selected path executes</text>
+  <text x="764" y="530" class="small">fatbin itself is never executed</text>
+</svg>

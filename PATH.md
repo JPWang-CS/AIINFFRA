@@ -35,7 +35,7 @@
 
 | 模块 | 路由 | 状态 |
 |---|---|---|
-| GPU 架构与性能 | [课程路由](./roadmap/curriculum/gpu/README.md) | `WIP`；从第一篇第一章重新开始，第一章从开头到 4.5 已读，第 5 节《架构、芯片、产品与软件版本》未读，下一入口为第 5 节（2026-09-17）；用户可自行跳过已掌握内容；既有阅读/实验事实不清零、不降级 |
+| GPU 架构与性能 | [课程路由](./roadmap/curriculum/gpu/README.md) | `WIP`；第一篇第一章已读完，第二章第 1 节与第 2 节（含 2.1–2.3）已读，第 3 节《SIMT：同一条指令不等于同一条数据路径》未读，下一入口为 `chapter=2#chapter-2-section-5`（2026-09-18）；用户可自行跳过已掌握内容；既有阅读/实验事实不清零、不降级 |
 | 算子实现与优化 | [算子路由](./roadmap/curriculum/operators/README.md) | 九类算子正文及页内实践已形成；原有实验状态保持独立 |
 | 算子内的深入优化 | 各算子正文；[实验检查表](./roadmap/curriculum/performance/README.md)按需使用 | MatMul已有部分证据；未另设优化课 |
 | 量化与模型 GPU 分析 | [量化](./roadmap/curriculum/quantization/README.md) · [Prefill/Decode/Mini Transformer](./roadmap/curriculum/model-analysis/README.md) | 量化及模型分析/Mini Transformer 正文已形成；组合实测未新增 |
@@ -43,7 +43,7 @@
 
 ### 第一篇当前入口
 
-[第一篇第一章：从 CUDA 程序看 GPU 的整体结构 → 5.《架构、芯片、产品与软件版本》](./roadmap/curriculum/gpu/course-site/index.html?chapter=1#chapter-1-section-23)是当前入口；第一章从开头到 4.5 已读，第 5 节尚未阅读（2026-09-17）。用户可自行跳过已掌握内容；本次只推进阅读，未新增 GPU 验证事实，既有证据保持不变。
+[第一篇第二章：CUDA 执行模型与指令调度 → 3.《SIMT：同一条指令不等于同一条数据路径》](./roadmap/curriculum/gpu/course-site/index.html?chapter=2#chapter-2-section-5)是当前入口；第一章已读完，第二章第 1 节与第 2 节（含 2.1–2.3）已读，第 3 节尚未阅读（2026-09-18）。本次仅推进阅读，实践线保持 `WIP`，未新增 GPU 验证事实，既有证据保持不变。
 
 ## 5. 论文线状态
 

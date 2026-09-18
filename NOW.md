@@ -6,20 +6,20 @@
 
 ## 课程网页
 
-- [当前实践：第一篇第一章《从 CUDA 程序看 GPU 的整体结构》→ 5.《架构、芯片、产品与软件版本》](http://127.0.0.1:8765/roadmap/curriculum/gpu/course-site/index.html?chapter=1#chapter-1-section-23)
+- [当前实践：第一篇第二章《CUDA 执行模型与指令调度》→ 3.《SIMT：同一条指令不等于同一条数据路径》](http://127.0.0.1:8765/roadmap/curriculum/gpu/course-site/index.html?chapter=2#chapter-2-section-5)
 - [当前论文：MLA（低维缓存与权重吸收）](http://127.0.0.1:8765/roadmap/curriculum/gpu/course-site/index.html?chapter=25)
 
 本机服务入口：若一条打不开，从仓库根目录运行 `python -m http.server 8765 --bind 127.0.0.1`。
 
 ## 实践线：从模块化课程第一篇第一章重新开始（WIP）
 
-当前从《从 CUDA 程序看 GPU 的整体结构》开始学习。用户会自行跳过已经掌握的内容；这次回到第一篇只改变课程入口，不清零既有实验。PATH/HISTORY 中已有的 `LEETGPU_PASS`、`GPU_VALIDATED`、原始代码与性能证据继续有效，经过对应章节时直接复盘或跳过；遇到验收缺口、环境变化需复测或明确的后续优化，再按对应流程补齐。
+当前沿第一篇课程继续学习。第一章已读完，第二章第 1 节与第 2 节（含 2.1–2.3）已读；用户会自行跳过已经掌握的内容，既有实验不清零。PATH/HISTORY 中已有的 `LEETGPU_PASS`、`GPU_VALIDATED`、原始代码与性能证据继续有效，经过对应章节时直接复盘或跳过；遇到验收缺口、环境变化需复测或明确的后续优化，再按对应流程补齐。
 
-- 当前课：[第一篇第一章：从 CUDA 程序看 GPU 的整体结构 → 5.《架构、芯片、产品与软件版本》](http://127.0.0.1:8765/roadmap/curriculum/gpu/course-site/index.html?chapter=1#chapter-1-section-23)
+- 当前课：[第一篇第二章：CUDA 执行模型与指令调度 → 3.《SIMT：同一条指令不等于同一条数据路径》](http://127.0.0.1:8765/roadmap/curriculum/gpu/course-site/index.html?chapter=2#chapter-2-section-5)
 - 课程总入口：[GPU 硬件与性能基础](./roadmap/curriculum/gpu/README.md)
 - Softmax 服务器真实性能验证仍是历史未完成项，但不再作为当前入口；后续在对应算子章按验收补齐
 
-- 2026-09-17 已阅读完成第一章从开头到 4.5；第 5 节《架构、芯片、产品与软件版本》尚未阅读，下一入口为该节。当前课程状态保持 `WIP`，本次仅推进阅读。
+- 2026-09-18 已阅读完成第一章；第二章第 1 节与第 2 节（含 2.1–2.3）已读，第 3 节《SIMT：同一条指令不等于同一条数据路径》尚未阅读，下一入口为 `chapter=2#chapter-2-section-5`。当前课程状态保持 `WIP`，本次仅推进阅读。讨论过：warp 负责一行/列的优势取决于连续布局、warp 内归约和同步范围，不是通用规则；不将此记为该节已掌握。
 
 MatMul 已阶段性收口为 RTX 3090 `GPU_VALIDATED` baseline；已有数据不清零，NCU、PTX/SASS、spill/occupancy、低精度和多 shape 将在 GEMM 章内继续深化。
 
