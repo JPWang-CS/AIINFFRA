@@ -160,6 +160,10 @@ host 侧先检查四维、同 shape、FP32、同 CUDA device、contiguous、正�
 
 本地 CPU 检查用 `S=1,3,5,33,65` 和 `block_kv=1,2,3,4` 对 dense reference 做逐元素比较；GPU harness 还用不同 batch/head 常数填充 V，检验 BH base 是否串位。这个测试比随机误差更容易把尾块、batch、head 三类错误分开。
 
+> **题面卡：现在可写的平台子算子**
+>
+> [Softmax Attention #6](https://leetgpu.com/challenges/softmax-attention) 的[官方题面目录](https://github.com/AlphaGPU/leetgpu-challenges/tree/main/challenges/medium/6_softmax_attention)给出 `Q[M,d],K[N,d],V[N,d],output[M,d],solve(Q,K,V,output,M,N,d)` 的矩形 noncausal 合同；[Multi-Head Attention #12](https://leetgpu.com/challenges/multi-head-self-attention) 再覆盖 `[N,d_model]` 的 head 切分与 concat；[#80 GQA](https://leetgpu.com/challenges/grouped-query-attention) 覆盖 `Hq/Hkv` 映射。平台题都不等价于当前 `[B,H,S,D]` square baseline，不能把平台通过写成 causal、online softmax 或 FA2/FA3 通过；从空题面写并归档后，再继续本章的 causal/Q 驻留/FA 代码检查。
+
 ## 5. Causal 对角线、GQA 与 varlen 的形状边界
 
 当前 baseline 的 causal 条件是同一个 sequence 起点上的 `k_abs≤q_abs`。它不处理 prefix cache、不同 query/key 起点或 packed varlen。例：prefix 长度 `p=3`，第一个 query 的 `query_local=0`，所以 `q_abs=3`；如果 KV buffer 含完整 prefix 并从绝对位置0开始，`k_abs` 依次是 `0,1,2,3,...`，不能把 K 也机械地加3。一般写成独立的 `q_abs=q_start+q_local`、`k_abs=k_start+k_local`，其中 `q_start` 与 `k_start` 由 cache API 合同决定；若 KV 只保留 suffix，才在 API 合同中把两者映射到同一局部起点。对 packed varlen，`cu_seqlens` 是物理存储起点，RoPE/causal 的 `pos_start` 是位置起点，两者不是同一个概念。典型 `[T,H,D]` 地址是 `(cu[b]+r)*H*D+h*D+d`，而本 kernel 是 BHSD 的 `((bH+h)S+s)D+d`。每个 batch 长度不同还需要长度表、cu-seqlens 和位置 offset，不能用一个方形 grid 替代。
@@ -567,13 +571,11 @@ def flash_attention(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor) -> torch.
 
 ## 8. 当前题面与本章实现的关系
 
-当前 [AlphaGPU leetgpu-challenges 总入口](https://github.com/AlphaGPU/leetgpu-challenges) 中，准确题名为 **#6 Softmax Attention**，题面接口是 `Q[M,d], K[N,d], V[N,d], out[M,d], solve(Q,K,V,out,M,N,d)`，FP32、noncausal、`rtol=atol=1e-4`，示例是 `M=2,N=3,d=4`。它是矩形单 batch/单 head 题，不是本章的 `[B,H,S,D]` 方形 causal wrapper；本章代码不能直接提交并声称适配 #6，也不沿用旧 reference 的错误 `[B,S,D]`/`N,d` 索引合同。独立 `reference_leetgpu_6` 只测试矩形数学：Q/K 全0、V 为三行不同已知常数时，输出应为三行均值；它不把 square kernel 伪装成 #6 solve。
-
-[#80 Grouped Query Attention](https://github.com/AlphaGPU/leetgpu-challenges/tree/main/challenges/medium/80_grouped_query_attention) 是 `Q[Hq,S,D]、K/V[Hkv,S,D]`、无 batch、noncausal，使用 `kvhead=qhead//(Hq/Hkv)`；[#61 RoPE Embedding](https://github.com/AlphaGPU/leetgpu-challenges/tree/main/challenges/medium/61_rope_embedding) 是 `Q/cos/sin/output[M,D]`，split-half，cos/sin 由输入提供。三者都是 free challenge，但题面入口、题名、shape、容差各自独立；平台实现必须从题面空白编辑器开始并原样归档当次 `solve`/kernel。
+`reference_leetgpu_6` 是本地矩形数学检查，不是平台提交物；当前 `[B,H,S,D]` square kernel 仍不等价于平台的单 batch、noncausal 或 GQA 题面。平台题只覆盖各自声明的子算子，本章的 causal、online recurrence、varlen 和 FA2/FA3 pipeline 仍需独立验证。
 
 ## 9. LeetGPU：正确性与代码归档
 
-本章不把方形教学 kernel 当作 #6 的提交物。平台路线从 [LeetGPU 官方题目入口](https://leetgpu.com/challenges) 搜索准确题名 **Softmax Attention**，再核对公开题面的精确目录 [6_softmax_attention](https://github.com/AlphaGPU/leetgpu-challenges/tree/main/challenges/medium/6_softmax_attention) 和 `solve(Q,K,V,out,M,N,d)` 合同；之后再单独完成 #80 GQA 与 #61 RoPE（如果进入这些题）。GitHub 是公开题库源，不是平台入口。每个题面都要保存当次平台原始代码，记录 shape、FP32、容差和免费题面链接；平台通过只由对应题面结果证明。
+完成对应平台题后，将当次空题面 `solve`/kernel 原样归档，并记录题面 shape、dtype、容差和结果。平台通过只证明对应子算子；本章的 batch/head base、causal mask、Q 驻留、online recurrence、varlen、FA2/FA3 pipeline 仍由本地 CPU/source-check 和服务器 correctness/benchmark 验收。
 
 ## 10. 服务器：真实性能
 

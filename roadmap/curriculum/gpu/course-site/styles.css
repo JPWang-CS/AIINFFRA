@@ -58,6 +58,10 @@ a:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid #e5a6
 .copy-code:hover{background:#2a4058}
 .code-panel pre{margin:0;padding:20px;overflow:auto;max-width:100%;tab-size:4;font:13.5px/1.75 "Cascadia Code",Consolas,"SFMono-Regular",monospace;overflow-wrap:normal}
 .markdown-body details .code-panel pre{max-height:65vh}
+.markdown-body details{margin:22px 0;padding:14px 18px;border:1px solid var(--line);border-radius:7px;background:var(--wash)}
+.markdown-body details>summary{cursor:pointer;font-weight:600;color:var(--ink);line-height:1.65}
+.markdown-body details[open]>summary{margin-bottom:18px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.markdown-body details details{background:var(--paper)}
 .code-panel pre:focus-visible{outline:2px solid #7b9bd1;outline-offset:-2px}
 @media print{.markdown-body details .code-panel pre{max-height:none;overflow:visible}}
 .code-panel code{font:inherit;white-space:pre;color:inherit;background:none}

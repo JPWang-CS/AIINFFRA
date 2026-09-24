@@ -2,7 +2,16 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { JSDOM, VirtualConsole } = require('jsdom');
-const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+// Navigation uses headings, links, folds and search data. Syntax-highlight and
+// KaTeX descendants are checked by content/render tests; retaining them in every
+// simulated browser session exhausts the heap as the course grows.
+const html = (() => {
+  const source = new JSDOM(fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8'));
+  source.window.document.querySelectorAll('pre code, .katex').forEach(node => node.replaceChildren());
+  const compact = source.serialize();
+  source.window.close();
+  return compact;
+})();
 const app = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
 const base = 'http://127.0.0.1:8765/roadmap/curriculum/gpu/course-site/index.html';
 const pause = () => new Promise(resolve => setTimeout(resolve, 30));
@@ -276,6 +285,30 @@ function state(env, chapter, part) {
   assert.equal(legacyOverview.errors.length,0);
   const invalid=boot('?chapter=999');
   state(invalid,1,'gpu');
+  // A saved subsection URL must reveal content inside a closed in-page lesson.
+  const folded=boot('?chapter=4#chapter-4-section-13');
+  const savedSection=folded.d.getElementById('chapter-4-section-13');
+  const lessonFold=savedSection.closest('.markdown-body details');
+  assert(lessonFold, 'Memory allocation remains in its in-page extension');
+  assert(lessonFold.open, 'Direct URL must expand the lesson containing its target');
+  assert.equal(folded.w.__scrollTarget,savedSection.id);
+  lessonFold.open=false;
+  lessonFold.dispatchEvent(new folded.w.Event('toggle'));
+  const highlighted=folded.d.querySelector('#page-toc a[aria-current="location"]');
+  assert(highlighted, 'A visible section remains highlighted after closing a lesson');
+  assert(!folded.d.getElementById(highlighted.hash.slice(1)).closest('details:not([open])'),
+    'Hidden headings cannot become the current reading location');
+  click(folded,'#page-toc a[href$="#chapter-4-section-13"]');
+  assert(lessonFold.open, 'Contents link must reveal its target');
+  lessonFold.open=false;
+  click(folded,'[data-section-link="chapter-4-section-13"]');
+  assert(lessonFold.open, 'Sidebar link must reveal its target');
+  click(folded,'#chapter-4 .chapter-switch a[data-chapter-link="5"]');
+  lessonFold.open=false;
+  await traverseHistory(folded,'back');
+  state(folded,4,'gpu');
+  assert(lessonFold.open, 'History navigation must reveal a saved folded section');
+  assert.equal(folded.errors.length,0);
   for(const env of [e,reloaded,reloaded10,reloaded11,reloaded12,invalid]) assert.equal(env.errors.length,0,env.errors.map(x=>x.message).join('\n'));
   console.log('PASS: top/side coordination; partition memory; subsection routes; folding; scroll; back/forward; search; chapter 12->13->14->15 and return; direct fragments; invalid route.');
   console.log('DOM simulation only: layout and scroll positions are modeled, not a visual browser test.');

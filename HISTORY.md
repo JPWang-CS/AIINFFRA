@@ -7,6 +7,16 @@
 
 ## 0. 最后更新
 
+- 2026-09-24（修复课程网页对临时 `127.0.0.1:8765` 服务的入口依赖：`NOW.md` 的网页链接改为仓库内相对静态文件，未改学习焦点；课程站 `file://` 模式使用普通页面导航，不调用可能受本地文件来源限制的 History URL 改写，HTTP 模式仍保留原来的单页导航。网页已重建；39 篇主课、1734 处公式、171 段源码摘录以及导航、论文阅读器、主题、离线结构检查通过。全站静态链接审计通过 103 个 HTML、5278 个本地目标与 4069 个锚点。浏览器工具按安全策略阻止直接打开本地 `file://`，因此双击文件的实际浏览器行为仍需用户现场确认，不能把结构检查记作视觉验收。PATH 与原始 solutions/reference/PDF 不变，未 commit/push。）
+
+- 2026-09-23（按读者顺序校订“算子与优化”九章：把 GEMM、block-scale/INT8 量化、Attention、MoE 和采样的 LeetGPU 题面入口放到对应公式/代码之后，区分平台子题、CPU 语义、服务器 correctness 与性能；访存、归约、融合章节删除回跳式汇总和重复题面。保留原始用户代码及历史实测，补空白设备记录表；按本地 CUDA 13.3 手册、推理实践与 DeepSeek-V4.1 报告核算 transaction、KV 容量、稀疏与投机收益条件。九章旧书签用语义重定向保留，课程站已重建，内容/源码摘录、导航、论文阅读器、主题、全站链接和浏览器直达检查通过；PDF 原文件哈希仍匹配。CPU 示例回归通过，未执行新的 LeetGPU 提交、CUDA/Triton 编译或真实 GPU 测量，PATH/NOW 不变，未 commit/push。后台审计见 `.codex/operator-reader-audit-2026-09-23.md`。）
+
+- 2026-09-23（继续完成 Mini Transformer 的 PyTorch 自定义 RMSNorm CPU 验证：仓库内 `.venv` 安装 PyTorch 2.7.1+cpu / NumPy 2.4.6。首跑发现用 `[1,3]` 转置构造“非连续输入”的测试不成立，改为 `[2,3]` 转置后实际 CLI 退出0；`opcheck`、一阶梯度、`torch.compile(fullgraph=True, backend="aot_eager")`、不同形状/非法输入，以及同权重的整段/逐 token/分块模型对照通过。课程同页原样代码和后台复核记录已同步；CPU 通过不代表 CUDA/Triton 编译、GPU 性能或系统服务结果。PATH/NOW 与原始 solutions/reference/PDF 不变，未 commit/push。）
+
+- 2026-09-22（模拟读者走读并按 GPU 高性能算子岗位复核知识库：修正切片地址中 storage offset 与 data_ptr 的区别、归约提前退出的表述、兼容路线的重复旧进度；增加重复测量/跨 shape 回归和编译—链接—装载—设备错误定位。Mini Transformer 同页补 FP32 RMSNorm 的 PyTorch 注册、FakeTensor、反向公式、opcheck/fullgraph 与模型替换实验，实际设备结果留空。两份面试资料删除固定性能倍数、无来源招聘频率及不成立的硬件/量化概括，补岗位能力与证据定位；保留论文线、量化核心和 vLLM 落地定位。语法、帮助/缺依赖出口与 NumPy 梯度公式检查通过；本机缺 PyTorch/Triton/nvcc，未执行框架和 GPU 验证。PATH/NOW、原始实践、PDF 和已有成绩不变，未 commit/push。详见 `.codex/reader-career-audit-2026-09-22.md`。）
+
+- 2026-09-22（按用户反馈重整“GPU 与 CUDA”五章：调整概念引入顺序与标题，移除突兀的问答/实践汇总；线程编号增加 4×2、16×4 图解，设备查询逐项解释；执行对照、转置、归约加入页内核函数和可展开完整程序。平台练习随向量加法、转置、Reduction 讲解安排，硬件与运行时实验就地保留命令及空白测量表。结合本地 CUDA 13.3 手册、固定版本 NVIDIA CUDA Samples、Triton 官方教程和 GPU MODE 的实验方法，原代码与历史性能记录保留。保留原有 211 个 GPU/CUDA 小节锚点，修复目录/旧书签进入折叠正文时自动展开；网页已重建。修改不代表用户阅读完成或设备验证，PATH/NOW、原始 solutions/reference、PDF 和覆盖状态不变；未 commit/push。检查与设备执行边界见 `.codex/course-editorial-review-2026-09-22.md`。）
+
 - 2026-09-18（用户已读完第一章；第二章第 1 节与第 2 节（含 2.1–2.3）已读，第 3 节《SIMT：同一条指令不等于同一条数据路径》尚未阅读，下一入口定位至 `chapter=2#chapter-2-section-5`。实践线保持 `WIP`，第一章阅读完成；论文线 MLA 以及所有 LeetGPU/GPU 状态不变。本轮讨论记录：warp 负责一行或一列的优势取决于连续布局、warp 内归约和同步范围，不是通用规则；仅记为讨论，不声称该节已掌握。）
 
 - 2026-09-17（用户已阅读完成第一章从开头到 4.5；第 5 节《架构、芯片、产品与软件版本》尚未阅读，下一入口定位至 `chapter=1#chapter-1-section-23`。本次仅同步 PATH/NOW/HISTORY，不新增实验或 GPU 验证；实践整体保持 `WIP`，既有 GPU/LeetGPU 状态与 MLA 论文线保持不变。用户询问过 `dim3(4,2)`：参数为 `(x,y)`，在 x 映射列、y 映射行的示例中覆盖 2 行 4 列；仅作讨论说明，不宣称已掌握。）

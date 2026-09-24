@@ -26,6 +26,27 @@ for (const [chapter,count] of [[4,28],[9,35]]) {
       'Previously published section anchor disappeared: '+chapter+'/'+section);
   }
 }
+// Operator chapters 7–15 had public in-page links before the editorial pass.
+// Keep every published id (or a semantic redirect span) when sections move.
+const publishedOperatorSections = {
+  7: Array.from({length:31},(_,i)=>i),
+  8: Array.from({length:24},(_,i)=>i),
+  9: Array.from({length:62},(_,i)=>i).filter(i=>![40,45].includes(i)),
+  10: Array.from({length:28},(_,i)=>i),
+  11: Array.from({length:24},(_,i)=>i),
+  12: Array.from({length:22},(_,i)=>i),
+  13: Array.from({length:35},(_,i)=>i).filter(i=>![27,29,30,31,32,33].includes(i)),
+  14: Array.from({length:15},(_,i)=>i),
+  15: Array.from({length:15},(_,i)=>i),
+};
+for (const [chapter,sections] of Object.entries(publishedOperatorSections)) {
+  const article = html.match(new RegExp('<article\\b[^>]*id="chapter-'+chapter+'"[\\s\\S]*?<\\/article>'))?.[0];
+  assert(article,'Operator chapter missing: '+chapter);
+  for (const section of sections) {
+    assert(article.includes('id="chapter-'+chapter+'-section-'+section+'"'),
+      'Published operator bookmark disappeared: '+chapter+'/'+section);
+  }
+}
 assert(!html.includes('id="chapter-6"') && !html.includes('data-nav-chapter="6"'), 'Retired overview must not be published');
 assert(!html.includes('<span>序</span>'), 'No operator preface');
 assert(html.includes('class="callout callout-important"'));

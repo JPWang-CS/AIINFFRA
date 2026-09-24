@@ -1,10 +1,95 @@
-# 第五章 资源预算、Roofline 与性能分析
+# 第五章 GPU kernel 的计时与性能分析
 
-kernel 时间受计算、访存、寄存器、shared memory 和调度共同影响。优化实验需要固定数值语义与计时范围，再比较改动前后的工作量和资源需求。
+## 1. 计时范围与 CUDA Event
 
-手算给出上界与假设，编译器报告给出资源分配，Nsight Systems/Compute 显示时间线和计数器。将它们与 PTX、SASS 对照，才能解释一次加速或退化。
+先决定测 kernel 本身还是包含主机调度、数据复制和同步的完整调用。`fn` 是每次执行一次待测算子的无参函数；`warmup` 次数用于让首次编译、模块加载等初始化离开稳态计时；`repeats` 次数用于平均多次执行。CUDA Event（CUDA 事件）记录设备时间线上的起止位置，不包含 Python 调用本身的全部主机耗时。
 
-## 1. Occupancy 是约束结果，不是 issue 利用率
+```python
+warmup = 10
+repeats = 50
+fn = lambda: kernel(x, y)  # 一次待测算子调用；输入和输出已准备好
+
+for _ in range(warmup):
+    fn()
+torch.cuda.synchronize()  # 等待预热工作结束
+start = torch.cuda.Event(enable_timing=True)
+end = torch.cuda.Event(enable_timing=True)
+start.record()
+for _ in range(repeats):
+    fn()
+end.record()
+end.synchronize()
+elapsed_ms = start.elapsed_time(end) / repeats
+```
+
+该方法测量同一 stream 中起止事件之间排入的 GPU 工作。若要测主机发起开销或整条服务请求，应另用 host wall time，并说明是否包含准备、排队与等待。计时前先用不规则 shape 检查正确性，性能样本不混入 correctness 调用。
+
+同一批实验应使用相同输入、数值设置、预热次数、重复次数和等待范围。完成计时后，再结合编译器资源报告、Roofline 与 profiler 判断瓶颈。
+
+### 1.1 基线与测试形状
+
+基线应完成相同的计算，具有相同的输入输出精度、布局和误差要求。Copy 可以与设备内复制对照；GEMM 可以与相同精度设置的 `torch.mm` 或 cuBLAS 对照；Attention 则要固定 mask、head 数和实际选择的后端。若一个接口已经包含布局转换、输出分配或额外融合，另一个没有，应分别测量 kernel 与完整调用。
+
+测试形状应覆盖不同的计算特点。GEMM 至少包含较大矩阵、小输出行数、长归约维度和不能整除 tile 的形状；归约至少覆盖短行、长行及不同行数；Attention 同时改变序列长度、batch 和 Query/KV head 数。各形状先通过正确性检查，才能进入性能表。一个 shape 上最快的配置，可能在其他 shape 上退化或耗尽片上资源。
+
+### 1.2 重复测量与跨形状回归
+
+一次测量包含多次 kernel 调用，可降低计时粒度的影响；多轮独立测量则用于观察波动。对同一 shape，可在预热后交替测量基线 A 和候选 B，保存每轮结果，而不是仅保留最短一次。温度、频率、其他进程、缓存和首次编译都可能影响比较，应记录运行条件，并把编译时间与稳态时间分开。
+
+每个 shape 报告中位数和四分位范围，既保留典型耗时，也展示波动。若收益与波动相近，应增加测量并检查环境，不能仅凭一次更小的数字认定加速。四分位范围描述样本分布，不是加速比的置信区间。
+
+设第 j 个 shape 的基线与候选中位数分别为 $t_{A,j}$、$t_{B,j}$，其加速比为
+
+$$
+s_j=\frac{t_{A,j}}{t_{B,j}}.
+$$
+
+跨 shape 汇总时，可以列出各项加速比及其几何平均，同时保留最差回归：
+
+$$
+s_{\mathrm{geo}}=\exp\left(\frac1J\sum_{j=1}^{J}\log s_j\right).
+$$
+
+几何平均给每个 shape 相同权重，不表示生产请求的总体加速。若实际请求频率差异较大，还需按真实负载重放并测量端到端时间。不同 shape 的毫秒数也不应直接平均后当作通用算子指标。
+
+下面的函数只汇总传入的实测毫秒数，不产生性能样本：
+
+```python
+import math
+import statistics
+
+
+def summarize_ms(samples):
+    values = [float(x) for x in samples]
+    if len(values) < 5 or any(not math.isfinite(x) or x <= 0 for x in values):
+        raise ValueError("at least five positive finite measurements required")
+    q1, _, q3 = statistics.quantiles(values, n=4, method="inclusive")
+    return {"median_ms": statistics.median(values), "q1_ms": q1, "q3_ms": q3}
+
+
+def compare_shapes(baseline, candidate):
+    if not baseline or baseline.keys() != candidate.keys():
+        raise ValueError("both implementations must use the same nonempty shape set")
+    reports = {}
+    for shape in baseline:
+        a, b = summarize_ms(baseline[shape]), summarize_ms(candidate[shape])
+        reports[shape] = {"baseline": a, "candidate": b,
+                          "speedup": a["median_ms"] / b["median_ms"]}
+    ratios = [row["speedup"] for row in reports.values()]
+    return reports, {"geomean_speedup": math.exp(statistics.mean(map(math.log, ratios))),
+                     "worst_speedup": min(ratios)}
+```
+
+| shape / 精度 / 布局 | 正确性 | 基线中位数 / 四分位范围 | 候选中位数 / 四分位范围 | 加速比 | 寄存器、共享内存与实际瓶颈 |
+|---|---|---|---|---|---|
+| 大矩阵或长行 | — | — | — | — | — |
+| 小矩阵或短行 | — | — | — | — | — |
+| 非整除边界 | — | — | — | — | — |
+| 模型实际出现的形状 | — | — | — | — | — |
+
+最终报告应保留失败配置和退化形状。继续优化的理由应来自实际瓶颈；资源调整没有改善目标工作负载，或收益不足以抵消额外复杂度时，可以保留更简单的实现。
+
+## 2. Occupancy 与资源驻留上限
 
 Occupancy（占用率）定义为一个 Streaming Multiprocessor（SM，流式多处理器）上活跃 warp 数与硬件最大 warp 数的比值：
 
@@ -14,21 +99,25 @@ $$
 
 它回答“有多少 warp 可以驻留”，不回答“每个周期发射了多少条指令”。Issue utilization（指令发射利用率）还取决于 eligible warp 数、依赖链、内存延迟、barrier、执行管线和指令混合。一个 25% occupancy 的 kernel 可能已经用满某条执行管线；一个 100% occupancy 的 kernel 也可能所有 warp 都在等待 global memory。
 
-设每个 block 有 $T_b$ 个线程、$W_b=\lceil T_b/32\rceil$ 个 warp、每线程使用 $R_t$ 个逻辑 32-bit registers、每 block 使用 $S_b$ 字节 shared memory，则简化的驻留上限是：
+设每个 block 有 $T_b$ 个线程、$W_b=\lceil T_b/32\rceil$ 个 warp、每线程使用 $R_t$ 个 32-bit registers、每 block 使用 $S_b$ 字节 shared memory。一个 SM 的上限分别记为 $T_{SM}$（线程数）、$W_{SM}$（warp 数）、$R_{SM}$（32-bit register 数）、$S_{SM}$（shared memory 字节数）和 $B_{SM}$（resident block 数）。忽略资源分配粒度时，驻留 block 上限可估为：
 
 $$
-B_{\mathrm{resident}}=\min\left(
-\left\lfloor\frac{T_{SM}}{T_b}\right\rfloor,
-\left\lfloor\frac{W_{SM}}{W_b}\right\rfloor,
-\left\lfloor\frac{R_{SM}}{T_bR_t}\right\rfloor,
-\left\lfloor\frac{S_{SM}}{S_b}\right\rfloor,
-B_{SM}
-\right).
+B_T=\left\lfloor\frac{T_{SM}}{T_b}\right\rfloor,\quad
+B_W=\left\lfloor\frac{W_{SM}}{W_b}\right\rfloor,\quad
+B_R=\left\lfloor\frac{R_{SM}}{T_bR_t}\right\rfloor,\quad
+B_S=\begin{cases}
+\left\lfloor S_{SM}/S_b\right\rfloor,&S_b>0,\\
+\infty,&S_b=0,
+\end{cases}
+\qquad
+B_{\mathrm{resident}}=\min(B_T,B_W,B_R,B_S,B_{SM}).
 $$
+
+其中 $B_T$、$B_W$、$B_R$、$B_S$ 分别表示线程、warp、寄存器和 shared memory 给出的上限。若 $S_b=0$，shared memory 不限制 block 数，该项取无穷大以避免除零。
 
 其中 $R_{SM}$ 的单位是 32-bit register 个数，不能把它误写成字节；$S_{SM}$ 的单位是字节。这个公式故意忽略了寄存器和 shared 的实际分配粒度、每线程/每 block 的额外限制、编译器临时值和架构特定规则，因此是乐观的预估上界：真实可驻留 block 数可能更低。它用于预估约束和找主导资源，真实值要以 `ptxas -v`、编译器 metadata、CUDA Occupancy API 或 Nsight Compute 为准。
 
-### 1.1 完整手算：给定 SM 假设
+### 2.1 Occupancy 资源上限手算
 
 > [!IMPORTANT] occupancy 是资源结果，不是优化目标
 > **37.5%的occupancy不表示计算单元只用了37.5%。** 资源公式先解释驻留上限；性能要继续看指令依赖、访存、同步与实际耗时。
@@ -72,7 +161,7 @@ python examples/occupancy_budget.py
 
 脚本打印的是逻辑手算，不是设备查询。编译器可能按 warp、register allocation unit 或 shared allocation unit 向上取整，因此 `65536/(256*96)=2` 只证明逻辑上最多两 block，不能证明实际编译产物一定正好使用两 block。对于寄存器从 64 到 65 的小变化，逻辑公式可能仍给出相同整数，但分配粒度会造成实际驻留阶梯变化；这正是要保存 `ptxas`/Nsight 证据的原因。
 
-### 1.2 反例：把 occupancy 当成性能目标
+### 2.2 Occupancy 与 kernel 时间
 
 假设一个 256-thread GEMM block 通过缩小 accumulator tile 从 96 降到 64 registers/thread，使手算 occupancy 从 25% 变成 37.5%。如果缩小 tile 同时降低 A/B 复用，global load 增多，或者增加边界与指针指令，kernel 可能变慢。反过来，一个更大 tile 可能因寄存器限制只有两 block/SM，却显著减少 global traffic 并提高计算吞吐。
 
@@ -80,14 +169,16 @@ python examples/occupancy_budget.py
 
 ```text
 硬件机制：寄存器/ shared / warp 上限共同限制驻留
-代码旋钮：BLOCK_M、BLOCK_N、BLOCK_K、num_warps、num_stages
+待比较参数：BLOCK_M、BLOCK_N、BLOCK_K、num_warps、num_stages
 预期指标：registers/thread、shared/block、resident blocks、eligible warps、stall
 结论依据：同一 shape、同一精度、同一 warmup/计时协议下的耗时与计数器
 ```
 
-追问：为什么 `active warps / maximum warps` 不是 issue utilization？答案是 occupancy 只描述驻留容量，未说明这些 warp 是否 ready、是否命中执行管线、是否在等待内存或 barrier；issue utilization 必须从调度器和执行管线相关计数器读取，不能由 occupancy 百分比代数推出。
+因此，`active warps / maximum warps` 只表示驻留容量。它不说明 warp 当前是否可发射，也不说明执行管线是否忙碌；issue utilization 要从调度器和执行管线计数器读取，不能由 occupancy 百分比计算得出。
 
-## 2. Roofline：先算算法上界，再检查真实流量
+[Triton 官方 fused-softmax 教程](https://triton-lang.org/main/getting-started/tutorials/02-fused-softmax.html)先读取编译后的寄存器数与共享内存用量，再估算可并发的 program 数。tile 与 warp 参数是编译输入，实际资源用量由编译器决定。因此，调整 tile 后需要重新读取编译结果。对于不使用共享内存的 kernel，驻留估算应跳过共享内存约束，避免除以零；最后再通过目标设备的性能工具或占用率查询接口核实。
+
+## 3. Roofline：计算强度与数据流量
 
 Arithmetic Intensity（AI，算术强度）定义为运算量与数据流量的比值：
 
@@ -103,7 +194,7 @@ $$
 
 这里的 bytes 必须注明口径。算法最小 bytes 假定每个输入/输出只从该层存储读写一次；真实 kernel 可能因未合并访问、cache miss、重读、write-allocate、padding 或中间结果而产生更多 traffic。Nsight Compute 的 DRAM/L2 bytes 和 requested/actual throughput 才能把算法下界替换为观测流量。
 
-### 2.1 Vector Add 完整数值算例
+### 3.1 Vector Add 数值算例
 
 对 `C[i]=A[i]+B[i]`，每个元素有 1 次加法，FP32 最小流量是读取两个 4-byte 值并写回一个 4-byte 值，共 12 bytes：
 
@@ -126,7 +217,7 @@ cd <AIINFFRA>/roadmap/curriculum/gpu/05-performance-analysis-and-optimization
 python examples/roofline_cases.py --bandwidth-gbps 840 --peak-tflops 20
 ```
 
-### 2.2 GEMM 完整数值算例
+### 3.2 GEMM 数值算例
 
 对 row-major $A_{M\times N}B_{N\times K}=C_{M\times K}$，取仓库 MatMul 使用的 $M=8192,N=6144,K=4096$：
 
@@ -146,18 +237,18 @@ $$
 AI_{FP32}=945.230769\ \mathrm{FLOP/byte}.
 $$
 
-若 storage dtype 为 FP16，三块矩阵的算法下界是 218,103,808 bytes，AI 数值上升为 1,890.461538 FLOP/byte；这只改变存储流量，不自动说明累加精度、Tensor Core 指令或误差契约相同。GEMM 的高 AI 来自 tile 复用：一个 A tile 被多个输出列复用，一个 B tile 被多个输出行复用；若 profiler 的实际 bytes 远高于上述下界，Roofline 点应按实际流量另算。
+若 storage dtype 为 FP16，三块矩阵的算法下界是 218,103,808 bytes，AI 数值上升为 1,890.461538 FLOP/byte；这只改变存储流量，不自动说明累加精度、Tensor Core 指令路径或结果误差相同。GEMM 的高 AI 来自 tile 复用：一个 A tile 被多个输出列复用，一个 B tile 被多个输出行复用；若 profiler 的实际 bytes 远高于上述下界，Roofline 点应按实际流量另算。
 
 ```bash
 cd <AIINFFRA>/roadmap/curriculum/gpu/05-performance-analysis-and-optimization
 python examples/roofline_cases.py --bandwidth-gbps 840 --peak-tflops 20
 ```
 
-反例是用理论 DRAM 带宽乘 AI 后，把结果直接当作 kernel 应达到的速度。Roofline 是上界和瓶颈分类工具，不包含 launch、地址计算、同步、指令依赖、低 occupancy、bank conflict、频率变化和实际 cache 层级；点低于 roof 只说明还有原因待找，不说明原因一定是 DRAM。
+Roofline 的带宽上界不是 kernel 的预期实测值。它没有包含 launch、地址计算、同步、指令依赖、occupancy、bank conflict、频率变化和 cache 层级等因素；测得性能低于该上界时，还需通过计数器和时间线定位限制来源。
 
-## 3. 数值精度必须分账：IEEE FP32 与 TF32
+## 4. 浮点精度与结果差异
 
-IEEE FP32 是严格的 32-bit binary32 输入/运算语义；TF32（TensorFloat-32）通常保持 FP32 存储和 FP32 accumulator，但在 Tensor Core 矩阵乘输入路径上使用更短的有效 mantissa。它们不是一张成绩表里的两个实现细节，而是两个数值契约：速度、指令路径和误差都可能不同。
+IEEE FP32 使用 binary32 输入与结果格式，但计算仍按浮点规则舍入。编译器可能将乘加融合为 FMA，树形归约也可能改变求和次序，因此结果不保证逐位等于未融合或按另一顺序计算的参考值。TF32（TensorFloat-32）通常保留 FP32 存储与累加器，在 Tensor Core 矩阵乘输入路径使用较短的有效尾数；它和 FP32 路径的指令与误差表现不同，应分别测量。
 
 仓库 `solutions/triton/matmul.py` 的严格 FP32 对照同时设置：
 
@@ -168,25 +259,13 @@ tl.dot(tile_a, tile_b, input_precision="ieee")
 
 因此 MatMul 的 IEEE 表应独立记录 `shape=(8192,6144,4096)`、输入/输出 dtype、allow_tf32、Triton config 和误差阈值。TF32 对照要单独报告 `max_abs_error`、`max_rel_error`，并以同样 warmup/repeat 协议计时；不能把 TF32 的速度提升写成 tile 优化收益，也不能把 PyTorch 默认配置猜成严格 IEEE。
 
-反例是只比较 `torch.mm` 与 Triton 的 ms，却没有锁定 `allow_tf32`，或把 FP16/BF16/Tensor Core 结果塞进 IEEE FP32 表。这样的表即使数字漂亮，也无法回答“相同数值语义下哪个实现更快”。
+比较 `torch.mm` 与 Triton 时，应锁定 `allow_tf32`，并将 FP16/BF16/Tensor Core 的结果与 FP32 路径分开记录；否则耗时差异同时包含精度和指令路径变化。
 
-## 4. benchmark 正确性、暖身和 event 时序
+### 正确性检查与计时样本
 
-正确的 benchmark 先用不规则 shape 做 correctness，再暖身，让首次编译、lazy loading、allocator 和 cache 状态不污染稳态。仓库 `solutions/triton/matmul.py` 的 `_time_ms` 提供了可复用时序：先执行 10 次 warmup，device synchronize；然后在同一 CUDA stream 上 record start event，重复执行 50 次，record end event，等待 end 完成，再用 `elapsed_time` 除以 repeats。这个协议测的是 GPU event 覆盖的 queued work，不是 Python 发起调用的 wall time。
+仓库 MatMul 脚本的基准使用 10 次 warmup、device synchronize、同一 stream 上 50 次 CUDA Event 计时，再以 elapsed time 除以重复次数。先对 `(1,1,1)`、整除形状、`(65,33,67)` 等非整除形状和目标性能形状做 correctness；误差与非有限值检查通过后，再运行计时循环。
 
-```python
-for _ in range(warmup):
-    fn()
-torch.cuda.synchronize()
-start.record()
-for _ in range(repeats):
-    fn()
-end.record()
-end.synchronize()
-elapsed_ms = start.elapsed_time(end) / repeats
-```
-
-反例包括：只调用 `time.perf_counter()` 而没有在开始/结束处同步，导致 host 只测到 launch；把 correctness 运行混在计时 repeats 中；不同配置使用不同 warmup；每次 repeat 后 `cudaDeviceSynchronize()` 破坏流水；或只测一个可整除 shape。最低 correctness 集合应包含 `(1,1,1)`、整除 shape、`(65,33,67)` 一类非整除 shape，以及真实性能 shape，并检查有限值与误差阈值。
+若只用 `time.perf_counter()` 且未在设备工作前后同步，主机计时可能只反映 launch；若把 correctness 调用放入计时循环、对每次 repeat 都做全设备同步，或各配置使用不同 warmup，比较结果也会失真。测试集应覆盖 `(1,1,1)`、整除尺寸、`(65,33,67)` 一类非整除尺寸和性能尺寸，并检查有限值与误差阈值。
 
 在仓库根目录运行 MatMul：
 
@@ -194,7 +273,7 @@ elapsed_ms = start.elapsed_time(end) / repeats
 python solutions/triton/matmul.py --config k256-128x32x256-w8-s3
 ```
 
-### 不同 stream 仍串行：先区分依赖、资源和提交队列
+### 不同 stream 仍串行：区分依赖、资源和提交队列
 
 两条 stream 没有显式 event 依赖，不等于它们必然并发。默认 NULL stream 的隐式同步、分配等操作、尚未完成的输入传输、单个 kernel 占满的寄存器/shared 资源，都可能使第二条 stream 的工作等待。先用时间线找出等待发生在 host 提交、设备排队还是 kernel 内部，再决定改哪一层；换一个 stream 名字不会解除数据依赖。
 
@@ -244,9 +323,16 @@ CUDA_CHECK(cudaStreamDestroy(latency_stream));
 
 可确认的事实是：在这批次、这组 shape/精度/配置和计时口径下，s2 比 s3 慢 5.44%，动态 shared 减半而 Reg/Trd 仍为 255；AutoDL 当时没有可用 NCU hardware counters，因此没有 achieved occupancy、stall reason 或 issue utilization 的直接证据。合理的解释假设是更浅的 pipeline 可能损失 latency hiding，而 shared 减少没有解除寄存器约束；这仍是待用 counter/邻域实验检验的假设，不能写成“已由 counter 证明流水损失”。Nsight Systems 的时间线和 launch metadata 不能替代 Nsight Compute 的硬件计数器。
 
+若在服务器重跑该对照，固定输入形状、IEEE FP32、warmup/repeat 与进程状态，只改 `num_stages`。历史数据保留在上表；此处填写新的实测批次，不预填成绩：
+
+| 配置 | GPU / CC | correctness | mean / median ms | GFLOP/s | registers/thread / shared |
+|---|---|---|---|---|---|
+| `k256-128x32x256-w8-s3` | — | — | — | — | — |
+| `k256-128x32x256-w8-s2` | — | — | — | — | — |
+
 ### 5.2 逐行读原始 trace：先确认测的是什么
 
-从 [s3 原始文本记录](../../../../notes/triton/logs/2026-08-29-matmul-k256-s3-nsys.txt) 抽取两条同名 kernel 的记录，只保留本节需要的字段：
+从 Nsight Systems trace 中选出两条同名 kernel 记录，只保留本节需要的字段：
 
 | 记录 | Duration（ns） | Grid | Block | Reg/Trd | DymSMem（MB） |
 |---|---:|---|---|---:|---:|
@@ -267,7 +353,7 @@ Grid 的64×16与源码相互印证：输出是8192×4096，每块输出128×256
 > [!TIP] 同名 kernel 不是同一份测量样本
 > **先筛工作负载，再做统计。** 这份记录中，汇总64次调用与筛出60次目标调用，会得到不同的平均值；它们不能混在同一张优化对比表里。
 
-### 5.3 正确性检查也需要明确合同
+### 5.3 正确性检查与误差阈值
 
 对浮点输出，常用判据是：
 
@@ -277,7 +363,7 @@ $$
 
 绝对阈值控制参考值接近零时的误差；相对阈值随参考值大小缩放。只看最大相对误差，可能把非常小的参考值放大成吓人的比率；只看平均误差，又可能掩盖少数位置的明显错误。应同时记录最大绝对误差、超阈值元素数量和非有限值。
 
-参考实现的计算精度也要声明。CPU double归约、GPU FP32树归约和允许TF32输入的矩阵乘，不是同一种舍入路径。可以使用高精度参考评价误差，但不能把它的时间当成相同数值合同下的性能基线。定位误差时，先检查地址、mask与输入精度，再评估归约顺序；放宽阈值不能替代诊断。
+参考实现的计算精度也要注明。CPU double 归约、GPU FP32 树归约和允许 TF32 输入的矩阵乘使用不同舍入路径。高精度参考可用于评价误差，但其运行时间不能作为相同精度设置的性能基线。排查误差时，先检查地址、mask 与输入精度，再检查归约顺序；不能只靠放宽阈值处理结果差异。
 
 工具分别回答不同问题：
 
@@ -297,12 +383,23 @@ compute-sanitizer --tool synccheck --error-exitcode=1 ./reduction_tail
 
 检查工具改变执行开销，测试其耗时没有优化比较意义。正确性输出与正常运行的benchmark应分开保存。
 
+### 5.4 在同一 MatMul 算例上复测
+
+本章复用 [LeetGPU Matrix Multiplication](https://leetgpu.com/challenges/matrix-multiplication) 的既有题面和已归档平台代码，不新增算子。服务器适配与配置入口在 `solutions/triton/matmul.py`。运行前检查不规则 shape 的正确性，再用固定的 `M=8192,N=6144,K=4096`、FP32、`allow_tf32=False` 对照配置；该脚本的基准循环使用第 1 节所述 warmup 与 CUDA Event 口径。
+
+| 配置 | GPU / CC | correctness / max error | mean kernel ms | GFLOP/s | NCU counters |
+|---|---|---|---|---|---|
+| `k256-128x32x256-w8-s3` | — | — | — | — | — |
+| 相同配置、另一次独立运行 | — | — | — | — | — |
+
+新记录须注明 GPU、计算能力、shape、dtype、精度开关、配置、warmup/repeat 和软件版本。已有 20.830 ms、s3/s2 与 sweep 数字仍分别属于原测量条件，不能替换成新表中的空栏或混成一条曲线。
+
 
 ## 6. 优化假设、改动、指标证据
 
 <figure class="diagram-frame">
 <img src="figures/nsys-stage-comparison.svg" alt="真实Nsys记录中s3平均21.208毫秒，s2平均22.362毫秒，共享内存减少但时间增加">
-<figcaption>图：MatMul 的 s3/s2 流水深度对比，各包含 60 次目标形状调用；来源为本节链接的流水深度分析及原始 trace。</figcaption>
+<figcaption>图：MatMul 的 s3/s2 流水深度对比，各包含 60 次目标形状调用；数字对应正文所述同一批次。</figcaption>
 </figure>
 
 > [!TIP] 从自己的实验中保留的认识
@@ -362,7 +459,57 @@ ncu --set roofline --target-processes all \
   --config k256-128x32x256-w8-s3
 ```
 
-Nsight Systems 适合回答 host enqueue、stream、kernel、H2D/D2H 和空洞是否按预期排列；Nsight Compute 适合回答单 kernel 的 achieved occupancy、registers、shared、DRAM/L2、warp stall、roofline 和 MMA/FP32 pipe。两者都不能仅凭一个 counter 证明算法原因；要把“硬件机制 → 代码旋钮 → 预期 counter → 实测耗时”闭环。
+Nsight Systems 用于查看 host 提交、stream、kernel、H2D/D2H 与空闲区间的时间顺序；Nsight Compute 用于检查单个 kernel 的 occupancy、寄存器与 shared 用量、DRAM/L2 流量、warp stall、Roofline 和 MMA/FP32 管线。单一计数器不足以确定原因，应同时记录源码改动、相关计数器变化和未开启 profiler 时的 kernel 时间。
+
+`nvidia-smi` 用于查看当前设备、驱动及运行状态；其中显示的 CUDA 版本表示驱动支持的最高 CUDA 版本，不等于本机已安装的 Toolkit 版本。`nvcc --version` 可查看 Toolkit 编译器版本；`-arch=sm_XX` 指定编译目标。目标设备信息与编译目标应分别记录，编译成功也不表示该 kernel 已在 GPU 上运行。
+
+[GPU MODE 第一讲](https://github.com/gpu-mode/lectures/tree/main/lecture_001)从完整 PyTorch 调用入手，用性能分析工具确认实际执行的 kernel。下面按这一方法编写独立实验：预先分配输入，分别调用三种逐元素平方写法；先检查结果并预热，再以 CUDA Event 计时，随后收集 CPU/CUDA 时间线。计时在 profiler 关闭时进行，避免将采集开销计入算子时间。
+
+```python
+import torch
+from torch.profiler import ProfilerActivity, profile, record_function
+
+x = torch.randn(1 << 20, device="cuda", dtype=torch.float32)
+operations = {
+    "torch.square": lambda: torch.square(x),
+    "x * x": lambda: x * x,
+    "x ** 2": lambda: x ** 2,
+}
+reference = x * x
+for fn in operations.values():
+    torch.testing.assert_close(fn(), reference)
+
+for name, fn in operations.items():
+    for _ in range(5):
+        fn()
+    torch.cuda.synchronize()
+    start = torch.cuda.Event(enable_timing=True)
+    end = torch.cuda.Event(enable_timing=True)
+    start.record()
+    for _ in range(100):
+        fn()
+    end.record()
+    end.synchronize()
+    print(f"{name}: {start.elapsed_time(end) / 100:.6f} ms")
+
+with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+             record_shapes=True) as prof:
+    for name, fn in operations.items():
+        with record_function(name):
+            for _ in range(10):
+                fn()
+    torch.cuda.synchronize()
+print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=20))
+prof.export_chrome_trace("square-trace.json")
+```
+
+这三种写法在数学上相同，但不能只凭 Python 源码断定 kernel 数量或实现相同。汇总表用于比较框架算子的调用次数和累计时间；在导出的 `square-trace.json` 中，沿各个 `record_function` 标记查看对应 GPU 轨道，才能记录实际 kernel 名称与次数。每种表达式被采集了 10 次，统计时应区分总次数与单次调用的 kernel 数。CUDA Event 结果来自未开启 profiler 的计时循环。
+
+| 表达式 | profiler 中的实际 kernel 名称 / 次数 | CUDA Event mean ms | GPU / CC |
+|---|---|---|---|
+| `torch.square(x)` | — | — | — |
+| `x * x` | — | — | — |
+| `x ** 2` | — | — | — |
 
 计时应遵循 event record、同步完成、读取 elapsed time 的顺序。系统时间线和 kernel 硬件指标分别用 Nsight Systems、Nsight Compute 分析。
 
@@ -384,15 +531,12 @@ cd <AIINFFRA>/roadmap/curriculum/gpu/05-performance-analysis-and-optimization
 bash examples/collect_cuda_tools.sh
 ```
 
-## LeetGPU：正确性与代码归档
+kernel 时间与服务请求时延的测量范围不同。以下拓展说明如何把算子测量放回模型请求时间线，并介绍常见推理指标。
 
-本章性能分析以前置的 Triton MatMul 代码为算例，不新增一个未经题面确认的平台题目。已有平台入口是 [LeetGPU Matrix Multiplication](https://leetgpu.com/challenges/matrix-multiplication)，原始平台 kernel 归档在 `solutions/triton/matmul_leetgpu.py`；服务器适配与参数入口在 `solutions/triton/matmul.py`。阅读本章时应把平台原始 kernel、服务器 wrapper、精度设置和 shape 分开引用。
+<details>
+<summary>拓展：从 kernel 时间走到 LLM 请求时延</summary>
 
-## 服务器：真实性能
-
-具备 CUDA Toolkit、目标 GPU、驱动、Triton/PyTorch 和 profiler 权限后，先按不规则 shape 做 correctness 与 warmup，再按 `--config` 逐个运行 MatMul，最后执行 Nsight Systems、Nsight Compute 和 Sanitizer 命令。任何新的时间、GFLOPS、occupancy 或 counter 都必须附带 GPU/CC、shape、dtype、精度开关、配置、warmup/repeat、软件版本和采集权限；本章给出的 RTX 3090 数字只属于上面注明的历史批次，不延伸为其他 GPU 或其他精度的结果。
-
-## 从 kernel 时间走到请求时间
+## 请求时延与 kernel 时间的边界
 
 请求时延与 kernel 时间的起止点不同。下面从时间戳计算指标，再分析单算子收益怎样传递到完整请求。
 
@@ -461,49 +605,13 @@ Decode 的小矩阵与 KV 扫描可能使 MFU 很低，但请求时延仍接近�
 
 把这些判断落实到已有的 Nsight 流程：先在 Systems 中确定排队、launch、拷贝与 kernel 的关键路径，再用 Compute 分析热点 kernel 的计算管线和存储事务，最后回到未开启 profiler 的请求测试核对 TTFT、TPOT 与吞吐。SLO（Service Level Objective，服务等级目标）约束下的有效并发需要压测；显存预算只能估计容量边界。
 
-从仓库根目录运行时间戳、P95 反例与 Amdahl 检查：
+从仓库根目录运行时间戳、P95 边界示例与 Amdahl 检查：
 
 ~~~bash
 python roadmap/curriculum/gpu/05-performance-analysis-and-optimization/examples/cpu_metrics_case.py
 ~~~
 
-## 8. 综合练习（带答案）
-
-### 练习一：资源约束
-
-问题：在本章假设下，256 threads/block、64 registers/thread、32 KiB shared/block 的 resident block 数和 occupancy 是多少？改为 96 registers/thread、48 KiB shared/block 呢？
-
-答案：第一组约束分别是 threads=8、warps=8、registers=4、shared=3、block=32，最小值 3；活跃 warp=24，占用率 $24/64=37.5\%$。第二组是 threads=8、warps=8、registers=2、shared=2、block=32，最小值 2；活跃 warp=16，占用率 $16/64=25\%$。这两个百分比不是 issue utilization。
-
-### 练习二：Vector Add Roofline
-
-问题：FP32 Vector Add 每元素 1 FLOP、12 bytes，若有效带宽 840 GB/s，算法 memory roof 是多少 GFLOP/s？
-
-答案：AI=$1/12$ FLOP/byte，memory roof=$840/12=70$ GFLOP/s。更自然的报告是有效带宽 840 GB/s 附近，而不是把 70 GFLOP/s 当成计算能力。
-
-### 练习三：GEMM AI
-
-问题：对 $8192\times6144$ 乘 $6144\times4096$ 的 FP32 storage GEMM，FLOPs、最小 bytes 和 AI 是多少？
-
-答案：FLOPs=$2MNK=412,316,860,416$；最小 bytes=$4(MN+NK+MK)=436,207,616$；AI=$945.230769$ FLOP/byte。实际 traffic 若包含重复 global load，应使用 profiler 观测值重算第二个 Roofline 点。
-
-### 练习四：精度公平性
-
-问题：为什么不能把严格 IEEE FP32 Triton 结果与 TF32 PyTorch 结果放在同一张“tile 优化”表？
-
-答案：两者的数值契约和矩阵乘指令路径不同；TF32 可能使用 Tensor Core 并带来不同误差。必须分别锁定 `allow_tf32`/`input_precision`，分别报告时间和 `max_abs_error`、`max_rel_error`。
-
-### 练习五：P0-lite 边界
-
-问题：s2 比 s3 慢、shared 减半、Reg/Trd 都是 255，可以直接说“s2 因流水损失变慢”吗？
-
-答案：不能。数据支持“这批次 s2 慢 5.44%、shared 减半、寄存器没有降低”；流水 latency hiding 是合理假设，但因为 NCU counters 不可用，尚无 stall/occupancy/issue 的直接证据。需要相同环境的 NCU 或更窄的邻域实验来检验。
-
-### 练习六：工具选择
-
-问题：想知道两个 stream 是否真的 overlap，想知道单 kernel 为什么慢，想知道是否越界，分别先用什么工具？
-
-答案：stream/host/copy/kernel 时间线先用 Nsight Systems；单 kernel 的 roofline、stall、register/shared、occupancy 用 Nsight Compute；越界、race 和同步错误先用 CUDA Sanitizer。工具输出要和源码配置、编译目标、warmup 与 shape 一起解释。
+</details>
 
 <span id="chapter-5-section-27" aria-hidden="true"></span>
 

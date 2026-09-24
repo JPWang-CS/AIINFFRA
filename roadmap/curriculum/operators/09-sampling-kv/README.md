@@ -129,6 +129,10 @@ RNG（Random Number Generator，随机数生成器）的 seed 只是初始条件
 > [!IMPORTANT] 随机算子的三层验证
 > 先验证候选集合和概率，再固定随机数验证 token 映射，最后检查统计分布与复现合同。仅比较几个随机 token，既不能证明正确，也不能定位错误。
 
+> **题面卡：在进入 KV 状态前先写采样子算子**
+>
+> [Top K Selection #29](https://leetgpu.com/challenges/top-k-selection) 只输出降序 value，不是 token id；[Top-p Sampling #60](https://leetgpu.com/challenges/top-p-sampling) 验证 `logits[V] + p + seed → sampled_token`，平台 reference 使用固定 seed 与 `torch.multinomial`。两题都不覆盖本章 RNG counter 绑定、动态 batching、KV append 或 EOS 状态；从空题面写完后，继续下面的 cache/投机语义。
+
 ## 4. KV 辅助操作：写位置和提交状态
 
 ### append 与 batch 重排
@@ -153,6 +157,13 @@ def commit_speculation(cache, prefix_length, draft_count, accepted):
 ~~~
 
 这里用切片表示逻辑提交。真实实现通常更新元数据并回收不再需要的页，不必为“删除候选”把所有内存清零；关键是无效尾部不可见。拒绝后新采样的 replacement token 与被拒绝的候选不是同一个 token，不能沿用后者的 KV。新 token 的 KV 仍需按实际模型执行路径生成。
+
+用一个带 shape 的小流程固定这条边界：`B=1,V=4,T=3`，稳定 KV 长度 `L=5`，draft token 为 `[1,2,0]`，`draft_probs/target_probs` 的形状都是 `[1,3,4]`，`uniform_samples` 是 `[1,4]`。若位置 0 接受、位置 1 拒绝并从 residual 分布采得 replacement token 3，逻辑输出序列的待执行后缀是 `[1,3]`，位置 2 的 draft token 不再提交；这两个 token 的状态要分阶段记录：
+
+1. **只提交已验证的 draft KV**：`draft_0=1` 位于逻辑位置 5，page size `P_T=4` 时物理页/偏移为 `(1,1)`；KV 有效长度从 5 变为 6。replacement `3` 只是下一步要执行的 token，虽然输出前缀已经知道 `[1,3]`，它的 KV 尚未物化，不能让 Attention 读取位置 6。
+2. **执行 replacement 的 target forward 并 append**：replacement 位于位置 6，地址为 `(1,2)`；只有写入完成且 metadata 更新后，KV 有效长度才从 6 变为 7。位置 7 的 draft KV 仍无效。若三个 draft 候选全接受，长度先推进到 8，再用 `uniform_samples[0,3]` 从最后一个 target 分布采 bonus token；bonus token 也要经过自己的 model forward/append，不能当作已经存在的 draft KV。
+
+这个实例把 `[B,T,V]` 的概率验证、连续前缀规则、预测 logits 的一位 shift 和 `[page,offset]` 的两阶段提交放在同一条数据流上；输出 token 数与已物化 KV 数是两个不同的计数器。
 
 ## 5. 投机验证为何能保持目标分布
 
@@ -197,20 +208,38 @@ $$
 
 增加 k 会增加可能接受的前缀，也会增加验证和暂存开销。高负载下验证还可能挤占其他请求的资源。DeepSeek-V4.1-Flash 的 DSpark 将前缀接受概率估计与引擎吞吐曲线结合选择验证长度，体现的就是这个权衡；它不是“接受率高就一直增加长度”。
 
+### draft mask、target verification 与 MTP 的因果边界
+
+投机解码中的两次前向有不同的 mask 合同。草稿模型生成第 `j` 个候选时，只能看到已经稳定提交的前缀和它之前已经生成的草稿 token；它不能看到同一轮中尚未生成的候选。目标模型验证长度为 `k` 的候选时，可以把“稳定前缀 + `k` 个候选”作为一个批量序列一次计算，但第 `j` 行的 causal mask 仍只允许它看稳定前缀和候选 `0..j`，不允许读取候选 `j+1..k-1`。并行验证是把多行放进一次 target forward，不是取消因果约束。
+
+因此，若把 `draft_j` 作为拼接输入中的位置 `L+j`，目标 self-attention 的 row `L+j` 确实可以看到稳定前缀和 `draft_0..draft_j`；但这个 row 产生的是“下一个位置”的 logits，不是 `draft_j` 的预测 logits。要验证 `draft_j`，应取前一行的输出（`j=0` 时取稳定前缀最后一行；具体 offset 由接口 layout 定义），再与 `draft_j` 对齐。对应的条件可写成
+
+$$
+\mathcal A_j=\{0,\ldots,L-1\}\cup\{\text{draft}_0,\ldots,\text{draft}_{j-1}\}.
+$$
+
+具体实现把候选 token 放在输入的下一个位置，还是把对应 logits 移位到 `j`，属于张量布局合同；无论采用哪种排布，验证比较的 `p_j` 必须来自上式的条件分布，而不能误用“已经看到 `draft_j` 的 row”所产生的下一 token logits。接受第 `a` 个候选后，`draft_{a+1}` 及其后面的 KV 即使已经物理写入，也不进入下一步的有效长度；一旦在位置 `a` 拒绝，后续候选不能跳过拒绝点继续提交。树状投机或 MTP 的分支 mask 可以不是简单的下三角，但每个节点仍只能依赖其祖先和稳定前缀。
+
+MTP（Multi-Token Prediction）和自投机也不能无条件写成“每次接收 `k` 个 token，所以加速约为 `k`”。MTP 可能复用主模型 hidden state 后由多个预测头给出候选；自投机可能使用早退层或同一模型的轻量路径；它们的 `t_draft(k)`、额外显存、校验 batch、调度和 KV 暂存协议都不同。只有在相同请求 batch、相同采样/过滤合同、target 能以一次保持因果 mask 的验证前向处理候选、并且把 draft、verify、commit、调度和同步全部计入时，下面的比值才可作为同范围估计：
+
+$$
+R(k)=
+\frac{\bigl(1+\mathbb E[A_{\mathrm{prefix}}]\bigr)t_{\mathrm{base}}}
+{t_{\mathrm{draft}}(k)+t_{\mathrm{verify}}(k)+t_{\mathrm{commit}}+t_{\mathrm{schedule}}}.
+$$
+
+例如 `k=3`、条件接受率为 `[0.8,0.7,0.6]` 时，
+`E[A_prefix]=0.8+0.8×0.7+0.8×0.7×0.6=1.696`，期望每轮提交 `2.696` 个 token。若单 token 基线为 `1.0 ms`，而 draft、target verification、commit 和调度合计 `2.3 ms`，同一口径下的估计只有 `2.696/2.3≈1.17×`，不是 `2.696×`。这还假定接受率来自同一 batch/长度分布；prefix cache 命中、KV page 复用、EOS、请求退出和动态 batching 都会改变 `α_j` 与每轮有效工作量。若 draft 成本随 `k` 增大，或 target 验证使其他请求排队，端到端吞吐可能没有提升，甚至下降。
+
+> **题面卡：现在写 Speculative Verification**
+>
+> [Speculative Decoding Verification #87](https://leetgpu.com/challenges/speculative-decoding-verification) 只接收 `draft_tokens`、`draft_probs`、`target_probs`、`uniform_samples`，验证 acceptance/residual/bonus token；它不生成 draft/target forward，不验证 causal mask 或 KV commit。完成空题面并归档后，下面的 CPU/服务器实验继续验证两次 forward 的 row shift、连续前缀和两阶段 KV 提交。
+
 ## 6. 实践：选择、采样和缓存分别验证
 
 ### LeetGPU：正确性与代码归档
 
-从 [LeetGPU 题库](https://leetgpu.com/challenges)开始：
-
-| 题目 | 直接验证什么 | 不要混淆 |
-|---|---|---|
-| Top K Selection（#29） | FP32 input[N] 中最大的 k 个值，降序输出 | 输出是值，不是 token id；k=1 与本章 argmax 仍有接口差别 |
-| Top-p Sampling（#60） | logits、p、seed 到单个 sampled_token | 需要匹配平台随机数与采样行为，分布相同不保证单次 token 相同 |
-
-先写确定性的选择部分，验证边界、平局、k=1 和 k=N。再固定一个 uniform 检查 CDF 映射，最后接 RNG。公开 Top-p 参考使用 PyTorch 的 seed 与 multinomial，不能把本章 CPU 的 inverse-CDF 原样当作平台的逐位兼容实现。
-
-本章 CPU 检查包含跨阈值 token、p=1、平局、CDF 边界、投机概率质量恢复及逻辑 KV 回退：
+平台原始提交按各自题面保存；本地 `semantics.py` 验证跨阈值 token、p=1、平局、CDF 边界、投机概率质量恢复及逻辑 KV 回退：
 
 ~~~bash
 python roadmap/curriculum/operators/09-sampling-kv/examples/semantics.py

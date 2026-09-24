@@ -156,7 +156,7 @@ $$
 
 这就是广播的实际含义：`bias[I]` 在 token 轴没有乘法，`residual[T,H]` 则沿两个逻辑轴都变化。`bias` 和 `residual` 若使用不同 layout 或非 contiguous stride，kernel 必须把 stride 作为参数；本章 Triton 示例固定为 contiguous 2-D `[T,I]`，不把任意 view 偷换成 contiguous 合同。
 
-本章的 `fused_swiglu` wrapper 只接受两路独立、contiguous 的 `[T,I]` buffer。对 packed `P[T,2I]` 来说，`P[:,:I]` 和 `P[:,I:]` 在 `T>1` 时通常带有 row stride `2I`，不是 contiguous view，不能直接传给这个 wrapper，也不能在计时循环内偷偷调用 `.contiguous()`。显式转换需要另列一次读写和 kernel/allocator 成本。#54 的 `T=1` 一维前后半切分可以 reshape 成 `[1,I]` 而不复制，但这不代表多行 packed `[T,2I]` 也满足本 kernel 的 contiguous 合同。
+本章的 `fused_swiglu` wrapper 只接受两路独立、contiguous 的 `[T,I]` buffer。对 packed `P[T,2I]` 来说，`P[:,:I]` 和 `P[:,I:]` 在 `T>1` 时通常带有 row stride `2I`，不是 contiguous view，不能直接传给这个 wrapper，也不能在计时循环内偷偷调用 `.contiguous()`。显式转换需要另列一次读写和 kernel/allocator 成本。一维前后半切分在 `T=1` 时可以 reshape 成 `[1,I]` 而不复制，但这不代表多行 packed `[T,2I]` 也满足本 kernel 的 contiguous 合同。
 
 当 `n=T*I` 不被 `BLOCK` 整除时，第 `pid` 个 program 的索引是
 
@@ -218,6 +218,8 @@ def fused_swiglu_kernel(
 host wrapper 的 shape 合同是：两个输入同 shape、同 device、同 dtype，均为 contiguous 2-D，dtype 只允许 FP16、BF16、FP32，输出同 shape/device/dtype。它可以检查 Python 元数据和 `numel` 是否能放入 signed int64，但不应在每次调用前 `torch.isfinite(gate).all()`；那是一次额外的 device reduction 和同步。若训练或 correctness policy 要拒绝特殊值，应该在 preflight 里做一次检查，然后再进入 timed loop。
 
 输出写回只有一次 cast。对 FP16/BF16，不能要求“独立 split 的低精度中间结果”和“fused 中 FP32 保持到最终 store”逐元素严格相等；正确对照是同一次 FP32 reference 后最终 cast，容差按 dtype 选择。FP32 下则可以把 fused 与 split 的中间存储语义做更严格的对比。
+
+**实践绑定：pointwise 题面与本地 reference。** [LeetGPU #52 Sigmoid Linear Unit](https://github.com/AlphaGPU/leetgpu-challenges/tree/main/challenges/easy/52_silu) 的合同是 FP32 一维 `input[N]→output[N]`，`rtol=atol=1e-5`；[LeetGPU #54 Swish-Gated Linear Unit](https://github.com/AlphaGPU/leetgpu-challenges/tree/main/challenges/easy/54_swiglu) 才是前半 gate、后半 up 的一维偶数输入，输出 `[N/2]`，`rtol=1e-5, atol=1e-4`。两者都不是这里二维 `[T,I]` 或 packed `[T,2I]` 的直接替代。先用 `examples/cpu_semantics.py` 检查 sigmoid/SwiGLU 的公式和尾部，再从空题面保存平台 `solve/kernel`，服务器 `validate_fusion.py` 才能在同一 FP32/低精度合同下比较 fused 与 split。
 
 ## 5. 可融合的边界与函数语义
 
@@ -304,12 +306,14 @@ $$
 
 1. 两次上投影独立 GEMM，单独启动 SwiGLU，再启动 down GEMM。这最容易验证，Z 会完整物化。
 2. GEMM 的 epilogue 中加 bias 或做局部 activation，但仍把 G/U 或 Z 写回，省掉一部分中间读。
-3. packed 上投影把 gate/up 的权重或输出放在同一布局，再做 pointwise；packed 需要严格区分 `[T,2I]` 的行边界，不能沿用 LeetGPU #54 的全局一维切法。
+3. packed 上投影把 gate/up 的权重或输出放在同一布局，再做 pointwise；packed 需要严格区分 `[T,2I]` 的行边界，不能沿用一维题面的全局切法。
 4. grouped GEMM 用于不同专家或不同 token group；形状和调度由 group 变化，不应把 dense MLP 的固定 `T,H,I` 假设直接搬过去。
 
 更大的 fusion 会延长 `G`、`U`、累加器和输出 tile 的 live range。寄存器不够时可能 spill 到 local memory；local 是线程私有的地址空间，不等于低延迟的物理片上存储。增加 `BLOCK` 或同时保留两路上投影，可能减少 launch 和物化，却降低 occupancy 或产生更多 local traffic。重算一部分 SiLU、牺牲一次 load、增加 CTA 数量，都必须通过 profiler 和多 shape 结果决定，不能从单个 shape 的最好数字推广。
 
 小 batch decode 的 `T` 可能很小，launch latency 和低占用更显著；大 prefill 的 `T` 足以填满 SM，GEMM 复用、Tensor Core 路径和全局流量更重要。同一个 fused kernel 不能只凭 `n` 变小或变大就假定收益方向。至少要把 `T` 小/大、`I` 可整除/不可整除、FP32 与低精度 correctness 分开；FP16/BF16 的性能表还要声明中间是否 cast/store，因为它们的 bytes 和误差语义不同。
+
+**实践绑定：完整 MLP 的题面边界。** [LeetGPU #84 SwiGLU MLP Block](https://github.com/AlphaGPU/leetgpu-challenges/tree/main/challenges/medium/84_swiglu_mlp_block) 才包含三组 dense 权重和完整 `[M,d_model]→[M,d_model]` 路径；一维 pointwise 题面不能替代它。进入 #84 时必须重新固定 `M,d_model,d_ff`、三次 GEMM 的累加精度、gate/up 角色和最终 down projection，不能把本节 `3ns` 的 pointwise 流量当作完整 MLP 的性能结果。
 
 ## 8. QK Norm 与 RoPE：布局、顺序和可交换性
 
@@ -388,7 +392,7 @@ def rope_split_half(x: list[float], cos_table: list[list[float]], sin_table: lis
 
 标量 RMS 缩放与正交旋转在数学上可交换；无 gamma 或每个旋转 pair 共享同一个 gamma，也可在真实正交 RoPE 下交换。per-dim gamma 一般不可交换，因为旋转会混合一对坐标，而不同 gamma 改变了这两个坐标的相对比例。非零 position 的反例是必要的：在 position 0，旋转是单位矩阵，错误顺序会被掩盖。LayerNorm 更不能默认交换：减均值和逐维 affine 不是旋转不变量，应直接比较 `LN(R(x))` 与 `R(LN(x))`。
 
-融合到一个 kernel 只改变 launch 和中间读写，不改变模型的语义顺序。模型若是 `QKNorm → RoPE`，就先在寄存器中完成 RMS，再用对应绝对位置表旋转；若模型是 `RoPE → QKNorm`，就保留反过来的顺序。K cache 的具体副作用是 `K_norm → RoPE(position) → cache[position]`，后续读取已经是旋转后的表示，不能再次 RoPE；CPU reference 检查原始 K 不变并构造 double-RoPE 反例。Residual Add + RMSNorm 是另一个合同：#83 只写 `out`，不改输入 residual，见本章前面的题面说明。
+融合到一个 kernel 只改变 launch 和中间读写，不改变模型的语义顺序。模型若是 `QKNorm → RoPE`，就先在寄存器中完成 RMS，再用对应绝对位置表旋转；若模型是 `RoPE → QKNorm`，就保留反过来的顺序。K cache 的具体副作用是 `K_norm → RoPE(position) → cache[position]`，后续读取已经是旋转后的表示，不能再次 RoPE；CPU reference 检查原始 K 不变并构造 double-RoPE 反例。Residual Add + RMSNorm 是另一个输出合同：只写 `out`，不改输入 residual。
 
 QK Norm 的关键实现也直接保留在 reference，而非只给文件名：
 
@@ -409,7 +413,11 @@ def rms_norm(x: list[float], gamma: list[float] | None = None, eps: float = 1e-6
 
 这些题目是 free challenge。应从平台总入口按准确题名搜索并核对当前签名，先原样保存平台 `solve`/kernel，再做服务器 wrapper。CPU reference 可以验证数学和索引，但不等于 GPU 题面通过。
 
-## 9. 旧代码、reference 和可执行题面
+## 9. 旧实现与 reference 的解释边界
+
+本节只使用上一章 GEMM 原始实现和 reference header 解释 accumulator、epilogue 及数值边界；它们用于理解，不是本章融合题面的实现或性能证据。
+
+### 9.1 用 GEMM accumulator 解释 epilogue，不把旧 kernel 当融合实现
 
 上一章用户 GEMM 原始实现可以用来解释 accumulator 的生命周期，但不能被写成 MLP 实现。下面是 solutions/cuda/gemm/naive_float.cu 中的原样 kernel；每个线程把一个 C 元素的 `sum` 保存在寄存器，循环结束才写回。这个事实能帮助理解 GEMM epilogue 为什么有一个“最终写回前”的插入点，但它没有 SwiGLU 或真实 MLP 的实测。
 
@@ -446,20 +454,11 @@ __device__ __forceinline__ float gelu(float x) {
 
 上面的 `sigmoid` 直接调用 `expf(-x)`，不具备稳定改写的全部溢出边界。融合还要考虑寄存器压力：限制寄存器可能引起 spill，local memory 不代表低延迟片上存储；`--use_fast_math` 会替换部分运算，可能改变误差和特殊值行为，不能只按运行时间选编译选项。
 
-可核对的公开题面有四个层次：
+## 10. 当依赖图改变时：Single-Pass mHC
 
-- [#52 Sigmoid Linear Unit](https://github.com/AlphaGPU/leetgpu-challenges/tree/main/challenges/easy/52_silu)：FP32 `input[N]` 到 `output[N]`，`rtol=atol=1e-5`。
-- [#54 Swish-Gated Linear Unit](https://github.com/AlphaGPU/leetgpu-challenges/tree/main/challenges/easy/54_swiglu)：FP32 一维偶数 `input[N]`，前半 gate、后半 up，输出 `[N/2]`，`solve(input, output, N)`，`rtol=1e-5, atol=1e-4`。
-- [#83 Fused Residual Add and RMS Norm](https://github.com/AlphaGPU/leetgpu-challenges/tree/main/challenges/medium/83_fused_residual_add_rms_norm)：先 `x+residual` 再 RMSNorm 和 weight，只输出一个 `[N,C]`，不改原 residual，`rtol=atol=1e-5`。
-- [#84 SwiGLU MLP Block](https://github.com/AlphaGPU/leetgpu-challenges/tree/main/challenges/medium/84_swiglu_mlp_block)：FP32 `x[M,d_model]`、三组 dense 权重和 `output[M,d_model]`，`rtol=atol=1e-4`；完整 MLP 题面不等于本章 pointwise kernel 已覆盖 GEMM。
+SwiGLU 的融合保持数学计算不变，只调整中间值的存放位置。另一类优化先改变模型的数据依赖，才可能减少遍历；DeepSeek-V4.1-Flash 的 Single-Pass mHC 用来说明这条边界。把它放在题面与 reference 之后，是为了先完成算子合同，再讨论不能作为等价编译变换的模型级设计。
 
-题面均为 free challenge。先从题面合同实现并保存原始 `solve`/kernel，再进入真实 GPU baseline；题面通过的是对应 challenge 的正确性，不自动赋予完整 `[T,H]`→`[T,I]`→`[T,H]` MLP 的性能结论。
-
-## 模型依赖怎样限制融合：Single-Pass mHC
-
-SwiGLU 的融合保持数学计算不变，只调整中间值的存放位置。DeepSeek-V4.1-Flash 的 Single-Pass mHC 则先改变模型的数据依赖，才能减少遍历；下面比较这两类优化的差别。
-
-### 先找必须等待的归约
+### 10.1 先找必须等待的归约
 
 mHC（Manifold-Constrained Hyper-Connections，流形约束超连接）维护多条残差流。对一个 token，令第 l 个 block 的输入为 X_l，形状为 n×d：n 是残差流数，d 是每条流的 hidden dimension。三个混合系数分别为 A_l∈R^(1×n)、B_l∈R^(n×n)、C_l∈R^(n×1)，由依赖输入的预测函数 H 产生：
 
@@ -473,7 +472,7 @@ $$
 
 把几个操作写进同一个函数并不会消除这个依赖。一个 CTA（Cooperative Thread Array，协作线程数组）若能保留全部数据，可以在归约后继续消费，但会受到寄存器和 shared memory 容量限制；多个普通 CTA 之间则不能随意用 block 内 barrier 代替全局协调。实现是否值得融合，首先取决于依赖和资源，不取决于函数名是否带 fused。
 
-### 哪部分能等价搬动，哪部分改变了模型
+### 10.2 哪部分能等价搬动，哪部分改变了模型
 
 预测器中的固定归一化权重可以吸收到线性投影权重中。例如行向量 x、固定逐通道 gamma 和矩阵 W 满足
 
@@ -507,7 +506,7 @@ def mix(coefficients, streams):
 
 给两条流 [1,0] 与 [0,2]，旧系数 [0.5,0.5] 得到 [0.5,1]；若当前预测器产生不同系数，混合结果通常不同。配套脚本用一个输入相关的 toy predictor 验证这个反例，不能把它当作作者训练后的质量评估。
 
-### 用元素流量核对收益，而不是把 kernel 数当速度
+### 10.3 用元素流量核对收益，而不是把 kernel 数当速度
 
 报告比较的是指定残差变换与输入 pre-norm 范围内的激活读写。按它的统计边界，多遍实现为 (4n+4)d 个元素，两遍实现为 (3n+2)d，Single-Pass 为 (2n+2)d。取报告的 n=4、d=5120：
 
@@ -527,11 +526,11 @@ python roadmap/curriculum/operators/04-activation-and-fusion/examples/cpu_mhc_ca
 
 实际优化仍按“依赖图 → 可保留的数据 → 编译资源 → profiler”检查：预期减少的是对应激活的遍历和中间存储；如果融合后 spill 增多、occupancy 下降或 launch 已不是瓶颈，时间收益可能小于流量收益。
 
-## 10. 实践：写题与性能对比
+## 11. 实践：写题与性能对比
 
 ### LeetGPU：正确性与代码归档
 
-先核对公开题面中的函数签名、输入输出布局和容差。从 #52 或 #54 开始时，代码必须按题面的一维合同处理；进入 #84 时再把三次 GEMM、gate/up 角色、最终 down projection 和 FP32 参考连接起来。非整除二维 shape、正负零、适度偏置、NaN/Inf 策略和 packed 行边界应在本地 CPU 语义脚本中先覆盖。通过后原样保存平台 `solve`/kernel，单独标注题面版本与本地 wrapper，不把服务器适配文件冒充平台源码。
+按前文已经定义的题面合同执行：先从空编辑器核对函数签名、输入输出布局和容差，再用本地 CPU 语义脚本覆盖非整除 shape、正负零、适度偏置、NaN/Inf 策略和 packed 行边界。通过后原样保存平台 `solve`/kernel，单独标注题面版本与本地 wrapper，不把服务器适配文件冒充平台源码。
 
 ### 服务器：真实性能
 
@@ -545,10 +544,16 @@ python roadmap/curriculum/operators/04-activation-and-fusion/examples/rope_qknor
 python roadmap/curriculum/operators/04-activation-and-fusion/examples/validate_fusion.py
 python roadmap/curriculum/operators/04-activation-and-fusion/examples/validate_fusion.py --benchmark --tokens 4096 --hidden 11008
 ~~~
-
-
-
 默认正确性检查覆盖 FP32、FP16、BF16 和非整除长度，性能对比固定为 FP32。先检查实际计时 shape 的 fused、split 和 reference 三份结果，再预热并计时。共同使用 `3*n*s` 作为 useful GB/s 的分子，便于比较完成相同有效工作的速度；同时另列 split 的 `5*n*s` 与 fused 的 `3*n*s` 算法流量，不能把这两个估算当成 DRAM counter。
+
+服务器记录表把 pointwise、完整 MLP 和 QK Norm/RoPE 分开：
+
+| 实验 | 固定合同与入口 | GPU / CC | correctness | mean ms | useful GB/s | registers / spill / occupancy / traffic |
+|---|---|---|---|---:|---:|---|
+| fused SwiGLU vs split | `[T,I]` gate/up；FP32；预分配 scratch/output；`T=`、`I=` |  |  |  |  |  |
+| low-precision fused SwiGLU | FP16/BF16 input；FP32 intermediate；最终 cast；`T=`、`I=` |  |  |  |  |  |
+| complete SwiGLU MLP | #84 contract；三次 GEMM；`M=`、`d_model=`、`d_ff=`；同精度 baseline |  |  |  |  |  |
+| QK Norm + RoPE | #61 table contract；split-half；non-zero position；`D=`、`Drot=` |  |  |  |  |  |
 
 ## 参考阅读
 

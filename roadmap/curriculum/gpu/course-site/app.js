@@ -61,6 +61,9 @@ let current = 1;
 let headings = [];
 const firstChapterByPart = new Map(partLinks.map(link => [link.dataset.partLink, Number(link.dataset.chapterLink)]));
 const lastChapterByPart = new Map(firstChapterByPart);
+// file:// pages have an opaque origin in some browsers. Navigating to the
+// same HTML with a new query is safer than rewriting their history entry.
+const localFile = location.protocol === 'file:';
 const partOf = chapter => articleById.get(chapter)?.dataset.part || (chapter <= 5 ? 'gpu' : chapter <= 15 ? 'operators' : 'systems');
 function readLocation() {
   const url = new URL(location.href);
@@ -81,12 +84,23 @@ function clearSearch() {
 function navigate(target, {replace = false, scroll = true} = {}) {
   const url = target instanceof URL ? target : new URL(target, location.href);
   if (!url.searchParams.has('chapter')) url.searchParams.set('chapter', current);
+  if (localFile) {
+    if (replace) location.replace(url.href);
+    else location.assign(url.href);
+    return false;
+  }
   if (replace) history.replaceState(null, '', url);
   else history.pushState(null, '', url);
   applyState(readLocation(), {scroll});
+  return true;
 }
 function closeMenu() { sidebar.classList.remove('open'); menu.setAttribute('aria-expanded', 'false'); }
 let lastPanelSelection = '';
+function revealSection(element) {
+  for (let parent = element?.parentElement; parent; parent = parent.parentElement) {
+    if (parent.tagName === 'DETAILS') parent.open = true;
+  }
+}
 function revealInPanel(item, panel) {
   if (!item || !panel || !item.getClientRects().length || !panel.getClientRects().length) return;
   const row = item.getBoundingClientRect(), frame = panel.getBoundingClientRect();
@@ -98,8 +112,9 @@ function revealInPanel(item, panel) {
 function progress() {
   const d = document.documentElement;
   document.querySelector('#progress-bar').style.width = 100 * d.scrollTop / Math.max(1, d.scrollHeight - d.clientHeight) + '%';
-  let selected = headings[0];
-  for (const heading of headings) {
+  const visibleHeadings = headings.filter(heading => !heading.closest('details:not([open])'));
+  let selected = visibleHeadings[0];
+  for (const heading of visibleHeadings) {
     if (heading.getBoundingClientRect().top <= 130) selected = heading;
     else break;
   }
@@ -131,7 +146,11 @@ function applyState(state, {scroll = true} = {}) {
   if (normalizedUrl.searchParams.get('chapter') !== String(n)) {
     normalizedUrl.searchParams.set('chapter', n);
     normalizedUrl.hash = state.hash;
-    history.replaceState(null, '', normalizedUrl);
+    if (localFile) {
+      // A bare index.html is the chapter-1 entry; legacy/invalid queries get
+      // one ordinary navigation to their canonical chapter.
+      if (location.search) { location.replace(normalizedUrl.href); return; }
+    } else history.replaceState(null, '', normalizedUrl);
   }
   current = n;
   lastChapterByPart.set(partOf(n), n);
@@ -170,7 +189,8 @@ function applyState(state, {scroll = true} = {}) {
     link.addEventListener('click', event => {
       if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
       event.preventDefault();
-      navigate(new URL(link.href, location.href), {scroll: false});
+      if (!navigate(new URL(link.href, location.href), {scroll: false})) return;
+      revealSection(heading);
       heading.scrollIntoView({behavior: 'smooth'});
       settleAnchorAfterFonts(heading);
     });
@@ -180,6 +200,7 @@ function applyState(state, {scroll = true} = {}) {
   try { anchor = document.getElementById(decodeURIComponent(location.hash.slice(1))); } catch {}
   if (scroll) {
     if (anchor && articleById.get(n).contains(anchor)) {
+      revealSection(anchor);
       anchor.scrollIntoView({behavior:'instant'});
       settleAnchorAfterFonts(anchor);
     }
@@ -199,8 +220,9 @@ document.querySelectorAll('.chapter-outline a,.heading-anchor,[data-section-link
   const heading = document.getElementById(id);
   if (!heading) return;
   event.preventDefault();
-  navigate(new URL(link.href, location.href), {scroll: false});
+  if (!navigate(new URL(link.href, location.href), {scroll: false})) return;
   const hydratedHeading = document.getElementById(id);
+  revealSection(hydratedHeading);
   hydratedHeading?.scrollIntoView({behavior: 'smooth'});
   settleAnchorAfterFonts(hydratedHeading);
 }));
@@ -228,6 +250,9 @@ document.querySelector('.content').addEventListener('click', () => {
   if (sidebar.classList.contains('open')) closeMenu();
 });
 bindCopies(document);
+document.addEventListener('toggle', event => {
+  if (event.target.matches?.('.markdown-body details')) progress();
+}, true);
 document.addEventListener('click', event => {
   if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
   const link=event.target.closest('a[href]');
@@ -271,6 +296,6 @@ search.addEventListener('input', () => {
 addEventListener('popstate', () => applyState(readLocation()));
 addEventListener('hashchange', () => applyState(readLocation()));
 addEventListener('scroll', progress, {passive: true});
-history.scrollRestoration = 'manual';
+try { history.scrollRestoration = 'manual'; } catch {}
 applyState(readLocation());
 window.courseNavigation = {navigate, readLocation, applyState};

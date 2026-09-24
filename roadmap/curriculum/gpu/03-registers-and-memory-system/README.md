@@ -4,28 +4,23 @@ C++ 的局部作用域描述变量在哪里可见，CUDA 地址空间描述谁�
 
 矩形转置把三类问题集中到一个例子里：global memory 的跨步访问、shared memory 的 bank conflict，以及尾块的协作装载。比较 naive 与带 padding 的 tiled 实现，可以逐层检查地址、同步和资源消耗。
 
-## 1. 先把“变量在哪里”拆成五个问题
+## 1. 线程私有值与寄存器
 
-在 CUDA C++ 中，下面五个问题的答案不同。
-
-1. 变量的**语义所有者**是谁：整个 grid、一个 block、一个 warp，还是单个 thread？
-2. 变量的**逻辑地址空间**是什么：global、shared、constant、local，还是寄存器候选？
-3. 编译器能否把它拆成标量、常量传播、消除或重新安排？
-4. 它的值在多长的**活跃区间**内必须保留？
-5. 生成的机器码最终用了多少物理寄存器、多少 local stack/frame，以及哪些 load/store？
-
-例如：
+先看一个元素在单个线程中的计算。kernel 可能启动比 `n` 多的线程，因此先检查下标；只有 launch 保证线程数恰好覆盖合法元素时，才可省略边界判断。
 
 ```cpp
-__global__ void one_value(const float* x, float* y) {
+__global__ void one_value(const float* x, float* y, int n) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n) return;
     float a = x[i];
     float b = a * 2.0f;
     y[i] = b + 1.0f;
 }
 ```
 
-`a`、`b` 的语义是每个 thread 一份，不能被另一个 thread 直接读；但这不等于它们一定各占一个物理寄存器直到 kernel 结束。若编译器把 `b` 直接融合进乘加，`a` 的活跃区间可能在计算后立刻结束。若 `a` 只被使用一次，编译器甚至可能把 load、乘法和 store 重新安排为更短的链。相反，下面的代码要求很多中间值同时存活：
+每个线程用自己的 `i` 读取一个 `x[i]`，计算 `a`、`b`，再写到 `y[i]`。线程之间不能直接读取对方的 `a` 或 `b`。这些值通常由寄存器承载，但源码中的局部变量并不保证各占一个物理寄存器；编译器可能将乘法与加法融合、复用存储位置或消除中间值。
+
+所谓活跃区间，是从一个值产生到最后一次使用之间的程序区间。下面的代码使多个输入值都在输出表达式处被使用：
 
 ```cpp
 __global__ void long_live_values(const float* x, float* y, int n) {
@@ -41,29 +36,47 @@ __global__ void long_live_values(const float* x, float* y, int n) {
 }
 ```
 
-这里的 `p0` 到 `p4` 可能被编译器优化掉一部分，但从源码结构看，它们之间存在一条较长的数据依赖和一个末端汇合点，寄存器压力通常比第一段更高。工程上不能只看“声明了几个变量”，要看 `ptxas` 报告的 registers/thread、local memory，以及 SASS 中是否真的出现了 local load/store。
+这里的 `p0` 到 `p4` 要保留到末尾求和，源码表达了较多同时活跃的值。编译器可能化简示例中的常量运算，因此这只是解释活跃区间的源代码示意；实际寄存器用量要结合编译器报告和生成指令判断。
 
-寄存器是线程私有的片上存储；local memory 也是线程私有的地址空间，但物理访问可能经过设备内存路径。寄存器、shared memory 和 block/warp 数量共同限制驻留量。“local”描述作用域，不代表低延迟。
+图中先区分谁能访问：寄存器和 local memory 都是线程私有；shared memory 由同一 block 的线程共享；global memory 可由 grid 中的线程访问。local 指线程私有的地址空间，并不表示数据一定在片上。接下来再看编译器如何为这些值选择物理存放位置。
 
-## 2. 32-bit 计量：寄存器不是按源码变量数计费
+<figure class="diagram-frame">
+<img src="figures/thread-block-memory-scope.svg" alt="寄存器和local memory属于单个线程，shared memory属于一个block，global memory可由grid中的线程访问">
+<figcaption>图：CUDA 地址空间的可见范围。local memory 虽是线程私有地址空间，物理访问仍可能落到设备内存路径。</figcaption>
+</figure>
+
+常见内存空间的可见范围、生命周期和位置如下。可见范围描述哪些线程能访问，不等同于每次访问的缓存路径。
+
+| 类型 | 可见范围 | 生命周期 | 通常所在位置 |
+|---|---|---|---|
+| 寄存器 | 单个 thread | kernel 执行期间 | SM 寄存器文件 |
+| Local memory | 单个 thread | kernel 执行期间 | device memory 路径，可能经缓存 |
+| Shared memory | 单个 block | kernel 执行期间 | SM 上与 L1 共用的片上资源 |
+| Global memory | grid 中线程 | 分配到释放 | device memory |
+| Constant memory | grid 中线程，只读 | 分配到释放 | device memory 与只读缓存路径 |
+
+## 2. 寄存器用量与计数单位
 
 > [!IMPORTANT] local 描述作用域，不描述距离
 > **线程私有变量不一定放在寄存器中。** 动态索引数组、较大局部对象和寄存器溢出都可能使用 local memory；只有最后一种原因才叫 register spill。先查编译产物，再判断性能影响。
 
-CUDA 的寄存器资源通常以 32-bit register 为计量单位。一个 `float` 或 `int` 的标量候选通常需要一个 32-bit register；`double`、64-bit pointer、`long long` 会占用多个 32-bit 单位；向量、结构体和编译器生成的临时值还可能被拆成更多标量。真正决定一个 block 能否同时驻留的是类似下面的资源账本：
+byte（字节）用于地址和传输大小；一个 32-bit word 是 4 byte。寄存器资源按 32-bit register 计：一个 `float` 或 `int` 标量通常占一个，`double`、64-bit pointer、`long long` 通常占多个。源码变量数不等于寄存器数，编译器会拆分、合并、消除或复用值。后文的 32B sector 是 global memory 请求的覆盖单位，bank 是 shared memory 的并行访问分组；它们都不是 C++ 元素或寄存器。
+
+估算一个 block 的寄存器需求可从下式开始：
 
 $$
 R_{block} \approx T_{block} \times R_{thread}
 $$
 
-它还要经过架构相关的分配粒度和每个 SM 的寄存器上限取整，因此这个式子适合做下界和趋势推导，不应拿来替代编译器报告。若 `T_block=256`、报告为 `R_thread=64`，未经分配粒度取整的直观账本是 $256\times64=16384$ 个 32-bit register。若把每线程寄存器从 64 压到 48，理论账本降为 12288，但若因此产生 local spill，实际性能可能更差。
+它还要经过架构相关的分配粒度和每个 SM 的寄存器上限取整，因此这个式子只用于估算趋势，不能替代编译器报告。若 `T_block=256`、报告为 `R_thread=64`，不考虑取整时，该 block 约需 $256\times64=16384$ 个 32-bit register。若每线程寄存器降至 48，估算数降为 12288；但若因此产生 local spill，性能可能更差。
 
-本章新增的 register_spill_probe.cu 故意使用一个动态索引的线程私有数组。它不是“数组一定 spill”的证明，而是一个用于观察编译器选择的最小例子：
+下面用线程私有数组观察动态下标对存储分配的影响。数组先初始化，随后根据运行时下标更新其中一个元素。这段教学片段省略了核函数外层，`i` 是已经检查合法的输入下标，`step` 是循环次数：
 
 ```cpp
 float values[64];
-int slot = (lane * 13 + step) & 63;
-values[slot] = values[slot] + input;
+for (int j = 0; j < 64; ++j) values[j] = input[i] + j;
+int slot = (threadIdx.x + 13 * step) & 63;
+values[slot] = fmaf(values[slot], 1.0001f, 0.25f);
 ```
 
 当索引是编译期常量时，编译器有机会把 `values[0]`、`values[1]` 等标量化，甚至完全消除数组；当索引依赖运行时数据时，编译器需要保留“基址 + 索引”的寻址能力，往往更难把全部元素固定到独立寄存器。此时可能出现 local memory 访问，也可能因为数组很小、优化足够强而仍被寄存器化。结论必须来自 `-Xptxas=-v`、`--resource-usage` 和 PTX/SASS，而不能由数组语法直接推断。
@@ -88,9 +101,9 @@ cuobjdump --dump-ptx register_spill_probe.exe
 nvdisasm --print-code --print-line-info register_spill_probe.cubin
 ```
 
-“限制寄存器”不是无条件优化。CUDA Programming Guide 13.3 在 §2.3.3.3、打印页 51（PDF 页 67）说明，`--maxrregcount` 可能让更多 block 驻留，却也可能使 kernel spill 到 local memory，改变性能特征；只有在同一目标设备、同一 shape、同一数值语义下测量，才能判断增加 occupancy 是否抵消了 local traffic。
+`--maxrregcount` 限制每个线程可用的寄存器数。限制较低时，一个 SM 可能容纳更多 block；但放不下的中间值也可能转存到 local memory，增加读写。对照实验需要同时查看寄存器报告、local 访问和运行时间，仅看驻留数量不足以判断收益。
 
-**反例：把 ptxas 的 register 数当作“每个源码变量的数量”。**
+### 编译器报告中的寄存器数
 
 ```cpp
 float a = x;
@@ -100,34 +113,29 @@ float c = b * 2.0f;
 
 优化编译后可能只保留一个或两个活跃值；反过来，一行表达式也可能因为 FMA 输入、地址计算、边界 predicate 和循环展开产生多个临时寄存器。应观察编译结果，不要从格式化后的源码行数倒推资源。
 
-**带答案的追问。**
-
-问：把 `float values[64]` 改成 `float values[8]`，是否一定能消除 spill？
-
-答：不一定。动态索引、循环展开、其他同时活跃的 accumulator、编译目标和寄存器分配粒度都会影响结果。正确做法是对两个版本分别保存 `ptxas` 的 registers/thread 与 lmem bytes，并在 SASS 中搜索 local load/store；“数组更小”只是降低压力的假设，不是验证结论。
+缩小 `float values[64]` 的数组不保证消除 spill。动态索引、循环展开、同时活跃的累加值、编译目标和寄存器分配粒度都会影响结果。比较两个版本的 `ptxas` registers/thread、local memory 字节数和 SASS 中的 local load/store，才能确认实际变化。
 
 ## 3. 活跃区间、依赖链与寄存器压力
 
-寄存器压力的核心不是“用了多少变量”，而是同一时刻有多少值必须继续可用。下面两个写法数学上相同，但活跃区间不同：
+寄存器压力取决于同一时刻必须保留的值。第一种写法先加载四个独立值，再一起消费；第二种分批加载并尽早消费前一批：
 
 ```cpp
 // 许多中间量同时存活到末尾
 float a = load_a(i);
 float b = load_b(i);
-float c = a * b;
+float c = load_c(i);
 float d = load_d(i);
-float e = c + d;
-float f = load_f(i);
-out[i] = e + f;
+out[i] = (a + b) + (c + d);
 ```
 
 ```cpp
 // 尽快消费中间量，缩短部分活跃区间
-float e = load_a(i) * load_b(i) + load_d(i);
-out[i] = e + load_f(i);
+float ab = load_a(i) + load_b(i);
+float cd = load_c(i) + load_d(i);
+out[i] = ab + cd;
 ```
 
-第二段也不保证一定更快，因为编译器可能自动做同样的安排；它的教学价值在于说明 live range（活跃区间）是可优化对象。矩阵乘的 accumulator 是另一种典型：若一个 thread 同时维护 $C_{tile\_m\times tile\_n}$ 个 FP32 累加器，输出 tile 增大，寄存器需求通常随 tile 面积增长。已有 Triton MatMul 归档 solutions/triton/matmul_leetgpu.py 中 `acc = tl.zeros((BLOCK_M, BLOCK_K), dtype=tl.float32)` 是高层写法；它表达了输出累加 tile，但实际 lane 到元素的映射、寄存器分配和共享内存 staging 由 Triton 编译器决定。已有服务器脚本 solutions/triton/matmul.py 的 benchmark 注释和参数也应与 `-Xptxas=-v`、Nsight Compute 结果一起解读，不能仅凭 `BLOCK_M/BLOCK_N/BLOCK_K` 推出寄存器数。
+第一种源码表达出四个加载值在输出计算时同时需要；第二种可在加载下一对之前结束前一对的活跃区间。编译器可能重排两者并生成相同机器码，因此要结合编译器资源报告和生成指令判断实际用量。矩阵乘中，线程持有的输出累加值也会影响寄存器需求；tile 变大通常提高压力，但实际 lane 映射和寄存器分配由编译器决定。
 
 依赖链又是另一个维度。一个长链：
 
@@ -153,7 +161,7 @@ for (int k = lane * 4; k < K; k += 4 * warpSize) {
 
 片段已对最后一组做逐元素边界检查，不要求 K 能被4整除。它展示的是“用更多独立累加器打断依赖链”的机制；同时，每条加载指令在lane之间的步长变成4，也可能改变访存效率。独立链增加后，registers/thread可能上升、驻留warp可能下降；是否更快仍要把指令依赖、地址映射和实际计数器一起看。
 
-## 4. 四类地址空间和缓存：语义不同，物理路径也不同
+## 4. CUDA 地址空间与缓存
 
 ### 4.1 Global memory
 
@@ -161,7 +169,7 @@ Global memory 是 grid 中所有线程可寻址的设备内存。它容量大、
 
 ### 4.2 Shared memory
 
-Shared memory 是 block 作用域的片上存储。它适合让同一 block 的线程交换数据和复用 tile，但它有 32 个 bank 的访问规则，且需要正确的 block-level synchronization。CUDA Programming Guide 13.3 的转置示例（打印页 60–67，对应 PDF 页 76–83）正是先用 shared staging 修复 global 的写入跨步，再用 padding 修复 shared 的列访问冲突。
+Shared memory（共享内存）是分配给一个 block 的片上存储，同一 block 的线程可用它交换数据、重复使用已加载的值。它分成多个可并行访问的存储分组，称为 bank；本章讨论的现代 CUDA GPU 有 32 个 bank。多个线程访问同一个 bank 的不同位置时，请求可能需要分批处理。矩阵转置将先用共享内存改善全局读写，再调整共享数组的行跨度，分别解决这两个问题。
 
 ### 4.3 Constant memory
 
@@ -171,9 +179,10 @@ Constant memory 是设备端只读地址空间，适合小的、稳定的常量�
 
 Local memory 的语义是每个 thread 私有，但“local”描述可见性和地址空间，不保证片上。寄存器溢出、无法标量化的局部数组、过大的线程私有对象都可能使用它。local 访问还可能经过缓存，因此需要区分两件事：它没有 shared 的 block 共享语义，也没有寄存器的低延迟保证；它是否成为瓶颈要通过 lmem 与机器码检查。
 
-**反例：把“变量声明在 kernel 内”解释成“它在 shared memory”。**
+### kernel 中的局部变量与 shared memory
 
 ```cpp
+// 前提：仅启动一个 block，blockDim.x 为 32，且没有其他 block 访问 tile。
 __global__ void wrong_memory_model(float* out) {
     float x = 1.0f;              // 每个 thread 的寄存器候选
     __shared__ float tile[32];   // block 共享，显式 shared
@@ -183,13 +192,11 @@ __global__ void wrong_memory_model(float* out) {
 }
 ```
 
+离开这些前提后，必须另行确认索引范围、数组大小和跨 block 的数据所有权。此例只比较 thread 私有的 `x` 与 block 共享的 `tile`。
+
 `x` 和 `tile` 的作用域都写在 kernel 内，但语义完全不同；前者不能被邻居 thread 直接读取，后者必须用 barrier 保护跨 thread 的生产—消费关系。
 
-**带答案的追问。**
-
-问：global memory 访问命中 L1/L2 后，能否称为“寄存器读”或“shared memory 读”？
-
-答：不能。缓存只改变某次 global 请求的物理服务路径和延迟，变量仍属于 global address space；寄存器和 shared 是不同的编程语义、容量账本和同步规则。
+命中 L1/L2 的访问仍是 global-memory 请求。缓存改变服务该请求的数据路径和延迟，不会把 global 地址变成寄存器或 shared 地址；这些地址空间具有不同的可见范围和同步规则。
 
 ## 5. Global memory 的 32B sector 手算
 
@@ -205,7 +212,7 @@ $$
 sector(l)=\left\lfloor\frac{addr(l)}{32}\right\rfloor
 $$
 
-真正的 sector 数是这些 sector 编号的去重数量。这个模型比“lane 连续所以一定合并”准确，因为合并关注请求覆盖了哪些 sector，而不要求源码中的 lane 顺序看起来连续。
+sector 数是地址映射后不同 sector 编号的数量。合并访问取决于一条 warp 指令覆盖的 sector，而不是 lane 编号在源码里是否按地址递增。
 
 ### stride = 1
 
@@ -226,13 +233,13 @@ $$
 
 ### 连续 lane 不是必要条件
 
-如果 32 个 lane 以任意置换访问同一组地址 `{0, 4, 8, ..., 124}`，去重后的 sector 集仍然是 `{0,1,2,3}`，请求仍可按 4 个 sector 合并。连续 lane 是最容易构造、也最常见的充分条件；“连续”不是合并访问的必要条件。反例是地址虽然在源码上由连续 lane 生成，却因为 base 跨过 32B 边界覆盖了额外 sector。
+如果 32 个 lane 以任意置换访问同一组地址 `{0, 4, 8, ..., 124}`，去重后的 sector 集仍然是 `{0,1,2,3}`，请求仍可按 4 个 sector 合并。连续 lane 是最容易构造、也最常见的充分条件，但不是合并访问的必要条件。若起始地址未对齐，即使 lane 按连续地址访问，也可能跨过额外的 32B sector。
 
 **完整算例。** 令 `base=64`、`stride=2`，第 0、1、2、3 个 lane 的地址是 64、72、80、88，sector 分别是 2、2、2、2；第 4 到 7 lane 地址 96、104、112、120，sector 是 3、3、3、3。继续到 lane 31，最后地址是 312，sector 是 9，所以总 sector 是 2 到 9，共 8 个。这里 lane 内部存在分组，但 sector 去重才是计数依据。
 
 分析 naive GEMM 的线程映射时，要区分单线程跨归约迭代的地址与同一条 warp 指令的地址。对 `B[n*K+k]`，若同一 warp 的 k 连续，固定 n 的这次读取可以合并；单线程下一次迭代跳过 K 个元素，并不意味着这次 warp 请求不合并。
 
-旧 tiled 实现的真实核心来自 `solutions/cuda/gemm/tiled_fp16.cu`，其合同是 `A[M,K] × B[K,N] => C[M,N]`，与 naive 的 `A[M,N] × B[N,K] => C[M,K]` 不同：
+下面的 tiled GEMM 计算 `A[M,K] × B[K,N] => C[M,N]`；本节的 naive GEMM 采用 `A[M,N] × B[N,K] => C[M,K]`。两者的矩阵维度约定不同：
 
 <!-- source-check: solutions/cuda/gemm/tiled_fp16.cu -->
 ~~~cpp {8-10,16-27,29-35,39-42}
@@ -342,13 +349,9 @@ $$
 
 bank 公式适合分析 32-bit word 访问。对于 64-bit、向量化或不同 bank width 的访问，一个请求可能覆盖多个 bank，必须按实际字节宽度拆分；不能把 `float4` 直接当成一个 32-bit word。对当前转置例程，tile 元素是 `float`，所以上面的手算可以直接使用。
 
-**带答案的追问。**
+对 `tile[32][32]`，若一个 warp 的 lane 读取 `tile[0][lane]`，访问分布在不同 bank；若读取 `tile[lane][0]`，32 个 lane 落到同一 bank 的不同 word。bank 行为由 lane 到地址的映射共同决定。
 
-问：`tile[32][32]` 的按行读取一定无冲突吗？
-
-答：若 warp 0 的 lane 读取 `tile[0][lane]`，是无冲突；但如果线程映射或索引表达式改成 `tile[lane][0]`，同一个物理数组立刻变成 32-way conflict。bank 决定于“lane 到 word address 的映射”，不是数组声明单独决定。
-
-## 7. 完整转置例程：先保证 barrier，再谈 padding
+## 7. 矩形转置：shared staging 与 padding
 
 ### 7.1 数学和布局
 
@@ -381,15 +384,295 @@ __syncthreads();
 
 ### 7.3 三条可比较的代码路径
 
-`transpose_tiled.cu` 里有三个可比较的路径：
+三种实现共用 `kTile=32`。朴素版本直接从输入读一个元素并写到转置后的地址：
 
-- `transpose_naive_kernel`：一个线程处理一个元素，读 A 连续，但写 B 跨步；它给出不使用 shared staging 的基线。
-- `transpose_tiled_kernel<false>`：`float tile[32][32]`，global 访问模式得到修复，但读转置列时会暴露 bank conflict。
-- `transpose_tiled_kernel<true>`：`float tile[32][33]`，同样的逻辑数据配合 padding，避免跨列访问的 32-way conflict。
+<!-- source-check: examples/transpose_tiled.cu -->
+~~~cpp
+constexpr int kTile = 32;
+~~~
+
+<!-- source-check: examples/transpose_tiled.cu -->
+~~~cpp
+__global__ void transpose_naive_kernel(const float* input, float* output,
+                                       int rows, int cols) {
+    const int row = blockIdx.y * blockDim.y + threadIdx.y;
+    const int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (row < rows && col < cols) {
+        // input is rows x cols; output is cols x rows.
+        output[col * rows + row] = input[row * cols + col];
+    }
+}
+~~~
+
+输入 tile 中，`threadIdx.x` 连续变化，因而读取 `input[row*cols+col]` 时 lane 访问连续列。直接写 `output[col*rows+row]` 则使相邻 lane 的地址相差 `rows` 个 float，global store 跨步。
+
+shared-memory 版本先按输入坐标写入 `tile[threadIdx.y][threadIdx.x]`，同步后用交换后的索引读取，再按输出坐标连续写回：
+
+<!-- source-check: examples/transpose_tiled.cu -->
+~~~cpp
+template <bool Padded>
+__global__ void transpose_tiled_kernel(const float* input, float* output,
+                                       int rows, int cols) {
+    // Every thread executes both the load phase and the barrier.  The padded
+    // layout changes only the physical shared-memory row stride.
+    __shared__ float tile[kTile][Padded ? kTile + 1 : kTile];
+
+    const int row = blockIdx.y * kTile + threadIdx.y;
+    const int col = blockIdx.x * kTile + threadIdx.x;
+    const bool input_valid = row < rows && col < cols;
+
+    tile[threadIdx.y][threadIdx.x] =
+        input_valid ? input[row * cols + col] : 0.0f;
+
+    __syncthreads();
+
+    // The logical transposed coordinate is (col, row).  A thread whose
+    // transposed output is outside the rectangle simply skips the store; it
+    // does not leave the block before the first barrier.
+    const int output_row = blockIdx.x * kTile + threadIdx.y;
+    const int output_col = blockIdx.y * kTile + threadIdx.x;
+    if (output_row < cols && output_col < rows) {
+        output[output_row * rows + output_col] =
+            tile[threadIdx.x][threadIdx.y];
+    }
+}
+~~~
+
+`tile[threadIdx.y][threadIdx.x]` 表示线程按输入行、列写入；读取改为 `tile[threadIdx.x][threadIdx.y]`，交换 shared tile 中的行列。`output_row` 与 `output_col` 是转置后的输出坐标；输出地址为 `output_row*rows+output_col`。因此，输出阶段的 `threadIdx.x` 连续改变 `output_col`，写入也连续。
+
+模板参数只改变 shared memory 的物理行跨度：`false` 使用 32 列，`true` 使用 33 列。对 FP32、32 个 bank 的示例，列读 `tile[threadIdx.x][threadIdx.y]` 在 32 列 stride 下可能让同 warp lane 落到相同 bank；额外一列把相邻行起点错开一个 bank。效果取决于 lane—地址映射和元素宽度，并非所有布局都应添加 padding。
+
+[NVIDIA CUDA Samples 的转置示例](https://github.com/NVIDIA/cuda-samples/tree/5443602d89ed99aede2e4b7bf329daddeadb320e/cpp/6_Performance/transpose)用四条路径逐步隔离成本：`copy` 给出同类读写的带宽参照；`transposeNaive` 保留跨步 global 写；`transposeCoalesced` 通过 shared tile 让 global 读写都合并；`transposeNoBankConflicts` 再调整 shared 行跨度，减少列读取的 bank conflict。padding 只针对特定线程与地址的对应关系有效，并非任意矩阵访问的通用优化。
+
+官方例程的逻辑 tile 为 32×32，线程块为 32×16，并要求矩阵尺寸整除 tile；本章实现用 32×32 线程块并处理矩形尾块。线程数、边界工作与 launch 数量不同，因此可以对照算法阶段和访存机制，不应直接把两份程序的毫秒数作横向性能结论。
 
 无 padding 与有 padding 两个版本均用32×32线程块，模板参数只控制shared行步长，是隔离bank影响的对照。naive版本使用32×8线程块，因此与tiled的比较同时包含线程组织变化，不能把全部收益归到padding。例程同时计算 CPU 参考，检查 naive、unpadded 和 padded 三个输出的最大绝对误差，并用 CUDA event 计时；任何非 finite 结果或超过阈值的误差都会使程序返回失败。
 
-## 8. 反复读取、stride 与缓存：把经验改写成可检验假设
+### 转置练习
+
+在 [LeetGPU Matrix Transpose](https://leetgpu.com/challenges/matrix-transpose) 题面从空白实现转置。先完成整除尺寸，再测矩形尾块；重点检查输入连续读取、输出连续写入、shared tile 的读写次序和 padding。平台原始 kernel 应单独归档。
+
+服务器验证使用本章 `examples/transpose_tiled.cu`，在相同矩阵、dtype、warmup 和计时规则下对照 naive、unpadded、padded 三条路径。先检查 CPU 参考和 sanitizer，再记录 kernel 时间、有效带宽、寄存器/shared/local 用量及可用的 global sector、shared bank 指标。矩形尾尺寸与整除尺寸分别报告；naive 和 tiled 的线程组织不同，不能把两者差值全归于 padding。
+
+```bash
+nvcc -O3 -std=c++17 -lineinfo --resource-usage examples/transpose_tiled.cu -o transpose_tiled
+./transpose_tiled 1 1 5
+./transpose_tiled 3 5 5
+./transpose_tiled 37 65 5
+compute-sanitizer --tool memcheck --error-exitcode=1 ./transpose_tiled 37 65 5
+compute-sanitizer --tool racecheck --error-exitcode=1 ./transpose_tiled 37 65 5
+./transpose_tiled 4096 4096 100
+```
+
+服务器结果按实际运行填写；未测项目保持空白：
+
+| 输入 / 实现 | GPU / CC | 正确性（最大误差） | kernel time | 有效带宽 | global sectors / shared bank |
+|---|---|---|---|---|---|
+| `4096×4096` FP32；naive | — | — | — | — | — |
+| `4096×4096` FP32；tile 32×32 | — | — | — | — | — |
+| `4096×4096` FP32；tile 32×33 | — | — | — | — | — |
+
+<details>
+<summary>完整 CUDA C++ 转置程序：kernel、CPU 参考、计时与入口</summary>
+
+<!-- source-check: examples/transpose_tiled.cu -->
+
+```cpp
+#include <cuda_runtime.h>
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <limits>
+#include <vector>
+
+namespace {
+
+constexpr int kTile = 32;
+
+#define CUDA_CHECK(call)                                                     \
+    do {                                                                     \
+        cudaError_t error__ = (call);                                        \
+        if (error__ != cudaSuccess) {                                        \
+            std::fprintf(stderr, "%s:%d CUDA error: %s\n",                  \
+                         __FILE__, __LINE__, cudaGetErrorString(error__));    \
+            std::exit(EXIT_FAILURE);                                         \
+        }                                                                    \
+    } while (false)
+
+__global__ void transpose_naive_kernel(const float* input, float* output,
+                                       int rows, int cols) {
+    const int row = blockIdx.y * blockDim.y + threadIdx.y;
+    const int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (row < rows && col < cols) {
+        // input is rows x cols; output is cols x rows.
+        output[col * rows + row] = input[row * cols + col];
+    }
+}
+
+template <bool Padded>
+__global__ void transpose_tiled_kernel(const float* input, float* output,
+                                       int rows, int cols) {
+    // Every thread executes both the load phase and the barrier.  The padded
+    // layout changes only the physical shared-memory row stride.
+    __shared__ float tile[kTile][Padded ? kTile + 1 : kTile];
+
+    const int row = blockIdx.y * kTile + threadIdx.y;
+    const int col = blockIdx.x * kTile + threadIdx.x;
+    const bool input_valid = row < rows && col < cols;
+
+    tile[threadIdx.y][threadIdx.x] =
+        input_valid ? input[row * cols + col] : 0.0f;
+
+    __syncthreads();
+
+    // The logical transposed coordinate is (col, row).  A thread whose
+    // transposed output is outside the rectangle simply skips the store; it
+    // does not leave the block before the first barrier.
+    const int output_row = blockIdx.x * kTile + threadIdx.y;
+    const int output_col = blockIdx.y * kTile + threadIdx.x;
+    if (output_row < cols && output_col < rows) {
+        output[output_row * rows + output_col] =
+            tile[threadIdx.x][threadIdx.y];
+    }
+}
+
+void transpose_cpu(const std::vector<float>& input, std::vector<float>& output,
+                   int rows, int cols) {
+    for (int row = 0; row < rows; ++row) {
+        for (int col = 0; col < cols; ++col) {
+            output[col * rows + row] = input[row * cols + col];
+        }
+    }
+}
+
+float max_abs_error(const std::vector<float>& actual,
+                    const std::vector<float>& expected) {
+    float error = 0.0f;
+    for (std::size_t i = 0; i < actual.size(); ++i) {
+        if (!std::isfinite(actual[i]) || !std::isfinite(expected[i])) {
+            return std::numeric_limits<float>::infinity();
+        }
+        error = std::max(error, std::fabs(actual[i] - expected[i]));
+    }
+    return error;
+}
+
+template <typename Launch>
+float run_and_measure(Launch launch, float* device_output, std::size_t output_size,
+                      std::vector<float>& host_output, int repeats) {
+    cudaEvent_t start = nullptr;
+    cudaEvent_t stop = nullptr;
+    CUDA_CHECK(cudaEventCreate(&start));
+    CUDA_CHECK(cudaEventCreate(&stop));
+
+    launch();
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    CUDA_CHECK(cudaEventRecord(start));
+    for (int i = 0; i < repeats; ++i) {
+        launch();
+    }
+    CUDA_CHECK(cudaEventRecord(stop));
+    CUDA_CHECK(cudaEventSynchronize(stop));
+
+    float elapsed_ms = 0.0f;
+    CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, start, stop));
+    CUDA_CHECK(cudaMemcpy(host_output.data(), device_output,
+                          output_size * sizeof(float), cudaMemcpyDeviceToHost));
+
+    CUDA_CHECK(cudaEventDestroy(start));
+    CUDA_CHECK(cudaEventDestroy(stop));
+    return elapsed_ms / static_cast<float>(repeats);
+}
+
+bool report(const char* name, float ms, float error, int rows, int cols) {
+    const double bytes = 2.0 * static_cast<double>(rows) * cols * sizeof(float);
+    const double gb_per_second = bytes / (static_cast<double>(ms) * 1.0e6);
+    constexpr float kTolerance = 1.0e-6f;
+    const bool pass = std::isfinite(error) && error <= kTolerance;
+    std::printf("%-8s  %.4f ms  %.3f GB/s  max_abs_error=%.8g  %s\n",
+                name, ms, gb_per_second, error, pass ? "PASS" : "FAIL");
+    return pass;
+}
+
+}  // namespace
+
+int main(int argc, char** argv) {
+    const int rows = argc > 1 ? std::atoi(argv[1]) : 37;
+    const int cols = argc > 2 ? std::atoi(argv[2]) : 65;
+    const int repeats = argc > 3 ? std::atoi(argv[3]) : 50;
+    if (rows <= 0 || cols <= 0 || repeats <= 0 ||
+        rows > std::numeric_limits<int>::max() - kTile ||
+        cols > std::numeric_limits<int>::max() - kTile) {
+        std::fprintf(stderr, "usage: %s [rows] [cols] [repeats]\n", argv[0]);
+        return EXIT_FAILURE;
+    }
+
+    if (static_cast<std::int64_t>(rows) * cols >
+        static_cast<std::int64_t>(std::numeric_limits<int>::max())) {
+        std::fprintf(stderr, "rows*cols is too large for this example\n");
+        return EXIT_FAILURE;
+    }
+    const std::size_t input_size = static_cast<std::size_t>(rows) * cols;
+    const std::size_t output_size = static_cast<std::size_t>(cols) * rows;
+    std::vector<float> host_input(input_size);
+    std::vector<float> host_reference(output_size, 0.0f);
+    std::vector<float> host_output(output_size, 0.0f);
+    for (std::size_t i = 0; i < input_size; ++i) {
+        host_input[i] = static_cast<float>(((i % 101) * 17 + 3) % 101) * 0.125f;
+    }
+    transpose_cpu(host_input, host_reference, rows, cols);
+
+    float* device_input = nullptr;
+    float* device_output = nullptr;
+    CUDA_CHECK(cudaMalloc(&device_input, input_size * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&device_output, output_size * sizeof(float)));
+    CUDA_CHECK(cudaMemcpy(device_input, host_input.data(),
+                          input_size * sizeof(float), cudaMemcpyHostToDevice));
+
+    const dim3 naive_block(32, 8);
+    const dim3 naive_grid((cols + naive_block.x - 1) / naive_block.x,
+                          (rows + naive_block.y - 1) / naive_block.y);
+    const dim3 tiled_block(kTile, kTile);
+    const dim3 tiled_grid((cols + kTile - 1) / kTile,
+                          (rows + kTile - 1) / kTile);
+
+    const float naive_ms = run_and_measure(
+        [&] { transpose_naive_kernel<<<naive_grid, naive_block>>>(
+                  device_input, device_output, rows, cols); },
+        device_output, output_size, host_output, repeats);
+    bool all_ok = report("naive", naive_ms,
+                         max_abs_error(host_output, host_reference), rows, cols);
+
+    const float unpadded_ms = run_and_measure(
+        [&] { transpose_tiled_kernel<false><<<tiled_grid, tiled_block>>>(
+                  device_input, device_output, rows, cols); },
+        device_output, output_size, host_output, repeats);
+    all_ok = report("tile32", unpadded_ms,
+                    max_abs_error(host_output, host_reference), rows, cols) && all_ok;
+
+    const float padded_ms = run_and_measure(
+        [&] { transpose_tiled_kernel<true><<<tiled_grid, tiled_block>>>(
+                  device_input, device_output, rows, cols); },
+        device_output, output_size, host_output, repeats);
+    all_ok = report("tile33", padded_ms,
+                    max_abs_error(host_output, host_reference), rows, cols) && all_ok;
+
+    CUDA_CHECK(cudaFree(device_input));
+    CUDA_CHECK(cudaFree(device_output));
+    return all_ok ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+```
+
+</details>
+
+## 8. 缓存复用与 shared staging
 
 “同一个地址反复读取可能命中缓存”与“应该把数据搬进 shared”并不矛盾，它们对应不同控制层：
 
@@ -398,16 +681,16 @@ __syncthreads();
 - 如果数据集小、复用距离短，global + cache 可能已经足够，shared staging 的同步和搬运成本反而占主导。
 - 如果重复读取跨越很多 block、工作集超出缓存，shared tile 能把一个 block 内的复用固定下来，但不能替代良好的 global coalescing。
 
-既有真实实验的历史对照说明：手写 tiled GEMM 并不保证在每个设备和 shape 上胜过 naive 版本；设备、shape、数据类型和计时条件必须随数值一起比较，不能跨不同合同推导出普遍加速结论。这是一个可复用的分析方向。对每个新实验，至少写出下面的假设链：
+手写 tile 不保证在所有设备和输入形状上都优于 naive 版本。比较时须保持设备、shape、数据类型和计时方法一致。可以按下列次序检查一次优化：
 
 ```text
 硬件机制：跨步写覆盖更多 32B sector，或 shared 列读落到同一 bank
-代码旋钮：tile 形状、padding、block 线程布局、是否 staging
+代码改动：tile 形状、padding、block 线程布局、是否 staging
 预期计数：global sectors 下降，或 shared bank conflict 下降
 测量：正确性 -> kernel time -> memory sectors/cache -> shared conflicts -> registers/lmem
 ```
 
-**反例：只看到 shared memory 变快就归因于“shared 比 global 快”。**
+共享内存版本变快，不一定是 shared latency 单独带来的结果。
 
 如果 naive 版本写错了布局、触发更多 global sectors，而 tiled 版本同时改善了访问合并、缓存局部性和计算复用，那么单次加速不能证明其中只有 shared latency 的贡献。必须至少保留同样的输入输出布局、边界尺寸和计时范围，再比较无 padding 与有 padding 的版本。
 
@@ -417,7 +700,7 @@ CUDA 源文件经过 `nvcc` 后至少要区分三层：
 
 1. CUDA C++：带 `__global__`、地址空间声明和 launch 配置的源代码。
 2. Parallel Thread Execution（并行线程执行，PTX）：面向虚拟 ISA（指令集架构）的中间表示，可读性较高，保留虚拟寄存器与地址空间信息。
-3. SASS：面向具体计算能力的机器指令，真正反映目标设备上使用的 load/store、FMA、barrier 和寄存器编码。
+3. SASS：面向具体计算能力的机器指令，显示目标设备采用的 load/store、FMA、barrier 和寄存器编码。
 
 对转置例程可使用：
 
@@ -440,17 +723,11 @@ nvdisasm --print-code --print-line-info transpose_tiled.cubin
 
 PTX 是可重新编译的虚拟指令表示，cubin 是与目标架构相关的二进制。保留 PTX 与只提供某一架构的 cubin，具有不同的兼容性边界。
 
-## 10. 实践复盘：旧代码怎样成为新问题的证据
-
-naive GEMM 的复盘重点是“同一条 warp 指令到底请求了哪些地址”：`A[M,N] × B[N,K] => C[M,K]` 中，固定归约 `n` 时若 lane 沿 `k` 展开，`B[n*K+k]` 是连续段；不要把单线程跨 n 的 stride 误判成 warp 不合并。tiled GEMM 的复盘重点则是生产—消费生命周期：当前 tile 由线程合作写入 shared memory，两个 barrier 分别保护写后读和读后覆写。Softmax 的边界线程同样不能在 block barrier 前随意退出；调试时要把错误地址、错误 mask、同步风险和合法但低效的 stride 分开验证。
-
-这些材料是源码与历史记录的映射，不替代当前机器的测量。尤其是 solutions/triton/matmul_leetgpu.py 的平台归档和 solutions/triton/matmul.py 的服务器脚本拥有不同用途；阅读它们可以说明 tile、mask、accumulator 和精度口径如何进入工程流程，但不能把其中一个环境的数字套到另一个环境。
-
-## 11. 统一地址、统一内存与映射内存：先问数据实际在哪里
+## 10. UVA、统一内存与映射内存
 
 一个指针值能被传到 kernel 中，不等于它指向的数据已经在 GPU 显存里。讨论“零拷贝”“统一内存”时，至少要分别回答：地址是否有效、谁能合法访问、物理页驻留在哪里、是否要迁移、访问前后如何同步。
 
-### 11.1 地址统一，不等于权限与物理位置统一
+### 10.1 统一地址不代表权限与物理位置相同
 
 UVA（Unified Virtual Addressing，统一虚拟寻址）让一个进程中的主机和设备分配处于统一虚拟地址空间，便于识别指针属性、确定复制方向。它没有承诺普通 CPU 指针可以在任意 GPU 上直接解引用，也没有把所有物理存储变成同一块显存。
 
@@ -469,7 +746,7 @@ Unified Memory（统一内存）则提供可由 CPU/GPU 使用的受管理内存
 
 即使系统支持硬件一致性，也不能据此从 CPU 直接解引用任意 `cudaMalloc` 分配。受管理分配与 GPU-only 分配必须按各自的访问规则处理。
 
-### 11.2 查询能力，而不是根据平台名称猜行为
+### 10.2 查询设备能力
 
 下面的片段放在已经建立错误检查的主机程序中，查询当前设备的统一内存能力：
 
@@ -489,7 +766,7 @@ concurrent 用于区分手册所述的完整与受限统一内存支持；pageab
 
 在软件一致性系统中，访问可能以页为粒度触发迁移；在特定硬件一致性系统中，访问机制又有所不同。这正是 Windows 与 Linux、独立GPU与紧耦合平台不能只凭同一段源码预测性能的原因。
 
-### 11.3 如何设计有意义的对照
+### 10.3 设计对照实验
 
 设一份数组先由 CPU 初始化，然后在 GPU 上执行十轮计算。以下两个程序的数学工作量可能相同，但内存行为不同：
 
@@ -502,7 +779,10 @@ concurrent 用于区分手册所述的完整与受限统一内存支持；pageab
 
 如果工作集超出显存，统一内存的超额分配能力可能使程序继续工作，却也可能引入频繁迁移。此时“能运行”与“性能可接受”必须分开分析。先检查工作集与数据访问顺序，再考虑内存机制，通常比先换一个分配 API 更有效。
 
-## 12. Thread Block Cluster、DSM 与 TMA multicast
+<details>
+<summary>拓展：Thread Block Cluster、DSM 与 TMA multicast</summary>
+
+## 11. Thread Block Cluster、DSM 与 TMA multicast
 
 线程块集群（Thread Block Cluster）把一组 CTA（Cooperative Thread Array，协作线程数组；即 CUDA thread block）作为一个协作域。Compute Capability 9.0 起，集群内 CTA 被共同调度在同一 GPC（Graphics Processing Cluster，图形处理集群）中，并可通过 Cooperative Groups 的 `cluster.sync()` 与分布式共享内存（Distributed Shared Memory，DSM）协作。DSM 是若干 CTA 各自 shared memory 的分布式地址视图：每块仍然分配自己的 shared 段，远端访问需显式映射；它不是更大的一块单体 shared，也不是 L2 cache。
 
@@ -515,7 +795,7 @@ Cluster 有两种容易混淆但机制不同的跨 CTA 数据路径：
 
 DSM 与 TMA multicast 都会涉及 cluster shared 地址，但不能把 `map_shared_rank()` 的普通 DSM 访问叫作 multicast。multicast 是 TMA copy 指令/抽象的复制语义：从一份 global tile 产生多个 cluster-local shared 副本，并把完成信号送到对应 CTA 的 barrier。
 
-### 12.1 两 CTA DSM histogram：初始化、远端原子与退出边界
+### 11.1 两 CTA DSM histogram：初始化、远端原子与退出边界
 
 下面程序将 32 个 histogram bin 分成两半，分别由 cluster rank 0、1 的 CTA 所有。每个 cluster 负责输入流的一个不重叠分片；处理某个元素时，线程依据 bin 计算所有者 rank，再把原子加法直接发往所有者的 shared 段。每个 cluster 最后把本地聚合结果原子累加到全局输出，因此多个 cluster 之间仍有一层 global atomic。
 
@@ -727,11 +1007,11 @@ if __name__ == "__main__":
     main()
 ~~~
 
-Cluster 是调度与同步域，也受资源分配约束。CUDA Programming Guide 将 8 CTA 列为 portable cluster size；更大 cluster 以及小型 GPU/MIG 可承载的上限依硬件而异，应查询 `cudaOccupancyMaxPotentialClusterSize`，不能把单个 block 的 shared/register 账本简单乘以 cluster 大小，就假定 launch 一定成功。此例只需要两个 CTA。`cudaLaunchKernelEx` 的 `clusterDim.x` 必须整除 `gridDim.x`；grid 仍按 CTA 数表示，不会变成 cluster 数。`cluster.sync()` 是 cluster 范围的 collective，所有相关 CTA 线程都必须到达同一个同步点。
+Cluster 是调度与同步域，也受资源分配限制。CUDA Programming Guide 将 8 CTA 列为 portable cluster size；更大 cluster 以及小型 GPU/MIG 可承载的上限依硬件而异，应查询 `cudaOccupancyMaxPotentialClusterSize`。单个 block 的 shared/register 用量不能简单乘 cluster 大小后就据此判断 launch 一定成功。此例只需要两个 CTA。`cudaLaunchKernelEx` 的 `clusterDim.x` 必须整除 `gridDim.x`；grid 仍按 CTA 数表示，不会变成 cluster 数。`cluster.sync()` 是 cluster 范围的 collective，所有相关 CTA 线程都必须到达同一个同步点。
 
 主机程序在 CUDA 初始化前处理 `--help` 和参数解析。`n` 限定为 1..16,777,216，避免负数经 `strtoull` 转成巨大无符号数、整数溢出或造成不合理的 host/device 分配。没有设备、计算能力低于 9.0、cluster occupancy API 返回 `cudaErrorNotSupported`、最大可用 cluster 小于 2，或 launch 返回 `cudaErrorNotSupported` 时，程序以 77 表示“当前环境不支持，跳过”；其他 CUDA/runtime/correctness 错误返回非零失败码，不能当作 skip。
 
-### 12.2 TMA multicast：硬件复制语义、mask 与 barrier 记账
+### 11.2 TMA multicast：硬件复制语义、mask 与 barrier 记账
 
 TMA（Tensor Memory Accelerator，张量内存加速器）multicast 不是多个 CTA 各自重复发出普通 global load，也不是把源 CTA 的 shared 指针传给远端 CTA。这里发出的是带 `.multicast::cluster` qualifier 的 tensor-copy：`ctaMask` 指定同一 cluster 中哪些 CTA 接收 tile；数据会写入每个目标 CTA 中与 `dstMem` 相同的 shared 相对偏移，完成信号也会送到相同相对偏移的 mbarrier。因此，每个目标 CTA 都得到一份可由本 CTA 消费的 shared tile。
 
@@ -788,7 +1068,7 @@ mma_barrier_phase_bit ^= 1;
 
 multicast 的预期收益是避免相邻 CTA 对同一 global tile 分别发起加载，减少重复搬运以及 L2/显存路径压力；它不保证端到端一定更快。比较性能时，需要确认 mask 中实际共享的 tile、每 CTA 的 shared footprint、cluster occupancy、barrier stall、TMA issue 开销和 L2/DRAM bytes。multicast 不会把数据永久写进 L2，也不会让多个 CTA 共用同一个 shared 实体地址。
 
-### 12.3 官方可运行案例：CUTLASS 4.6.3 Blackwell TMA multicast GEMM
+### 11.3 CUTLASS 4.6.3 Blackwell TMA multicast GEMM
 
 可以在具备 Blackwell SM100 支持的主机上，用固定 release 运行完整官方示例。该示例同时使用 TMA multicast 和 Blackwell `tcgen05.mma`，不是单独的 DSM 测试。CUTLASS 官方 CMake 将 `03_mma_tma_multicast_sm100.cu` 注册为 `cute_tutorial_03_mma_tma_multicast_sm100`，且只在 `CUTLASS_NVCC_ARCHS` 包含 `100a` 时创建该 target。此示例要求支持 SM100a 的 NVIDIA GPU、兼容的 CUDA Toolkit/NVCC、CMake、Git 和 CUTLASS 4.6.3；不能把在其他 GPU 上编译成功当作 kernel 已执行。
 
@@ -807,13 +1087,13 @@ cmake --build /tmp/cutlass-v4.6.3/build \
 
 上述命令固定官方 release 与构建目标；关键控制流已在本页展开，运行时仍需要完整的 CUTLASS checkout。
 
-### 12.4 能力与生命周期边界
+### 11.4 能力与生命周期
 
 CUDA Programming Guide 13.3 将 Cluster 作为可选执行层级，并在 Distributed Shared Memory 一节明确要求：先保证 Cluster 中所有 CTA 都已存在；任一 CTA 退出前，必须完成所有可能访问它 shared memory 的远端操作。`cudaLaunchKernelEx` 的 runtime cluster dimension 必须整除对应的 grid 维度。portable cluster size 上限为 8 CTA；实际最大值会随 GPU、MIG 和资源配置变化，应查询 occupancy API。本文 DSM histogram 以 `sm_90` 为最低编译目标；TMA tensor map 与 TMA cluster multicast 也需要 Hopper 或更新架构及相应 Toolkit 支持。PTX ISA 的 multicast 指令要求 `sm_90+`，并针对特定架构家族优化；SM100 CUTLASS 示例则要求 `100a`。
 
 相关接口可查 [CUDA Programming Model](https://docs.nvidia.com/cuda/cuda-programming-guide/01-introduction/programming-model.html)、[Cooperative Groups](https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/cooperative-groups.html) 和 [PTX 指令手册](https://docs.nvidia.com/cuda/parallel-thread-execution/)。
 
-### 12.5 Cluster 的最小尺寸、偏好尺寸与 grid 计数
+### 11.5 Cluster 尺寸与 grid 计数
 
 普通 `__cluster_dims__` 声明或 `cudaLaunchAttributeClusterDimension` 指定的是本次计算所需的 cluster 尺寸；grid 的对应维度必须能被 cluster 尺寸整除。支持的设备还可以给出 preferred cluster dimension：它必须是最小尺寸的整数倍，grid 也要能被该偏好尺寸整除。**偏好不是保证。** 一次执行可能采用最小或偏好尺寸，kernel 必须在两者下都正确，不能按 host 请求的偏好值直接访问不存在的 DSM 邻居。
 
@@ -835,7 +1115,25 @@ void launch_eight_clusters() {
 
 这是启动配置对照，不是性能例子。两者都组织 16 个 block、2048 个逻辑线程。带 cluster tuple 的 `__block_size__` 已在声明中固定 block/cluster 形状，不能再同时用 `__cluster_dims__` 重复指定 cluster。若该特殊三尖括号形式还需要动态 shared 大小或 stream，第二个参数必须写占位值 `1`，例如 `blocks_as_clusters<<<8, 1, bytes, stream>>>()`；不能把熟悉的 `128` 再填到第二个位置。这项语法依赖相应工具链支持，也不改变普通 CUDA 启动的计数规则。
 
-## 13. Green Contexts：执行资源选择，不是显存分区
+在支持 Cluster 的设备上，可运行 DSM histogram 小例，覆盖 1、127、129、4099 个输入，并用 CPU histogram 对照。CPU ownership 模型只验证工作分片，不替代设备运行与 sanitizer：
+
+```bash
+python examples/cluster_dsm_ownership_check.py
+nvcc -O3 -std=c++17 -arch=sm_90 -lineinfo --resource-usage examples/cluster_dsm_histogram.cu -o cluster_dsm_histogram
+./cluster_dsm_histogram 1
+./cluster_dsm_histogram 127
+./cluster_dsm_histogram 129
+./cluster_dsm_histogram 4099
+compute-sanitizer --tool memcheck --error-exitcode=1 ./cluster_dsm_histogram 4099
+compute-sanitizer --tool racecheck --error-exitcode=1 ./cluster_dsm_histogram 4099
+```
+
+</details>
+
+<details>
+<summary>拓展：Green Context 与执行资源分组</summary>
+
+## 12. Green Context：执行资源分组
 
 普通 CUDA context 通常让该 device 的工作共享整张 GPU 上可用的执行资源。Green Context 是一个较轻量的 execution context：主机端先从 device 资源中切出一组 SM 和/或 work-queue（WQ）配置，再为它创建 context 与 stream；排在这条 stream 上的 kernel 就只能使用该 context 提供的资源。kernel 数学、线程块形状和数据结构可以不变，变化主要发生在 host 的资源选择与 stream 创建路径。
 
@@ -1123,7 +1421,12 @@ cleanup:
 
 </details>
 
-## 14. Extended GPU Memory：GPU 可寻址的 NUMA 系统内存
+</details>
+
+<details>
+<summary>拓展：Extended GPU Memory 与 NUMA 系统内存</summary>
+
+## 13. Extended GPU Memory：GPU 可访问的 NUMA 系统内存
 
 Extended GPU Memory（EGM）让符合条件的 Grace–GPU/NVLink-C2C 系统把 CPU NUMA node 上的 pinned system memory 纳入 GPU 可访问地址空间；在多 GPU 或 fabric 系统中，还可按支持的拓扑经 NVLink/NVSwitch 访问其他 GPU 与 host memory。它扩展的是 GPU 可读写的内存资源，不会把 host-attached memory 变成某张卡本地 HBM，也不改变远近 NUMA node 的访问成本。若访问是随机而非复用型，较大容量可能换来更高的延迟或 TLB 压力。
 
@@ -1183,53 +1486,10 @@ CUDA_CHECK(cudaMemPoolSetAccess(egm_pool, &gpu_access, 1));
 CUDA_CHECK(cudaMallocFromPoolAsync(&ptr, bytes, egm_pool, stream));
 ```
 
-CUDA 13.3 文档指出 EGM 映射使用 2 MiB 页，因此很大的工作集可能增加 TLB miss。评估时把 CPU-local、GPU-local HBM、经 NVLink-C2C 的 local NUMA host memory、经 GPU fabric 的 remote memory 分开测；固定访问序列、页面/分配策略、GPU 数、互联 topology，并同时记录延迟、有效带宽和 TLB 行为。没有目标系统实测时，只能说明映射合同，不能把“可访问”写成“与 HBM 同速”。
+CUDA 13.3 文档指出 EGM 映射使用 2 MiB 页，因此很大的工作集可能增加 TLB miss。评估时把 CPU-local、GPU-local HBM、经 NVLink-C2C 的 local NUMA host memory、经 GPU fabric 的 remote memory 分开测；固定访问序列、页面/分配策略、GPU 数、互联 topology，并同时记录延迟、有效带宽和 TLB 行为。没有目标系统实测时，只能说明访问路径，不能推断它与 HBM 性能相同。
 
+</details>
 
-## LeetGPU：正确性与代码归档
-
-本章的核心例程可对应 [LeetGPU Matrix Transpose](https://leetgpu.com/challenges/matrix-transpose) 练习 global 地址、tile、barrier 和 padding；平台原始 `solve`/kernel 应单独归档。已有 solutions/triton/matmul_leetgpu.py 作为已有 MatMul 代码复盘，不要求重写该题。正确性最低限度应覆盖整除尺寸和矩形尾尺寸，并与 CPU 参考逐元素比较。
-
-## 服务器：真实性能
-
-Linux服务器从仓库根目录开始，先编译并检查多个边界形状，然后再运行大矩阵计时：
-
-```bash
-cd roadmap/curriculum/gpu/03-registers-and-memory-system
-nvcc -O3 -std=c++17 -lineinfo --resource-usage \
-  examples/transpose_tiled.cu -o /tmp/cuda-transpose
-/tmp/cuda-transpose 1 1 5
-/tmp/cuda-transpose 3 5 5
-/tmp/cuda-transpose 32 32 5
-/tmp/cuda-transpose 37 65 5
-compute-sanitizer --tool memcheck --error-exitcode=1 /tmp/cuda-transpose 37 65 5
-compute-sanitizer --tool racecheck --error-exitcode=1 /tmp/cuda-transpose 37 65 5
-/tmp/cuda-transpose 4096 4096 100
-
-nvcc -O3 -std=c++17 -lineinfo --resource-usage \
-  examples/register_spill_probe.cu -o /tmp/cuda-register-probe
-/tmp/cuda-register-probe
-compute-sanitizer --tool initcheck --error-exitcode=1 /tmp/cuda-register-probe
-
-python examples/cluster_dsm_ownership_check.py
-nvcc -O3 -std=c++17 -arch=sm_90 -lineinfo --resource-usage \
-  examples/cluster_dsm_histogram.cu -o /tmp/cluster-dsm-histogram
-/tmp/cluster-dsm-histogram --help
-/tmp/cluster-dsm-histogram 1
-/tmp/cluster-dsm-histogram 127
-/tmp/cluster-dsm-histogram 129
-/tmp/cluster-dsm-histogram 4099
-compute-sanitizer --tool memcheck --error-exitcode=1 \
-  /tmp/cluster-dsm-histogram 4099
-compute-sanitizer --tool racecheck --error-exitcode=1 \
-  /tmp/cluster-dsm-histogram 4099
-```
-
-两种寄存器探针各有CPU参考，但数组大小与计算量不同；它们用于观察编译器的存储选择，不是一组能直接声称加速比的同工作量优化。后文或前文的PowerShell命令也以本章目录为工作目录。
-
-服务器实验应编译 examples/transpose_tiled.cu，在同一设备、同一 `M×N`、同一数据类型、同一 warmup/iteration 规则下比较 naive、unpadded 和 padded 三条路径，记录 kernel time、有效带宽、误差、registers/thread、shared memory、local memory，以及 profiler 中的 global sectors 和 shared bank conflict；矩形尾尺寸必须与整除尺寸分开报告。
-
-Cluster 主机程序应先检查参数：`--help` 在 CUDA device query 前直接成功；`-1`、`18446744073709551616` 和大于 16,777,216 的值应返回参数错误码 2，且不尝试分配。设备测试覆盖最小输入、CTA/cluster 边界和非整除尾块，并以 CPU histogram 作逐 bin 参考。exit 77 只表示设备或 runtime 不支持此 cluster 配置并跳过，不是正确性通过；其他 CUDA/runtime/correctness 错误均须视为失败。CUDA 程序需在目标设备由 NVCC 编译，再由支持 Cluster 的 GPU 执行；CPU ownership 检查通过不能证明 DSM GPU correctness、racecheck 或性能。
 
 ## 参考阅读
 

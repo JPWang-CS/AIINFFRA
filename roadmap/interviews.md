@@ -1,274 +1,133 @@
-# GPU/ML 系统工程师面试准备指南
+# GPU 高性能算子与 LLM 系统面试准备
 
-> 配套大模型板块 [面试笔记](../notes/llm/interview.md)。
-> 使用方式：不是一次性读完，而是按求职前 8-12 周滚动复习。
+本文面向已有 NPU 算子经验、准备转向 GPU 高性能算子与 LLM 性能优化的工程师。复习时以 CUDA/Triton 实现、性能分析和真实项目为主，模型结构及推理问题结合[LLM 面试笔记](../notes/llm/interview.md)展开。
 
----
+## 复习原则
 
-## 如何使用本计划
+回答一个优化问题时，沿着“工作负载与正确性要求 → 瓶颈假设 → 代码改动 → 可观测证据 → 反例与边界”连续展开。先说明输入形状、dtype、布局、误差容限和测量范围，再解释为何改某段代码；最后说清用什么 profiler/基准验证、还有哪些情形可能让结论失效。数字只引用注明设备、版本、shape、精度和计时口径的真实记录。没有实验的内容标为待验证假设，不用峰值规格替代实测。
 
-1. 第一遍：先读“硬技能要求”和“高频题”，确认差距。
-2. 第二遍：按模块刷题，每题都要写 1 分钟版本。
-3. 第三遍：做系统设计题，要画图、算数字、说取舍。
-4. 面试前：只复习自己的项目和数字，不背整篇。
+学习材料、LeetGPU 通过、真实设备验证、岗位要求和个人工作经历是不同证据。课程覆盖只说明仓库有相应教材；不能据此声称读者已掌握或已满足招聘条件。
 
-### 8 周冲刺节奏
+## 能力与证据定位
 
-| 周 | 重点 | 输出 |
-|----|------|------|
-| W1 | CUDA/GPU 高频题 | 每题 1 分钟口径 |
-| W2 | Triton + Flash Attention | 代码示例 + benchmark |
-| W3 | 推理系统 | vLLM 链路图 |
-| W4 | 量化 + 投机解码 | 取舍表 |
-| W5 | 分布式训练 | 显存账本 + 通信图 |
-| W6 | 系统设计题 | 完整设计稿 |
-| W7 | 项目打磨 | 3-5 个可讲项目 |
-| W8 | 模拟面试 | 高频题录音复盘 |
+以下采用招聘方公开的两个岗位作为样本，用于核对能力要求，不据此统计市场频率。课程以 GPU 架构、CUDA/Triton 和算子优化为主干，量化与模型性能分析为核心应用，框架接入和真实系统验证用于展示工程效果。RadixArk 样本另有 4 年以上经验要求；岗位年限、地域等资格条件需单独核对，不能用课程学习替代。
 
-### 面试回答结构
+| 能力 | 对应课程 | 面试中应能说明或展示 |
+|---|---|---|
+| 线程、存储与同步 | [GPU 与 CUDA](curriculum/gpu/README.md) | 具体线程到地址的映射、同步范围、资源限制，以及错误定位 |
+| GEMM 与 Tensor Core | [GEMM 实现与优化](curriculum/operators/03-gemm/README.md) | tile、布局、累加精度、流水；同精度强基线和退化案例 |
+| 性能诊断 | [计时与性能分析](curriculum/gpu/05-performance-analysis-and-optimization/README.md) | 时间线、硬件指标、PTX/SASS、重复测量和跨形状回归 |
+| 框架算子接入 | [Mini Transformer 算子替换](curriculum/model-analysis/mini-transformer/README.md) | schema、FakeTensor、注册检查、数值与梯度、编译组合 |
+| 量化算法与 kernel | [量化算子](curriculum/operators/07-quantized-operators/README.md) | scale、打包、校准与误差补偿；同模型的质量、容量和速度对照 |
+| Prefill 与 Decode | [模型 GPU 执行分析](curriculum/model-analysis/README.md) | 从形状推 FLOPs/bytes，区分权重、KV、算子和请求时间 |
+| 真实推理系统 | [vLLM 与系统应用](curriculum/systems/README.md) | 找到实际后端，解释缓存与调度，并验证端到端收益 |
+| 论文推导与代码 | [论文与算法](../notes/algorithms/README.md) | 符号、维度、状态更新与作者实现的对应关系和适用条件 |
+| C++/Linux 调试 | [执行与编译](curriculum/gpu/02-cuda-execution-and-scheduling/README.md) | 最小复现、编译/链接/装载错误、主机调用栈与设备错误定位 |
+| 跨平台迁移 | 上述算子案例与本人 NPU 项目 | 两端共同的数学要求、不同的执行/存储/同步机制与真实测量 |
+| 多 GPU 与专项 | [多 GPU](curriculum/systems/multi-gpu/README.md) | 根据岗位准备 collective、拓扑、负载与通信；训练/编译器开发另按岗位深入 |
 
-每个技术题都按这个结构：
+本项目先形成 GPU 算子和性能分析能力，再用量化、模型接入及真实系统证明其作用。至少准备三项能完整解释基线、改动、正确性、性能和失败尝试的算子案例。论文阅读独立进行，不要求每篇都实现；岗位中的工作年限、生产经历和语言要求另行核对。
 
-```text
-是什么 -> 为什么需要 -> 关键机制 -> 关键数字 -> 取舍 -> 怎么验证
-```
+## GPU 架构与算子优化
 
-### 示例回答模板
+### CUDA 线程、分歧与访存合并
 
-问：为什么 Decode 是 memory-bound？
+CUDA kernel 按 grid、block 和 thread 表达并行工作。NVIDIA GPU 通常以 32 条 lane 构成 warp；warp 是调度与协作的重要粒度，但不能因此把所有指令行为简化为“32 线程永远锁步”。同一 warp 的线程若走不同控制路径，路径可能需要分别执行，有效 lane 利用率下降；实际影响取决于分支、编译生成代码和工作量。短分支可能被谓词化，未必比显式分支更好，应检查 PTX/SASS 并测量。
 
-答：Decode 每步只生成一个 token，但必须读全部模型权重和全部历史 KV cache；计算量小，HBM 读取量大，所以瓶颈是显存带宽。验证方法是用 Nsight 看 memory throughput 是否接近上限。
+Coalescing 按同一条 warp 访存指令的地址合并请求。连续 32 个线程各读取一个 4 字节 float，总有效数据为 128 字节；起始地址按 32 字节对齐时，在 32 字节 sector 模型下覆盖 4 个 sector，错开起点则可能覆盖 5 个。散乱地址可能增加请求数和未使用字节，最终耗时还受缓存、访问宽度、并行请求数和设备影响。
 
----
+面试中可以从地址式入手：FP32 读取的字节地址为 `base + 4*lane` 时，相邻 lane 读取相邻元素；行主序矩阵沿行方向跨步时，则应把行跨度代入公式。随后检查生成的访存指令、DRAM/L1/L2 流量和 sector 指标。数据已在缓存、规模很小或瓶颈不在访存时，减少请求数量未必缩短整体时间。
 
-## 面向：Ascend NPU → NVIDIA GPU/ML Systems 转型工程师
+Shared memory bank conflict 也不能只背“32 banks，所有冲突都串行”。对通常的 32-bit word 访问，bank 映射会让连续 word 分散到不同 bank；同一请求中多个 lane 访问同一 bank 的不同地址时，可能需要多个服务阶段。[CUDA 编程指南的 shared-memory 章节](https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/writing-cuda-kernels.html#shared-memory)说明了 bank conflict 与矩阵转置例子；广播同一地址等访问有不同规则，宽数据、向量化与具体代际也会影响行为。矩阵转置中常用 padding 或 swizzle 改变 shared-memory 布局；随后确认冲突指标和总耗时，不能只凭代码形状断言已解决。
 
----
+### 延迟、Occupancy 与性能指标
 
-## 目标岗位分析
+Latency hiding 的机制是：当一个 warp 等待数据或依赖时，SM 调度器可以选择其他就绪 warp 发射指令。Occupancy 描述活动 warp 相对硬件上限的比例；它受寄存器、shared memory、线程数和架构约束影响，但不等于吞吐率。高 occupancy 可能有助于隐藏延迟；增加 tile、独立累加器或 pipeline stage 也可能提高复用/指令并行度，同时消耗更多寄存器或 shared memory、降低驻留并引发 spill。
 
-**最常见职位名称：**
-- ML Systems Engineer / ML Infrastructure Engineer
-- GPU Software Engineer / CUDA Engineer
-- Inference Engineer / Model Optimization Engineer
-- Compiler Engineer (ML) / Kernel Engineer
-- AI Framework Engineer
+因此不能用单一 occupancy 或 SOL 百分比直接判定瓶颈。先用 Nsight Systems 找到端到端关键路径、launch 间隙、并发和拷贝；再用 Nsight Compute 结合计算管线、DRAM/L2 流量、指令与 stall 指标解释目标 kernel。将实测耗时与一个有明确假设的 Roofline/带宽下界比较，并对多种代表 shape 重复测量。Memory SOL 低可能是访问没有形成足够并行请求、工作量太小、cache 命中或其他原因，不能直接翻译成“memory-bound”；Compute SOL 低也不自动表示“latency-bound”。SOL 是诊断线索，不是单指标分类器。
 
-**主要招聘公司：**
-- 大厂：NVIDIA, Google DeepMind, Meta AI, Microsoft, Amazon (AWS Inferentia/Trainium), Apple
-- AI 独角兽：Anthropic, OpenAI, Mistral, Cohere, Databricks, Anyscale
-- 推理专属：Groq, Cerebras, Together AI, Fireworks AI, Baseten
-- 国内出海：字节跳动 (TikTok)、阿里云、百度、华为海外、DeepSeek
+### GEMM、Tensor Core 与整数点积
 
----
+对 $A\in\mathbb{R}^{M\times K}$、$B\in\mathbb{R}^{K\times N}$，GEMM 计算 $C=AB$。朴素实现让每个输出元素重复读取输入；分块实现使 CTA/warp 复用子块，再沿 K 维累加。回答优化题时应说清线程/warp 如何映射到 tile，global→shared/register 的搬运和复用，累加精度，边界 mask，以及 M/N/K 变化如何影响资源与尾块。
 
-## 硬技能要求（频率排序）
+Tensor Core 是矩阵乘加数据路径，不是任何 FP16/INT8 代码都会自动使用的标签。是否走该路径取决于目标 GPU、输入/累加 dtype、tile/layout、指令/API、对齐及编译器选择。验证应查看编译产物或 profiler 中的 MMA/Tensor 指标，并与允许误差的合同一致。NVIDIA 的 [`__dp4a` 文档](https://docs.nvidia.com/cuda/cuda-math-api/cuda_math_api/group__CUDA__MATH__INTRINSIC__INT.html)将其定义为四对打包 8-bit 整数的点积并累加到 32-bit 结果；它不应说成 INT8 Tensor Core 路径。整数点积指令和 Tensor Core MMA 是不同指令/数据路径。整数 kernel 是否更快，还受反量化/缩放、布局、饱和规则、算子融合和目标设备支持影响。
 
-| 排名 | 技能 | 出现频率 | 说明 |
-|------|------|:--------:|------|
-| 1 | CUDA 编程（kernel 编写、优化） | ★★★★★ | 几乎所有 GPU 岗位必考 |
-| 2 | PyTorch internals / autograd | ★★★★★ | ML infra 岗位标配 |
-| 3 | 推理优化（TensorRT, vLLM, quantization） | ★★★★☆ | LLM 推理岗高频 |
-| 4 | **Triton kernel 编写** | ★★★★☆ | **2024 年后快速上升** |
-| 5 | 分布式训练（Megatron, DeepSpeed, FSDP） | ★★★★☆ | 大模型团队必考 |
-| 6 | 内存优化（FlashAttention, KV cache） | ★★★★☆ | LLM 方向必备 |
-| 7 | C++/系统编程 | ★★★★☆ | 编译器/runtime 岗 |
-| 8 | 性能分析（Nsight, perf, profiler） | ★★★☆☆ | 优化岗位重点 |
-| 9 | MLIR / XLA / 编译器基础 | ★★★☆☆ | Google/Apple 偏好 |
-| 10 | 网络通信（NCCL, RDMA, InfiniBand） | ★★★☆☆ | 分布式专向岗位 |
+### Attention 与 FlashAttention
 
----
+标准 attention 的核心是 $S=QK^T/\sqrt{d}$、$P=\mathrm{softmax}(S)$、$O=PV$。朴素实现可能把 $N\times N$ 的分数或概率矩阵写到 HBM；FlashAttention 通过分块和 online softmax 在片上维护每行的运行最大值、归一化和输出累加，避免将完整中间矩阵物化到 HBM。它仍须读取 Q/K/V 并写 O，且 Q/K/V 的重读、tile 大小、SRAM 预算、因果 mask、反向重算和具体实现都会影响实际 HBM 流量。因此不能说“FlashAttention 的所有 HBM IO 都是 O(N)”或由此推出端到端固定倍数加速。应给出确切的 IO 模型假设，并测量对应 shape、dtype、head dimension、batch、设备和基线。
 
-## CUDA / GPU 高频面试题（含答案）
+追问“改哪段”时，说明你改变的是 score/probability 的中间存储和 tile 循环，而不是注意力数学定义；若讨论 FlashAttention-2，再指出 work partitioning 对并行度、共享内存读写和 warp 间工作分配的调整。论文推导、论文伪码和所读代码版本要对应，不能把读论文说成已在 GPU 复现。
 
-**Q1：CUDA 线程层次是什么？**
+### Triton、CUDA 与 PyTorch 接入
 
-一个 kernel 启动一个 grid，grid 由若干 block 组成，每个 block 最多 1024 个 thread。32 个 thread 组成一个 warp，是 GPU 调度的最小单元。warp 内所有 thread 执行同一条指令（SIMT 模型），如果存在分支会序列化执行（warp divergence），导致性能下降。
+Triton 提供块级张量编程与 JIT 编译；开发者写 tile 计算和指针表达式，编译器负责将逻辑张量映射到线程/warp，并选择/生成相应指令与数据布局。它不会对任意程序自动保证 coalescing、Tensor Core 使用或接近某固定百分比的峰值。面试可沿一个 MatMul 例子解释 `program_id`、tile、`tl.load` mask、`tl.dot`、编译期配置、layout 和生成代码，然后在多 shape 上与 PyTorch/cuBLAS 基线比较正确性和耗时。
 
-**Q2：什么是 memory coalescing？**
+Triton 便于表达和迭代，但“开发速度提升 10 倍”或“固定达到 CUDA 的 93–95%”没有跨 workload 的普适依据。性能受 shape、dtype、layout、编译器版本、调优空间与基线影响。PyTorch 集成也不等于 kernel 函数能被调用：生产级 custom op 还涉及 schema/dispatch、设备与 dtype 检查、fake/meta 行为、Autograd、编译/打包、测试和版本兼容。根据目标需求选 Python/Triton 接口或 C++/CUDA custom operator，并用官方 `torch.library`/`cpp_extension` 路径与实际项目约束验证。
 
-当一个 warp 的 32 个 thread 访问 global memory 时，如果地址连续且对齐（128 byte cacheline），硬件合并为 1 次事务（coalesced）；若地址分散，每个 thread 触发独立事务，带宽利用率降至 1/32。优化 memory layout（转置、padding）是 kernel 优化的第一步。
+### 什么时候讨论 Persistent Kernel
 
-**Q3：shared memory bank conflict 是什么？**
+Persistent kernel 是让有限数量的 CTA/warp 长时间驻留并循环处理多批工作的一类调度方式；工作分配可在 GPU 侧完成，也可以由 kernel 的 program 结构预先分派，并不必然是“CPU 常驻工作队列”。Triton 的[教程目录](https://triton-lang.org/main/getting-started/tutorials/)把 Persistent Matmul 列作一种特定实现示例，而非通用调度要求。它可能摊薄重复 launch 或调度开销、改善特定工作负载的流水，但也可能占用 SM 资源、降低并发、造成负载不均或增加同步复杂度。是否适合取决于 grid 大小、任务粒度、设备驻留、其他 kernel 并发和服务延迟要求。对普通单次启动的 GEMM，persistent 主要改变 CTA 的工作分配与 tile 复用，并不自动减少 kernel 启动次数。应针对实际假设比较驻留、负载均衡、缓存流量和端到端时间。
 
-Shared memory 分为 32 个 bank，若同一 warp 内多个 thread 访问同一 bank 的不同地址，会串行化（bank conflict）。解决方法：对 shared memory 数组加 padding（`float smem[32][33]`，多一列打破对齐）。
+## LLM 模型与推理性能
 
-**Q4：occupancy 如何影响性能？**
+### Prefill、Decode 与 KV cache
 
-Occupancy = SM 上活跃 warp / 最大支持 warp。Occupancy 高 → 能更好地隐藏内存延迟（latency hiding）。但高 occupancy ≠ 高性能：compute-bound kernel 可在低 occupancy 下跑满算力。限制 occupancy 的因素：registers、shared memory 用量、block size。
+Prefill 通常有较大的序列维度和矩阵工作量，常见情况下计算并行度较高；Decode 每步生成少量 token，可能更受权重/KV 读取、batch、cache 和 launch 影响。但这是工作负载倾向，不是由阶段名称决定的硬约束。短 prompt、小 batch、长上下文、并发请求、权重驻留或融合都会改变瓶颈。用请求级时间线和代表性的 batch、prompt length、decode length 矩阵验证，并分别报告 TTFT、TPOT、吞吐与尾延迟。
 
-**Q5：A100 各级内存容量和延迟？**
+对没有前缀共享、长度均为 S 的 B 条序列，L 层普通 MHA/GQA 的 KV 有效数据量为
 
-Global (HBM2): 80GB，~600-800 cycle；L2 cache: 40MB，~200 cycle；L1/shared: 192KB/SM，~20-30 cycle；Registers: 256KB/SM，~1 cycle。优化原则：将热数据放 registers 和 shared memory，减少 global memory 访问。
+$$
+B_{KV}=2\,L\,S\,H_{KV}\,D\,B\,b.
+$$
 
-**Q6：warp divergence 如何避免？**
+其中 $L$ 为层数，$S$ 为缓存 token 数，$H_{KV}$ 为 KV head 数，$D$ 为 head dimension，$B$ 为 batch/序列数，$b$ 为每元素字节数，系数 2 对应 K 和 V。分页、对齐、元数据、不同序列长度和量化 scale 会改变真实分配。GQA 在 head dimension 与序列长度等条件相同的情况下，KV heads 从 $H_Q$ 减少为 $H_{KV}$，理想 KV 元素数按 $H_{KV}/H_Q$ 缩小；不要在缺少模型配置时引用固定 MiB 数。
 
-Warp divergence 发生时硬件序列化两路，最坏算力减半。避免：1) 让同一 warp 内 thread 走相同分支（基于 `threadIdx` 的条件）；2) 用 predication 代替分支；3) 将不同行为的 thread 重排到不同 warp。
+Decode 每步也不总是“完整读取全部权重”。单序列、较低 batch 且权重远大于 cache 时，权重流量常是重要项；但批处理复用、cache 层级、并发与实现会改变从 HBM 实际读取的字节。可先在“相关权重各读取一次”的假设下估算字节数，再用实际流量验证；MoE 则按该批次涉及的共享层和专家计算，不能直接把总参数容量当作每步读取量。
 
-**Q7：tensor core 如何工作？**
+PagedAttention 通过块表将逻辑 token 块映射到物理 KV 块，降低连续大块预分配带来的碎片并支持灵活调度/共享；block size、复制/写时共享语义和调度策略属于具体实现。不要把某个历史版本的默认 block token 数或碎片百分比说成所有 vLLM 版本的固定事实。Continuous batching 在迭代边界动态调整活动请求，也不保证任意负载获得固定倍数吞吐提升；应用相同请求分布测 TTFT、TPOT、吞吐、公平性和 P95/P99。
 
-Tensor core 是专门执行矩阵乘加（$D = A \times B + C$）的硬件单元，A100 稀疏 FP16 可达约 312 TFLOPS（dense 约 156 TFLOPS），CUDA core FP32 约 19.5 TFLOPS。WMMA API 让 32 个 thread 协作操作 16×16 tile。实际通过 cuBLAS / CUTLASS / Triton（`tl.dot` 自动生成 `mma.sync`）调用。
+### 量化：方法、误差与部署性能
 
-**Q8：INT8 量化的 CUDA 层变化？**
+量化答案至少区分权重与激活精度（如 W4A16、W8A8）、静态/动态 scale、per-tensor/per-channel/per-group 粒度、校准数据、误差指标和运行时 kernel。AWQ 是利用激活统计识别敏感权重通道并选择缩放策略的训练后权重量化方法；“activation-aware”不是“训练激活量化”，也不意味着它执行 QAT。GPTQ 是基于近似二阶信息逐步量化并补偿误差的训练后方法。SmoothQuant 通过等价缩放把激活 outlier 带来的量化难度迁移到权重，以支持 W8A8；方法效果取决于模型、校准数据、粒度和部署实现。
 
-INT8 推理用 `dp4a` 指令（4 个 INT8 的点积，A100 稀疏 INT8 理论约 624 TOPS，dense 约 312 TOPS）。挑战：per-channel/per-token scaling 控制误差；矩阵维度需 16/64 对齐；非矩阵算子（layernorm, softmax）仍需 FP16 格式转换。
+低 bit 权重可减少存储和潜在读取量，但解包、scale 处理、反量化、矩阵形状、batch 与硬件指令会改变吞吐；W4A16 不必然只适合小 batch，W8A8 也不必然只适合大 batch。量化评估要在同模型/任务集和相同请求分布下记录质量退化、显存、kernel/端到端延迟及吞吐，并确认运行路径真正使用目标低精度指令。训练量化方法需要按目标说明 QAT、PTQ 或混合流程，不能断言量化一定需要/不需要完整微调。
 
-**Q9：FlashAttention 为什么快？**
+### Speculative decoding 与 PD 分离
 
-IO-aware tiling：将 Q/K/V 分块加载到 SRAM（不写回 HBM），用 online softmax 跨块增量更新，最终只写一次输出。HBM 读写从 O(N²) 降到 O(N)，A100 实现 3-4× 端到端加速，显存从 O(N²) 降到 O(N)。
+Speculative decoding 用 draft 模型提出候选 token，再由 target 模型验证；接受/拒绝机制可保持目标分布（在算法前提成立时）。速度取决于 draft 成本、候选长度、接受率、目标模型批处理效率和调度开销，不能引用固定加速倍数或只凭同家族关系断言有效。测量需同时报告输出质量/分布检查、接受率、吞吐和延迟。
 
-**Q10：PCIe vs NVLink 的影响？**
+Prefill-Decode 分离把两阶段放在不同资源池以隔离服务目标或资源特征；是否值得取决于负载混合、调度、资源利用和 KV 传输成本。KV 搬迁时间受传输字节、链路拓扑、拥塞、协议和同步影响，不能说固定“远小于 prefill”。需要在真实部署上比较 TTFT/TPOT、尾延迟、吞吐、GPU 利用率及迁移流量。
 
-PCIe 4.0 x16 双向 ~32 GB/s，NVLink 4.0 (H100) 单 GPU 总带宽 ~900 GB/s。单节点多 GPU 训练 NVLink 通信不成瓶颈；PCIe 互联则 all-reduce 严重受限，需用 gradient compression 或 ZeRO。跨节点走 InfiniBand HDR（200 Gb/s ≈ 25 GB/s），是大模型训练主要通信瓶颈。
+## 分布式训练：回答时先声明假设
 
-**Q11：如何 profile 一个 CUDA kernel？**
+Data Parallel、Tensor Parallel、Pipeline Parallel、Expert Parallel 切分的对象和通信路径不同。DP 复制模型并对梯度做 collective；TP 切层内矩阵并频繁交换部分结果；PP 按层分段传激活，可能有 pipeline bubble；EP 为 MoE 专家分片并涉及 token dispatch。并行选择取决于模型形状、显存、拓扑、batch/sequence、通信实现和目标延迟，不存在适用于所有集群的固定 3D 配方。
 
-`nsys profile` → 生成 timeline（看 kernel 占比、stream 并发、数据传输）；`ncu` (Nsight Compute) → 深度分析 SOL（Speed of Light）：compute SOL 低 = memory-bound，memory SOL 低 = latency-bound。关注：Memory Throughput、Compute Throughput、Warp State（stalled reason）。
+ZeRO/FSDP 按阶段切分 optimizer state、gradient 和 parameter，可减少每 rank 的持有量，但实际节省与参数/梯度/optimizer dtype、临时 buffer、激活、通信 bucket、预取和 checkpoint 策略有关。不要背固定“4×/8×”或未经推导的通信倍数。可以先画单 rank 显存账本，再说明一个同步窗口内何时 all-gather/reduce-scatter，并用实际配置与 trace 校验。Ring all-reduce 的每 rank 传输量可在经典 ring 算法假设下推导为约 $2(P-1)/P$ 个 payload 大小（$P$ 个 rank），但 NCCL 可按消息大小、拓扑和配置选择不同算法/协议，理论传输量不证明链路已饱和或通信必为瓶颈。
 
-**Q12：persistent kernel 是什么？**
+混合精度、loss scaling 与 activation checkpointing 的取舍也要注明训练目标和框架策略。checkpointing 以重算换激活存储，重算比例取决于选择哪些节点及实现；不能把某个理论渐近估计或常见开销百分比当作所有模型的实测。Nsight Systems、框架 profiler、通信库日志和 step time 一起回答“计算还是通信限制”。若应聘方向是 GPU kernel/inference，分布式训练可按岗位要求准备，不要让它替代 CUDA/Triton 核心实践。
 
-常驻 GPU 的 kernel，通过工作队列从 CPU 获取任务，避免每次 kernel launch 开销（~5-20μs）。适合大量小 kernel 连续调用（decoder 逐 token 生成）或极低延迟在线推理。代价是占用 SM 资源影响并发。
+## 系统设计与项目回答
 
-**Q13：CUDA stream 和异步执行？**
+设计推理服务时，先问清模型结构/权重格式、prompt 与输出长度分布、并发、吞吐目标和 TTFT/TPOT/P99 SLO；再算权重、KV、临时空间和副本数，设计 batching/KV 管理/量化/并行拓扑；之后用请求 trace 和压测调度。容量估算是初始约束，不是已实现的吞吐承诺。训练集群设计则从模型与优化器状态账本、激活、checkpoint、拓扑和容错约束出发，比较 TP/PP/DP/EP，并验证通信与 step time。
 
-同一 stream 内操作顺序执行；不同 stream 可并发（计算+数据传输重叠）。`cudaMemcpyAsync` + stream 实现 double buffering，掩盖 PCIe 传输延迟。常见用法：多 stream pipeline 将大 batch 切成 micro-batch 交错执行。
+讲一个 kernel 项目时至少准备：基线定义、功能与精度约定、最初瓶颈证据、每次代码改动、正确性结果、多 shape benchmark、profiler 支持的解释、失败尝试和未解决问题。只报告实测数字；benchmark 的输入、GPU/计算能力、软件版本、warmup/repeat、计时方法和精度必须随结果给出。性能表里存在多个配置时不把不同时次/条件拼成单一曲线。
 
-**Q14：解释 Triton 和 CUDA 的区别。**
+### Ascend NPU → GPU 迁移经历
 
-Triton 是 block-level 编程模型：你指定 tile 对数据的操作（`tl.load`、`tl.dot`、`tl.store`），编译器自动处理 thread 分配、shared memory promotion、coalescing、syncthreads。性能接近手写 CUDA（~93-95%），开发时间降 10×。Triton 官方 tutorial 用 Triton 实现了 FlashAttention；官方 FlashAttention-2 本身是 CUDA/CUTLASS 实现。
+可解释两端都需要权衡数据搬运、复用、并行度和流水，但 API、memory hierarchy、执行粒度、编译器和 profiler 不能一一等同。Cube 与 Tensor Core、L1/UB 与 shared memory、pipe 与 CUDA pipeline 可作为“功能目标相似”的比较起点，不是实现完全相同的证明。回答迁移经验时说出亲自完成的代码、具体 shape/dtype、验证与测量条件；若尚未在目标 GPU 完成实验，明确说这是原理映射或待验证工作，不编造上手时长、项目年限、性能提升和峰值比例。
 
-**Q15：GQA 的 KV cache 节省怎么算？**
+可直接使用的自我介绍框架：
 
-GQA 将 H 个 Q heads 分为 G 组，每组共享一个 KV head（G 个 KV heads，$G < H$）。KV cache 节省比例 $= G/H$。LLaMA 2 70B ($G=8, H=64$): 节省 87.5%，每 token KV 从 2.5 MiB 降到 320 KiB。
+> 我在【真实平台与时间范围】做过【具体算子/系统任务】。迁移到 CUDA/Triton 时，我把问题拆成【计算/访存/同步/系统层机制】，用【仓库或个人项目中的代码与工具】验证了【真实结果及完整条件】。目前我还在补【具体缺口】，其中【NPU 与 GPU 的一个相同目标、一个不同机制】是我能用代码和实验说明的。
 
----
+方括号必须由本人事实替换。若没有某项实绩，删除对应句子，不把模板当作个人经历。
 
-## 推理系统高频面试题（含答案）
+## 参考资料
 
-**Q1：continuous batching 是什么？**
-
-标准 batching 等一个 batch 所有 sequence 完成才释放，导致短 sequence 提前结束后 GPU 空转。Continuous batching 每个 decode step 后检查完成的 sequence，立即用新 request 填充，KV cache slot 动态分配。实测吞吐提升 5-23×，GPU 利用率从 30-40% 提升到 80%+。
-
-**Q2：KV cache 占多少显存？优化手段？**
-
-公式：$2 \times \text{num\_layers} \times \text{num\_kv\_heads} \times \text{head\_dim} \times \text{seq\_len} \times \text{batch} \times \text{dtype\_bytes}$。LLaMA-2-70B (GQA, FP16), seq=4096, batch=1 ≈ 1.25 GiB；batch=32 则约 40 GiB。优化：GQA/MQA（减少 kv_heads）、KV cache 量化（INT8/FP4）、PagedAttention（减少碎片）、prefix caching（复用相同 prompt）。
-
-**Q3：speculative decoding 的原理？**
-
-小草稿模型（draft model）快速生成 k 个 token，大目标模型并行验证（一次 forward）。rejection sampling 保证输出分布与 target 等价。适用条件：小大模型同家族（acceptance rate 高）、batch size 小（目标模型 memory-bound）。代码生成典型加速比 2-3×，通用文本 1.5-2×。
-
-**Q4：prefill 和 decode 为什么要分离？**
-
-Prefill 是 compute-bound（大矩阵乘），decode 是 memory-bandwidth bound（矩阵-向量乘）。混合 serving 时相互干扰：长 prefill 阻塞 decode（TTFT 毛刺）；显存争抢。PD 分离（Splitwise/DistServe）将两者放不同 GPU 集群，P99 TTFT 降低 4-5×，整体吞吐提升 2×。KV cache 用 RDMA 传输（~10ms，远小于 prefill 耗时）。
-
-**Q5：PagedAttention 解决什么问题？**
-
-传统 KV cache 预分配连续显存，内部碎片（平均 60-80% 浪费）+ 外部碎片（奇怪大小空洞）。PagedAttention 借鉴 OS 分页，KV cache 切成固定大小 block（vLLM 默认 16 tokens），block table 维护逻辑→物理映射。碎片从 60-80% 降到 <4%，支持 copy-on-write 共享 prefix。
-
-**Q6：W4A16 vs W8A8 量化的区别？**
-
-W4A16（权重 INT4，激活 FP16）：显存减 4×，每次 GEMM 需先反量化到 FP16，适合 memory-bound（小 batch）。W8A8（权重激活都 INT8）：利用 INT8 Tensor Core（~2× FP16 吞吐），适合 compute-bound（大 batch）。实践：单 token 推理用 W4A16，吞吐优化用 W8A8。
-
-**Q7：chunked prefill 解决什么？**
-
-超长 prompt 单次 prefill 耗时数秒，阻塞所有 decode 请求。Chunked prefill 将 prompt 切成小块（如 512 tokens），与 decode step 交替执行，消除延迟毛刺。vLLM 0.4+ 支持（`--enable-chunked-prefill`）。
-
-**Q8：FP8 推理（H100）的注意点？**
-
-H100 原生 FP8 tensor core：E4M3（前向激活）和 E5M2（梯度），理论 ~3958 TFLOPS（vs BF16 的 989）。挑战：FP8 动态范围窄，激活 outlier 需 per-tensor/per-channel scaling；Transformer Engine（NVIDIA）自动管理 scaling factor。LLM 推理 FP8 精度损失通常 <0.5% MMLU。
-
-**Q9：tensor parallelism vs pipeline parallelism 推理 tradeoff？**
-
-TP 将矩阵按列/行切分，每层 all-reduce，latency 与 GPU 数量线性相关（NVLink 依赖）；适合低延迟推理。PP 按层分组，跨节点通信量小，但有 pipeline bubble，单 token 延迟高；适合超大模型或跨节点场景。推理服务通常优先 TP。
-
----
-
-## 分布式训练高频面试题（含答案）
-
-**Q1：DP/TP/PP 各适用什么场景？**
-
-Data Parallel（DP）：模型放入单卡，scale batch size，通信量 = 梯度大小（2×参数量）。Tensor Parallel（TP）：模型放不进单卡，权重矩阵按维度切分，单节点 NVLink 互联，每层需 all-reduce。Pipeline Parallel（PP）：模型极大，按层切分，跨节点通信量小（只传激活），有 pipeline bubble（效率 50-70%）。实际大模型用 3D parallelism（DP×TP×PP）。
-
-**Q2：ZeRO 三个阶段？**
-
-Stage 1：切分 optimizer states（Adam 的 momentum + variance），4× 显存节省，通信量不变。Stage 2：额外切分梯度，8× 节省，通信 +50%（Reduce-Scatter 替代 AllReduce）。Stage 3：额外切分参数，Nd× 节省（N = GPU 数），forward 时 AllGather 参数、backward 后 Reduce-Scatter 梯度，通信约 3× DP。PyTorch FSDP = ZeRO-3 官方实现。
-
-**Q3：gradient checkpointing 的 tradeoff？**
-
-前向只保留部分层的激活，反向时重新计算中间激活，激活显存从 O(layers) 降到 O(√layers)。代价：额外 ~33% 计算（重算前向）。Selective checkpointing（只重算 attention，跳过 FFN）在节省和计算间取平衡。长上下文训练中激活是主要瓶颈，必须用。
-
-**Q4：Ring all-reduce 的原理？**
-
-N 个 GPU 排成环，两阶段：Reduce-Scatter（每 GPU 收到一份 reduced 结果）+ All-Gather（广播给所有 GPU）。每个 GPU 通信量 = 2(N-1)/N × model_size ≈ 2× model size，与 GPU 数量无关（bandwidth-optimal）。NCCL 在 NVLink 上接近理论带宽上限。
-
-**Q5：混合精度训练（AMP）为什么不全用 FP16？**
-
-FP16 动态范围（~65504）容易溢出/下溢（小梯度归零）；Adam 的参数更新量可能比参数小 1000×，需 FP32 精度。AMP 用 FP16 做前向/反向（利用 Tensor Core），用 FP32 保存 master weights 和 optimizer state。Loss scaling（GradScaler）动态调整 loss 放大倍数，防止梯度下溢。
-
-**Q6：sequence parallelism 是什么？**
-
-Tensor Parallelism 切 hidden dim，但 layernorm 和 dropout 的激活在 sequence 维度无法用 TP 切分，导致每卡仍存完整 sequence 激活。SP 将这些算子的激活也按 sequence 切分，进一步降低显存。超长上下文（>32K）时激活成为主要瓶颈，TP+SP 联合是标准做法（Megatron-LM）。
-
----
-
-## 系统设计题
-
-### 设计题 1：设计 LLM 推理服务（70B 模型，QPS=100，P99 latency < 2s）
-
-**关键考量点**：
-1. **部署**：LLaMA-2-70B FP16 需 140GB → W4A16 量化到 35GB 可单卡 A100 80GB；或双卡 TP=2
-2. **Batching**：continuous batching（vLLM）+ PagedAttention，GPU 利用率 80%+
-3. **调度**：在线估算 KV cache 需求，抢占式调度（recomputaion preemption）防 OOM
-4. **长 prompt**：chunked prefill 防阻塞；prefix caching 加速重复 system prompt
-5. **扩展**：多实例 + load balancer，按 KV cache 使用量做 routing
-6. **监控**：TTFT / TBT / KV cache 使用率 / 队列深度
-
-### 设计题 2：100B 参数模型分布式训练（64 GPU，A100）
-
-**关键考量点**：
-1. **并行策略**：TP=8（节点内 NVLink），PP=8（跨节点），DP=8 × 8 = 64 GPU
-2. **显存**：100B × 16 bytes (Adam FP16) = 1.6 TB，ZeRO-3 降至 1.6TB/64 = 25 GB/GPU（可行）
-3. **通信**：TP all-reduce（节点内，快）；PP P2P 传激活（跨节点，少量）；DP all-reduce（跨节点，梯度）
-4. **激活**：gradient checkpointing（每 √layers 层一个 checkpoint）
-5. **混合精度**：BF16 forward + FP32 optimizer state（on GPU），或 ZeRO-Offload 把 optimizer 卸到 CPU
-
-### 设计题 3：Triton GEMM kernel 优化
-
-**要说清楚的点**：
-1. block tiling（BLOCK_M、BLOCK_N、BLOCK_K 的选择）
-2. `tl.dot` 自动调用 Tensor Core
-3. L2 cache 优化（GROUP_M swizzle）
-4. Autotuning 策略（以上参数的搜索空间）
-5. 对比 cuBLAS：Triton 可以轻松自定义（fused softmax、custom dtype）
-
----
-
-## Ascend → GPU 叙事框架
-
-### 核心叙事
-
-> "我有昇腾 NPU 算子开发经验，迁移到 GPU 生态时发现核心概念高度同构——只是工具链不同。Ascend 上的 L1 Buffer tiling 对应 CUDA 的 shared memory tiling；Pipe 流水对应 double buffering；Cube Unit 对应 Tensor Core。这让我用 1-2 个月就上手了 GPU 内核优化，而不是从零开始。"
-
-### 具体话术模板
-
-**"你有 GPU 经验吗？"**  
-"我有半年的 CUDA + Triton 实战经验，实现了 GEMM（naive → tiled → FP16）、Softmax、在读 Flash Attention 源码。在此之前有 2 年昇腾 NPU 算子开发，两个平台的优化思路高度同构，所以上手很快。"
-
-**"为什么从 Ascend 转 GPU？"**  
-"GPU 是业界事实标准，生态更完整（CUDA / Triton / vLLM / PyTorch）。我的核心竞争力不是绑定某个 vendor，而是理解算子优化的方法论——访存分析、tiling 策略、计算-访存 tradeoff，这些在任何平台上都适用。"
-
-**"解释一个你优化过的算子"**  
-"以 GEMM 为例：v0 naive 每 thread 直接读 global memory，算术强度 0.25 FLOP/byte，完全 memory-bound。v1 shared memory tiling 把 TILE×TILE 的数据搬进片上，算术强度提升到 TILE/2，实测 GFLOPS 提升 5-10×。这和 Ascend 上做 L1 Buffer tiling 是完全相同的思路——把数据搬进片上，多次复用，减少 HBM 访问。"
-
-### 简历加分项（按优先级）
-
-1. **能展示的代码**：GitHub 有 GEMM/Softmax/Attention 的 Triton 实现，并附 benchmark（比 PyTorch 快多少）
-2. **Profiling 数据**：Nsight Compute 截图，能指出瓶颈在哪、如何改进
-3. **LeetGPU 通关记录**：fp16 GEMM、Flash Attention 等 Hard 题
-4. **论文阅读**：能复述 Flash Attention 2 的 work partitioning 改进（说明读得深）
-5. **系统级理解**：能讲 vLLM 的 continuous batching + PagedAttention 工作原理
-6. **Cross-platform 经验**：Ascend 经验是差异化优势，主动提，说明理解"异构计算本质"
-
----
-
-*最后激活时间：求职前 2-3 个月。保持刷题 + 系统复习 + 项目 demo 展示。*
+- NVIDIA, [CUDA C++ Programming Guide: coalesced global memory access](https://docs.nvidia.com/cuda/cuda-programming-guide/)。用于核对事务如何依 warp 地址请求合并；事务模型和硬件行为应按目标架构版本阅读。
+- NVIDIA, [Nsight Compute Profiling Guide](https://docs.nvidia.com/nsight-compute/ProfilingGuide/)。SOL/Roofline 与详细指标属于诊断材料，需结合 workload 和其他指标解释。
+- Triton, [Matrix Multiplication tutorial](https://triton-lang.org/main/getting-started/tutorials/03-matrix-multiplication.html) 与[教程索引](https://triton-lang.org/main/getting-started/tutorials/)。用于查看 tile、program 重排、调优等真实可运行例子，不构成跨场景性能保证。
+- PyTorch, [Custom C++ and CUDA Operators](https://docs.pytorch.org/tutorials/advanced/cpp_custom_ops.html)。用于核实 custom op schema、注册、测试及扩展构建路径。
+- Dao et al., [FlashAttention](https://arxiv.org/abs/2205.14135)；Dao, [FlashAttention-2](https://tridao.me/publications/flash2/flash2.pdf)。IO 复杂度和并行划分应依论文条件理解。
+- Lin et al., [AWQ](https://arxiv.org/abs/2306.00978)；Xiao et al., [SmoothQuant](https://arxiv.org/abs/2211.10438)。分别核对激活感知的训练后权重量化与 W8A8 的等价缩放方法。
+- [Anthropic GPU Performance Engineer](https://job-boards.greenhouse.io/anthropic/jobs/4926227008)；[RadixArk Cross-Hardware Inference](https://job-boards.greenhouse.io/radixark/jobs/4343666009)。仅作两个岗位能力样本，不据此声称市场频率、个人资格或投递情况。

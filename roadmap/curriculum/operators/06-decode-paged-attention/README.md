@@ -97,6 +97,32 @@ $$
 
 GQA 的理论 KV 容量可按 Hkv/Hq 缩小，但不能承诺 HBM 一定获得相同倍数：同一 KV page 是否被多个 Query program 重用、page padding、metadata、allocator 碎片、split partial 和不同 head 的调度都会改变实际数字。容量账本必须与代码复用路径分开记录。
 
+### “每步读全部历史 KV”成立的条件
+
+“Decode 每步都读全部历史 KV”首先是一个逻辑访问描述，不是对 DRAM 事务的无条件断言。对请求 `b`，只有在使用标准 dense causal Attention、没有滑动窗口/稀疏选择/压缩摘要、且本步需要完整历史上下文时，数学有效集合才是
+
+$$
+\mathcal V_b=\{0,1,\ldots,L_b-1\},
+\qquad
+N_{\mathrm{logical\ KV}}=2\sum_b L_bH_{kv}D.
+$$
+
+这里的元素数同时计入 K 和 V，前面的 2 不是数据类型字节数。若要得到 BF16 等格式的逻辑字节数，还需乘每元素字节数；后文的缓存容量公式也使用这一口径。
+
+如果 prefix cache 让多个请求共享只读页，或某个 KV page 已在 L2/片上缓存，逻辑上仍然要使用这些 token，但物理 HBM 读取可能少于这个数量；反过来，非连续页、事务对齐、GQA 的多个 Query program、split-KV partial 和跨请求调度也可能让实际事务多于有效元素的下界。滑窗把集合改成窗口，稀疏/压缩注意力改变参与位置，不能把这些路径与普通 paged dense decode 的账本合并。
+
+同样，“Decode 每步都读全部权重”只适用于 dense 模型的一层层完整前向，并且还要说明权重已经驻留在哪一级存储。量化、权重驻留在 L2/显存/主机、专家路由只激活部分专家、权重预取与 batch 复用，都会改变本步的 HBM 流量；它们不一定改变数学上调用了哪些层。应分别记录 `logical parameters used`、权重的物理驻留位置、实际 DRAM/L2 traffic 和 batch 大小，不能从参数总字节数直接推出 Decode 延迟。
+
+一个小账本：`B=2`、`Hq=8`、`Hkv=2`、`D=128`、BF16，两个请求的历史长度为 `4` 和 `1024`。在“每个有效 KV 元素都从 HBM 冷读、没有跨请求复用”的假设下，K/V 逻辑读取下界是
+
+$$
+2\,H_{kv}D\,b_{elem}(4+1024)
+=2\times2\times128\times2\times1028
+=1{,}052{,}672\ \mathrm{bytes}\approx1.00\ \mathrm{MiB}.
+$$
+
+这不是一次 kernel 的实测带宽，也不是把 `Hq=8` 再乘进去；GQA 的八个 Query head 共享两个 KV head。若两个请求共享前缀页，或页面命中 L2，DRAM counter 可以更低；若 `T=16`、页尾和 metadata 被纳入物理事务，则分配容量和实际流量又会不同。
+
 ### 从 KV 字节数算到可服务的请求数
 
 缓存预算应从张量形状计算，而不是先假设 KV 一定占用最多显存。对普通 MHA/GQA，若各层头数、维度和 dtype 相同、请求之间不共享前缀，L 层的有效 KV 数据为
@@ -276,6 +302,8 @@ $$
 
 因此报告明确接受近似状态。encoder 重放只恢复局部 SWA，命中的 global KV 不重算、不覆盖；未命中的后缀再生成自己的状态。decoder 重放产生的局部 KV 用于后续 Decode。数学一致性、输出质量和缓存命中位置敏感性需要分别检查，不能沿用普通分页重排的“结果只差浮点归约顺序”标准。
 
+这里要把“索引稀疏”与“缓存删除”分成两条路径。若每层、每个请求仍保存全部 global entry，只是为本次 Query 建立 Top-K 索引，那么 cache capacity 仍按实际保存的 entry 数计，Attention 读取量才可能按选中的位置减少；索引表本身还要按 batch、层和请求隔离。只有 allocator 真正释放或覆盖历史 entry，并且后续模型路径允许重算、近似或质量退化时，才可以把它记成缓存容量下降。DSA/CSA2 的 sparse selection、page table 重排和永久 eviction 不能使用同一张“节省字节”表。
+
 ### FP4：先算条目，再算 scale
 
 报告的 main KV 用 E2M1 编码，每 16 个 channel 配一个 E4M3 scale，平均为 4.5 bit/元素；它省略了完整 NVFP4 的第二层 global scale。indexer K 使用另一套 MXFP4 规则，SWA 仍为 FP8。读取 main KV 后先反量化，再执行 Attention，因此缓存格式与矩阵指令格式不能直接画等号。
@@ -286,15 +314,29 @@ $$
 (288+68)\times 2.5=890\ {\rm B/token}.
 $$
 
-这是 global KV 有效数据量的手算，与该模型报告的容量口径一致；它不包含 SWA、页 padding、索引输出、allocator 或 TP 副本，不能当作全模型显存或测量结果。完整 NVFP4 的第二层 global scale 见[NVIDIA 对 NVFP4 的公开说明](https://developer.nvidia.com/blog/introducing-nvfp4-for-efficient-and-accurate-low-precision-inference/)，不能把它反推成报告 mainKV 已采用完整格式。
+这是在该模型给定 compression/scale 合同下的 global KV 每 token 抽算，不是当前 wrapper 或所有模型的通用数字。若请求和层的 entry 格式不同，应按 `sum_b S_b * sum_l bytes_per_entry[l]` 重新求和；这里的 890 B/token 不包含 SWA、页 padding、索引输出、allocator 或 TP 副本，不能当作全模型显存或测量结果。完整 NVFP4 的第二层 global scale 见[NVIDIA 对 NVFP4 的公开说明](https://developer.nvidia.com/blog/introducing-nvfp4-for-efficient-and-accurate-low-precision-inference/)，不能把它反推成报告 mainKV 已采用完整格式。
 
-MLA 的容量也要按实际路径写公式。官方 DeepSeek-V3 inference/model.py 的 absorbed 路径每层保存一份共享 latent 512 和一份 RoPE key 64；每个元素若按 BF16 计为 2 字节（没有把 TP/metadata 写入这个 token 账本），因此 61 层的正确数值是
+MLA 的容量也要按实际路径写公式，不能直接照搬资料中的 `2×512+2×64` 而不说明 2 的含义。若实际 contract 是“每层、每个 token 保存一份 latent 向量 `d_c=512` 和一份 RoPE key 向量 `d_r=64`，两者都用 BF16”，则每层每 token 是
 
 $$
-61\times(512+64)\times2=70272\ {\rm B/token},
+M_{\mathrm{MLA,layer/token}}=(d_c+d_r)\,b_{elem}
+=(512+64)\times2=1152\ \mathrm{B},
 $$
 
-不是把两项分别乘 2 后再误读成约 137 KiB/token。这个数字是数据模型示例，不是本章 page allocation 或真实全模型容量。
+不是把两项分别当成独立 K/V 副本后误读成约 137 KiB/token。这里的 `2` 是 BF16 的 bytes/element，不是额外再保存一份 K 和一份 V；如果某个实现确实分别保存两个副本，必须在 storage contract 中另列出来，不能从“latent + RoPE key”名称推断。对 `B` 个请求、每请求有效长度 `S_b`、`L` 个独立物理层，且不共享前缀页时，应写成
+
+$$
+M_{\mathrm{MLA}}=\sum_{b=0}^{B-1}S_b
+\sum_{\ell=0}^{L-1}(d_{c,\ell}+d_{r,\ell})b_{\ell}.
+$$
+
+若 latent 跨层物理共享、按 TP 分片，或使用不同 dtype/scale，分别替换内层求和与每设备账本；不能机械乘以层数或除以 TP size。若回到上述“61 个独立层、BF16、无 TP/metadata”的示例，总账本才是
+
+$$
+61\times(512+64)\times2=70272\ \mathrm{B/token},
+$$
+
+不是把两项分别当成独立 K/V 副本后误读成约 137 KiB/token。这个数字是数据模型示例，不是本章 page allocation 或真实全模型容量。
 
 vLLM 的[历史 PagedAttention 设计文档](https://docs.vllm.ai/en/latest/design/paged_attention/)页面明确带有历史文档警告；它适合说明早期布局设计，不应被当作 today backend 的实现依据。当前实现应以实际 checkout、backend、metadata 和 profiler 为准。
 
@@ -366,6 +408,10 @@ def _paged_decode_kernel(
 
 host launch 的 grid 是 (B*Hq,)，因此一个 program 的 pid 用整除/取模还原为 (b,hq)；它读取一行 q，沿 BLOCK_T 循环扫描该请求的历史 KV。k * q[None,:] 的形状是 [BLOCK_T,D]，tl.sum(..., axis=1) 沿 D 归约，得到每个 token 一个 score；p[:,None] * v 仍是 [BLOCK_T,D]，tl.sum(..., axis=0) 沿 T 归约成一个 D 维的 U 更新。最后只在 l>0 时除以 l，否则写零。token_base 是 [BLOCK_T,1]，d 是 [1,D]；因此 cache_offset 是 [BLOCK_T,D]。页表和 cache 的无效 lane 都经过 mask，且不从无效 logical page 无 mask 加载 physical page ID。这个 kernel 是 FP32 simple correctness baseline，不声称等同 FlashAttention-2，也不把小 M=1 的 kernel 当作 Tensor Core 性能实现。tl.range 避免把长上下文的所有 chunk 静态完全展开；实际性能仍需以目标 GPU 编译报告和 profiler 验证。
 
+> **题面卡：分页之外先写可等价子算子**
+>
+> [Softmax Attention #6](https://leetgpu.com/challenges/softmax-attention) 先验证连续单 Query 的 score、softmax、PV；[#80 GQA](https://leetgpu.com/challenges/grouped-query-attention) 验证 `kv_head=hq//(Hq/Hkv)`；[#96 INT8 KV-Cache Attention](https://leetgpu.com/challenges/int8-kv-cache-attention) 验证连续 INT8 K/V、per-head/token scale 和单步 attention。AlphaGPU 当前没有与 `page_table + ragged lengths + append/COW + split-KV` 完全等价的 LeetGPU 题，因此这些语义在下面的独立 CPU/host/GPU correctness 实验中验收，不能把 #6/#80/#96 通过写成 paged decode 通过。
+
 ### 连续参考与分页实现怎样对比
 
 先独立生成逻辑连续的 K/V，再把相同数据放入非连续物理页。参考实现只读取逻辑张量，分页实现读取页表与物理池，这样寻址错误不会同时出现在两条路径中。
@@ -404,9 +450,7 @@ torch.testing.assert_close(got, expected, rtol=1e-4, atol=1e-4)
 
 ### LeetGPU：正确性与代码归档
 
-从 [LeetGPU 官方题库入口](https://leetgpu.com/challenges) 搜索并核对上一章的 [#6 Softmax Attention](https://github.com/AlphaGPU/leetgpu-challenges/tree/main/challenges/medium/6_softmax_attention)：题面是连续的 Q[M,d]、K[N,d]、V[N,d]、out[M,d]，solve(Q,K,V,out,M,N,d)。本章先把 M=1 作为连续长 KV 的单 Query 数学基础：它可以验证 score、softmax、PV 和长 N，但没有 page_table、ragged batch、append 或 COW。应从平台空题面完成并保存当次原始 solve/kernel，平台状态只由对应题面结果证明。
-
-[#80 Grouped Query Attention](https://github.com/AlphaGPU/leetgpu-challenges/tree/main/challenges/medium/80_grouped_query_attention) 再验证 Hq/Hkv 的 GQA 映射，但它是同长、无 batch 的多头题，不是单 Query 分页题。当前公开题库树中没有以 paged/decode 命名的对应题面；因此 page table、ragged length、split merge、append/COW 只进入本章的 CPU/GPU 扩展实验，平台题检查 head 映射，扩展实验另外检查分页和单 Query 状态。
+完成对应空题面后保存原始 `solve`/kernel；page table、ragged length、split merge、append/COW 和 paged decode 没有完全等价平台题，由本章 CPU/host/GPU 扩展实验验收。
 
 ### 服务器：真实性能
 

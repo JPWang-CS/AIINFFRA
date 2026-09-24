@@ -1,5 +1,65 @@
 {
   "version": 1,
+  "operator_reader_review_2026_09_23": {
+    "scope": "Operator chapters 7-15: source-to-code and formula-to-exercise continuity, LeetGPU challenge contract versus extension experiments, blank device measurements and public bookmark compatibility.",
+    "audit": ".codex/operator-reader-audit-2026-09-23.md",
+    "local_sources": [
+      {"path": "downloads/cuda-programming-guide.pdf", "pdf_pages": [72, 73, 74, 81, 82, 83], "use": "Coalesced 32-byte global transactions and shared-memory transpose/bank-conflict mechanics."},
+      {"path": "downloads/大模型推理实践.pdf", "pdf_pages": [49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60], "use": "KV-cache hierarchy, quantization and speculative-decoding topics; check claimed KV bytes, sparse selection and unconditional speedup statements against actual tensors and algorithms."},
+      {"path": "downloads/DeepSeek_V41_Tech_Report.pdf", "pdf_pages": [7, 8, 9, 10, 11, 12], "use": "CED and CSA2 storage, selection and cross-layer reuse; do not equate with ordinary paged dense decode."}
+    ],
+    "primary_external_sources": [
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/",
+      "https://triton-lang.org/main/getting-started/tutorials/03-matrix-multiplication.html",
+      "https://github.com/AlphaGPU/leetgpu-challenges"
+    ],
+    "curriculum_style_reference": "https://caomaolufei.github.io/AIInfraGuide/guides/ai-infra%E5%AD%A6%E4%B9%A0%E8%B7%AF%E7%BA%BF/",
+    "validation": "Build: 39 chapters, 102 attached pages, 42 assets, 1734 formulas, 171 source excerpts. Static/content, editorial, navigation, paper-reader, theme, font-anchor, PDF-hash and CPU semantic checks passed. Final link audit: 103 HTML artifacts, 5278 local href/src, 4069 fragments, 1102 attached-document TOC links. Browser checked chapter 7/8/10/13 legacy anchors and top/sidebar state.",
+    "boundary": "CPU semantics and static source checks do not constitute LeetGPU acceptance, nvcc/Triton compilation, GPU correctness or benchmark evidence. Original user solutions and prior measurements are preserved."
+  },
+  "reader_career_review_2026_09_22": {
+    "scope": "Canonical curriculum routes, representative reader paths, and interview consistency; not a claim of GPU execution or exhaustive review of every PDF.",
+    "career_sources": [
+      "https://job-boards.greenhouse.io/anthropic/jobs/4926227008",
+      "https://job-boards.greenhouse.io/radixark/jobs/4343666009",
+      "https://job-boards.greenhouse.io/janestreet/jobs/7449252002"
+    ],
+    "job_source_limit": "Illustrative employer-authored requirements, not a frequency survey, application, or personal qualification assessment. Workday pages without readable bodies were not treated as verified full descriptions.",
+    "framework_sources": [
+      "https://docs.pytorch.org/docs/stable/library.html",
+      "https://docs.pytorch.org/tutorials/advanced/cpp_custom_ops.html",
+      "https://docs.pytorch.org/tutorials/advanced/python_custom_ops_functional.html",
+      "https://docs.pytorch.org/tutorials/recipes/torch_compile_user_defined_triton_kernel_tutorial.html"
+    ],
+    "new_example": "roadmap/curriculum/model-analysis/examples/registered_rmsnorm.py",
+    "math_check": "roadmap/curriculum/model-analysis/examples/registration_math_checks.py",
+    "integration": "Mini Transformer section 6: same FP32 no-gamma norm, explicit functional schema, metadata-only fake, CPU reference/CUDA Triton branch, first-order autograd, opcheck/fullgraph, full/token/chunk model checks and separate timings.",
+    "other_repairs": "Storage base versus tensor.data_ptr offset; reduction exits versus initialized data; independent timing batches and cross-shape regression; compile/link/load/device error classification; legacy interview statements and duplicated progress.",
+    "validation_boundary": "Python AST, CLI help/missing-dependency exit, NumPy finite differences and measurement-summary arithmetic were checked. PyTorch is absent locally: registration, opcheck, compile, model execution and CUDA/Triton checks remain unexecuted. Original solutions/reference and PDF coverage status unchanged."
+  },
+  "gpu_cuda_editorial_review_2026_09_22": {
+    "scope": "GPU and CUDA chapters 1-5: prerequisite order, inline code, adjacent exercises, blank device measurements and compatible section navigation.",
+    "local_manual": "downloads/cuda-programming-guide.pdf, Release 13.3",
+    "reviewed_pdf_pages": [21, 22, 23, 25, 26, 61, 62, 63, 64],
+    "official_semantics": [
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/writing-cuda-kernels.html",
+      "https://docs.nvidia.com/deploy/nvidia-smi/index.html",
+      "https://docs.nvidia.com/cuda/cuda-compiler-driver-nvcc/index.html"
+    ],
+    "open_source_integration": [
+      {"chapter": 1, "source": "NVIDIA/cuda-samples cpp/1_Utilities/deviceQuery", "use": "Device enumeration and properties versus compiler target capabilities."},
+      {"chapter": 1, "source": "https://triton-lang.org/main/getting-started/tutorials/01-vector-add.html", "use": "Logical index vectors, pointer vectors and the 130-element masked tail; compiler layout is separate."},
+      {"chapters": [2, 3], "source": "NVIDIA/cuda-samples cpp/6_Performance/transpose/transpose.cu", "use": "32x32 data tile versus 32x16 threads; copy, naive, coalesced and padded comparisons, with local shape/thread differences stated."},
+      {"chapter": 4, "source": "NVIDIA/cuda-samples cpp/0_Introduction/simpleStreams/simpleStreams.cu", "use": "Pinned buffers and per-stream H2D-kernel-D2H ordering; actual overlap is left for measurement."},
+      {"chapter": 5, "source": "https://github.com/gpu-mode/lectures/tree/main/lecture_001", "files_reviewed": ["README.md", "pytorch_square.py", "pt_profiler.py", "nsys_square.py"], "use": "Independent rewritten square comparison with correctness, unprofiled event timing and CPU/CUDA trace. Do not copy undefined model/inputs from lecture scratch script."},
+      {"chapter": 5, "source": "https://triton-lang.org/main/getting-started/tutorials/02-fused-softmax.html", "use": "Compiled register/shared usage informs launch size; zero-shared-memory case and architecture constraints retained."}
+    ],
+    "cuda_samples_revision": "5443602d89ed99aede2e4b7bf329daddeadb320e",
+    "curriculum_reference": "https://caomaolufei.github.io/AIInfraGuide/guides/ai-infra%E5%AD%A6%E4%B9%A0%E8%B7%AF%E7%BA%BF/",
+    "reduction_task_source": "https://raw.githubusercontent.com/AlphaGPU/leetgpu-challenges/main/challenges/medium/4_reduction/challenge.py",
+    "reduction_task_scope": "FP32 input and one device output, reference sums in FP64 then rounds; local CPU merging of partial sums is not a complete platform submission.",
+    "boundary": "No CUDA compilation, GPU benchmark or platform submission. Original solutions/reference files and PDF coverage status are unchanged."
+  },
   "five_directions_delivery": {
     "date": "2026-09-14",
     "gemm": "Swizzle coordinate/bank model plus fixed CUTLASS3.8.0 example49 integration and producer/consumer collective explanation; author library supplies WGMMA kernel, not a handwritten replacement.",

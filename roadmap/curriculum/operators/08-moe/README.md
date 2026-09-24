@@ -57,6 +57,14 @@ router 输出按 token 排列，GEMM 希望同一专家的输入行连续。每�
 
 分组后 E0 有 2 行，E1 有 1 行，E2 有 3 行。以专家顺序串起来，offsets=[0,2,3,6]；专家 e 负责 [offsets[e],offsets[e+1])。注意重排后有 T×k=6 行任务，不是原来的 3 行。
 
+把这张表走成地址和数值：`flat[0:2]` 是 E0 的 token 0/1，`flat[2:3]` 是 E1 的 token 2，`flat[3:6]` 是 E2 的 token 0/1/2。每条 flat 记录仍带 `(token,slot,weight)`，因此专家输出临时张量的写入地址是 `flat_offset*D+d`，combine 的目标地址是 `Y[token*D+d]`，而不是 `Y[flat_offset*D+d]`。例如 token 0 的路由是 E2、E0，若 `D=2`、`X_0=[1,2]`、教学专家为 `F_e(x)=(e+1)x+e`，则 `F_2(X_0)=[5,8]`、`F_0(X_0)=[1,2]`，最终
+
+$$
+Y_0=G_{0,0}[5,8]+G_{0,1}[1,2].
+$$
+
+`semantics.py` 使用 logits `[3,0,4,-1]` 产生 `[2,0]`，使用 `[2,0,5,-1]` 产生第二行 `[2,0]`，第三行 `[0,6,2,1]` 产生 `[1,2]`，与本表和 `offsets=[0,2,3,6]` 对齐。权重是选中 logits 上的 Softmax；如果模型另有 route scale 或共享专家，要在这个 `Y[token,d] += weight * value` 之外单独列出。
+
 <!-- source-check: examples/semantics.py -->
 ~~~python
 def group_routes(routes, experts):
@@ -176,6 +184,10 @@ padding logits 为 -inf，因此有限有效值优先；K 维的补齐槽位同�
 
 E 或 k 变大时，重复扫描、归约同步和寄存器压力会上升，可以比较分层候选选择、排序网络或其他选择算法。先保持相同平局、输出排序和 dtype 约定，避免把语义变化当作性能优化。
 
+> **题面卡：先写 Router，再扩展整层**
+>
+> [MoE Top-K Gating #67](https://leetgpu.com/challenges/moe-topk-gating) 的输入是 `logits[M,E]`，输出 `topk_weights[M,k]` 与 INT32 `topk_indices[M,k]`；它正好对应上面的 gate kernel 和“选中 logits 上重新 Softmax”，但不包含重排、专家 GEMM 或 combine。先从空题面完成并归档 #67，再用本章 `semantics.py` 验证 `(token,slot)` 双射、空专家和 combine；当前没有一题把完整 route→dispatch→expert GEMM→combine/TP/EP 全部等价覆盖。
+
 ### Grouped GEMM 为什么有必要
 
 逐专家启动 GEMM 简单，但很多专家可能只有几行，launch 数多且利用率低。Grouped GEMM 将多个独立矩阵问题交给一个调度器，使 GPU 在不同专家的 tile 之间分配工作。
@@ -204,11 +216,7 @@ capacity 限制、丢弃、重路由和负载均衡也属于模型/调度策略�
 
 ### LeetGPU：正确性与代码归档
 
-在 [LeetGPU 题库](https://leetgpu.com/challenges)完成 **MoE Top-K Gating（#67）**。输入 logits[M,E]，输出 topk_weights[M,k] 和 INT32 的 topk_indices[M,k]；它要求对选中的 logits 做 Softmax，不包含专家 GEMM、重排或 combine。
-
-先验证 k=1、k=E、负 logits 和多行输入。无平局时可直接与 topk+softmax 对齐；有平局时单独核对平台约定。本章的固定平局规则只是明确的教学选择，不承诺与任意库版本的索引次序一致。
-
-随后用一个很小的完整 MoE 参考验证数据组织：3 个 token、4 个专家、每 token 2 个选择。检查六个任务没有重复和遗漏，空专家正确跳过，按专家执行与按 token 执行得到相同结果：
+本地完整 MoE 数据路径回归验证 `k=1/k=E`、负 logits、平局、六个 `(token,slot)` 任务双射、空专家、专家执行与 token-wise combine 一致：
 
 ~~~bash
 python roadmap/curriculum/operators/08-moe/examples/semantics.py

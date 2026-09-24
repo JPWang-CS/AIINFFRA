@@ -1,19 +1,10 @@
 # 第一章 从 CUDA 程序看 GPU 的整体结构
 
-CUDA 程序把工作分成线程、线程块和 grid，GPU 再把这些工作分配给 SM 执行。数据分块、线程分工和物理计算单元是三个不同层次。
+CPU（中央处理器）适合处理依赖复杂、分支多或访问不规则的任务；GPU（图形处理器）适合同时推进大量相互独立的工作。GPU 程序把工作组织为线程和线程块，再由设备上的执行资源分批处理。数据块大小、线程数与物理执行单元数量属于不同层次：例如，一个 64×64 输出块包含 4096 个元素，可以由较少线程分批计算。
 
-一个 64×64 的输出块有 4096 个元素，可以由较少的线程分多次计算；一个包含 256 个线程的 block，也不要求 256 个物理计算单元同时执行。Vector Add 与 MatMul 的地址、线程和数据复用，可以用来观察这层映射。
+## 1. CPU 与 GPU 的任务分工
 
-## 阅读时怎样使用 CUDA 手册
-
-> [!IMPORTANT] 先分清三个层次
-> **数据 tile 是工作划分，CUDA 线程是执行实例，SM/CUDA Core 是硬件资源。三者没有固定的一一对应。** 后面的地址映射、寄存器和性能分析都建立在这个区分上。
-
-CUDA 编程模型定义主机、设备、线程和内存之间的关系。具体 API（Application Programming Interface，应用程序编程接口）的同步行为查 API reference，架构差异查对应调优指南；分析代码时将这些条件与实际编译目标一起核对。
-
-## 1. 硬件全貌：为什么需要 CPU 和 GPU 一起工作
-
-### 1.1 吞吐高，不等于单个任务的延迟低
+### 1.1 延迟与吞吐
 
 CPU（Central Processing Unit，中央处理器）和 GPU（Graphics Processing Unit，图形处理器）都能执行计算，但设计时面对的主要矛盾不同。CPU 要让一条具有复杂依赖、分支和不规则访问的指令流尽快向前推进；GPU 则要在功耗和面积约束下，让大量工作持续通过计算与存储资源。
 
@@ -23,63 +14,45 @@ CPU（Central Processing Unit，中央处理器）和 GPU（Graphics Processing 
 
 “访存延迟可以用更多线程隐藏”的准确含义，是一些线程等待数据时，硬件有机会执行其他就绪工作。那一次内存请求的实际延迟没有消失。如果所有工作都在等同一瓶颈，或者已经达到可持续带宽，再增加线程不会创造额外带宽。
 
-对算子先问三个问题：是否有足够独立工作？工作能否相对规则地组织？计算或复用是否足以摊薄准备与搬运成本？向量加法容易并行，但每个元素只有一次加法、两次读取和一次写入；矩阵乘法则能让同一输入参与很多乘加。两者都运行在 GPU 上，性能限制却不必相同。
+判断算子是否适合 GPU，要看独立工作量、工作组织是否规则，以及计算或数据复用能否抵消准备和搬运成本。向量加法中每个元素只有一次加法、两次读取和一次写入；矩阵乘法则可让输入参与多次乘加，因此两类算子可能受不同因素限制。GPU 程序也可以包含循环；循环本身不决定并行性，关键是循环迭代和不同线程之间是否存在数据依赖。
 
-### 1.2 Host 与 Device 是角色，不只是指针前缀
+### 1.2 Host、Device 与数据传输
 
-CUDA（Compute Unified Device Architecture，统一计算设备架构）采用异构计算模型。程序通常从主机侧开始，由主机代码组织数据、调用运行时并提交设备工作。Host 指主机及其执行环境，通常包括 CPU 与主机内存；Device 指参与计算的 GPU 设备及其可用资源。
-
-先看常见的独立 GPU 系统：
+CUDA（Compute Unified Device Architecture，统一计算设备架构）采用异构计算模型。Host 指主机侧，通常包括 CPU 和主机内存；Device 指 GPU 设备及其可用资源。主机代码负责组织数据、调用运行时并提交设备工作。独立 GPU 系统中，输入常经 H2D（Host to Device，主机到设备）传入设备，结果再经 D2H（Device to Host，设备到主机）返回；互联可以是 PCIe（Peripheral Component Interconnect Express，外围组件高速互联）或系统提供的其他通道。
 
 <figure class="diagram-frame">
 <img src="assets/host-device.svg" alt="主机与独立 GPU 分区：CPU 提交 kernel，输入数组通过 H2D 送入设备显存，GPU 计算后的结果通过 D2H 返回主机内存。">
-<figcaption>图：任务提交与数据搬运分开表示。CPU 与 SM 执行计算，主机内存与设备显存保存数组；互联上的两个箭头标明数据方向。</figcaption>
+<figcaption>任务提交和数组传输是两件事。CPU 与 GPU 执行计算，主机内存与设备显存保存数组，互联上的箭头表示数据方向。</figcaption>
 </figure>
 
-H2D（Host to Device，主机到设备）和 D2H（Device to Host，设备到主机）表示传输方向。互联可以是 PCIe（Peripheral Component Interconnect Express，外围组件高速互联）或具体系统提供的其他通道。某种服务器的连接方式不是全部 CUDA 系统共同的物理结构。
+在 GPU 上由许多线程执行的函数称为核函数（kernel）。CPU 通过 CUDA 运行时库提交核函数；运行时库负责常用的设备选择、内存分配和任务提交接口。执行 `kernel<<<...>>>(d_a)` 时传入的是设备指针的值，不会自动复制其指向的整个数组。数组必须已经位于 kernel 可访问的位置，或由相应内存机制保证可访问。
 
-图中把“提交任务”和“传输数据”分开。执行 `kernel<<<...>>>(d_a)` 时，传入的是设备指针这个参数的值，不是把它指向的整个数组再复制一次。数组必须已处于 kernel 可合法访问的位置，或由相应内存机制保证可访问。kernel 启动不是自动搬运任意 CPU 数组的操作。
+集成 GPU、映射内存、统一内存和一致性平台有不同的访问与迁移机制，因此独立显卡图只表示一种常见系统。
 
-也不能把独立显卡示意图理解成“CPU 与 GPU 永远必须拥有完全分离的物理内存”。集成系统、映射内存、统一内存和硬件一致性平台具有不同的访问与迁移机制。本章用显式分配和复制，是为了把位置与生命周期说清楚，不是说只有这一种方式。
+### 1.3 GPU 内部的执行与存储资源
 
-### 1.3 GPU 内部：SM 是一组执行资源，不是一个“大核心”
-
-SM（Streaming Multiprocessor，流式多处理器）是 GPU 中承载线程块执行的一组硬件资源，也是理解 CUDA 执行的重要硬件层次。一个 SM 包含线程状态所需的寄存器资源、指令调度与发射资源、计算和访存管线，以及片上缓存和共享内存相关资源。多个 SM 共同访问设备级缓存和显存系统。
-
-下面是组织关系图，不是某一芯片的精确版图，也不表示每次访存都必须经过图中的所有层级：
+SM（Streaming Multiprocessor，流式多处理器）是 GPU 中执行线程块的一组硬件资源。一个 SM 包含线程状态所需的寄存器、指令调度与发射资源、计算与访存管线，以及片上缓存和共享内存。线程块（block）是软件定义的协作线程组；一次核函数启动的全部线程块组成 grid。设备可按任意顺序把 block 安排到可用 SM，资源允许时一个 SM 可同时驻留多个 block，较大的 grid 则分批执行。寄存器、共享内存和线程数限制决定驻留能力。
 
 <figure class="diagram-frame">
 <img src="assets/gpu-resource-map.svg" alt="GPU 内部组织：多个 GPC 包含多个 SM，SM 内有调度、寄存器、计算与存储资源；L2 和显存系统是设备级资源。">
-<figcaption>图：框的嵌套表示资源归属，不表示固定的访存路径。GPC 为 Graphics Processing Cluster（图形处理集群）；矩阵计算能力取决于具体架构。</figcaption>
+<figcaption>图中嵌套表示资源归属，不表示每次访存都经过所有层级。GPC（Graphics Processing Cluster，图形处理集群）是更高一级的组织。</figcaption>
 </figure>
 
-GPC 内还可能有 TPC（Texture Processing Cluster，纹理处理集群）等组织层次，但普通 CUDA 程序通常不通过 TPC 编号划分任务。这个名称帮助你阅读硬件框图，不意味着所有图形专用模块都需要成为通用计算的调度接口。
+GPC 内还可能有 TPC（Texture Processing Cluster，纹理处理集群）等组织层次；普通 CUDA 程序通常不通过 TPC 编号划分任务。寄存器是高速存储资源，线程私有是其编程可见范围；线程不能读取其他线程的局部变量。共享内存用于线程块内部协作，普通 block 即使驻留在同一 SM，也不能因此共用同一共享内存。支持线程块集群的硬件另有显式的分布式共享内存机制。
 
-寄存器文件的“文件”不是磁盘文件，而是一组高速存储资源。线程私有是其编程可见范围：一个线程不能因为寄存器物理上位于同一 SM，就任意读另一个线程的局部变量。物理资源共同存在，不等于变量访问权限共同存在。
+L1（Level 1，一级）和 L2（Level 2，二级）缓存保存部分数据副本，减少访问更远存储的需求。程序显式通过共享内存地址组织协作数据；缓存则由硬件缓存策略服务访问。设备显存通常由 DRAM（Dynamic Random-Access Memory，动态随机存取存储器）实现。HBM（High Bandwidth Memory，高带宽存储器）和 GDDR（Graphics Double Data Rate，图形双倍数据速率存储器）是不同显存技术，并非所有 NVIDIA GPU 都使用 HBM。显存容量与带宽分别表示可保存的数据量和单位时间传输量。
 
-共享内存为线程块内部协作提供数据空间。普通线程块之间的共享内存不因驻留同一 SM 就变成共同可读写的数组。支持硬件上的集群级分布式共享内存属于显式扩展，不能用它改写普通线程块的语义。
+Tensor Core 支持特定矩阵运算，不是执行任意 C++ 语句的通用线程。普通算术、地址计算、条件判断和矩阵乘加可能使用不同管线。写出矩阵乘法表达式并不保证编译器选择 Tensor Core；输入格式、表达方式、指令和架构支持都会影响代码生成。
 
-L1（Level 1，一级）和 L2（Level 2，二级）缓存保存部分数据副本，减少访问更远存储的需求。缓存与共享内存即使共用部分物理资源，控制方式也不同：程序用共享内存地址显式组织协作数据，缓存则按缓存策略服务访问。它们都“在片上”，不代表可以互换使用方式。
+### 1.4 Kernel 流量与端到端耗时
 
-设备显存通常由 DRAM（Dynamic Random-Access Memory，动态随机存取存储器）实现。HBM（High Bandwidth Memory，高带宽存储器）与 GDDR（Graphics Double Data Rate，图形双倍数据速率存储器）是不同的显存技术，不是所有 NVIDIA GPU 都使用 HBM。容量回答“能放多少”，带宽回答“每单位时间能搬多少”，不能用一个指标代替另一个。
+两个长度为 N 的 float 数组执行向量加法时，只按有效载荷计算，H2D 为 `2×N×4` 字节，D2H 为 `N×4` 字节；kernel 读取两个输入并写一个输出，逻辑流量为 `3×N×4` 字节。主机—设备传输和 GPU 内部访问经过不同路径。逻辑流量不一定等于显存总线的实际流量，缓存命中、访问粒度和写入行为都会影响它。
 
-Tensor Core 是支持特定矩阵运算的硬件计算单元，不是另一组执行任意 C++ 语句的通用线程。普通加法、地址计算、条件判断和矩阵乘加可能使用不同管线。写了矩阵乘法的数学表达式，并不意味着编译器一定选择 Tensor Core；输入格式、表达方式、指令与架构支持都参与决定。后续会把它具体落实到矩阵指令和布局。
+总耗时还可能包括分配、初始化、提交与同步。若 kernel 只占端到端时间的一小部分，即使 kernel 时间减半，整体收益也有限。多个算子连续在 GPU 上执行、输入只传一次且中间结果留在设备上时，传输成本可由多次计算共同承担。性能分析应区分 kernel 时间与端到端时间，并结合目标设备的编译结果和测量判断瓶颈。
 
-### 1.4 “设备内部的快”与“整个程序的快”
+## 2. 编程模型：kernel、线程和线程块
 
-假设把两个长度为 N 的 float 数组送入设备，完成加法，再取回结果。只按有效载荷记账，H2D 是 `2×N×4` 字节，D2H 是 `N×4` 字节；kernel 本身又有两个读取和一个写入，逻辑流量为 `3×N×4` 字节。
-
-两组字节走的不是同一条路径。前者经过主机—设备互联，后者在 GPU 存储体系中发生。kernel 的 12N 字节是算法口径的有效流量，也不一定等于实际显存总线流量：缓存命中、访问粒度和存储行为可能改变物理流量。
-
-端到端耗时还可能包含分配、初始化、提交与同步。即使把 kernel 时间减半，如果它只占总耗时的一小部分，整个任务的收益仍然有限。反过来，多个算子连续在 GPU 上执行，输入只传一次，中间结果留在设备，搬运成本就可以被多次计算摊薄。这解释了为什么既需要单 kernel 优化，也要保留模型级分析。
-
-**追问：CPU 擅长串行，所以 GPU 不能写循环吗？**
-
-可以写。关键是循环内部与线程之间有哪些依赖。不同线程各自执行独立任务的循环，仍能并行；所有工作围绕单一依赖链，才难以利用大量资源。“代码里有循环”与“问题只能串行”不是同一个判断。
-
-## 2. 编程模型：工作怎样组织，硬件怎样承接
-
-### 2.1 kernel、grid、block、thread 回答不同的问题
+### 2.1 Kernel、grid、block 与 thread
 
 kernel（核函数）说明参与线程执行什么设备代码；kernel launch（核函数启动）指定这次调用采用什么执行配置。grid（线程块网格）是这次启动组织出的线程块集合；thread block（线程块）是其中一个可协作的线程组；thread（线程）是执行代码、具有自身索引与局部状态的逻辑实例。
 
@@ -95,7 +68,7 @@ vector_add_kernel<<<4, 256>>>(d_a, d_b, d_c, 1000);
 
 “组织 1024 个线程”也不等于“1024 个线程同时执行某条机器指令”。执行配置描述程序；实际并发还由设备资源、线程块需求、指令和数据依赖等决定。程序必须在允许的调度方式下都正确，不能依赖想象中的同时启动时间。
 
-### 2.2 一个 block 在一个 SM 上执行，不代表一个 SM 只有一个 block
+### 2.2 Block 与 SM 的驻留关系
 
 普通线程块的线程在同一 SM 上执行，使块内共享内存和同步成为可能。资源允许时，一个 SM 可以同时驻留多个线程块；很大的 grid 则可以分批安排到有限数量的 SM 上。
 
@@ -107,7 +80,7 @@ vector_add_kernel<<<4, 256>>>(d_a, d_b, d_c, 1000);
 
 这不表示“CUDA 永远不能跨块同步”。Cooperative Groups（协作组）中的相关启动与同步机制，以及支持硬件上的 Thread Block Cluster（线程块集群），提供了特定协作范围。手册 §1.2.2.1.1 介绍了计算能力 9.0 及以上支持的集群：同一集群的块在同一 GPC 内协同调度和通信。它需要显式使用，不是普通启动自动获得的全 grid 屏障。
 
-### 2.3 warp 是 32 个逻辑线程，不是永久绑定的 32 个核心
+### 2.3 Warp 组成与硬件线程调度
 
 warp（线程束）把同一线程块中的线程按 32 个一组组织。SIMT（Single Instruction, Multiple Threads，单指令多线程）描述这种执行模型：硬件对参与线程发射指令，各线程使用自己的寄存器值和地址，得到各自结果。
 
@@ -121,37 +94,39 @@ const unsigned warp_id = linear_tid / 32;
 const unsigned lane_id = linear_tid % 32;
 ~~~
 
-因此 x 方向先变化。二维 block 的“一行”是否正好对应一个 warp，要看 x 方向长度，不能因为数据是矩阵就把 warp 等同于矩阵的一行。
+因此 x 方向先变化。若把同一个 `threadIdx.y` 下的 x 方向线程称为线程块中的“一排”，这一排是否正好是一个 warp，要看 `blockDim.x`；它不等于矩阵的一整行。线程处理哪些矩阵元素，还要看 kernel 的下标公式。
 
 CUDA Core 是某类硬件算术执行资源的产品/架构描述，CUDA thread 是具有执行状态的逻辑线程，没有永久一一对应关系。SM 能保留很多线程的状态，调度它们使用有限的执行管线；不同指令也可能去往不同功能单元。不能把 CUDA Core 数量直接代入 grid×block 的线程数公式。
 
-同一 warp 遇到不同分支时，不同路径在相应活动线程集合上执行；被屏蔽的线程不会在该路径完成相同的有效工作。本章先理解分支可能降低有效利用率，不进一步推断“同一 warp 的线程天然可以不加同步交换共享内存数据”。独立线程调度和内存顺序会影响这种写法，协作仍须使用规定的同步原语。
+同一 warp 遇到不同分支时，不同路径由相应活动线程执行，被屏蔽的线程不会完成该路径的有效工作。不能据此认为 warp 内线程可以不加同步地交换共享内存数据；独立线程调度和内存顺序会影响这种写法，协作仍须使用规定的同步原语。
 
 ### 2.4 CUDA 的线程视角与 Triton 的 tile 视角
 
-CUDA C++ 常写“一个线程计算哪个索引”。Triton Vector Add 则写的是“一个 program 处理哪些元素”：
+CUDA C++ 通常为每个线程计算标量索引。Triton 的 program（程序实例）一次描述一个逻辑数据块，再通过索引向量表达该块覆盖的元素：
+
+下面是核函数内的片段。`tl` 是 `triton.language` 的常用导入别名；`x_ptr`、`y_ptr`、`out_ptr` 分别指向两个输入和一个输出数组，每个数组有 130 个元素。这里用固定长度说明索引、地址和数据值的区别。
 
 ~~~python
 pid = tl.program_id(0)
-offsets = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
-mask = offsets < n_elements
+offsets = pid * 128 + tl.arange(0, 128)
+mask = offsets < 130
+x_ptrs = x_ptr + offsets
+x = tl.load(x_ptrs, mask=mask)
+y = tl.load(y_ptr + offsets, mask=mask)
+tl.store(out_ptr + offsets, x + y, mask=mask)
 ~~~
 
-来源：现有 Vector Add 文件。它是本地验证/benchmark wrapper，不是单独归档的平台原始 solve；来源区别必须保留。
+当 `pid=1` 时，`offsets` 为 128 到 255，其中只有 128、129 满足 mask。`offsets` 是整数索引向量；加到 `x_ptr` 后的 `x_ptrs` 才是地址向量。Triton 官方 Vector Add 示例的注释把 offsets 称为 pointers，但从运算本身看，它们仍是索引。对常规 NVIDIA Triton kernel，一个 program 实例通常映射到一个 CUDA 线程块；各元素如何分配到硬件线程和寄存器由编译器决定。详见 [Triton 官方 Vector Add 教程](https://triton-lang.org/main/getting-started/tutorials/01-vector-add.html)。
 
-offsets 是逻辑索引集合。它有 256 个元素，并不单独决定编译器使用多少线程、每线程持有几个值、怎样安排寄存器。对常规 NVIDIA Triton kernel，program 实例通常对应一个 CUDA 线程块，但具体映射由编译器、执行配置和后端决定；高级集群配置还须检查对应行为。
+CUDA block 表示执行组织，Triton program 内的 tile 表示数据组织。CUDA Tile API 与 Triton API 语法不同，不能直接替换。
 
-这与手册 §1.2.2.3 的区分一致：block 是执行组织，tile 是数据组织。不要把该节的 CUDA tile API 与 Triton API 当成同一套语法；它们共享部分抽象思想，不是可直接替换的接口。
-
-“不同 thread 会不会重复读一行？”不能只看地址 tile 判断。地址 tile 只能知道请求了哪些逻辑元素，不能断言每个 CUDA 线程都各自读整行；还要看元素怎样分配、缓存和共享内存是否复用，以及最终访存指令。不同 program 之间可能请求相同输入区域，但请求重复不意味着每次都重新走到显存。
+索引向量描述逻辑上请求哪些元素，不能单独说明每个 CUDA 线程实际处理哪些地址，也不能据此判断重复请求是否再次访问显存；还要检查编译后的元素布局、缓存行为和访存指令。
 
 ## 3. 完整程序：沿着一次计算走一遍
 
-### 3.1 先看完整代码，再解释每个阶段
+### 3.1 Vector Add 完整程序
 
 下面包含主机初始化、设备分配、输入复制、kernel 启动、两层错误检查、结果复制、参考比较和释放。输入选择较小的整数倍二进制分数，便于此例精确比较；不代表一般浮点归约都应逐位相等。
-
-代码来源：vector_add_walkthrough.cu。这是用于讲解主机—设备执行过程的独立 CUDA 示例，不替换其他实现。网站构建时会检查本节代码块与文件一致；修改示例必须同步正文。
 
 <!-- BEGIN vector_add_walkthrough.cu -->
 ~~~cpp
@@ -302,7 +277,7 @@ main 在 CPU 上执行。`std::vector<float>` 分配的是本例的主机数组�
 
 `float* d_a = nullptr` 只定义指针变量，尚未申请数组。`cudaMalloc(&d_a, bytes)` 才申请设备内存，并把返回地址写入 d_a。传 `&d_a`，是因为 API 要修改指针变量，不是写数组第一个 float。
 
-cudaMalloc 的大小单位为字节。1000 个 float 需要 4000 字节，三个设备数组的有效容量为 12000 字节。但这不是 CUDA 进程全部显存开销：上下文、代码和其他运行时资源不在这个数组账本中。
+cudaMalloc 的大小单位为字节。1000 个 float 需要 4000 字节，三个设备数组合计占用 12000 字节；CUDA 上下文、代码和其他运行时资源还会使用额外显存。
 
 设备分配通常不会替你初始化输入值。两个 H2D 复制填充 d_a、d_b；没有初始化 d_c，是因为每个有效输出都由 kernel 完整覆盖。若改成对已有 d_c[i] 累加，就必须先定义初值。分配成功不等于内容为零。
 
@@ -318,7 +293,7 @@ kernel 启动通常相对提交它的主机线程异步：CPU 可以在 kernel �
 
 在本例相同流的顺序与普通 D2H 条件下，显式设备同步不是让 CPU 最终得到正确结果的唯一写法。把它放在这里，还有明确定位 kernel 执行期错误的作用。不能推广成“每次 kernel 后都必须全设备同步”。
 
-### 3.4 两层错误检查为什么都要有
+### 3.4 启动错误与执行期错误检查
 
 三尖括号启动表达式不返回 cudaError_t。紧接着调用 cudaGetLastError，可以检查当时的错误状态，例如无效启动配置。它也可能报告先前异步操作留下的错误，因此诊断时需要知道前面的错误是否已经处理。
 
@@ -328,7 +303,7 @@ kernel 启动通常相对提交它的主机线程异步：CPU 可以在 kernel �
 |---|---|---|---|
 | 提交之后 | `cudaGetLastError()` | 当时的 CUDA 错误状态，例如无效启动配置 | kernel 已经完成，或计算结果正确 |
 | 等待设备工作 | `cudaDeviceSynchronize()` 并检查返回值 | 相关先前工作完成，执行期错误有机会在这里报告 | 数学索引和算法正确 |
-| 结果可读之后 | D2H 并与 CPU reference 比较 | 所测输入满足声明的数值合同 | 所有未测试形状和并发场景都正确 |
+| 结果可读之后 | D2H 并与 CPU reference 比较 | 所测输入满足给定的数值要求 | 所有未测试形状和并发场景都正确 |
 
 数值比较是第三种不同检查。API 不报错不能证明数学索引和逻辑正确。例如把 a[i]+b[i] 写成 a[i]+a[i]，可能合法地访问内存，却算出错误结果。
 
@@ -356,7 +331,7 @@ Windows 的输出文件后缀与主机编译器配置不同。nvcc 的默认设�
 
 ## 4. 索引与地址：把线程落到每一个元素
 
-### 4.1 一维索引不是死记的公式
+### 4.1 一维索引与尾部边界
 
 若每个 block 负责长度为 B 的连续区间，第 p 块起点就是 p×B；块内第 t 个线程再偏移 t 个元素，所以：
 
@@ -380,9 +355,45 @@ i = blockIdx.x × blockDim.x + threadIdx.x
 
 常见向上取整写法为 `(N+B-1)/B`。整除时不会多一块，有余数时进到下一整数。例如 1000+255=1255，整数除以 256 得 4。示例采用 `N/B+(N%B!=0)` 避免巨大 N 的加法溢出，并检查 N×sizeof(float) 是否可表示；N=0 单独拒绝，避免零大小 grid。
 
-**追问：不写 mask，多分配一点内存可以吗？**
+边界判断保护的是实际访问，不是线程块大小。即使底层缓冲区额外分配了空间，也要确认越界位置是否会参与计算；归约时的填充值还必须符合运算，例如求和用 0，求最大值通常用负无穷。
 
-那是另一种需要明确定义填充区的合同。所有数组确实有足够合法容量，某些额外访问可能不越界，但仍须考虑无效数据是否进入计算。归约的填充值必须匹配运算；多分配本身不保证数值正确。当前例子没有这样的填充合同，必须保护访问。
+### LeetGPU：正确性与代码归档
+
+在 [LeetGPU Vector Addition](https://leetgpu.com/challenges/vector-addition) 从空题面完成一维向量加法。这个练习检查刚学过的 block/thread 索引、向上取整计算 block 数、`i < N` 尾部保护，以及每个有效线程写一个输出。平台的 starter 参数是设备指针，本例不负责分配或复制数组。
+
+<!-- 教学整理自早期 LeetGPU Vector Addition 快照；并非 source-check 原始文件。 -->
+~~~cpp
+#include <cuda_runtime.h>
+
+__global__ void vector_add(const float* A, const float* B, float* C, int N) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < N) {
+        C[idx] = A[idx] + B[idx];
+    }
+}
+
+extern "C" void solve(const float* A, const float* B, float* C, int N) {
+    constexpr int threadsPerBlock = 256;
+    const int blocksPerGrid = (N + threadsPerBlock - 1) / threadsPerBlock;
+    vector_add<<<blocksPerGrid, threadsPerBlock>>>(A, B, C, N);
+    cudaDeviceSynchronize();
+}
+~~~
+
+### 服务器：真实性能
+
+记录中的 RTX 4090 Vector Add 测量为 1M FP32 元素、256 threads/block，带宽 696 GB/s，结果 0 error。有效带宽按每元素两次读取加一次写入，即 `3 × N × sizeof(float)` 计算；这是该次 kernel 计时口径下的单组结果，不代表其他设备或形状。
+
+服务器执行使用本节前面的完整 Vector Add 示例，按其编译命令运行，并核对设备名、输入长度和结果。该程序用于正确性检查，不含稳定的性能基准计时；需要重新测量时，应固定预热、迭代次数和同步范围，并把 kernel 时间与整段程序启动时间分开。
+
+实测记录（`kernel ms` 和有效带宽需用 CUDA event 计时后填写；不把程序启动时间当作 kernel 时间）：
+
+| N（FP32 元素） | block 线程数 | 实际 GPU | correctness | kernel ms | 有效带宽 GB/s |
+|---:|---:|---|---|---:|---:|
+| 1 | 256 | — | — | — | — |
+| 256 | 256 | — | — | — | — |
+| 257 | 256 | — | — | — | — |
+| 1000 | 256 | — | — | — | — |
 
 ### 4.2 二维线程块映射到 3×5 矩阵
 
@@ -415,7 +426,7 @@ grid=(2,2)，共 4 块，每块 8 线程，总计 32 线程。但这**不是一�
 
 具体算一个线程：blockIdx=(1,0)、threadIdx=(0,1)，得到 col=1×4+0=4，row=0×2+1=1，所以 offset=1×5+4=9，访问第 2 行第 5 列。另一个线程 blockIdx=(1,1)、threadIdx=(1,0) 得到 row=2、col=5，列已经越界。
 
-更容易忽视的是 row=0、col=5：线性偏移 5 在数组总长度内，却实际落到下一行开头。只检查 offset&lt;M×N 会错把非法列当成合法坐标，并可能与真正的下一行线程写同一地址。二维 mask 必须匹配二维坐标合同。
+row=0、col=5 的线性偏移为 5，虽仍在数组总长度内，却已落到下一行开头。只检查 offset&lt;M×N 会把非法列误作合法坐标，并可能与下一行线程写入同一地址。二维 mask 必须分别检查行、列范围。
 
 ### 4.3 元素偏移、字节偏移与 stride
 
@@ -437,7 +448,7 @@ N 在这里既是逻辑列数，也是相邻行的元素步长，只因为布局
 
 stride（步长）必须声明单位。PyTorch 通常按元素计 stride；CUDA 某些 pitched allocation 接口返回的 pitch 却以字节计。把字节步长当 float 元素步长会多乘一次元素大小。shape 描述多少元素，stride 描述它们在哪里，不能合成一个概念。
 
-### 4.4 地址集合不是读回的值
+### 4.4 Triton 地址与数据值
 
 MatMul LeetGPU 实现中的典型片段是：
 
@@ -470,9 +481,9 @@ offset_m[:, None] * 5        offset_n[None, :]
 [ true  true  false ]
 ~~~
 
-other=0.0 给无效位置提供零值，适合矩阵乘法的归约填充。mask 按 tile 位置控制访问，不把整个 tile 变小。tl.store 同样如此：输出指针给出候选位置，输出 mask 决定真正写入哪些位置。
+other=0.0 给无效位置提供零值，适合矩阵乘法的归约填充。mask 按 tile 位置控制访问，不改变 tile 形状。tl.store 同样如此：输出指针给出候选位置，输出 mask 决定实际写入的位置。
 
-若算法是 C=A@B，累加器从零开始，最后覆盖 C，不需要读旧 C；若变成 C=alpha×(A@B)+beta×C 且 beta 非零，才需要定义和读取旧 C 的贡献。读不读输出由数学合同决定，不是“每个指针都先 load 一遍”。
+若算法为 `C=A@B`，累加器从零开始并覆盖 C，不需要读取旧 C。若算法为 `C=alpha×(A@B)+beta×C` 且 beta 非零，才需要定义并读取旧 C。是否读取输出由运算要求决定，并非所有输出指针都要先 load。
 
 ### 4.5 一线程可以处理多个元素
 
@@ -494,7 +505,7 @@ for (std::size_t i = start; i < n; i += step) {
 
 ## 5. 架构、芯片、产品与软件版本
 
-### 5.1 为什么一张 GPU 的名字不够用
+### 5.1 架构、芯片、产品与计算能力
 
 “这是 Ampere GPU”给出架构家族，不给出完整资源预算。某个产品型号也不代替计算能力与运行环境。讨论性能和兼容性，要分开五个问题：
 
@@ -510,7 +521,7 @@ for (std::size_t i = start; i < n; i += step) {
 
 昇腾经验中“先确认硬件与编译目标，再讨论资源预算”的习惯可以迁移，但不要建立“一个 AI Core 等于一个 SM”的硬对应。软件职责、同步范围与存储管理方式不同，类比帮助提出问题，不能替代 CUDA 定义。
 
-### 5.2 代际不是一条无分支的产品升级链
+### 5.2 GPU 架构阶段及能力差异
 
 下面建立能力地图，不列型号性能，也不意味着后来的家族在全部指标上替代先前产品：
 
@@ -593,7 +604,7 @@ PTX 的方向不同：例如 `compute_80` PTX 可以在满足条件的更高 com
 
 #### 5.3.4 用 `nvcc` 观察具体产物
 
-下面命令以 Linux 的 POSIX shell 为例，路径和变量写法不与 Windows PowerShell 混用。可以把本章第 3 节已经展示的完整 Vector Add 程序保存为 `vector_add.cu` 后直接观察；kernel 数量不会改变 PTX、cubin 与 fatbin 的层次关系。
+以下命令使用 Linux POSIX shell。将完整 Vector Add 程序保存为 `vector_add.cu` 后即可检查生成的 PTX、cubin 与 fatbin；同一设备代码容器可以包含多个 kernel。
 
 先分别生成一个面向 `sm_86` 的 cubin 和一个面向 `compute_80` 的 PTX：
 
@@ -638,7 +649,7 @@ nvcc -std=c++17 -O2 --keep --keep-dir build/keep -v \
   -fatbin vector_add.cu -o build/vector_add.fatbin
 ```
 
-`--keep`/`--keep-dir` 让中间 PTX、device object 和临时文件留下来，`-v` 显示 host compiler、device compiler、`ptxas` 和链接步骤。这个命令只是在离线阶段生成目标，不能替代在目标 GPU 上运行。
+`--keep`/`--keep-dir` 让中间 PTX、device object 和临时文件留下来，`-v` 显示为生成该 fatbin 实际调用的 host/device 编译工具。使用 `-fatbin` 时输出是独立设备代码容器，不会执行完整 host 链接，也不生成 host 可执行文件。所有这些命令都在离线生成或检查代码，不能替代在目标 GPU 上运行。
 
 用 `cuobjdump` 检查设备代码容器时，分别看三类信息：
 
@@ -648,13 +659,13 @@ cuobjdump --dump-ptx vector_add
 cuobjdump --dump-sass vector_add
 ```
 
-`--list-elf` 列出容器内的 ELF/device code object，`--dump-ptx` 查看嵌入的 PTX，`--dump-sass` 查看已经生成的 SASS（Streaming ASSembler，GPU 机器指令）。在实际 executable 或 shared library 上也可以对该文件运行同样的检查。检查结果应回答“有哪些目标、有哪些 kernel、是否真的嵌入 PTX”，而不是只看文件名猜测。不同 Toolkit 版本的输出排版可能不同，但命令的检查对象分别是容器/ELF、PTX 和 SASS。
+`--list-elf` 列出容器内的 ELF/device code object，`--dump-ptx` 查看嵌入的 PTX，`--dump-sass` 查看面向具体 GPU 架构的机器指令反汇编（NVIDIA 工具称为 SASS）。在实际 executable 或 shared library 上也可以对该文件运行同样的检查。检查输出用于确认包含哪些目标、kernel 和 PTX；不同 Toolkit 版本的输出格式可能不同。
 
 #### 5.3.5 JIT、cache 与诊断开关
 
 首次加载 PTX 时，driver 需要把 PTX 编译成当前设备机器码，这会增加 application load time。生成的 binary 通常写入 compute cache，后续相同条件的加载可以复用缓存；driver 升级可能使缓存失效，以便使用新 driver 中的 JIT compiler。因而 benchmark 至少要区分 cold load、首次 kernel launch、cache warm 后的 launch 和稳定迭代时间，不能拿“第一次包含 JIT 的总时间”与“已经预热的库 kernel”直接比较。
 
-为了验证 fatbin 中是否真的带了 PTX、PTX JIT 是否可用，可以在诊断运行中设置 `CUDA_FORCE_PTX_JIT=1`。这个开关会忽略嵌入的 cubin，强制使用嵌入的 PTX；若 PTX 缺失、版本不受支持或 JIT 路径有问题，加载就会暴露出来。相反，`CUDA_DISABLE_PTX_JIT=1` 会禁用嵌入 PTX 的 JIT，只允许使用兼容 cubin；它适合验证“每个 kernel 是否有直接可加载的 cubin”。这两个变量是验证工具，不是生产部署中用来宣称性能的默认配置。做性能测试时应移除它们，并明确记录 cold load、cache warm 与稳定迭代分别采用什么口径。
+诊断 fatbin 是否包含 PTX、PTX JIT 是否可用时，可设置 `CUDA_FORCE_PTX_JIT=1`。这个开关忽略嵌入的 cubin，强制使用嵌入的 PTX；若 PTX 缺失、版本不受支持或 JIT 路径有问题，加载会失败。相反，`CUDA_DISABLE_PTX_JIT=1` 会禁用嵌入 PTX 的 JIT，只允许使用兼容 cubin，可用于检查每个 kernel 是否有直接可加载的 cubin。这两个变量用于诊断，不应用于生产性能测试；测量时应移除它们，并分别记录 cold load、cache warm 与稳定迭代。
 
 在 Linux shell 中可以这样做：
 
@@ -676,157 +687,92 @@ $env:CUDA_DISABLE_PTX_JIT = $null
 
 这几层产物的取舍也很实际：多放 cubin 可以减少首次 JIT 并让已覆盖的目标直接加载，但会增大程序或库体积，且每个新增目标都要构建和测试；只放 PTX 可以缩小目标组合并给新 GPU 留出 JIT 路径，但首次加载有额外延迟，性能还受 driver 的 JIT 编译器影响；同时放常用 cubin 和一个合适的 PTX，通常是在加载延迟、包体积和未来适配之间做折中。最终应根据部署 GPU 范围决定目标集合，而不是把“目标越多”当成无条件更好。
 
-### 5.4 “能运行”与“按目标优化”不是同一个结论
+### 5.4 设备代码加载与目标架构优化
 
-前一节解决的是设备代码能否加载：兼容 cubin 可以直接加载，合适 PTX 可以经过 JIT。架构专用 `a` 目标与 family-specific `f` 目标还有更具体的兼容规则，不能拿普通 `sm_xx` 的概括覆盖它们，实际部署须查对应指南。本节进一步追问：代码即使能够加载，是否真的针对目标硬件优化？
+上一节说明了设备代码的加载条件：兼容 cubin 可以直接加载，合适的 PTX 可以经过 JIT。架构专用 `a` 目标与 family-specific `f` 目标另有兼容规则，部署时需查对应指南。代码能够加载，不代表它已经针对目标硬件优化。
 
 即使旧代码能运行，也不等于自动用上新架构全部能力。没有表达合适的张量搬运或矩阵计算的程序，不会仅因换卡就必然成为精心设计的新流水线。编译器能优化，但能否生成目标指令、生成后是否更快，还需看代码、编译结果与实测。
 
 “库支持某卡”与“编译的程序携带兼容代码”也是两个问题。分清层次，才能定位 no kernel image、不支持 PTX 版本或不支持编译目标，而不是统一归因于“CUDA 版本不对”。
 
-### 5.5 在服务器上分别查询什么
+### 5.5 查询设备、驱动与编译环境
 
-~~~bash
+`nvidia-smi` 是随 NVIDIA 驱动提供的系统管理工具，可查看驱动识别到的 GPU、驱动版本、显存占用和当前进程等信息。其输出中的 `CUDA Version`（部分新版本显示为 `CUDA UMD Version`；UMD 指用户态驱动）表示驱动支持的 CUDA 版本范围，不是本机已安装的 CUDA Toolkit 版本。字段定义以 [NVIDIA System Management Interface 官方文档](https://docs.nvidia.com/deploy/nvidia-smi/index.html)为准。
+
+`nvcc` 是 CUDA Toolkit 中的编译驱动。`nvcc --version` 显示当前命令搜索路径实际找到的编译器版本；机器可以安装多个 Toolkit，因此还应确认命令路径。`nvcc --list-gpu-code` 列出当前 `nvcc` 支持生成的非架构专用 `sm_XX` 目标，不是本机 GPU 清单；`nvcc --list-gpu-arch` 则列出它支持生成的 `compute_XX` 虚拟架构。官方定义见 [NVCC 文档](https://docs.nvidia.com/cuda/cuda-compiler-driver-nvcc/index.html)。
+
+```bash
 nvidia-smi
 nvcc --version
 nvcc --list-gpu-code
-~~~
+nvcc --list-gpu-arch
+```
 
-nvidia-smi 帮助确认设备、驱动与运行状态，其中 CUDA Version 表示驱动支持相关 CUDA 能力的版本信息，不证明已安装同版本 Toolkit；nvcc --version 才确认当前调用的编译工具。多个 Toolkit 可以共存，命令搜索路径决定实际调用哪一个。
+程序要查询当前可见设备的属性，可用 Runtime API（CUDA 运行时接口）的 `cudaGetDeviceProperties`。该函数把设备属性写入 `cudaDeviceProp` 结构体；下表列出与硬件及线程块资源相关的字段：
 
-程序内 cudaGetDeviceProperties 可查询 major、minor、multiProcessorCount、maxThreadsPerBlock 等属性。CC 常写 major.minor，SM 数量与每块线程上限则是不同属性，不能互相替代。
-
-使用 PyTorch、Triton 或预编译库时，还须记录版本与构建信息。框架携带的运行库版本不一定等于系统 nvcc 版本。把硬件、驱动、Toolkit、框架分栏记录，比一句“环境是 CUDA 13”更有诊断价值。
-
-## 6. 概念辨析与常见问题
-
-下面的问答把本章概念放回已有 CUDA、Triton Vector Add 和 MatMul 代码中，重点是区分逻辑组织、地址计算与硬件执行。
-
-| 常见问题 | 核心辨析 | 代码案例 |
+| 字段 | 含义 | 关联主题 |
 |---|---|---|
-| CTA 是什么，怎样体现在 Triton？ | CTA 通常指线程块；program 与 tile 要区分 | Vector Add 的 `program_id` 与 CUDA 的 block |
-| `ptr_a` 是地址合集吗？ | 指针集合与读取值不同；元素偏移不是字节偏移 | MatMul 的 `ptr_a`、`mask_a` 与 `tl.load` |
-| 边界位置怎样处理？ | 按 tile 位置控制访问，不改变逻辑形状 | Vector Add 的 `i < n` 与 MatMul 的二维 mask |
-| 不同 thread 会重复读一行吗？ | 广播表达式不能直接说明物理分工 | tile 地址、缓存、共享内存和最终指令 |
-| 有 `ptr_c` 就要先 load 吗？ | 覆盖输出与读取旧输出由数学合同决定 | `C=A@B` 与带非零 `beta` 的更新 |
+| `name` | 设备名称 | 识别实际测试设备；名称本身不说明全部资源 |
+| `major`、`minor` | 计算能力的主、次版本 | 与 5.1 的 CC 对应；影响可用特性和目标代码 |
+| `multiProcessorCount` | 设备上的 SM 数量 | 对应 1.3 的 SM 层次；不等于可同时执行的 block 总数 |
+| `maxThreadsPerBlock` | 单个 block 可配置的最大线程数 | 检查第 2 节的启动配置是否合法；不代表推荐 block 大小 |
+| `regsPerMultiprocessor` | 每个 SM 可分配的寄存器数量 | 后续分析寄存器资源对驻留 block 的限制 |
+| `sharedMemPerMultiprocessor` | 每个 SM 可用的共享内存容量 | 对应 1.3 的共享内存资源 |
 
-本章 CUDA 示例用于解释执行过程，Triton 片段用于对照地址与 tile；两者的源码路径和适用范围分别标明。
+`cudaGetDeviceProperties` 适合查询单个设备；下面的示例固定查询首个可见设备（编号 0）。NVIDIA 的 [cuda-samples `deviceQuery`](https://github.com/NVIDIA/cuda-samples/tree/5443602d89ed99aede2e4b7bf329daddeadb320e/cpp/1_Utilities/deviceQuery) 遍历可见设备，按同一查询链读取设备数量、每台设备的属性，以及 Runtime/Driver 版本。设备属性回答“这台机器有什么”，`nvcc --list-gpu-code` 回答“当前编译器支持生成哪些目标”，两者不能互相替代。
 
-### LeetGPU：正确性与代码归档
-
-题面入口：[Vector Addition](https://leetgpu.com/challenges/vector-addition)、[Matrix Multiplication](https://leetgpu.com/challenges/matrix-multiplication)。MatMul 平台源码保存在 matmul_leetgpu.py；Vector Add 的本地案例保存在 vector_add.py。平台题目中的 `solve`/kernel 与本地 wrapper 应分别保存，不能互相替代。
-
-早期 A1 CUDA Vector Add 已在 LeetGPU 跑通（HISTORY/weekly 记录 2026-06-16），但当前仓库只有 [Lesson 01 的代码快照](../../../../lessons/01-cuda-basics.md)，没有独立的 `solutions/cuda` 原始 `solve` 文件。为便于重学时直接复盘，这里保留该快照；它不是 `source-check` 摘录，也不把快照伪称为原始归档：
-
-~~~cpp
-// LeetGPU 的 starter 模板：
+```cpp
 #include <cuda_runtime.h>
+#include <cstdio>
 
-__global__ void vector_add(const float* A, const float* B, float* C, int N) {
-    // TODO: 你来写
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < N) {
-        C[idx] = A[idx] + B[idx];
+int main() {
+    int count = 0;
+    cudaError_t status = cudaGetDeviceCount(&count);
+    if (status != cudaSuccess) {
+        std::fprintf(stderr, "cudaGetDeviceCount: %s\n", cudaGetErrorString(status));
+        return 1;
     }
+    if (count == 0) {
+        std::fprintf(stderr, "No CUDA device is visible.\n");
+        return 1;
+    }
+    cudaDeviceProp prop{};
+    status = cudaGetDeviceProperties(&prop, 0);
+    if (status != cudaSuccess) {
+        std::fprintf(stderr, "cudaGetDeviceProperties: %s\n",
+                     cudaGetErrorString(status));
+        return 1;
+    }
+    int runtimeVersion = 0;
+    int driverVersion = 0;
+    status = cudaRuntimeGetVersion(&runtimeVersion);
+    if (status != cudaSuccess) return 1;
+    status = cudaDriverGetVersion(&driverVersion);
+    if (status != cudaSuccess) return 1;
+    std::printf("device=%s CC=%d.%d SMs=%d maxThreadsPerBlock=%d\n",
+                prop.name, prop.major, prop.minor, prop.multiProcessorCount,
+                prop.maxThreadsPerBlock);
+    std::printf("registers/SM=%d sharedBytes/SM=%zu\n",
+                prop.regsPerMultiprocessor,
+                static_cast<std::size_t>(prop.sharedMemPerMultiprocessor));
+    std::printf("runtime=%d driver-api=%d\n", runtimeVersion, driverVersion);
 }
+```
 
-extern "C" void solve(const float* A, const float* B, float* C, int N) {
-    int threadsPerBlock = 256;
-    int blocksPerGrid = (N + threadsPerBlock - 1) / threadsPerBlock;
-    vector_add<<<blocksPerGrid, threadsPerBlock>>>(A, B, C, N);
-    cudaDeviceSynchronize();
-}
-~~~
+将上面代码保存为 `device_properties.cu`，在保存目录打开终端后编译并运行：
 
-这份快照的技术正确性已完成：题面 `solve` 接收 device pointer，固定 256 threads/block，按 `N` 覆盖尾部并写出 `A[i]+B[i]`；因此不需要为了重新进入模块化课程而重做 A1。归档门槛仍未满足：没有平台原始提交的独立本地文件，故 PATH 中保持“平台正确性已完成、归档缺口”的状态，只有取得原始 `solve` 后才补归档，不将本段升级为 `LEETGPU_PASS`。
+```bash
+nvcc -std=c++17 device_properties.cu -o device_properties
+./device_properties
+```
 
-同一 A1 周报还记录了 2026-06-16 前后在本地 RTX 4090 的真实性能运行：1M FP32 elements、256 threads/block，`696 GB/s`、`0 error`。Lesson 01 保存的计时/带宽快照如下；它只是教学快照，不是独立 `solutions` 原始文件，也没有可据此还原的完整原始日志：
-
-~~~cpp
-cudaEvent_t start, stop;
-cudaEventCreate(&start);
-cudaEventCreate(&stop);
-
-cudaEventRecord(start);
-vector_add_kernel<<<blocks, threads>>>(d_A, d_B, d_C, N);
-cudaEventRecord(stop);
-cudaEventSynchronize(stop);
-
-float ms;
-cudaEventElapsedTime(&ms, start, stop);
-printf("Kernel time: %.3f ms\n", ms);
-
-// 算 bandwidth
-float gb_per_sec = (3.0f * N * sizeof(float)) / (ms / 1000.0f) / 1e9f;
-printf("Bandwidth: %.2f GB/s\n", gb_per_sec);
-~~~
-
-这组 `696 GB/s / 0 error` 只支持该 RTX 4090、该 1M FP32 shape、该快照计时口径下的 A1 记录；它与 Triton Vector Add 在 RTX 3090 的 `840.1 GB/s vs torch.add 843.0 GB/s` 不是同一次实验，不能互相比较或合并成单一基线。当前没有保存该次运行的完整 shape/精确计时原始日志，因此不补猜毫秒、warmup 或理论带宽利用率；A1 不需要为重学而重跑，后续只在取得平台原始 `solve` 或需要补齐测量元数据时处理。
-
-本章 `vector_add_walkthrough.cu` 是独立 CUDA 教学案例，没有平台题目的 `solve` 接口。阅读时把它与 Triton 的 program、tile、mask 对照，不需要把两个接口混为一谈。
-
-### 服务器：真实性能
-
-在具备 CUDA Toolkit、兼容主机编译器、驱动和 NVIDIA GPU 的服务器上，运行前文命令，记录设备、计算能力、工具版本和实际输出。该命令用于观察执行路径并检查结果；若要测量性能，应另行设计预热、计时、输入规模和报告指标。
-
-遇到错误时保留原始错误信息，分别检查编译、启动、执行期同步和数值比较。比较性能时固定输入形状、精度、计时范围和设备；某张卡上的结果不能直接推广为通用硬件结论。
-
-## 7. 面试追问：把机制组成完整回答
-
-### 从 NPU 经验迁移：保留分析方法，不照搬执行单位
-
-已有算子经验最值得保留的是分析顺序：先确定数据依赖与工作划分，再预算片上资源，组织搬运与计算，最后验证吞吐。换到 GPU 后，这个顺序仍然成立，但每一步要回答新的硬件问题。
-
-| 已有分析问题 | 在 CUDA 中继续追问 |
-|---|---|
-| 一个计算块负责哪些输出？ | 输出tile如何分到thread、warp和CTA，grid是否有足够任务？ |
-| 输入搬入片上后复用多少次？ | 哪些值留在寄存器，哪些放shared，哪些请求依靠L1/L2缓存？ |
-| 搬运能否覆盖计算等待？ | 是主机侧stream重叠，还是kernel内异步copy？哪一个完成事件允许消费和复用buffer？ |
-| 扩大tile是否能提高复用？ | 累加器和共享内存是否使驻留减少？lane到地址的映射是否仍有效？ |
-| 增加计算核心能否提高并行？ | block是否足够多，尾波次是否过短，实际eligible warp是否足够？ |
-
-NPU上熟悉的“显式搬运后复用”可以帮助理解shared staging，但不能推断每次global load都会访问显存，因为GPU缓存可能已服务该请求。Vector/Cube的职责类比也不能变成CUDA Core/Tensor Core的一一等价：指令粒度、线程协作方式、可见存储和同步协议都要重新查证。
-
-> [!IMPORTANT] 迁移的是优化推理，不是硬件名称
-> **Tiling、复用、流水线与资源预算的思路可以迁移；执行单位、地址映射与同步协议必须以CUDA为准。** 新平台上的结果仍须由目标设备的编译产物与测量支持。
-
-**一个 SM 有很多 CUDA Core，启动同样多线程就能跑满吗？**
-
-不能。线程数是软件组织，算术单元数是某类物理资源。线程受 block 组织、资源需求、指令类型、依赖和访存等待约束。先说明没有永久一一对应，再定义“跑满”是在看哪条管线、哪种指令和什么指标，而不是给出核心数相等公式。
-
-**为什么同一个 kernel 可在 SM 数量不同的设备上运行？**
-
-程序把工作分为可独立调度的线程块，运行时安排到可用 SM。更多 SM 可承接更多工作，不改变索引的定义。前提是设备支持相应功能且单块资源可启动；单块需求超限时，即使算法可分块，也可能启动失败。
-
-**同一 block 在一个 SM 上，是不是同时执行？**
-
-“同一 SM”与“同一时刻执行同一条机器指令”不同。一个 block 有多个 warp，SM 还可能驻留多个块，实际发射受就绪工作与管线资源约束。块内协作通过规定的同步机制正确进行，不依赖所有线程恰好齐步完成。
-
-**为什么 3×5 例子共 32 个线程，却不是一个 warp？**
-
-它们分在 4 个 block，每块 8 线程。warp 不跨块拼接，因此是 4 个部分有效 warp，不是一个跨块 warp。这是软件分组影响硬件利用的直接例子。
-
-**把 CPU 指针传给 kernel，会自动复制吗？**
-
-不会。启动传参数值，不自动搬运任意指向数组。设备能否合法访问取决于分配、映射/统一内存与系统能力。本例显式 device allocation 与 H2D，不把特定统一内存系统的现象推广到所有主机数组。
-
-**更新 Toolkit 能让旧 GPU 使用新硬件指令吗？**
-
-更新软件不会创造硬件单元。工具可能增加支持、改进代码生成，也可能移除旧目标。回答须区分工具支持、驱动兼容、设备能力和程序二进制覆盖。
-
-**cudaGetLastError 成功，为什么后面还报错？**
-
-启动异步，检查当时错误状态不代表设备工作完成。执行期间错误可在后续同步或 API 返回。此外还须数值比较：运行时不报错不代表算法正确。
-
-**怎样证明理解了地址 tile，而不是只背语法？**
-
-手算具体行列索引广播后的元素偏移、每个位置的 mask 与合法地址，再说明指针和值不同。随后指出这仍是逻辑层：每线程实际访问哪些位置要检查编译布局与指令，而不是从广播语法猜硬件。
+若程序使用 PyTorch 或 Triton，还要查询实际导入的框架及其构建信息，因为框架所用的 CUDA Runtime 可能不同于系统 `nvcc`。例如 PyTorch 可运行 `python -c "import torch; print(torch.__version__, torch.version.cuda); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'no CUDA device')"`。这补充的是应用运行环境，不会改变 `nvcc --version` 所报告的系统编译器版本。
 
 ## 知识总结与延伸阅读
 
 主要依据本地手册 §1.1、§1.2、§1.3、§2.1。在线入口：[Introduction](https://docs.nvidia.com/cuda/cuda-programming-guide/01-introduction/introduction.html)、[Programming Model](https://docs.nvidia.com/cuda/cuda-programming-guide/01-introduction/programming-model.html)、[The CUDA platform](https://docs.nvidia.com/cuda/cuda-programming-guide/01-introduction/cuda-platform.html)。API 同步边界另见正文 Runtime API 参考。
 
-读完本章后，应能区分 CPU 与 GPU 的角色、grid/block/thread 与 SM 的层次、逻辑 tile 与物理执行、元素步长与字节步长，以及 Toolkit、驱动、计算能力和目标代码之间的关系。后续学习可以从 CUDA Programming Guide 的 Programming Model、CUDA C++ Memory Model 和对应架构调优指南继续深入。
+需要掌握的关系包括 CPU 与 GPU 的职责、grid/block/thread 与 SM 的层次、逻辑 tile 与物理执行、元素步长与字节步长，以及 Toolkit、驱动、计算能力和目标代码之间的区别。相关细节见 CUDA Programming Guide 的 Programming Model、CUDA C++ Memory Model 和对应架构调优指南。
 
 ## 参考阅读
 

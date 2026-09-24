@@ -152,6 +152,10 @@ def block_scale_kernel(X, S, Y, M: tl.constexpr, N: tl.constexpr,
 
 该 kernel 的 X、S、Y 都是 FP32，只演示 block scale 寻址，并没有解包 INT4。基础题允许一般 FP32 的 S，包括负数；这不改变真实量化通常要求 scale 为正的约定。真实反量化还要在相乘之前加入正确的编码转换。
 
+### 现在写题：Weight Dequantization（#64）
+
+到这里先进入 [Weight Dequantization（#64）](https://leetgpu.com/challenges/weight-dequantization)，并用 [AlphaGPU #64 challenge 目录](https://github.com/AlphaGPU/leetgpu-challenges/tree/main/challenges/medium/64_weight_dequantization) 核对空题面的实际合同：`X[M,N]`、`S[ceil(M/TILE_SIZE),ceil(N/TILE_SIZE)]` 和 FP32 输出 `Y[M,N]`，每个输出元素使用 `S[row//TILE_SIZE,col//TILE_SIZE]`。平台题只验收 block-scale 地址与逐元素乘法，不验收本章后面的 INT4 nibble、groupwise scale、GEMM、FP8/FP4 或校准。先从 `M=N=3,TILE_SIZE=2` 手算，再从平台空题面实现并保存当次原始 `solve`；本地 `block_scale_kernel` 是教学对照，不是平台提交物。
+
 ## 3. 从反量化接到 GEMM
 
 ### W8A8：整数点积之后还要恢复尺度
@@ -174,6 +178,10 @@ $$
 因此带 zero point 的计算不是“直接 INT8 dot 再乘两个 scale”。交叉项可以融合或预计算，但不能遗漏。激活 per-token、权重 per-output-channel 且归约轴上 scale 不变时，输出元素乘 s_a[t]s_w[o] 即可；如果 scale 沿 I 分组变化，则必须先对各组 partial 恢复尺度，再合并，不能用一个最终 scale 替代全部分组。
 
 INT8 乘法常用 INT32 累加，仍要检查溢出。带零点的差值可能达到 255；粗略最坏界是 I×255²，超过 INT32 范围时不能继续依赖无限精度的数学公式。输出再量化还涉及除输出 scale、舍入、加输出 zero point 和饱和，每一步都可能影响结果。
+
+### 现在写题：INT8 Quantized MatMul（#32）
+
+量化 GEMM 的零点修正、scale 恢复、舍入和饱和讲完后，进入 [INT8 Quantized MatMul（#32）](https://leetgpu.com/challenges/int8-quantized-matmul)，并用 [AlphaGPU #32 challenge 目录](https://github.com/AlphaGPU/leetgpu-challenges/tree/main/challenges/medium/32_int8_quantized_matmul) 核对：题面是 `A[M,K]B[K,N]`、标量输入/输出 scale 和 zero point，输出 `C[M,N]` 为 INT8。它覆盖 W8A8 标量量化矩阵乘，不覆盖本章 W4A16 packed 权重、沿输入轴的 groupwise scale、FP8/FP4、AWQ/GPTQ 或原生低位 MMA；题目 `K` 对应本文的 `I`。平台 reference 的 FP32 matmul/round 顺序是题面正确性合同，不能直接替代目标 GPU 的 INT32 dot 或指令证据。
 
 ### W4A16：少读权重与反量化成本的交换
 
@@ -350,6 +358,63 @@ tl.trans 调整的是当前权重 tile 的逻辑朝向，让 [T,I] 与 [I,O] 相
 以每 16 个 FP4 值带一个 8-bit scale 为例，16 个值占 8 字节，scale 占 1 字节，平均为 4.5 bit/值。128 个 INT4 权重配一个 FP16 scale 则是 64+2=66 字节，不是裸 64 字节。还有 per-tensor scale、对齐与分片时，要继续计入。
 
 MXFP4 与 NVFP4 的 scale 粒度和表示不同；具体矩阵指令支持还取决于架构及库版本。DeepSeek-V4.1-Flash 的 main KV 格式采用 E2M1 与 16-channel E4M3 scale，并省略完整 NVFP4 的第二层 global scale；它反量化后执行 Attention，不能据此推断使用了原生 FP4 Attention 矩阵指令。
+
+### 一个约 115 KiB 的容量账本
+
+裸 4-bit 字节数、scale 和对齐必须分开计算。例：`W[I,O]` 取 `I=2048`、`O=112`，沿输入轴以 `G=128` 分组，packed 权重的低半字节先放偶数输入索引，scale 用 FP16 保存。则
+
+$$
+N_{q}=I O/2=2048\times112/2=114{,}688\ \mathrm{B},
+$$
+
+$$
+N_{s}=\left\lceil I/G\right\rceil O\times2
+=16\times112\times2=3{,}584\ \mathrm{B},
+\qquad
+N_{total}=118{,}272\ \mathrm{B}\approx115.5\ \mathrm{KiB}.
+$$
+
+这只是一个有明确 `I/O/G/dtype` 的存储片段，不是整个层的显存，也没有计入 allocator 对齐、额外 zero-point、workspace 或多副本。若把 scale 改为 FP32，或把 `G` 改小，结果都会变化；因此报告“约 115 KB”时必须同时给出字节单位、scale dtype、分组轴和是否包含 padding。
+
+### 存储编码不等于硬件低精度指令
+
+`uint8` packed INT4 只证明两个 nibble 共用一个字节；`torch.float8_*` 只证明张量采用某种 FP8 编码。要声称使用了原生低精度矩阵指令，至少要把同一输入、同一 shape、同一输出误差合同下的四层证据连起来：
+
+1. **数据路径**：确认 wrapper 没有在 kernel 之前把整个权重解包成 FP16/BF16；若有独立 dequant kernel，要把它和 GEMM 的时间、写回字节数单列。
+2. **编译目标**：记录 GPU 的 compute capability、CUDA/Triton/PyTorch 版本和实际 dispatch。PTX 中出现 `mma` 不是最终 SASS 证据，跨架构 JIT 可能选择不同实现。
+3. **机器指令**：在目标 GPU 上从实际 launch 的 kernel 取得 SASS。`HMMA`/`MMA` 类指令可作为 FP16/BF16/FP8 Tensor Core 路径的线索，`IMMA` 可作为整数矩阵路径的线索；具体 mnemonic 和计数器随架构、CUDA 与库版本变化，不能只凭名字把任意 `dot` 宣称成 INT4 MMA。
+4. **计数与对照**：用 profiler 的指令统计、kernel 时间和 DRAM/L2 traffic 对照 dequantize+GEMM、融合解包 GEMM 与高精度 GEMM；同时重新检查输出误差。出现 `HMMA` 只说明某一段使用了半/浮点矩阵指令，不能说明 packed nibble 被原生 INT4 消费。
+
+现场检查可从仓库根目录执行；`ncu --query-metrics` 的名称按安装版本筛选，不能把别的 GPU 的固定 counter 名称抄成结论：
+
+~~~bash
+nvidia-smi --query-gpu=name,compute_cap --format=csv,noheader
+python roadmap/curriculum/operators/07-quantized-operators/examples/packed_int4_gpu.py
+nsys profile --trace=cuda,nvtx --stats=true -o quant-packed \
+  python roadmap/curriculum/operators/07-quantized-operators/examples/packed_int4_gpu.py --benchmark
+ncu --query-metrics | grep -Ei 'sass|hmma|imma|tensor'
+# The source kernel is named plain_kernel; replace this quoted regex only if
+# the preceding ncu summary shows a different demangled kernel name.
+KERNEL_REGEX='plain_kernel'
+ncu --set full --target-processes all \
+  --kernel-name-base demangled --kernel-name "$KERNEL_REGEX" --launch-count 1 \
+  python roadmap/curriculum/operators/07-quantized-operators/examples/packed_int4_gpu.py --benchmark
+if [ -n "${SASS_FILE:-}" ] && [ -f "$SASS_FILE" ]; then
+  cuobjdump --dump-sass "$SASS_FILE" | grep -Ei 'HMMA|MMA|IMMA'
+else
+  echo 'SASS_FILE is unset or is not a file from this launch; use the SASS or instruction report exported by ncu.'
+fi
+~~~
+
+默认只采用本次 `ncu` 导出的实际 kernel SASS/instruction report。只有用户已经明确把 `SASS_FILE` 设置为本次构建、且与该 launch 对应的 cubin/fatbin 时，才运行可选的 `cuobjdump` 分支；不在仓库中自动猜测文件。先用 Nsight Systems 或 `ncu` 的 kernel summary 找到实际 kernel 名称，再把带引号的 `KERNEL_REGEX` 改成该名称/正则；这样 `--launch-count 1` 只统计匹配的目标 kernel，不会把第一个无关 launch 当成证据。无目标 GPU、未编译或只通过 CPU 检查时，下表保持空白：
+
+| 路径 | GPU/CC | 实际 kernel | 低精度指令/计数 | dequant 与 GEMM 时间 | 误差合同 | 结论 |
+|---|---|---|---|---|---|---|
+| packed INT4 融合 |  |  |  |  |  |  |
+| 解包后 FP16/BF16 GEMM |  |  |  |  |  |  |
+| 原始高精度 GEMM |  |  |  |  |  |  |
+
+这条验证顺序也适用于 FP8：先确认 E4M3/E5M2、scale/amax 的实际传递，再核对目标架构支持的矩阵指令和转换指令，最后用相同校准集与 heldout 集报告误差。低位文件更小、CPU 参考更快或某个 `torch.mm` 更快，都不能替代现场指令证据。
 
 ## 4. 校准、缩放搜索与误差补偿
 
@@ -1871,11 +1936,7 @@ CUDA/Triton 调参先看数据是否合并访问，再看一个 scale 是否被�
 
 ## 6. 实践：从 scale 寻址到量化 GEMM
 
-### LeetGPU：正确性与代码归档
-
-在 [LeetGPU 题库](https://leetgpu.com/challenges)中先做 **Weight Dequantization（#64）**。题面输入 X[M,N] 与二维 S，输出 Y[M,N]，均为 FP32；函数参数包含 M、N、TILE_SIZE。它验证上面的 scale 寻址，不验证 INT4 解包。可先用 3×3、TILE_SIZE=2 手算，再测试非整除形状、负 scale 和零输入。完整逻辑学会后从空白题面写，不把服务器包装当作原始提交版本。
-
-接着做 **INT8 Quantized MatMul（#32）**，区分题目采用的 A[M,K]B[K,N] 与本文的 X[T,I]W[I,O]：题目 K 是本文的 I。它带输入/输出 scale 和 zero point，最终输出 INT8，要求精确匹配。公开参考使用 FP32 matmul、round、缩放、再量化；一个理想 INT32 参考不保证在所有范围和舍入边界与之逐位相同，必须按题面算术顺序验证。
+平台题面的写题入口已经分别放在 block-scale 寻址和 W8A8 GEMM 原理之后；本节只收束 CPU/静态检查、服务器现场实验以及跨题范围，不再把平台题延后到章末。
 
 CPU 检查先验证全部 256 组 INT4 双元素组合、奇数尾部、零点修正和 scale 地址：
 

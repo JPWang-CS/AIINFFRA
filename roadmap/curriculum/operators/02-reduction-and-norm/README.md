@@ -66,6 +66,8 @@ $$
 
 第一步每个线程只写自己的寄存器 `local`，没有线程间通信；第二步 32 个 lane 交换寄存器值；第三步每个 warp 的 lane 0 把结果写入 shared；第四步由 warp 0 读取这些少量结果并再次用 shuffle 归约。对于 128 线程 CTA，有 4 个 warp；对于 256 线程 CTA，有 8 个 warp。shared 只保存 4 或 8 个 float，而不是保存整行。
 
+这几层承担不同的同步合同：`__syncthreads()` 等待 CTA 内未退出的线程并提供 block 内的内存排序；`__shfl_down_sync` 只在同一 warp 的寄存器之间交换值，要求 mask 覆盖的 lane 按合同参与；`__reduce_add_sync` 的类型和架构支持也有限制，不能因为名字相似就把它当作任意 float 归约的替代品。
+
 ### 2.1 `__shfl_down_sync` 的两个条件
 
 `__shfl_down_sync(mask, value, delta)` 让一个 lane 读取同一 warp 内另一个 lane 的寄存器值。它不是 shared load，也不是 barrier。安全使用 `0xffffffffu`（FULL mask）至少需要两个事实同时成立：
@@ -77,13 +79,13 @@ $$
 
 ### 2.2 shuffle 和 barrier 不能互换
 
-同一 warp 的 shuffle 用于寄存器交换；它不为其他 warp 的 shared 写入提供可见性，也不等待 CTA 中的其他 warp。于是典型顺序必须是：每个 warp 先完成自己的 shuffle，lane 0 写 `warp_sum[warp]`，然后所有 CTA 线程执行 `__syncthreads()`，最后 warp 0 才读取 shared。CUDA 手册的 §5.4.4.1 明确了 `__syncthreads()` 的等待和排序语义；PDF 第 577 页是本地版本的精确页码。
+同一 warp 的 shuffle 用于寄存器交换；它不为其他 warp 的 shared 写入提供可见性，也不等待 CTA 中的其他 warp。于是典型顺序必须是：每个 warp 先完成自己的 shuffle，lane 0 写 `warp_sum[warp]`，然后所有 CTA 线程执行 `__syncthreads()`，最后 warp 0 才读取 shared。CUDA Programming Guide 13.3 的 §5.4.4.1 明确了 `__syncthreads()` 的等待和排序语义。
 
 不能用“只有 warp 0 读 shared”来删掉 barrier。warp 0 读的是其他 warp 的写入，不是自己的寄存器；没有 barrier，代码缺少跨 warp 的 happens-before。反过来，不能把 shuffle 当成全 CTA barrier：它不能让 warp 1 等待 warp 2，也不能排序 shared/global memory。
 
 ### 2.3 为什么本章不使用 `__reduce_add_sync`
 
-CUDA Programming Guide §5.4.6.4（PDF 第 599–600 页）给出的 `__reduce_add_sync` 支持范围包括整数类型，并要求 Compute Capability 8.x 或更高版本；它不是一个可以泛化替代 FP32 手写归约的接口。这里要处理的是 FP32 row sum，同时教学目标是把两级数据流和同步边界显式展开，所以使用 `__shfl_down_sync`。即使某一目标架构有其他 reduction 指令，也应先核对生成代码、支持的类型和误差语义，不能把 API 名字直接等同于“更快的 FP32 reduction”。
+CUDA Programming Guide 13.3 的 §5.4.6.4 给出的 `__reduce_add_sync` 支持范围包括整数类型，并要求 Compute Capability 8.x 或更高版本；它不是一个可以泛化替代 FP32 手写归约的接口。这里要处理的是 FP32 row sum，同时教学目标是把两级数据流和同步边界显式展开，所以使用 `__shfl_down_sync`。即使某一目标架构有其他 reduction 指令，也应先核对生成代码、支持的类型和误差语义，不能把 API 名字直接等同于“更快的 FP32 reduction”。
 
 ## 3. 完整 FP32 row sum：从 `D=1000` 跑一遍控制流
 
@@ -155,6 +157,8 @@ extern "C" cudaError_t launch_row_sum(const float* x, float* y, int rows, int co
 对 `D=1000` 和 `BLOCK_SIZE=256`，`rounded_cols=1024`。因此 tid 0–231 的循环列为 `tid、tid+256、tid+512、tid+768`，第四项最大是 `999`；tid 232–255 的第四项分别是 `1000..1023`，条件为 false，累加 0。warp 0–6 各自先得到一个局部和，warp 7 也参与同样的第一层流程，只是它的 24 个尾部线程在第四次取 0；8 个 warp 的 lane 0 把结果写入 `warp_sum[0..7]`。barrier 后 warp 0 的 lane 0–7 读取这 8 项，lane 8–31 读 0，最终只有 warp 0 的 lane 0，也就是 CTA 的 thread 0，把结果写入 `y[row]`。
 
 这个“全 warp 参与、无提前退出”设计有一个实际代价：尾部线程会执行指令，但不会读取越界地址。对于 row-wise reduction，尾部浪费通常比一个错误的 barrier 更容易接受；只有在测量确认尾部占主导时，才考虑改变映射。代码中只有一次 CTA 级 `__syncthreads()`：它等待所有 warp 把 partial 写入 shared。两轮 shuffle 都在完整 warp 内进行，第二轮只操作 warp 0 的寄存器，因此不需要第二次 block barrier。shuffle 本身不是 memory barrier；这里的跨 warp 可见性由那一次 `__syncthreads()` 提供。
+
+**实践绑定：Reduction 题面与 row-wise 教学实现。** 当前只确认 [LeetGPU Challenges](https://leetgpu.com/challenges) 总题库入口和官方 [Reduction #4 原题目录](https://github.com/AlphaGPU/leetgpu-challenges/tree/main/challenges/medium/4_reduction)，不把未从题库页面确认的 slug 写成直达链接。#4 的平台合同是 FP32 一维 `input[N]→output`；本节的 CUDA kernel 则是 `[R,D]→[R]`，以 `D=1000,BLOCK_SIZE=256` 展示尾部和两级归约。二者共享“局部和→warp→CTA”的机制，但不能用一维平台通过代替多行 kernel 的 correctness。服务器编译入口是 `roadmap/curriculum/operators/02-reduction-and-norm/examples/row_sum.cu`，先以 `rows=3, cols=1000` 和非整除列数检查，再谈性能。
 
 ## 4. 从已有 1D Softmax 归档代码理解 partial 合并
 
@@ -337,7 +341,7 @@ __global__ void softmax_kernel(const float* input, float* output, float global_m
 }
 ~~~
 
-该版本的题面接口是 `extern "C" void solve(const float*, float*, int)`，线程块固定 256，跨 block partial 在 host 合并；weekly 只给出约百万元素的约 1 ms baseline，不提供可与后续 Triton/RTX3090 数字直接比较的完整同条件表。它证明的是平台 1D 正确性，不是服务器 `GPU_VALIDATED`；后续 `softmax_online.cu` 虽保存了 2-pass 设计，但 weekly 明确未做本地/服务器横向 benchmark，且当前 host launcher 有未定义 `threadsPerGrid` 笔误，所以仍按未验证历史路径处理，不把“省一次读/launch”写成实测收益。
+该版本的题面接口是 `extern "C" void solve(const float*, float*, int)`，线程块固定 256，跨 block partial 在 host 合并；weekly 只给出约百万元素的约 1 ms baseline，不提供可与后续 Triton/RTX3090 数字直接比较的完整同条件表。它证明的是平台 1D 正确性，不是服务器多行 kernel 的 GPU correctness 或性能结果；后续 `softmax_online.cu` 虽保存了 2-pass 设计，但 weekly 明确未做本地/服务器横向 benchmark，且当前 host launcher 有未定义 `threadsPerGrid` 笔误，所以仍按未验证历史路径处理，不把“省一次读/launch”写成实测收益。
 
 原始归档旁边的 CUDA 历史文件可以用来理解另一路径，但 `softmax_online.cu` 的 host `solve` 中有一处笔误：`blocksPerGrid = (N + threadsPerBlock - 1) / threadsPerGrid` 使用了未定义的 `threadsPerGrid`。因此本章只引用它的核函数结构和 host merge 公式，不把它说成可直接编译或已验证，也不修改旧文件。那条旧 CUDA 路径是 GPU partial → host D2H merge → normalize kernel；host 计算出的两个 scalar 作为 kernel 参数传回，不等于把 partial 数组显式 H2D 搬回。无论如何，分块统计后重新 normalize 都意味着输入至少被读取两遍、输出写一遍，即理想 3N 个元素，再叠加 partial scratch、host 往返和 kernel launch 成本；不能把这种路径写成天然只有 2N 元素流量。
 
@@ -345,7 +349,9 @@ __global__ void softmax_kernel(const float* input, float* output, float global_m
 
 本章 rowwise_softmax.py 选择最容易审计的映射：一个 Triton program 负责一行，`tl.program_id(0)` 对应 `row`，`tl.arange(0, BLOCK)` 对应列向量。`BLOCK` 取不小于 `D` 的 2 的幂，超过真实列数的 lane 由 `mask` 排除。这里的 mask 是**逻辑元素访问 mask**，决定哪些 `tl.load`/`tl.store` 位置有效；它不是 CUDA shuffle 的参与线程 mask。
 
-这两个概念必须分开。Triton 的 `mask=offsets < cols` 可以让一个向量化 load 的无效位置返回 `-inf`，也可以让 store 不写 padding；它不意味着一个 CUDA thread 从控制流中退出。CUDA reduction 中的尾部线程仍须经过 shuffle 和 barrier，只能让它们的贡献为 0 或 `-inf`。如果把“逻辑元素无效”实现成 `return`，恰好会破坏后续 `__syncthreads()` 对全 CTA 的等待合同。
+Triton 的访问 mask 与 CUDA 同步函数的参与线程范围是两件事。`mask=offsets < cols` 配合 `other=-inf` 可以为 Softmax 的无效输入补值，store mask 则阻止越界写回；这些操作不表示某个 CUDA 线程退出了核函数。
+
+对于前面的共享内存归约，无效输入仍要写入运算的单位元，供后续归约读取。如果在线程写入之前直接 `return`，剩余线程可能读到未初始化的位置。是否满足同步要求还取决于所用原语及其参与规则；不能将所有提前退出都说成必然死锁。采用完整 warp 的 shuffle 示例时，则必须保证掩码要求参与的线程都执行相应调用，并且被读取的源 lane 有定义值。
 
 <!-- source-check: examples/rowwise_softmax.py -->
 ~~~python
@@ -368,6 +374,8 @@ def softmax_row_kernel(x, y, rows, cols, BLOCK: tl.constexpr):
 max subtraction 的顺序是先求 $m_r=\max_cx_{r,c}$，再求 $q_r=\sum_ce^{x_{r,c}-m_r}$，最后输出 $e^{x_{r,c}-m_r}/q_r$。由于输入在 load 后立即转成 FP32，max、exp 输入和 sum 都以 FP32 语义进行；最终 store 到 `y` 时保持输入 dtype。对于有限输入，减去行内最大值后指数的最大输入为 0，避免直接 `exp(x)` 的上溢。
 
 wrapper 的默认合同是 contiguous、CUDA、浮点 16/32 或 bfloat16、正的有限 `rows/cols`，并限制 `rows*cols <= INT32_MAX` 以保持指针索引简单。它默认不对每次调用做 `torch.isfinite(x).all()`，因为那会额外发起一次 GPU 归约并同步，污染 benchmark。正确做法是在 correctness preflight 里显式调用 `softmax(x, check_finite=True)` 一次，计时路径使用默认参数。对于 all-`-inf`、NaN 或空行，普通 max subtraction 的语义需要额外约定；本例拒绝非有限输入和空 shape，而不是静默产出 NaN。
+
+**实践绑定：Softmax 题面与稳定公式。** 平台 [Softmax](https://leetgpu.com/challenges/softmax) 是一维输入输出合同；本节把同一稳定顺序扩展到 `[R,D]`，并用 `D=1,31,32,33,257,1000` 检查 mask 和 `axis=0`。服务器 correctness/计时入口是 `examples/validate_forward.py`；它先用 FP32 reference 检查多行和非有限拒绝，再在相同预分配条件下计时，GPU、shape、mean ms 和 profiler 字段留到服务器记录。
 
 ## 6. RMSNorm 与 LayerNorm：同一行里统计量不同，mask 也不同
 
@@ -446,6 +454,8 @@ def layer_norm_kernel(x, weight, bias, y, rows, cols, eps, BLOCK: tl.constexpr):
 ~~~
 
 这份实现采用“两遍统计”的直观写法：第一遍逻辑上得到 mean，第二遍用 centered 值得到 variance，然后变换并写回。`E[x^2]-E[x]^2` 只需要一次平方和，但当 $x$ 的均值较大而方差很小时，两个接近的大数相减会发生严重数值抵消；FP32 也不是无限精度。教学版本使用 centered square，代价是需要保留或重新获得 mean 后的值，但数值语义更清楚。
+
+**实践绑定：RMSNorm 与 LayerNorm 的题面边界。** 当前不确认 #50/#113 的平台 slug，因此只给 [LeetGPU Challenges](https://leetgpu.com/challenges) 总题库入口，并附官方 [RMS Normalization #50 原题目录](https://github.com/AlphaGPU/leetgpu-challenges/tree/main/challenges/medium/50_rms_normalization) 与 [Layer Normalization #113 原题目录](https://github.com/AlphaGPU/leetgpu-challenges/tree/main/challenges/medium/113_layer_normalization) 做合同核对。#50 使用一维输入，`gamma` 和 `beta` 均为 scalar float；#113 使用 `[N,C]`、`weight[C]`、`bias[C]`。本节的教学 kernel 是 `[R,D]`、per-column `gamma/beta`、FP32 统计，因此提交时要从空题面重写接口，服务器脚本的 `R/D` correctness 不能冒充平台归档。
 
 更一般的并行实现可以用 Welford 状态 $(n,\mu,M_2)$：$n$ 是段内样本数，$\mu$ 是这段样本的均值，$M_2=\sum_i(x_i-\mu)^2$ 是以该段均值为中心的平方和。一个元素初始化为 $(1,x,0)$。两段状态 A、B 合并时，必须先处理空状态：若 $n_A=0$，直接返回 B；若 $n_B=0$，直接返回 A。只有两段都非空时，才令 $\delta=\mu_B-\mu_A$、$n=n_A+n_B$ 并计算：
 
@@ -558,7 +568,7 @@ roofline 也不能只写成“带宽受限”。Softmax 有 max、exp、sum、�
 
 ## LeetGPU：正确性与代码归档
 
-LeetGPU 题面以平台当前页面为准；公开题面源码也已核对：[Reduction #4](https://github.com/AlphaGPU/leetgpu-challenges/tree/main/challenges/medium/4_reduction)、[RMS Normalization #50](https://github.com/AlphaGPU/leetgpu-challenges/tree/main/challenges/medium/50_rms_normalization)、[Layer Normalization #113](https://github.com/AlphaGPU/leetgpu-challenges/tree/main/challenges/medium/113_layer_normalization)。平台总入口是 [LeetGPU Challenges](https://leetgpu.com/challenges)，页面搜索时使用准确题名；页面是 SPA，能取得 HTTP 响应不等于已登录并点击执行过题目。
+LeetGPU 题面以平台当前页面为准；#4/#50/#113 当前只给 [LeetGPU Challenges](https://leetgpu.com/challenges) 总入口，不猜未确认的 platform slug；官方原题源码用于核对：[Reduction #4](https://github.com/AlphaGPU/leetgpu-challenges/tree/main/challenges/medium/4_reduction)、[RMS Normalization #50](https://github.com/AlphaGPU/leetgpu-challenges/tree/main/challenges/medium/50_rms_normalization)、[Layer Normalization #113](https://github.com/AlphaGPU/leetgpu-challenges/tree/main/challenges/medium/113_layer_normalization)。页面搜索时使用准确题名；页面是 SPA，能取得 HTTP 响应不等于已登录并点击执行过题目。
 
 三道题和本章教学实现的对应关系要写清楚：
 
@@ -583,9 +593,13 @@ python roadmap/curriculum/operators/02-reduction-and-norm/examples/validate_forw
 
 脚本的 correctness 先用 FP32 计算 reference，再 cast 到被测 dtype，覆盖 `R=1/2/3`、`D=1/31/32/33/257/1000`、常数行、全负行和 `[10000,10001,9999,10002]` 这类非恒定偏置行。correctness 直接调用 row-wise Softmax、RMSNorm、LayerNorm kernel；`--benchmark` 只对预分配的 Softmax kernel 与同样预分配的 `torch.softmax(..., out=...)` 计时，当前脚本不报告 Norm 性能数字。Norm 若后续加入 kernel-only 计时，数字必须不包含 Python wrapper 的 contiguous/CUDA/device/dtype/eps 检查和 output allocation；若要报告 wrapper 端到端延迟，必须另列计时边界，不能与 kernel-only 数字混在一起。脚本使用 CUDA Event 包住 Python 发起的循环，平均值包含 kernel launch 的 host gap，不能当作 profiler 的纯 kernel duration；纯 kernel 时长需由 Nsight Systems/Compute 或等价工具单独获取。
 
-## 参考资料
+服务器记录表只预留同条件结果：
 
-实现时注意同步与归约的不同约束：`__syncthreads()` 等待 block 内未退出线程并提供排序；`__reduce_add_sync` 的类型与架构支持有限制，不能直接用于 float；shuffle 支持 float，但源 lane 必须参与，且它本身不提供共享内存的排序保证。这些条件分别落实在本章的实现中。
+| 算子 | 固定合同 | GPU / CC | max abs/rel error | mean ms | effective bytes / GB/s | profiler 资源与流量 |
+|---|---|---|---:|---:|---|---|
+| row-wise Softmax | FP32；`R=`；`D=`；finite input；预分配 output |  |  |  |  |  |
+| RMSNorm | dtype=` `；`R=`；`D=`；FP32 accumulation；`eps=` |  |  |  |  |  |
+| LayerNorm | dtype=` `；`R=`；`D=`；biased variance；`eps=` |  |  |  |  |  |
 
 ## 参考阅读
 

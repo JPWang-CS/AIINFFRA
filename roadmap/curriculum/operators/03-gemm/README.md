@@ -4,6 +4,8 @@
 
 从一个线程计算一个输出开始，再引入 shared tile、寄存器微块和矩阵指令，可以逐步看清地址、同步和资源需求怎样变化。已有 MatMul 配置扫描提供了相应的加速、退化与资源超限案例。
 
+阅读顺序沿着同一条数据路径推进：先固定矩阵公式、地址和尾块 mask，再看 thread/program 的输出所有权；随后才进入 shared/寄存器复用、算术强度、WMMA、异步流水线和 TMA。第 7–9 节把同一套坐标合同扩展到 batch、grouped、split-K 与 persistent 调度；第 10 节把题面正确性和服务器测量放回这条链上。后面的矩阵指令和库实现是前面 tile、精度与同步合同的延伸，不是独立的替代教程。
+
 ## 1. 先固定符号：输出坐标和归约坐标各有自己的名字
 
 本章使用以下维度约定，后面的 CUDA 与 Triton 代码均按这套符号解释：
@@ -375,6 +377,8 @@ python roadmap/curriculum/operators/03-gemm/examples/cpu_hopper_swizzle_checks.p
 
 该 CPU 检查证明逻辑覆盖、base phase、chunk 内 half 顺序和上述 lane→address 函数的 bank 直方图；不模拟真实 bank arbiter，不执行 CUDA，也不能替代 TMA/WGMMA descriptor 检查或 GPU counter。
 
+**实践绑定：先把 GEMM 题面写清，再进入矩阵指令。** [LeetGPU Matrix Multiplication](https://leetgpu.com/challenges/matrix-multiplication) 的公开原题目录是 [#2 Matrix Multiplication](https://github.com/AlphaGPU/leetgpu-challenges/tree/main/challenges/easy/2_matrix_multiplication)：FP32、row-major、`A[M,N]B[N,K]→C[M,K]`，接口为 `solve(A,B,C,M,N,K)`，题面 correctness 以 `rtol=atol=1e-4` 为准。先从空编辑器实现并原样归档平台 `solve/kernel`；本章后面的 WMMA、流水线和 CUTLASS 改变输入精度或布局时，要另立合同，不能把它们的结果接到这条 FP32 平台记录上。
+
 ## 4. 算术强度与资源账本：每个符号都要标出统计范围
 
 对一个输出 tile `BM×BK`、归约 tile `BN`，本轮乘加的 FLOPs（Floating-point Operations，浮点运算次数）是
@@ -589,6 +593,8 @@ host 校验使用已经转换为 half 的同一份 A/B，再转为 double 做参
 这个例子为了暴露边界，使用一个 warp、一个输出小块和同步填充。它没有跨 warp 复用、异步 global-to-shared 流水线或优化 epilogue，因此不能期待它接近库 GEMM，更不能拿它与已有 IEEE FP32 记录直接比速度。
 
 下一步每次只改一个层次：扩大 CTA 复用区域；分配 warp 输出块；选择匹配的 shared 与指令布局；引入异步搬运；最后优化写回。扩大 CTA 后，正确性首先取决于所有权和同步，再去看 shared、寄存器、指令及吞吐。
+
+**实践绑定：WMMA 是同一 GEMM 合同的扩展。** 这里的输入是 FP16、累加和输出为 FP32，`17×19×21` 与 `33×65×7` 用 padding 检查矩阵指令不能直接处理的尾块；它不是前面 FP32 LeetGPU Matrix Multiplication 的替代提交。先用 `wmma_padded.cu` 的 double reference 检查转换后的 half 输入，再在相同 dtype、shape、alpha/beta 和计时边界下与库实现比较；不要把 WMMA 的结果接到 IEEE FP32 表中。
 
 对 WMMA accumulator 做所有元素相同的线性缩放可以遍历 fragment.x；但需要输出行列坐标的 bias、mask 或列缩放，不能把 fragment.x 的数组下标直接解释成矩阵坐标。这里通过 Cs 写回，正是把不透明寄存器表示转换回明确的二维坐标。
 
@@ -1477,6 +1483,8 @@ fi
 exec "$binary" "$@"
 ```
 
+### 6.19 CUTLASS 与 cuBLAS 的同条件比较
+
 强基线要固定相同输入/输出 dtype、累加 dtype、M/N/K、layout/leading dimension、alpha/beta、尾块与计时范围。此 CUTLASS 示例是 half×half、FP32 accumulate、half output，不得与 IEEE FP32 的既有 RTX 3090 记录直接比较。若用 row-major A[M,K]、B[K,N]、C[M,N] 比较，可明确调用 cuBLAS `cublasGemmEx`，以列主序 API 计算 `C?=B?A?`：
 
 ```cpp
@@ -1969,7 +1977,7 @@ def matrix_multiplication_kernel(
     tl.store(ptr_c, acc, mask=mask_c)
 ~~~
 
-该片段与 `solve(a,b,c,M,N,K)` 的平台接口和 `BLOCK_M=64, BLOCK_N=32, BLOCK_K=64, num_warps=4, num_stages=3` 配置一起构成 A100 的 `24.54 ms / 55.3th percentile` 证据；不能将它与下方 RTX 3090 服务器适配版的 `1e-2` correctness 容差、tile sweep 或 Nsys 时间线混成同一个样本。LeetGPU 证据不需要重跑；剩余 GEMM 缺口是 RTX 3090 的 NCU、PTX/SASS、spill/occupancy、低精度与多 shape 优化，不是重新提交已经归档的题目。
+该片段与 `solve(a,b,c,M,N,K)` 的平台接口和 `BLOCK_M=64, BLOCK_N=32, BLOCK_K=64, num_warps=4, num_stages=3` 配置一起构成 A100 的 `24.54 ms / 55.3th percentile` 历史测量；不能将它与下方 RTX 3090 服务器适配版的 `1e-2` correctness 容差、tile sweep 或 Nsys 时间线混成同一个样本。平台正确性、服务器多 shape correctness、NCU、PTX/SASS、spill/occupancy 和低精度比较分别对应不同的测量合同，不能用其中一项替代另一项。
 
 ### 服务器：真实性能
 
@@ -2061,6 +2069,16 @@ ncu --list-sections
 再从实际输出中选择存在的 set/section，针对单个配置采集；不要直接照抄环境未必提供的 `--set roofline`。报告至少需要把 GPU 身份、dtype、输入精度、shape、grid/block、寄存器、shared、occupancy、spill、MMA/FP32 指令、L2/DRAM 和 stall 相关字段与时间放在一起。若环境没有 counters，就保留 Nsys 时间线、launch metadata 和缺失项，不能把静态资源推导写成 achieved occupancy，也不能把推测写成硬件因果。
 
 本章的 CPU 账本、原始源码摘录和公开资料入口用于检查推导边界；真正 GPU correctness、编译资源、机器指令和性能数字仍以目标设备上的对应命令与报告为准。
+
+服务器记录表把不同数值合同分开，GPU 字段留给目标设备填写：
+
+| 实验 | 固定合同与入口 | GPU / CC | correctness | mean ms | GFLOPS / TFLOPS | registers / shared / occupancy / traffic |
+|---|---|---|---|---:|---:|---|
+| Triton baseline | IEEE FP32；`M×N×K=8192×6144×4096`；`torch.mm` 同次对照 |  |  |  |  |  |
+| WMMA padded | FP16 A/B；FP32 accumulate/output；`1×1×1`、`17×19×21`、`33×65×7` |  |  |  |  |  |
+| cp.async pipeline | FP16 A/B；FP32 output；`wmma_pipeline.cu`；serial vs double buffer |  |  |  |  |  |
+| TMA + WMMA | FP16 A/B；FP32 output；TMA descriptor；`CC≥9.0` |  |  |  |  |  |
+| CUTLASS example 49 | CUTLASS v3.8.0 pinned commit；half input/output；FP32 compute；Hopper `90a` |  |  |  |  |  |
 
 [返回完整算子体系](../README.md) · [上一章：并行归约、Softmax 与归一化](../02-reduction-and-norm/README.md) · [GPU存储机制](../../gpu/03-registers-and-memory-system/README.md) · [性能分析方法](../../gpu/05-performance-analysis-and-optimization/README.md)
 

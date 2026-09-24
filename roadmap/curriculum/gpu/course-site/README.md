@@ -1,6 +1,6 @@
 # GPU 与 CUDA 课程网站
 
-入口：[课程网页](index.html?chapter=1)。网站包括GPU基础五章、[访存布局首章](index.html?chapter=7)、[并行归约、Softmax 与归一化](index.html?chapter=8)、[GEMM：从分块实现到性能优化](index.html?chapter=9)、[Activation 与 Fusion](index.html?chapter=10)、[Prefill Attention](index.html?chapter=11)、[Decode / PagedAttention](index.html?chapter=12)、[量化算子](index.html?chapter=13)、[MoE](index.html?chapter=14)和[Sampling/KV](index.html?chapter=15)，以及模型与系统四章：[模型分析](index.html?chapter=16)、[Mini Transformer](index.html?chapter=17)、[vLLM](index.html?chapter=18)、[多 GPU](index.html?chapter=19)。正文来自课程目录中的Markdown，示例代码保留在各章examples中。网站为本地静态文档，不对外发布。
+入口：[课程网页](index.html?chapter=1)。网站包括GPU基础五章、[访存布局首章](index.html?chapter=7)、[并行归约、Softmax 与归一化](index.html?chapter=8)、[GEMM：从分块实现到性能优化](index.html?chapter=9)、[Activation 与 Fusion](index.html?chapter=10)、[Prefill Attention](index.html?chapter=11)、[Decode / PagedAttention](index.html?chapter=12)、[量化算子](index.html?chapter=13)、[MoE](index.html?chapter=14)和[Sampling/KV](index.html?chapter=15)，以及模型与系统四章：[模型分析](index.html?chapter=16)、[Mini Transformer](index.html?chapter=17)、[vLLM](index.html?chapter=18)、[多 GPU](index.html?chapter=19)。正文来自课程目录中的Markdown，示例代码保留在各章examples中。网站是预生成的本地静态文档，不依赖常驻服务，也不对外发布。
 
 ## 构建
 
@@ -12,27 +12,34 @@ npm run build
 npm run check
 npm run test:navigation
 npm run test:papers
+npm run test:offline
 ~~~
 
 依赖版本固定在 package.json 与 package-lock.json。构建使用 Marked 解析 Markdown、KaTeX 排版数学、highlight.js 为代码着色；生成的 HTML、样式与数学字体可以离线阅读，不从 CDN 拉取运行资源。
 
 构建遇到无效公式、课程管理字样或源码摘录不一致会失败。check.cjs检查39篇正文（18篇主课、21篇论文与算法）的路由、静态资源与源码链接、唯一锚点、公式、搜索索引、重点提示和可复制代码一致性，并独立复算sector、bank、矩形转置、向量copy主体/尾部索引以及缓存容量。它不代替浏览器视觉检查、nvcc编译或GPU测试。
 
-## 本地预览
+`test:offline` 只检查预生成入口、相对资源、内嵌内容、静态文件导航分支和 `NOW.md` 入口；它不代替浏览器中双击文件的实际检查。
 
-从仓库根目录执行：
+## 直接打开静态网页
+
+在文件管理器中双击本目录的 `index.html`，由浏览器打开。整个仓库须保持原目录结构；站点的样式、公式字体、附属阅读页和本地 PDF 使用相对路径。首页默认第一章；各章可用顶部导航、侧栏和页内目录切换。`NOW.md` 保存当前课程小节与论文的直接入口。
+
+不需要运行 Python、Node.js 或保持终端窗口打开。Node.js 只用于修改 Markdown 后重新生成网站；已经生成的 `index.html` 可以离线阅读。部分浏览器在本地文件模式下限制脚本改写浏览历史，因此章节切换使用普通页面跳转；打开新章可能重新加载同一个 HTML 文件，不影响公式、目录和章节锚点。复制代码按钮若受浏览器剪贴板权限限制，会提示手动选中复制。
+
+需要检查 HTTP 环境时，仍可选择从仓库根目录运行：
 
 ~~~bash
 python -m http.server 8765 --bind 127.0.0.1
 ~~~
 
-访问 http://127.0.0.1:8765/roadmap/curriculum/gpu/course-site/index.html?chapter=1 。
+这只是可选开发预览，不是阅读课程的前提。临时服务停止后 `127.0.0.1` 链接会拒绝连接；应使用本地静态入口。
 
-页面保留既有 chapter ID；chapter=6 为退休的“序”，旧链接转到访存与布局 chapter=7。其余 1–19 的实际章节入口不变，共 18 篇正文。右侧目录支持章节内锚点；复制按钮只复制源码，不包含行号与高亮标记。浏览器剪贴板功能需要安全上下文，localhost通常满足要求。
+页面保留既有 chapter ID；chapter=6 为退休的“序”，旧链接转到访存与布局 chapter=7。其余 1–19 的实际章节入口不变，共 18 篇正文。右侧目录支持章节内锚点；复制按钮只复制源码，不包含行号与高亮标记。
 
 重点提示使用GitHub风格的引用标记：IMPORTANT用于核心结论，WARNING用于边界，TIP用于实践复盘，NOTE用于理解提示。代码围栏可使用语言后跟`{2,4-6}`指定重点行。提示与高亮只强调关键位置，不替代连续解释。
 
-保持开发服务的仓库根目录不变，否则本地 CUDA 手册、solutions 与 notes 的相对链接无法定位。
+无论是否使用可选开发服务，都要保持仓库目录结构不变，否则本地 CUDA 手册与附属文档的相对链接无法定位。
 
 ## 链接审计记录（维护说明）
 

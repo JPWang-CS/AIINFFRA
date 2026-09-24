@@ -6,16 +6,17 @@
 
 ## 课程网页
 
-- [当前实践：第一篇第二章《CUDA 执行模型与指令调度》→ 3.《SIMT：同一条指令不等于同一条数据路径》](http://127.0.0.1:8765/roadmap/curriculum/gpu/course-site/index.html?chapter=2#chapter-2-section-5)
-- [当前论文：MLA（低维缓存与权重吸收）](http://127.0.0.1:8765/roadmap/curriculum/gpu/course-site/index.html?chapter=25)
+- [静态课程入口](./roadmap/curriculum/gpu/course-site/index.html)
+- [当前实践：第一篇第二章《CUDA 执行模型与指令调度》→ 3.《SIMT：同一条指令不等于同一条数据路径》](./roadmap/curriculum/gpu/course-site/index.html?chapter=2#chapter-2-section-5)
+- [当前论文：MLA（低维缓存与权重吸收）](./roadmap/curriculum/gpu/course-site/index.html?chapter=25)
 
-本机服务入口：若一条打不开，从仓库根目录运行 `python -m http.server 8765 --bind 127.0.0.1`。
+课程网页是预生成的静态文件。在文件管理器中双击 `roadmap\curriculum\gpu\course-site\index.html`，用浏览器阅读；不需要启动本机服务。若 Codex 内点击 Markdown 链接只显示 HTML 源码，请用文件管理器打开同一文件。
 
 ## 实践线：从模块化课程第一篇第一章重新开始（WIP）
 
 当前沿第一篇课程继续学习。第一章已读完，第二章第 1 节与第 2 节（含 2.1–2.3）已读；用户会自行跳过已经掌握的内容，既有实验不清零。PATH/HISTORY 中已有的 `LEETGPU_PASS`、`GPU_VALIDATED`、原始代码与性能证据继续有效，经过对应章节时直接复盘或跳过；遇到验收缺口、环境变化需复测或明确的后续优化，再按对应流程补齐。
 
-- 当前课：[第一篇第二章：CUDA 执行模型与指令调度 → 3.《SIMT：同一条指令不等于同一条数据路径》](http://127.0.0.1:8765/roadmap/curriculum/gpu/course-site/index.html?chapter=2#chapter-2-section-5)
+- 当前课：[第一篇第二章：CUDA 执行模型与指令调度 → 3.《SIMT：同一条指令不等于同一条数据路径》](./roadmap/curriculum/gpu/course-site/index.html?chapter=2#chapter-2-section-5)
 - 课程总入口：[GPU 硬件与性能基础](./roadmap/curriculum/gpu/README.md)
 - Softmax 服务器真实性能验证仍是历史未完成项，但不再作为当前入口；后续在对应算子章按验收补齐
 

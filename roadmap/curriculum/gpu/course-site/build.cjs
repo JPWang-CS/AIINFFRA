@@ -17,10 +17,10 @@ const appRevision = assetRevision('app.js');
 const themeRevision = assetRevision('theme.js');
 const chapters = [
   ['01-gpu-hardware-map-and-generations', '从 CUDA 程序看 GPU 的整体结构', '硬件全貌、编程模型、完整程序与地址映射。', '01-introduction/programming-model.html'],
-  ['02-cuda-execution-and-scheduling', '线程执行、指令调度与计算管线', '从驻留线程到就绪指令，理解并行度、依赖与数值计算。', '02-basics/writing-cuda-kernels.html'],
-  ['03-registers-and-memory-system', '寄存器、存储层次与数据访问', '从变量活跃区间到逐线程地址，分析复用、合并访问和存储冲突。', '02-basics/writing-cuda-kernels.html'],
-  ['04-synchronization-and-asynchronous-execution', '同步、线程协作与异步流水线', '建立正确的数据依赖，再组织计算与搬运的重叠。', '02-basics/asynchronous-execution.html'],
-  ['05-performance-analysis-and-optimization', '资源模型、性能分析与优化方法', '用资源预算、性能上界和真实实验解释优化结果。', '02-basics/writing-cuda-kernels.html'],
+  ['02-cuda-execution-and-scheduling', 'CUDA 执行模型与指令调度', '线程编号、warp 分组、数据依赖、分支与计算指令。', '02-basics/writing-cuda-kernels.html'],
+  ['03-registers-and-memory-system', '寄存器文件、地址空间与内存系统', '寄存器用量、存储范围、合并访问与矩阵转置。', '02-basics/writing-cuda-kernels.html'],
+  ['04-synchronization-and-asynchronous-execution', '线程协作、同步与异步执行', '从共享数据的读写顺序到归约、事件依赖和异步搬运。', '02-basics/asynchronous-execution.html'],
+  ['05-performance-analysis-and-optimization', 'GPU kernel 的计时与性能分析', '明确计时范围，用资源用量、数据流量和性能工具分析结果。', '02-basics/writing-cuda-kernels.html'],
   ['../operators', '完整 GPU 算子体系', '九类算子的原理、实现与实践对比。', '02-basics/writing-cuda-kernels.html'],
   ['../operators/01-memory-and-layout', '访存与布局算子', '从数据搬运、向量化访问到高效转置。', '02-basics/writing-cuda-kernels.html'],
   ['../operators/02-reduction-and-norm', '并行归约、Softmax 与归一化', '从两级归约、稳定 Softmax 到 RMSNorm 和 LayerNorm。', '02-basics/writing-cuda-kernels.html'],
@@ -145,8 +145,10 @@ function anchorFor(file, hash, chapter) {
     for (const [key, number] of Object.entries(aliases)) {
       const title = key.slice(key.indexOf('|')+1,key.lastIndexOf('|'));
       const id = 'chapter-'+chapter+'-section-'+number;
+      const redirect = anchorRegistry.redirects?.[String(chapter)]?.[String(number)];
       if ((slug(title,new Set()) === wanted || title.toLowerCase() === wanted)
-          && list?.some(h=>h.id===id)) return '#'+id;
+          && (list?.some(h=>h.id===id || h.id==='chapter-'+chapter+'-section-'+redirect)
+              || publicationText(file).includes('id="'+id+'"'))) return '#'+id;
     }
   }
   return '#' + encodeURIComponent(hit ? hit.id : wanted);
@@ -196,7 +198,17 @@ md.use({renderer: {
     const id = context.kind === 'chapter'
       ? chapterHeadings.get(context.file)[context.headingNumber++].id
       : slug(text || plain, context.usedHeadings);
-    return '<h' + depth + ' id="' + esc(id) + '">' + title + '<a class="heading-anchor" href="' + (context.kind === 'chapter' ? '?chapter=' + context.chapter + '#' + encodeURIComponent(id) : '#' + encodeURIComponent(id)) + '" aria-label="链接到' + esc(plain) + '">#</a></h' + depth + '>\n';
+    let legacy = '';
+    if (context.kind === 'chapter') {
+      const active = new Set(chapterHeadings.get(context.file).map(h => h.id));
+      for (const [from,to] of Object.entries(anchorRegistry.redirects?.[String(context.chapter)] || {})) {
+        const alias = 'chapter-'+context.chapter+'-section-'+from;
+        if (id === 'chapter-'+context.chapter+'-section-'+to && !active.has(alias)) {
+          legacy += '<span id="'+alias+'" class="legacy-anchor" aria-hidden="true"></span>';
+        }
+      }
+    }
+    return legacy + '<h' + depth + ' id="' + esc(id) + '">' + title + '<a class="heading-anchor" href="' + (context.kind === 'chapter' ? '?chapter=' + context.chapter + '#' + encodeURIComponent(id) : '#' + encodeURIComponent(id)) + '" aria-label="链接到' + esc(plain) + '">#</a></h' + depth + '>\n';
   },
   link({href, title, tokens}) { const label = this.parser.parseInline(tokens); const target = rewriteLink(href, context.file, context.output, context.kind); return target === null ? label : '<a href="' + esc(target) + '"' + (title ? ' title="' + esc(title) + '"' : '') + '>' + label + '</a>'; },
   image({href, title, text}) { const target = rewriteLink(href, context.file, context.output, context.kind); if (target === null) return '<span class="unavailable-asset">' + esc(text || href) + '</span>'; return '<img src="' + esc(target) + '" alt="' + esc(text || '') + '"' + (title ? ' title="' + esc(title) + '"' : '') + '>'; },

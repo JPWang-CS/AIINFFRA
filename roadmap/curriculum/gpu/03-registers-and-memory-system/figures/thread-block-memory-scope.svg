@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="420" viewBox="0 0 760 420" role="img" aria-labelledby="title desc">
+  <title id="title">CUDA线程与地址空间可见范围</title>
+  <desc id="desc">Grid包含多个block。Block中的线程各有寄存器和local memory，并共享本block的shared memory。Global memory位于block之外，可由grid中的线程访问。</desc>
+  <rect width="760" height="420" rx="16" fill="#f4f7fb"/>
+  <text x="28" y="42" font-family="Segoe UI, sans-serif" font-size="24" font-weight="700" fill="#18324b">数据对哪些线程可见？</text>
+  <rect x="24" y="64" width="712" height="330" rx="14" fill="#e5eef8" stroke="#7893ad" stroke-width="2"/>
+  <text x="44" y="98" font-family="Segoe UI, sans-serif" font-size="20" font-weight="700" fill="#274762">Grid：多个 block</text>
+  <rect x="44" y="114" width="430" height="258" rx="12" fill="#d8f0e8" stroke="#4f947b" stroke-width="2"/>
+  <text x="64" y="145" font-family="Segoe UI, sans-serif" font-size="20" font-weight="700" fill="#235b49">Block：线程协作范围</text>
+  <rect x="64" y="160" width="188" height="108" rx="10" fill="#fff" stroke="#6f9c8d"/>
+  <text x="158" y="190" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="19" font-weight="700" fill="#24483c">Thread 0</text>
+  <rect x="78" y="202" width="160" height="28" rx="5" fill="#fff0cc" stroke="#d0a543"/>
+  <text x="158" y="223" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="18" fill="#624b14">寄存器：私有</text>
+  <rect x="78" y="234" width="160" height="28" rx="5" fill="#f5e5f4" stroke="#aa76a5"/>
+  <text x="158" y="255" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="18" fill="#593853">local：私有</text>
+  <rect x="266" y="160" width="188" height="108" rx="10" fill="#fff" stroke="#6f9c8d"/>
+  <text x="360" y="190" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="19" font-weight="700" fill="#24483c">Thread 1 …</text>
+  <rect x="280" y="202" width="160" height="28" rx="5" fill="#fff0cc" stroke="#d0a543"/>
+  <text x="360" y="223" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="18" fill="#624b14">各自寄存器</text>
+  <rect x="280" y="234" width="160" height="28" rx="5" fill="#f5e5f4" stroke="#aa76a5"/>
+  <text x="360" y="255" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="18" fill="#593853">各自 local</text>
+  <rect x="64" y="282" width="390" height="70" rx="10" fill="#bfe6d5" stroke="#39836b" stroke-width="2"/>
+  <text x="259" y="312" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="20" font-weight="700" fill="#235b49">Shared memory</text>
+  <text x="259" y="339" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="18" fill="#315c4d">只由这个 block 的线程协作访问</text>
+  <rect x="500" y="180" width="216" height="112" rx="12" fill="#d5e6ff" stroke="#6386bd" stroke-width="2"/>
+  <text x="608" y="218" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="20" font-weight="700" fill="#294e80">Global memory</text>
+  <text x="608" y="249" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="18" fill="#365c87">线程块间可共享</text>
+  <text x="608" y="275" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="18" fill="#365c87">grid 中线程可访问</text>
+  <text x="44" y="414" font-family="Segoe UI, sans-serif" font-size="18" fill="#40576d">地址空间说明可见范围，不单独决定物理位置、延迟或同步条件。</text>
+</svg>

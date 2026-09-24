@@ -49,7 +49,9 @@ if __name__ == "__main__":
     assert ids == [3,2] and abs(sum(weights)-1) < 1e-12
     assert route_topk([7,7,7], 2)[0] == [0,1]  # explicit teaching tie rule
     assert route_topk([3,-9], 1)[1] == [1.0]
-    routes = [route_topk(row, 2) for row in [[1,2,3,0],[8,1,3,0],[0,6,2,1]]]
+    # Keep this concrete run aligned with the table in the chapter:
+    # token 0/1 -> [expert 2, expert 0], token 2 -> [expert 1, expert 2].
+    routes = [route_topk(row, 2) for row in [[3,0,4,-1],[2,0,5,-1],[0,6,2,1]]]
     inputs = [[1,2],[3,4],[-1,5]]
     experts = [lambda x,e=e: [(e+1)*v + e for v in x] for e in range(4)]
     offsets, order = group_routes(routes, 4)

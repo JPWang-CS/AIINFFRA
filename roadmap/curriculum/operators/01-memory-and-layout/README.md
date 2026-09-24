@@ -60,6 +60,19 @@ $$
 
 unit 必须说清楚：PyTorch 的 stride 以元素为单位，NumPy 的 strides 以字节为单位；CUDA 指针加法通常以所指向的 C++ 类型为单位；手算 global transaction 时最终必须回到 byte address。把 stride=1 直接说成“1 byte”是常见错误。
 
+上式的 `base` 指底层存储的起始地址。如果使用 `tensor.data_ptr()`，得到的已经是该张量第一个逻辑元素的地址，包含切片带来的 storage offset。此时只应再加各维的 stride 偏移，不能重复加 `storage_offset`。
+
+例如，`x` 是连续的 FP32 `[4,6]` 矩阵，`v=x[1:3,1:5:2]` 的形状为 `[2,2]`，stride 为 `(6,2)`，storage offset 为 7。计算 `v[1,1]` 时有两种等价写法：
+
+$$
+\begin{aligned}
+\text{address}&=\text{storage base}+4(7+1\times6+1\times2),\\
+&=v.\operatorname{data\_ptr}()+4(1\times6+1\times2).
+\end{aligned}
+$$
+
+两者都指向底层第 15 个元素。把 PyTorch 张量传给 Triton 时，传入指针对应该张量的起始位置；kernel 按传入的 stride 寻址即可。这个例子同时说明，形状相同的张量不一定有相同的地址步长。
+
 ### 2.2 contiguous 不是唯一合法布局
 
 row-major contiguous 的二维 [M, N] 张量通常是 stride=[N, 1]；列方向相邻元素的 byte 间距是 elementbyte，行方向相邻元素的 byte 间距是 N×elementbyte。转置 view 的 stride 变成 [1, N]，逻辑上合法，但若沿输出最后一维遍历，物理访问可能是大步长。
@@ -145,15 +158,15 @@ for (std::size_t i = vec_n * 4; i < n; ++i) dst[i] = src[i];
 
 ## 4. coalescing：从 lane 地址推导 transaction
 
-CUDA Programming Guide §2.3.4.1（打印页 56 / PDF 页 72）描述 global memory 的核心模型：一个 warp 的请求会合并为满足这些地址所需的尽可能少的 32-byte memory transactions。对 float32，若 32 个 lane 访问连续 128 bytes，理想需要四个 32B transaction；若相邻 lane 的地址相隔至少 32 bytes，可能需要 32 个 transaction，而有效使用的仍只有 128 bytes，事务利用率只有 12.5%。官方 Best Practices §10.2.1 用 maximize bytes used / bytes transferred 表达同一原则。
+CUDA Programming Guide 13.3 的 §2.3.4.1 描述 global memory 的核心模型：一个 warp 的请求会合并为满足这些地址所需的尽可能少的 32-byte memory transactions。对 float32，若 32 个 lane 访问连续 128 bytes，理想需要四个 32B transaction；若相邻 lane 的地址相隔至少 32 bytes，可能需要 32 个 transaction，而有效使用的仍只有 128 bytes，事务利用率只有 12.5%。官方 Best Practices §10.2.1 用 maximize bytes used / bytes transferred 表达同一原则。
 
 ### 4.1 copy 的连续访问
 
 一维 contiguous copy 中，lane l 访问 base + (pid×BLOCK+l)×4。当一个 warp 内的 l=0..31 连续时，它覆盖四个 32B segment；边界 warp 可能只使用其中一部分 word，但 segment 仍可能被取回。所谓合并不是要求 lane 按严格顺序执行，而是要求它们请求落在尽量少的 segment 中；在同一 segment 内做合法 permutation 通常不增加 transaction。
 
-### 4.2 用户问题：不同 thread 重复读一行
+### 4.2 地址重复、请求合并与显式复用
 
-此前讨论中提出：“对啊 但是不同thread 其实是会重复读一行的”。要判断这种重复的成本，需要区分三个场景：
+判断“不同 thread 重复读一行”的成本，需要区分三个场景：
 
 1. **32 个 thread 读同一个地址**：逻辑上只有一个 word 的有效数据，但 global memory 的最小服务粒度仍受 segment/缓存系统影响；同一 warp 的请求落在同一 32B segment，通常不需要为每个 lane 各发一个 segment。不能进一步保证永远只访问 DRAM 一次，因为 L1/L2 命中、其他 warp 流量和请求合并由硬件与时序决定。
 2. **32 个 thread 读同一行的连续 32 个元素**：这是 128B 连续访问，理想是四个 32B transaction。它们读的是同一行，但不是重复同一地址；每个 lane 使用不同 word。
@@ -193,6 +206,8 @@ restrict的前提独立于对齐。两个不同、都16B对齐的地址仍可能
 
 这个程序重复使用同一对buffer，因此给出的是热工作集条件下的有效copy带宽。它不是“显存峰值测量工具”，也不意味着float4版本一定更快。向量化减少的指令是否足以抵消对齐检查、循环和尾处理，需要结合生成指令及目标形状判断。
 
+**实践绑定：copy 的实验合同。** `copy_alignment.cu` 只研究 contiguous FP32、非重叠输入输出、起始偏移 0/1 和 `N=1,3,4,5,257` 等尾部/对齐边界；它是转置题之前的访存预实验，不是 Matrix Transpose 的平台提交。报告时保留 `N`、起始偏移、预分配 buffer、warmup/iterations 和有效字节 `2N×4`，不要把向量化 copy 的结果外推到任意 stride。
+
 ## 6. 真实转置：读和写为什么不能沿用同一组线程坐标
 
 ### 6.1 一个输出布局要求怎样改变地址
@@ -219,7 +234,7 @@ A[1,4]在线性位置9，B[4,1]在线性位置4×3+1=13。真实转置把值从�
 
 ### 6.2 shared tile 分开输入阶段与输出阶段
 
-复用GPU基础篇的 完整转置程序。输入阶段让threadIdx.x沿输入列变化，输出阶段让它沿输出列变化：
+共享 tile 转置把输入阶段和输出阶段分成两个地址合同。输入阶段让 `threadIdx.x` 沿输入列变化，输出阶段让它沿输出列变化：
 
 ~~~cpp {4,8-11}
 const int in_row = blockIdx.y * 32 + threadIdx.y;
@@ -246,6 +261,8 @@ if (out_row < N && out_col < M) {
 逻辑有效数据仍是32×32，只是物理行步长增加一个float。每块shared容量从4096B变成4224B，增加128B。这是用少量空间改变访问映射，不是给输出矩阵增加一列，也不是修改数学计算。
 
 无padding与有padding版本使用相同线程布局，可以较清楚地观察bank布局的影响。naive版本与tiled版本还同时改变了线程组织和shared staging，二者的整体时间差不能全部归因于padding。后续优化可以研究32×8线程块协作处理32×32 tile、每线程搬多个元素，但要分别分析寄存器、循环和同步变化，不能一次改完再猜原因。
+
+**实践绑定：transpose 的题面与形状。** 平台入口是 [Matrix Transpose](https://leetgpu.com/challenges/matrix-transpose)；平台 `solve/kernel` 的参数、矩形限制和容差以题面为准。本章至少用 `1×1`、`3×5`、`32×32`、`37×65` 检查地址与尾块：其中 `3×5` 直接对应上面的 `A[1,4]→B[4,1]`，`37×65` 检查两个轴的独立 mask。共享 tile 的 CUDA 程序只作为服务器实验实现，不能当作平台原始提交。
 
 ## 7. 从转置推广到 gather、scatter、embedding 和数据打包
 
@@ -318,7 +335,7 @@ $$
 - tile32变tile33：逻辑工作不变，主要观察bank布局与shared容量变化。
 - 同形状变不同stride：这是工作负载变化，不是同一配置的纯速度对比。
 
-## 9. 实践复盘：沿着已有代码继续，不重置经验
+## 9. 已有 Vector Add 测量：把结果放回访存模型
 
 已保存的 Vector Add 测量使用 N=2^25、BLOCK_SIZE=256、RTX3090：Triton有效带宽840.1GB/s，torch.add为843.0GB/s。它说明在当时条件下两个实现很接近，不能单凭接近torch就证明DRAM饱和，更不能把这个数字当成不同GPU的目标。
 
@@ -346,7 +363,7 @@ def vector_add_kernel(
     tl.store(out_ptr + offsets, x + y, mask=mask)
 ~~~
 
-复算入口是 `python solutions/triton/vector_add.py`；GPU段用 CUDA tensor 和 `triton.testing.do_bench`（含预热与同步计时），正确性覆盖 `N=1/256/257/1000/2^20`。weekly 记录的 GPU 证据为 [2026-08-24](../../../../weekly/2026-08-24-triton-vector-add.md)：AutoDL RTX 3090、`N=2^25`、FP32、`BLOCK_SIZE=256`，Triton `0.479 ms / 840.1 GB/s`，`torch.add` `0.478 ms / 843.0 GB/s`，按 `3N×4`（两次输入读取加一次输出写入）计算有效带宽。该结果只支持这台 RTX 3090、这个 shape、这个计时口径下的 GPU_VALIDATED baseline；不能外推到其他 GPU、任意 stride 或证明 DRAM 已达峰值。当前剩余缺口是单独归档 LeetGPU 原始 `solve`，不是重跑这次已经有证据的 benchmark。
+复算入口是 `python solutions/triton/vector_add.py`；GPU 段用 CUDA tensor 和 `triton.testing.do_bench`（含预热与同步计时），正确性覆盖 `N=1/256/257/1000/2^20`。weekly 记录的 GPU 测量为 [2026-08-24](../../../../weekly/2026-08-24-triton-vector-add.md)：AutoDL RTX 3090、`N=2^25`、FP32、`BLOCK_SIZE=256`，Triton `0.479 ms / 840.1 GB/s`，`torch.add` `0.478 ms / 843.0 GB/s`，按 `3N×4`（两次输入读取加一次输出写入）计算有效带宽。它只描述这台 RTX 3090、这个 shape 和这个计时口径，不能外推到其他 GPU、任意 stride 或证明 DRAM 已达峰值；它也不替代 Matrix Transpose 的平台题面实现。
 
 Vector Add每元素需要两个输入读取和一个输出写入，FP32算法流量为12N；纯copy与transpose是8N。比较两类算子时先统一流量口径，不能直接把同样的GB/s看成相同总工作量。
 
@@ -389,17 +406,12 @@ compute-sanitizer --tool racecheck --error-exitcode=1 /tmp/transpose-layout 37 6
 
 查看编译资源与机器指令后，才判断float4是否形成相应访存指令、padding是否改变shared请求。若Nsight Compute权限不可用，保留Nsys时间线、编译资源、源码配置和正确性结果，并把缺少counter导致无法证明的因果留在分析中，不补造数据。
 
-## 本章收束：继续优化前能够回答什么
+服务器记录表只预留同条件结果，不预填目标数字：
 
-**为什么转置view不能做真实transpose的性能基线？** 因为前者只改变元数据解释，后者实际重排元素。必须比较相同输出布局和同样的物化边界。
-
-**为什么N能被4整除还不能直接float4读写？** 因为长度只控制尾部，对齐取决于当前指针和每行步长；alias又是独立的条件。
-
-**为什么用shared后还可能慢？** 因为多了shared访问、同步与资源占用；复用和合并的收益必须抵消这些成本。相同算法可在不同shape上出现不同结果。
-
-**为什么scatter的重复index不是gather的重复index？** Gather只重复读取合法数据；scatter可能让多个线程写同一输出，必须定义冲突语义。
-
-**本章怎样衔接极致优化？** 先建立上述可解释baseline，再研究向量化粒度、线程布局、tile、缓存行为和多shape适配。达到强baseline后，收益很小的改动需要更严格的计时与证据；不把一次最快值当成稳定结论。
+| 实验 | 固定合同 | GPU / CC | correctness | mean ms | effective GB/s | Nsys/NCU 资源与流量 |
+|---|---|---|---|---:|---:|---|
+| contiguous copy，scalar vs `float4` | FP32；非重叠；`N=`；offset=`0/1` |  |  |  |  |  |
+| tiled transpose，naive vs shared | FP32；`M×N=`；`32×32` tile；padding=`0/1` |  |  |  |  |  |
 
 [返回完整算子体系](../README.md) · [下一章：并行归约、Softmax 与归一化](../02-reduction-and-norm/README.md)
 

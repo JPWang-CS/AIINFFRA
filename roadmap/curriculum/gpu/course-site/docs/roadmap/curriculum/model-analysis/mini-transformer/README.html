@@ -1,4 +1,4 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第二章 Mini Transformer：把算子放进完整前向 · AIINFFRA 附属文档</title><script src="../../../../../theme.js?v=3aab643066da"></script><link rel="stylesheet" href="../../../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../../../styles.css?v=0753ae308913"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../../../index.html?chapter=1">返回课程</a></nav><button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换到浅色模式">浅色</button></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · roadmap/curriculum/model-analysis/mini-transformer/README.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#1-block-%E7%9A%84%E8%BE%93%E5%85%A5%E8%BE%93%E5%87%BA%E4%B8%8E%E6%AE%8B%E5%B7%AE">1. block 的输入输出与残差</a></li><li><a href="#2-rope-%E7%9A%84%E7%BB%9D%E5%AF%B9%E4%BD%8D%E7%BD%AE%E4%B8%8D%E8%83%BD%E6%AF%8F%E6%AD%A5%E6%B8%85%E9%9B%B6">2. RoPE 的绝对位置不能每步清零</a></li><li><a href="#3-gqa-%E4%B8%8E%E5%B8%A6%E5%8E%86%E5%8F%B2-cache-%E7%9A%84%E5%9B%A0%E6%9E%9C-mask">3. GQA 与带历史 cache 的因果 mask</a></li><li><a href="#4-%E5%AE%8C%E6%95%B4%E5%89%8D%E5%90%91%E7%9A%84%E6%A0%B8%E5%BF%83%E4%BB%A3%E7%A0%81">4. 完整前向的核心代码</a></li><li><a href="#5-%E4%B8%89%E7%A7%8D%E6%89%A7%E8%A1%8C%E6%96%B9%E5%BC%8F%E5%AF%B9%E7%85%A7">5. 三种执行方式对照</a></li><li><a href="#6-%E7%AE%97%E5%AD%90%E6%9B%BF%E6%8D%A2%E8%A6%81%E6%A3%80%E6%9F%A5%E4%BB%80%E4%B9%88">6. 算子替换要检查什么</a></li><li><a href="#7-%E5%AE%9E%E8%B7%B5%E7%9B%B8%E5%90%8C%E6%9D%83%E9%87%8D%E7%9B%B8%E5%90%8C%E8%BE%93%E5%85%A5%E4%B8%8D%E5%90%8C%E6%89%A7%E8%A1%8C%E8%B7%AF%E5%BE%84">7. 实践：相同权重、相同输入、不同执行路径</a></li><li><a href="#%E5%8F%82%E8%80%83%E9%98%85%E8%AF%BB">参考阅读</a></li><li><a href="#%E7%AB%A0%E8%8A%82%E5%AF%BC%E8%88%AA">章节导航</a></li></ol></nav><div class="markdown-body"><h1 id="第二章-mini-transformer把算子放进完整前向">第二章 Mini Transformer：把算子放进完整前向<a class="heading-anchor" href="#%E7%AC%AC%E4%BA%8C%E7%AB%A0-mini-transformer%E6%8A%8A%E7%AE%97%E5%AD%90%E6%94%BE%E8%BF%9B%E5%AE%8C%E6%95%B4%E5%89%8D%E5%90%91" aria-label="链接到第二章 Mini Transformer：把算子放进完整前向">#</a></h1>
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第二章 Mini Transformer：把算子放进完整前向 · AIINFFRA 附属文档</title><script src="../../../../../theme.js?v=3aab643066da"></script><link rel="stylesheet" href="../../../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../../../styles.css?v=deca86f54b40"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../../../index.html?chapter=1">返回课程</a></nav><button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换到浅色模式">浅色</button></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · roadmap/curriculum/model-analysis/mini-transformer/README.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#1-block-%E7%9A%84%E8%BE%93%E5%85%A5%E8%BE%93%E5%87%BA%E4%B8%8E%E6%AE%8B%E5%B7%AE">1. block 的输入输出与残差</a></li><li><a href="#2-rope-%E7%9A%84%E7%BB%9D%E5%AF%B9%E4%BD%8D%E7%BD%AE%E4%B8%8D%E8%83%BD%E6%AF%8F%E6%AD%A5%E6%B8%85%E9%9B%B6">2. RoPE 的绝对位置不能每步清零</a></li><li><a href="#3-gqa-%E4%B8%8E%E5%B8%A6%E5%8E%86%E5%8F%B2-cache-%E7%9A%84%E5%9B%A0%E6%9E%9C-mask">3. GQA 与带历史 cache 的因果 mask</a></li><li><a href="#4-%E5%AE%8C%E6%95%B4%E5%89%8D%E5%90%91%E7%9A%84%E6%A0%B8%E5%BF%83%E4%BB%A3%E7%A0%81">4. 完整前向的核心代码</a></li><li><a href="#5-%E4%B8%89%E7%A7%8D%E6%89%A7%E8%A1%8C%E6%96%B9%E5%BC%8F%E5%AF%B9%E7%85%A7">5. 三种执行方式对照</a></li><li><a href="#6-%E7%AE%97%E5%AD%90%E6%9B%BF%E6%8D%A2%E8%A6%81%E6%A3%80%E6%9F%A5%E4%BB%80%E4%B9%88">6. 算子替换要检查什么</a></li><li><a href="#61-%E4%BB%8E%E6%A0%B8%E5%87%BD%E6%95%B0%E5%88%B0%E6%A1%86%E6%9E%B6%E7%AE%97%E5%AD%90">6.1 从核函数到框架算子</a></li><li><a href="#62-%E5%89%8D%E5%90%91%E8%AE%A1%E7%AE%97%E4%B8%8E%E6%A2%AF%E5%BA%A6">6.2 前向计算与梯度</a></li><li><a href="#63-%E6%8E%A5%E5%8F%A3%E6%A3%80%E6%9F%A5%E6%95%B0%E5%80%BC%E6%A3%80%E6%9F%A5%E4%B8%8E%E7%BC%96%E8%AF%91%E6%A3%80%E6%9F%A5">6.3 接口检查、数值检查与编译检查</a></li><li><a href="#64-%E5%9C%A8%E5%90%8C%E4%B8%80%E6%A8%A1%E5%9E%8B%E4%B8%AD%E6%9B%BF%E6%8D%A2%E5%92%8C%E6%B5%8B%E9%87%8F">6.4 在同一模型中替换和测量</a></li><li><a href="#7-%E5%AE%9E%E8%B7%B5%E7%9B%B8%E5%90%8C%E6%9D%83%E9%87%8D%E7%9B%B8%E5%90%8C%E8%BE%93%E5%85%A5%E4%B8%8D%E5%90%8C%E6%89%A7%E8%A1%8C%E8%B7%AF%E5%BE%84">7. 实践：相同权重、相同输入、不同执行路径</a></li><li><a href="#%E5%8F%82%E8%80%83%E9%98%85%E8%AF%BB">参考阅读</a></li><li><a href="#%E7%AB%A0%E8%8A%82%E5%AF%BC%E8%88%AA">章节导航</a></li></ol></nav><div class="markdown-body"><h1 id="第二章-mini-transformer把算子放进完整前向">第二章 Mini Transformer：把算子放进完整前向<a class="heading-anchor" href="#%E7%AC%AC%E4%BA%8C%E7%AB%A0-mini-transformer%E6%8A%8A%E7%AE%97%E5%AD%90%E6%94%BE%E8%BF%9B%E5%AE%8C%E6%95%B4%E5%89%8D%E5%90%91" aria-label="链接到第二章 Mini Transformer：把算子放进完整前向">#</a></h1>
 <p>这个小型 Transformer 使用固定随机权重和固定 token，比较整段前向、逐 token Decode 与分块输入的结果。NumPy float64 提供数值参考，PyTorch FP32 使用相同权重。</p>
 <p>模型有两层，hidden dimension 为 64，Query/KV heads 为 4/2，head dimension 为 16，SwiGLU 中间维度为 96，词表为 128。省略 bias、dropout 和训练，RMSNorm 缩放权重固定为 1。它用于检查算子组合，不需要下载语言模型。</p>
 <h2 id="1-block-的输入输出与残差">1. block 的输入输出与残差<a class="heading-anchor" href="#1-block-%E7%9A%84%E8%BE%93%E5%85%A5%E8%BE%93%E5%87%BA%E4%B8%8E%E6%AE%8B%E5%B7%AE" aria-label="链接到1. block 的输入输出与残差">#</a></h2>
@@ -96,7 +96,447 @@
 <span class="code-line" data-line="6">torch.testing.assert_close(replaced, baseline, rtol=<span class="hljs-number">1e-4</span>, atol=<span class="hljs-number">1e-4</span>)</span></code></pre></div>
 <p>换成二维 row-wise kernel 时，将 [B,S,D] 映射到 [BS,D]，计算后恢复形状。若必须先 contiguous，新增拷贝要计入模型时间。gamma、输出分配和 dtype 转换也不能从替换成本里消失。</p>
 <p>Attention 的接口更复杂：Prefill 与 Decode、MHA 与 GQA、连续 cache 与分页 cache 都不一定兼容。适配必须维护真实布局与状态，不能只把调用函数名换掉。先检查单次输出，再检查多步 cache 和生成行为。</p>
-<h2 id="7-实践相同权重相同输入不同执行路径">7. 实践：相同权重、相同输入、不同执行路径<a class="heading-anchor" href="#7-%E5%AE%9E%E8%B7%B5%E7%9B%B8%E5%90%8C%E6%9D%83%E9%87%8D%E7%9B%B8%E5%90%8C%E8%BE%93%E5%85%A5%E4%B8%8D%E5%90%8C%E6%89%A7%E8%A1%8C%E8%B7%AF%E5%BE%84" aria-label="链接到7. 实践：相同权重、相同输入、不同执行路径">#</a></h2>
+<h3 id="61-从核函数到框架算子">6.1 从核函数到框架算子<a class="heading-anchor" href="#61-%E4%BB%8E%E6%A0%B8%E5%87%BD%E6%95%B0%E5%88%B0%E6%A1%86%E6%9E%B6%E7%AE%97%E5%AD%90" aria-label="链接到6.1 从核函数到框架算子">#</a></h3>
+<p>一个 Triton kernel 可以被 Python 函数直接调用，但框架还需要知道它是否修改输入、输出的形状与类型、如何求导，以及编译时如何推导输出。下面以无 gamma 的 RMSNorm 为例，将这些要求落实到同一个接口。</p>
+<p>输入为连续的 FP32 <code>[R,D]</code>，每行独立计算，<code>1 &lt;= D &lt;= 4096</code>，epsilon 为有限正数。输出是相同形状的新张量；输入不修改，输出不与输入共享存储。R 可以为零，此时返回空输出而不启动 CUDA kernel。非连续布局和其他 dtype 明确拒绝。连续切片即使 <code>storage_offset</code> 非零仍可接受，因为传入指针已经指向该切片的起点。</p>
+<p>CPU 分支用 PyTorch 运算提供可检查的实现，CUDA 分支用一行一个 program 的 Triton kernel。框架通过算子名称 <code>aiinffra::rms_norm_f32</code> 识别它，<code>mutates_args=()</code> 声明不修改任何输入。这个声明需要和实现一致，不是供编译器参考的性能提示。</p>
+<p>FakeTensor 用形状、步长、dtype 和 device 等元数据表示张量，供编译器分析程序，不包含可读取的实际数据。注册的 fake 实现只检查这些元数据并描述新输出，不能调用 <code>.item()</code>、<code>.numpy()</code> 或解引用数据地址。</p>
+<h3 id="62-前向计算与梯度">6.2 前向计算与梯度<a class="heading-anchor" href="#62-%E5%89%8D%E5%90%91%E8%AE%A1%E7%AE%97%E4%B8%8E%E6%A2%AF%E5%BA%A6" aria-label="链接到6.2 前向计算与梯度">#</a></h3>
+<p>对一行输入，令</p>
+<div class="equation"><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>r</mi><mo>=</mo><msup><mrow><mo fence="true">(</mo><mfrac><mn>1</mn><mi>D</mi></mfrac><munder><mo>∑</mo><mi>j</mi></munder><msubsup><mi>x</mi><mi>j</mi><mn>2</mn></msubsup><mo>+</mo><mi>ϵ</mi><mo fence="true">)</mo></mrow><mrow><mo>−</mo><mn>1</mn><mi mathvariant="normal">/</mi><mn>2</mn></mrow></msup><mo separator="true">,</mo><mspace width="2em"/><msub><mi>y</mi><mi>i</mi></msub><mo>=</mo><msub><mi>x</mi><mi>i</mi></msub><mi>r</mi><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">r=\left(\frac1D\sum_j x_j^2+\epsilon\right)^{-1/2},\qquad y_i=x_i r.</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0278em;">r</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:3.4417em;vertical-align:-1.4138em;"></span><span class="minner"><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size4">(</span></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0278em;">D</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.05em;"><span style="top:-1.8723em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0572em;">j</span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.4138em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8641em;"><span style="top:-2.453em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0572em;">j</span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.3831em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord mathnormal">ϵ</span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size4">)</span></span></span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:2.0279em;"><span style="top:-4.2029em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">1/2</span></span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mpunct">,</span><span class="mspace" style="margin-right:2em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0359em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord mathnormal" style="margin-right:0.0278em;">r</span><span class="mord">.</span></span></span></span></span></div>
+<p>无效列在加载时补零，但均值的分母仍是实际 D，不能用向上补齐后的 BLOCK。存储只覆盖有效列。示例中输入、累加和输出均为 FP32，尚未引入低精度转换或 gamma 缩放。</p>
+<p>若后续需要反向传播，设输出梯度为 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>g</mi><mi>i</mi></msub><mo>=</mo><mi mathvariant="normal">∂</mi><mi>L</mi><mi mathvariant="normal">/</mi><mi mathvariant="normal">∂</mi><msub><mi>y</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">g_i=\partial L/\partial y_i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0359em;">g</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord" style="margin-right:0.0556em;">∂</span><span class="mord mathnormal">L</span><span class="mord">/</span><span class="mord" style="margin-right:0.0556em;">∂</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0359em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>，输入梯度为</p>
+<div class="equation"><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mfrac><mrow><mi mathvariant="normal">∂</mi><mi>L</mi></mrow><mrow><mi mathvariant="normal">∂</mi><msub><mi>x</mi><mi>i</mi></msub></mrow></mfrac><mo>=</mo><msub><mi>g</mi><mi>i</mi></msub><mi>r</mi><mo>−</mo><msub><mi>x</mi><mi>i</mi></msub><msup><mi>r</mi><mn>3</mn></msup><mrow><mo fence="true">(</mo><mfrac><mn>1</mn><mi>D</mi></mfrac><munder><mo>∑</mo><mi>j</mi></munder><msub><mi>g</mi><mi>j</mi></msub><msub><mi>x</mi><mi>j</mi></msub><mo fence="true">)</mo></mrow><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">\frac{\partial L}{\partial x_i}
+=g_i r-x_i r^3\left(\frac1D\sum_j g_jx_j\right).</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:2.2074em;vertical-align:-0.836em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3714em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord" style="margin-right:0.0556em;">∂</span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord" style="margin-right:0.0556em;">∂</span><span class="mord mathnormal">L</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.836em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.7778em;vertical-align:-0.1944em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0359em;">g</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord mathnormal" style="margin-right:0.0278em;">r</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:3.1638em;vertical-align:-1.4138em;"></span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0278em;">r</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8641em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mtight">3</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size4">(</span></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0278em;">D</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.05em;"><span style="top:-1.8723em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0572em;">j</span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.4138em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0359em;">g</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0572em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0572em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size4">)</span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">.</span></span></span></span></span></div>
+<p>第一项来自 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>y</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">y_i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0359em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> 对当前 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>x</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">x_i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> 的直接依赖，第二项来自所有输出共同使用的均方根。反向公式通过 <code>register_autograd</code> 注册，使用 PyTorch 运算实现；示例将其与原始 PyTorch 表达式的一阶梯度比较。模型前向仍在 inference mode 中运行，注册反向不会把推理实验变成训练任务。</p>
+<p>下面先给出 CUDA 行归约及算子注册。Triton 编译函数按需创建并缓存；fake 实现与真实实现采用相同的元数据约定。完整程序还包含依赖检查、输入拒绝测试和模型替换测试。</p>
+<!-- source-check: ../examples/registered_rmsnorm.py -->
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1"><span class="hljs-meta">@lru_cache(<span class="hljs-params">maxsize=<span class="hljs-number">1</span></span>)</span></span>
+<span class="code-line" data-line="2"><span class="hljs-keyword">def</span> <span class="hljs-title function_">_triton_kernel</span>():</span>
+<span class="code-line" data-line="3">    <span class="hljs-comment"># Lazy module globals let Triton&#x27;s JIT resolve tl names from function globals.</span></span>
+<span class="code-line" data-line="4">    <span class="hljs-keyword">global</span> triton, tl</span>
+<span class="code-line" data-line="5">    <span class="hljs-keyword">import</span> importlib</span>
+<span class="code-line" data-line="6">    triton = importlib.import_module(<span class="hljs-string">&quot;triton&quot;</span>)</span>
+<span class="code-line" data-line="7">    tl = importlib.import_module(<span class="hljs-string">&quot;triton.language&quot;</span>)</span>
+<span class="code-line" data-line="8"></span>
+<span class="code-line" data-line="9"><span class="hljs-meta">    @triton.jit</span></span>
+<span class="code-line" data-line="10">    <span class="hljs-keyword">def</span> <span class="hljs-title function_">kernel</span>(<span class="hljs-params">X, Y, COLS: tl.constexpr, EPS: tl.constexpr, BLOCK: tl.constexpr</span>):</span>
+<span class="code-line" data-line="11">        row = tl.program_id(<span class="hljs-number">0</span>)</span>
+<span class="code-line" data-line="12">        col = tl.arange(<span class="hljs-number">0</span>, BLOCK)</span>
+<span class="code-line" data-line="13">        mask = col &lt; COLS</span>
+<span class="code-line" data-line="14">        value = tl.load(X + row * COLS + col, mask=mask, other=<span class="hljs-number">0.0</span>)</span>
+<span class="code-line" data-line="15">        mean_square = tl.<span class="hljs-built_in">sum</span>(value * value, axis=<span class="hljs-number">0</span>) / COLS</span>
+<span class="code-line" data-line="16">        scale = tl.rsqrt(mean_square + EPS)</span>
+<span class="code-line" data-line="17">        tl.store(Y + row * COLS + col, value * scale, mask=mask)</span>
+<span class="code-line" data-line="18">    <span class="hljs-keyword">return</span> kernel</span></code></pre></div>
+<!-- source-check: ../examples/registered_rmsnorm.py -->
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1"><span class="hljs-keyword">def</span> <span class="hljs-title function_">_register</span>(<span class="hljs-params">torch_module</span>):</span>
+<span class="code-line" data-line="2">    <span class="hljs-keyword">global</span> torch, _OP</span>
+<span class="code-line" data-line="3">    torch = torch_module</span>
+<span class="code-line" data-line="4"></span>
+<span class="code-line" data-line="5"><span class="hljs-meta">    @torch.library.custom_op(<span class="hljs-params"><span class="hljs-string">&quot;aiinffra::rms_norm_f32&quot;</span>, mutates_args=(<span class="hljs-params"></span>)</span>)</span></span>
+<span class="code-line" data-line="6">    <span class="hljs-keyword">def</span> <span class="hljs-title function_">implementation</span>(<span class="hljs-params">x: torch.Tensor, eps: <span class="hljs-built_in">float</span></span>) -&gt; torch.Tensor:</span>
+<span class="code-line" data-line="7">        _validate(x, eps)</span>
+<span class="code-line" data-line="8">        y = torch.empty(x.shape, dtype=x.dtype, device=x.device)</span>
+<span class="code-line" data-line="9">        <span class="hljs-keyword">if</span> x.shape[<span class="hljs-number">0</span>] == <span class="hljs-number">0</span>:</span>
+<span class="code-line" data-line="10">            <span class="hljs-keyword">return</span> y</span>
+<span class="code-line" data-line="11">        <span class="hljs-keyword">if</span> x.device.<span class="hljs-built_in">type</span> == <span class="hljs-string">&quot;cpu&quot;</span>:</span>
+<span class="code-line" data-line="12">            mean_square = (x * x).<span class="hljs-built_in">sum</span>(dim=<span class="hljs-number">1</span>, keepdim=<span class="hljs-literal">True</span>) / x.shape[<span class="hljs-number">1</span>]</span>
+<span class="code-line" data-line="13">            y.copy_(x * torch.rsqrt(mean_square + eps))</span>
+<span class="code-line" data-line="14">            <span class="hljs-keyword">return</span> y</span>
+<span class="code-line" data-line="15">        <span class="hljs-comment"># Tensor.data_ptr() includes storage_offset; guard the tensor&#x27;s device.</span></span>
+<span class="code-line" data-line="16">        <span class="hljs-keyword">with</span> torch.cuda.device(x.device):</span>
+<span class="code-line" data-line="17">            _triton_kernel()[(x.shape[<span class="hljs-number">0</span>],)](</span>
+<span class="code-line" data-line="18">                x, y, COLS=x.shape[<span class="hljs-number">1</span>], EPS=eps,</span>
+<span class="code-line" data-line="19">                BLOCK=triton.next_power_of_2(x.shape[<span class="hljs-number">1</span>]),</span>
+<span class="code-line" data-line="20">            )</span>
+<span class="code-line" data-line="21">        <span class="hljs-keyword">return</span> y</span>
+<span class="code-line" data-line="22"></span>
+<span class="code-line" data-line="23"><span class="hljs-meta">    @torch.library.register_fake(<span class="hljs-params"><span class="hljs-string">&quot;aiinffra::rms_norm_f32&quot;</span></span>)</span></span>
+<span class="code-line" data-line="24">    <span class="hljs-keyword">def</span> <span class="hljs-title function_">fake</span>(<span class="hljs-params">x, eps: <span class="hljs-built_in">float</span></span>):</span>
+<span class="code-line" data-line="25">        torch._check(x.ndim == <span class="hljs-number">2</span>)</span>
+<span class="code-line" data-line="26">        torch._check(x.dtype == torch.float32)</span>
+<span class="code-line" data-line="27">        torch._check(x.device.<span class="hljs-built_in">type</span> <span class="hljs-keyword">in</span> (<span class="hljs-string">&quot;cpu&quot;</span>, <span class="hljs-string">&quot;cuda&quot;</span>))</span>
+<span class="code-line" data-line="28">        torch._check(x.shape[<span class="hljs-number">1</span>] &gt;= <span class="hljs-number">1</span>)</span>
+<span class="code-line" data-line="29">        torch._check(x.shape[<span class="hljs-number">1</span>] &lt;= <span class="hljs-number">4096</span>)</span>
+<span class="code-line" data-line="30">        torch._check(x.is_contiguous())</span>
+<span class="code-line" data-line="31">        torch._check(math.isfinite(eps) <span class="hljs-keyword">and</span> eps &gt; <span class="hljs-number">0</span>)</span>
+<span class="code-line" data-line="32">        <span class="hljs-keyword">return</span> torch.empty(x.shape, dtype=x.dtype, device=x.device)</span>
+<span class="code-line" data-line="33"></span>
+<span class="code-line" data-line="34">    <span class="hljs-keyword">def</span> <span class="hljs-title function_">setup_context</span>(<span class="hljs-params">ctx, inputs, output</span>):</span>
+<span class="code-line" data-line="35">        x, eps = inputs</span>
+<span class="code-line" data-line="36">        ctx.save_for_backward(x)</span>
+<span class="code-line" data-line="37">        ctx.eps = eps</span>
+<span class="code-line" data-line="38"></span>
+<span class="code-line" data-line="39">    <span class="hljs-keyword">def</span> <span class="hljs-title function_">backward</span>(<span class="hljs-params">ctx, grad</span>):</span>
+<span class="code-line" data-line="40">        (x,) = ctx.saved_tensors</span>
+<span class="code-line" data-line="41">        r = torch.rsqrt((x * x).mean(dim=<span class="hljs-number">1</span>, keepdim=<span class="hljs-literal">True</span>) + ctx.eps)</span>
+<span class="code-line" data-line="42">        projection = (grad * x).mean(dim=<span class="hljs-number">1</span>, keepdim=<span class="hljs-literal">True</span>)</span>
+<span class="code-line" data-line="43">        <span class="hljs-keyword">return</span> grad * r - x * r.<span class="hljs-built_in">pow</span>(<span class="hljs-number">3</span>) * projection, <span class="hljs-literal">None</span></span>
+<span class="code-line" data-line="44"></span>
+<span class="code-line" data-line="45">    implementation.register_autograd(backward, setup_context=setup_context)</span>
+<span class="code-line" data-line="46">    _OP = implementation</span>
+<span class="code-line" data-line="47">    <span class="hljs-keyword">return</span> implementation</span></code></pre></div>
+<p>这里的 <code>_validate</code> 检查支持的输入范围；<code>_OP</code> 保存注册后可调用的算子。CPU 与 CUDA 分支都返回新张量。<code>setup_context</code> 保存反向所需的输入和 epsilon，<code>backward</code> 对应上面的梯度公式。</p>
+<h3 id="63-接口检查数值检查与编译检查">6.3 接口检查、数值检查与编译检查<a class="heading-anchor" href="#63-%E6%8E%A5%E5%8F%A3%E6%A3%80%E6%9F%A5%E6%95%B0%E5%80%BC%E6%A3%80%E6%9F%A5%E4%B8%8E%E7%BC%96%E8%AF%91%E6%A3%80%E6%9F%A5" aria-label="链接到6.3 接口检查、数值检查与编译检查">#</a></h3>
+<p>以下几种检查分别回答不同问题：</p>
+<table>
+<thead>
+<tr>
+<th>检查</th>
+<th>验证内容</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>与 PyTorch 参考比较</td>
+<td>输出值、形状、类型和误差是否正确</td>
+</tr>
+<tr>
+<td>非连续输入、越界列数、错误 dtype/epsilon</td>
+<td>不支持的输入是否明确拒绝</td>
+</tr>
+<tr>
+<td><code>torch.library.opcheck</code></td>
+<td>算子注册、修改/别名声明、FakeTensor 和编译组合是否符合框架要求</td>
+</tr>
+<tr>
+<td>独立梯度比较</td>
+<td>注册的一阶梯度是否与原表达式一致</td>
+</tr>
+<tr>
+<td><code>torch.compile(fullgraph=True)</code></td>
+<td>当前测试调用是否能够完整捕获，避免静默退回 Python 片段</td>
+</tr>
+<tr>
+<td>模型整段、逐 token、分 chunk 对照</td>
+<td>替换后 logits、位置与 cache 数据流是否保持一致</td>
+</tr>
+</tbody></table>
+<p><code>opcheck</code> 不证明数学公式正确，也不证明 kernel 更快；一次 <code>fullgraph=True</code> 成功也不证明所有动态形状都不会重新编译。示例的 CPU <code>aot_eager</code> 后端用于检查图组合，不提供 GPU 融合或加速证据。CUDA 环境的 Inductor 路径需要在服务器实际执行。</p>
+<p>这里选择 <code>custom_op</code> 是为了明确展示接口、fake 实现和后端分支。它对 <code>torch.compile</code> 是不透明调用，编译器不能据此融合算子内部的 Triton 计算。若希望编译器继续分析 Triton 实现，可采用 <code>torch.library.triton_op</code> 与 <code>wrap_triton</code>；两者的接口用途与限制见 <a href="https://docs.pytorch.org/tutorials/recipes/torch_compile_user_defined_triton_kernel_tutorial.html">PyTorch 自定义 Triton 算子教程</a>。算子注册的检查语义见 <a href="https://docs.pytorch.org/docs/stable/library.html">torch.library</a>。</p>
+<h3 id="64-在同一模型中替换和测量">6.4 在同一模型中替换和测量<a class="heading-anchor" href="#64-%E5%9C%A8%E5%90%8C%E4%B8%80%E6%A8%A1%E5%9E%8B%E4%B8%AD%E6%9B%BF%E6%8D%A2%E5%92%8C%E6%B5%8B%E9%87%8F" aria-label="链接到6.4 在同一模型中替换和测量">#</a></h3>
+<p>模型的 Norm 输入为 <code>[B,S,D]</code>。适配函数先确认连续布局，再展平成 <code>[BS,D]</code>，调用注册算子，最后恢复原形状；它不隐式复制非连续输入。示例复用本章相同权重和 token，分别比较整段输入、逐 token cache 和两段 Prefill 的输出。</p>
+<p>在模型测试通过后，再分别测量单个 Norm 调用与完整模型前向。注册、首次 JIT 编译及编译器捕获不进入稳态计时；输出分配和框架调用开销则保留在两种实现的完整调用中。模型中其他算子、cache 复制与 Python 调度也计入模型时间，所以单个 Norm 的收益不会直接等于模型收益。</p>
+<p>从仓库根目录运行，环境需要 PyTorch 2.4 或更高版本；CUDA 分支另需匹配的 GPU、驱动和 Triton。缺少依赖或设备时返回 77，运行或校验失败时返回非零错误，只有实际执行全部检查后才输出通过信息。</p>
+<div class="code-panel"><div class="code-caption"><span>BASH</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-bash"><span class="code-line" data-line="1">python roadmap/curriculum/model-analysis/examples/registered_rmsnorm.py --<span class="hljs-built_in">help</span></span>
+<span class="code-line" data-line="2">python roadmap/curriculum/model-analysis/examples/registered_rmsnorm.py --device cpu</span>
+<span class="code-line" data-line="3">python roadmap/curriculum/model-analysis/examples/registered_rmsnorm.py --device cuda --compile-backend inductor</span>
+<span class="code-line" data-line="4">python roadmap/curriculum/model-analysis/examples/registered_rmsnorm.py --device cuda --compile-backend inductor --benchmark</span></code></pre></div>
+<table>
+<thead>
+<tr>
+<th>设备 / PyTorch / Triton</th>
+<th>接口与数值检查</th>
+<th>一阶梯度检查</th>
+<th>fullgraph 后端与结果</th>
+<th>模型三种输入方式</th>
+<th>Norm 参考 / 替换 ms</th>
+<th>模型参考 / 替换 ms</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+</tbody></table>
+<details>
+<summary>完整程序：注册 RMSNorm、校验、模型替换与计时</summary><!-- source-check: ../examples/registered_rmsnorm.py -->
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1"><span class="hljs-string">&quot;&quot;&quot;Functional FP32 RMSNorm custom op and MiniTransformer replacement checks.&quot;&quot;&quot;</span></span>
+<span class="code-line" data-line="2"><span class="hljs-keyword">from</span> __future__ <span class="hljs-keyword">import</span> annotations</span>
+<span class="code-line" data-line="3"></span>
+<span class="code-line" data-line="4"><span class="hljs-keyword">import</span> argparse</span>
+<span class="code-line" data-line="5"><span class="hljs-keyword">from</span> functools <span class="hljs-keyword">import</span> lru_cache</span>
+<span class="code-line" data-line="6"><span class="hljs-keyword">import</span> math</span>
+<span class="code-line" data-line="7"><span class="hljs-keyword">import</span> time</span>
+<span class="code-line" data-line="8"></span>
+<span class="code-line" data-line="9">torch = <span class="hljs-literal">None</span></span>
+<span class="code-line" data-line="10">_OP = <span class="hljs-literal">None</span></span>
+<span class="code-line" data-line="11"></span>
+<span class="code-line" data-line="12"></span>
+<span class="code-line" data-line="13"><span class="hljs-meta">@lru_cache(<span class="hljs-params">maxsize=<span class="hljs-number">1</span></span>)</span></span>
+<span class="code-line" data-line="14"><span class="hljs-keyword">def</span> <span class="hljs-title function_">_triton_kernel</span>():</span>
+<span class="code-line" data-line="15">    <span class="hljs-comment"># Lazy module globals let Triton&#x27;s JIT resolve tl names from function globals.</span></span>
+<span class="code-line" data-line="16">    <span class="hljs-keyword">global</span> triton, tl</span>
+<span class="code-line" data-line="17">    <span class="hljs-keyword">import</span> importlib</span>
+<span class="code-line" data-line="18">    triton = importlib.import_module(<span class="hljs-string">&quot;triton&quot;</span>)</span>
+<span class="code-line" data-line="19">    tl = importlib.import_module(<span class="hljs-string">&quot;triton.language&quot;</span>)</span>
+<span class="code-line" data-line="20"></span>
+<span class="code-line" data-line="21"><span class="hljs-meta">    @triton.jit</span></span>
+<span class="code-line" data-line="22">    <span class="hljs-keyword">def</span> <span class="hljs-title function_">kernel</span>(<span class="hljs-params">X, Y, COLS: tl.constexpr, EPS: tl.constexpr, BLOCK: tl.constexpr</span>):</span>
+<span class="code-line" data-line="23">        row = tl.program_id(<span class="hljs-number">0</span>)</span>
+<span class="code-line" data-line="24">        col = tl.arange(<span class="hljs-number">0</span>, BLOCK)</span>
+<span class="code-line" data-line="25">        mask = col &lt; COLS</span>
+<span class="code-line" data-line="26">        value = tl.load(X + row * COLS + col, mask=mask, other=<span class="hljs-number">0.0</span>)</span>
+<span class="code-line" data-line="27">        mean_square = tl.<span class="hljs-built_in">sum</span>(value * value, axis=<span class="hljs-number">0</span>) / COLS</span>
+<span class="code-line" data-line="28">        scale = tl.rsqrt(mean_square + EPS)</span>
+<span class="code-line" data-line="29">        tl.store(Y + row * COLS + col, value * scale, mask=mask)</span>
+<span class="code-line" data-line="30">    <span class="hljs-keyword">return</span> kernel</span>
+<span class="code-line" data-line="31"></span>
+<span class="code-line" data-line="32"></span>
+<span class="code-line" data-line="33"><span class="hljs-keyword">def</span> <span class="hljs-title function_">_validate</span>(<span class="hljs-params">x, eps</span>):</span>
+<span class="code-line" data-line="34">    <span class="hljs-keyword">if</span> <span class="hljs-keyword">not</span> <span class="hljs-built_in">isinstance</span>(x, torch.Tensor):</span>
+<span class="code-line" data-line="35">        <span class="hljs-keyword">raise</span> TypeError(<span class="hljs-string">&quot;x must be a torch.Tensor&quot;</span>)</span>
+<span class="code-line" data-line="36">    <span class="hljs-keyword">if</span> x.ndim != <span class="hljs-number">2</span>:</span>
+<span class="code-line" data-line="37">        <span class="hljs-keyword">raise</span> ValueError(<span class="hljs-string">&quot;x must have shape [rows, cols]&quot;</span>)</span>
+<span class="code-line" data-line="38">    <span class="hljs-keyword">if</span> x.dtype != torch.float32:</span>
+<span class="code-line" data-line="39">        <span class="hljs-keyword">raise</span> TypeError(<span class="hljs-string">&quot;only torch.float32 is supported&quot;</span>)</span>
+<span class="code-line" data-line="40">    <span class="hljs-keyword">if</span> x.device.<span class="hljs-built_in">type</span> <span class="hljs-keyword">not</span> <span class="hljs-keyword">in</span> (<span class="hljs-string">&quot;cpu&quot;</span>, <span class="hljs-string">&quot;cuda&quot;</span>):</span>
+<span class="code-line" data-line="41">        <span class="hljs-keyword">raise</span> ValueError(<span class="hljs-string">&quot;only CPU and CUDA devices are supported&quot;</span>)</span>
+<span class="code-line" data-line="42">    <span class="hljs-keyword">if</span> <span class="hljs-keyword">not</span> x.is_contiguous():</span>
+<span class="code-line" data-line="43">        <span class="hljs-keyword">raise</span> ValueError(<span class="hljs-string">&quot;x must be contiguous&quot;</span>)</span>
+<span class="code-line" data-line="44">    <span class="hljs-keyword">if</span> <span class="hljs-keyword">not</span> <span class="hljs-number">1</span> &lt;= x.shape[<span class="hljs-number">1</span>] &lt;= <span class="hljs-number">4096</span>:</span>
+<span class="code-line" data-line="45">        <span class="hljs-keyword">raise</span> ValueError(<span class="hljs-string">&quot;cols must be in [1, 4096]&quot;</span>)</span>
+<span class="code-line" data-line="46">    <span class="hljs-keyword">if</span> <span class="hljs-keyword">not</span> math.isfinite(eps) <span class="hljs-keyword">or</span> eps &lt;= <span class="hljs-number">0</span>:</span>
+<span class="code-line" data-line="47">        <span class="hljs-keyword">raise</span> ValueError(<span class="hljs-string">&quot;eps must be finite and positive&quot;</span>)</span>
+<span class="code-line" data-line="48"></span>
+<span class="code-line" data-line="49"></span>
+<span class="code-line" data-line="50"><span class="hljs-keyword">def</span> <span class="hljs-title function_">_register</span>(<span class="hljs-params">torch_module</span>):</span>
+<span class="code-line" data-line="51">    <span class="hljs-keyword">global</span> torch, _OP</span>
+<span class="code-line" data-line="52">    torch = torch_module</span>
+<span class="code-line" data-line="53"></span>
+<span class="code-line" data-line="54"><span class="hljs-meta">    @torch.library.custom_op(<span class="hljs-params"><span class="hljs-string">&quot;aiinffra::rms_norm_f32&quot;</span>, mutates_args=(<span class="hljs-params"></span>)</span>)</span></span>
+<span class="code-line" data-line="55">    <span class="hljs-keyword">def</span> <span class="hljs-title function_">implementation</span>(<span class="hljs-params">x: torch.Tensor, eps: <span class="hljs-built_in">float</span></span>) -&gt; torch.Tensor:</span>
+<span class="code-line" data-line="56">        _validate(x, eps)</span>
+<span class="code-line" data-line="57">        y = torch.empty(x.shape, dtype=x.dtype, device=x.device)</span>
+<span class="code-line" data-line="58">        <span class="hljs-keyword">if</span> x.shape[<span class="hljs-number">0</span>] == <span class="hljs-number">0</span>:</span>
+<span class="code-line" data-line="59">            <span class="hljs-keyword">return</span> y</span>
+<span class="code-line" data-line="60">        <span class="hljs-keyword">if</span> x.device.<span class="hljs-built_in">type</span> == <span class="hljs-string">&quot;cpu&quot;</span>:</span>
+<span class="code-line" data-line="61">            mean_square = (x * x).<span class="hljs-built_in">sum</span>(dim=<span class="hljs-number">1</span>, keepdim=<span class="hljs-literal">True</span>) / x.shape[<span class="hljs-number">1</span>]</span>
+<span class="code-line" data-line="62">            y.copy_(x * torch.rsqrt(mean_square + eps))</span>
+<span class="code-line" data-line="63">            <span class="hljs-keyword">return</span> y</span>
+<span class="code-line" data-line="64">        <span class="hljs-comment"># Tensor.data_ptr() includes storage_offset; guard the tensor&#x27;s device.</span></span>
+<span class="code-line" data-line="65">        <span class="hljs-keyword">with</span> torch.cuda.device(x.device):</span>
+<span class="code-line" data-line="66">            _triton_kernel()[(x.shape[<span class="hljs-number">0</span>],)](</span>
+<span class="code-line" data-line="67">                x, y, COLS=x.shape[<span class="hljs-number">1</span>], EPS=eps,</span>
+<span class="code-line" data-line="68">                BLOCK=triton.next_power_of_2(x.shape[<span class="hljs-number">1</span>]),</span>
+<span class="code-line" data-line="69">            )</span>
+<span class="code-line" data-line="70">        <span class="hljs-keyword">return</span> y</span>
+<span class="code-line" data-line="71"></span>
+<span class="code-line" data-line="72"><span class="hljs-meta">    @torch.library.register_fake(<span class="hljs-params"><span class="hljs-string">&quot;aiinffra::rms_norm_f32&quot;</span></span>)</span></span>
+<span class="code-line" data-line="73">    <span class="hljs-keyword">def</span> <span class="hljs-title function_">fake</span>(<span class="hljs-params">x, eps: <span class="hljs-built_in">float</span></span>):</span>
+<span class="code-line" data-line="74">        torch._check(x.ndim == <span class="hljs-number">2</span>)</span>
+<span class="code-line" data-line="75">        torch._check(x.dtype == torch.float32)</span>
+<span class="code-line" data-line="76">        torch._check(x.device.<span class="hljs-built_in">type</span> <span class="hljs-keyword">in</span> (<span class="hljs-string">&quot;cpu&quot;</span>, <span class="hljs-string">&quot;cuda&quot;</span>))</span>
+<span class="code-line" data-line="77">        torch._check(x.shape[<span class="hljs-number">1</span>] &gt;= <span class="hljs-number">1</span>)</span>
+<span class="code-line" data-line="78">        torch._check(x.shape[<span class="hljs-number">1</span>] &lt;= <span class="hljs-number">4096</span>)</span>
+<span class="code-line" data-line="79">        torch._check(x.is_contiguous())</span>
+<span class="code-line" data-line="80">        torch._check(math.isfinite(eps) <span class="hljs-keyword">and</span> eps &gt; <span class="hljs-number">0</span>)</span>
+<span class="code-line" data-line="81">        <span class="hljs-keyword">return</span> torch.empty(x.shape, dtype=x.dtype, device=x.device)</span>
+<span class="code-line" data-line="82"></span>
+<span class="code-line" data-line="83">    <span class="hljs-keyword">def</span> <span class="hljs-title function_">setup_context</span>(<span class="hljs-params">ctx, inputs, output</span>):</span>
+<span class="code-line" data-line="84">        x, eps = inputs</span>
+<span class="code-line" data-line="85">        ctx.save_for_backward(x)</span>
+<span class="code-line" data-line="86">        ctx.eps = eps</span>
+<span class="code-line" data-line="87"></span>
+<span class="code-line" data-line="88">    <span class="hljs-keyword">def</span> <span class="hljs-title function_">backward</span>(<span class="hljs-params">ctx, grad</span>):</span>
+<span class="code-line" data-line="89">        (x,) = ctx.saved_tensors</span>
+<span class="code-line" data-line="90">        r = torch.rsqrt((x * x).mean(dim=<span class="hljs-number">1</span>, keepdim=<span class="hljs-literal">True</span>) + ctx.eps)</span>
+<span class="code-line" data-line="91">        projection = (grad * x).mean(dim=<span class="hljs-number">1</span>, keepdim=<span class="hljs-literal">True</span>)</span>
+<span class="code-line" data-line="92">        <span class="hljs-keyword">return</span> grad * r - x * r.<span class="hljs-built_in">pow</span>(<span class="hljs-number">3</span>) * projection, <span class="hljs-literal">None</span></span>
+<span class="code-line" data-line="93"></span>
+<span class="code-line" data-line="94">    implementation.register_autograd(backward, setup_context=setup_context)</span>
+<span class="code-line" data-line="95">    _OP = implementation</span>
+<span class="code-line" data-line="96">    <span class="hljs-keyword">return</span> implementation</span>
+<span class="code-line" data-line="97"></span>
+<span class="code-line" data-line="98"></span>
+<span class="code-line" data-line="99"><span class="hljs-keyword">def</span> <span class="hljs-title function_">rms_norm_f32</span>(<span class="hljs-params">x, eps=<span class="hljs-number">1e-6</span></span>):</span>
+<span class="code-line" data-line="100">    <span class="hljs-keyword">if</span> _OP <span class="hljs-keyword">is</span> <span class="hljs-literal">None</span>:</span>
+<span class="code-line" data-line="101">        <span class="hljs-keyword">raise</span> RuntimeError(<span class="hljs-string">&quot;custom op is not registered&quot;</span>)</span>
+<span class="code-line" data-line="102">    <span class="hljs-keyword">return</span> _OP(x, <span class="hljs-built_in">float</span>(eps))</span>
+<span class="code-line" data-line="103"></span>
+<span class="code-line" data-line="104"></span>
+<span class="code-line" data-line="105"><span class="hljs-keyword">def</span> <span class="hljs-title function_">_reference</span>(<span class="hljs-params">x, eps=<span class="hljs-number">1e-6</span></span>):</span>
+<span class="code-line" data-line="106">    <span class="hljs-keyword">return</span> x * torch.rsqrt((x * x).mean(dim=<span class="hljs-number">1</span>, keepdim=<span class="hljs-literal">True</span>) + eps)</span>
+<span class="code-line" data-line="107"></span>
+<span class="code-line" data-line="108"></span>
+<span class="code-line" data-line="109"><span class="hljs-keyword">def</span> <span class="hljs-title function_">_close</span>(<span class="hljs-params">actual, expected, label</span>):</span>
+<span class="code-line" data-line="110">    torch.testing.assert_close(actual, expected, rtol=<span class="hljs-number">1e-4</span>, atol=<span class="hljs-number">1e-4</span>)</span>
+<span class="code-line" data-line="111">    error = (actual - expected).<span class="hljs-built_in">abs</span>().<span class="hljs-built_in">max</span>().item() <span class="hljs-keyword">if</span> actual.numel() <span class="hljs-keyword">else</span> <span class="hljs-number">0.0</span></span>
+<span class="code-line" data-line="112">    <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;PASS <span class="hljs-subst">{label}</span>; max_abs=<span class="hljs-subst">{error:<span class="hljs-number">.3</span>g}</span>&quot;</span>)</span>
+<span class="code-line" data-line="113"></span>
+<span class="code-line" data-line="114"></span>
+<span class="code-line" data-line="115"><span class="hljs-keyword">def</span> <span class="hljs-title function_">_reject</span>(<span class="hljs-params">label, fn</span>):</span>
+<span class="code-line" data-line="116">    <span class="hljs-keyword">try</span>:</span>
+<span class="code-line" data-line="117">        fn()</span>
+<span class="code-line" data-line="118">    <span class="hljs-keyword">except</span> (TypeError, ValueError, RuntimeError):</span>
+<span class="code-line" data-line="119">        <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;PASS reject <span class="hljs-subst">{label}</span>&quot;</span>)</span>
+<span class="code-line" data-line="120">    <span class="hljs-keyword">else</span>:</span>
+<span class="code-line" data-line="121">        <span class="hljs-keyword">raise</span> AssertionError(<span class="hljs-string">f&quot;expected rejection: <span class="hljs-subst">{label}</span>&quot;</span>)</span>
+<span class="code-line" data-line="122"></span>
+<span class="code-line" data-line="123"></span>
+<span class="code-line" data-line="124"><span class="hljs-keyword">def</span> <span class="hljs-title function_">_check_grad</span>(<span class="hljs-params">device</span>):</span>
+<span class="code-line" data-line="125">    x = torch.randn((<span class="hljs-number">3</span>, <span class="hljs-number">65</span>), device=device, requires_grad=<span class="hljs-literal">True</span>)</span>
+<span class="code-line" data-line="126">    upstream = torch.randn_like(x)</span>
+<span class="code-line" data-line="127">    grad, = torch.autograd.grad((rms_norm_f32(x) * upstream).<span class="hljs-built_in">sum</span>(), x)</span>
+<span class="code-line" data-line="128">    x_ref = x.detach().clone().requires_grad_(<span class="hljs-literal">True</span>)</span>
+<span class="code-line" data-line="129">    expected, = torch.autograd.grad((_reference(x_ref) * upstream).<span class="hljs-built_in">sum</span>(), x_ref)</span>
+<span class="code-line" data-line="130">    _close(grad, expected, <span class="hljs-string">&quot;first-order gradient vs native PyTorch formula&quot;</span>)</span>
+<span class="code-line" data-line="131"></span>
+<span class="code-line" data-line="132"></span>
+<span class="code-line" data-line="133"><span class="hljs-keyword">def</span> <span class="hljs-title function_">_check_opcheck</span>(<span class="hljs-params">device</span>):</span>
+<span class="code-line" data-line="134">    sample = torch.randn((<span class="hljs-number">3</span>, <span class="hljs-number">65</span>), device=device, requires_grad=<span class="hljs-literal">True</span>)</span>
+<span class="code-line" data-line="135">    torch.library.opcheck(_OP, (sample, <span class="hljs-number">1e-6</span>))</span>
+<span class="code-line" data-line="136">    singleton = torch.randn((<span class="hljs-number">1</span>, <span class="hljs-number">3</span>), device=device).t()</span>
+<span class="code-line" data-line="137">    <span class="hljs-keyword">assert</span> singleton.shape == (<span class="hljs-number">3</span>, <span class="hljs-number">1</span>) <span class="hljs-keyword">and</span> singleton.is_contiguous() <span class="hljs-keyword">and</span> singleton.stride(<span class="hljs-number">1</span>) != <span class="hljs-number">1</span></span>
+<span class="code-line" data-line="138">    torch.library.opcheck(_OP, (singleton, <span class="hljs-number">1e-6</span>))</span>
+<span class="code-line" data-line="139">    _close(rms_norm_f32(singleton), _reference(singleton), <span class="hljs-string">&quot;contiguous singleton with arbitrary stride&quot;</span>)</span>
+<span class="code-line" data-line="140">    empty = torch.empty((<span class="hljs-number">0</span>, <span class="hljs-number">65</span>), device=device)</span>
+<span class="code-line" data-line="141">    torch.library.opcheck(_OP, (empty, <span class="hljs-number">1e-6</span>))</span>
+<span class="code-line" data-line="142">    <span class="hljs-built_in">print</span>(<span class="hljs-string">&quot;PASS opcheck registration contract (not a numerical/gradient proof)&quot;</span>)</span>
+<span class="code-line" data-line="143"></span>
+<span class="code-line" data-line="144"></span>
+<span class="code-line" data-line="145"><span class="hljs-keyword">def</span> <span class="hljs-title function_">_check_compile</span>(<span class="hljs-params">device, backend</span>):</span>
+<span class="code-line" data-line="146">    <span class="hljs-comment"># custom_op is opaque inside torch.compile: fullgraph checks graph-boundary</span></span>
+<span class="code-line" data-line="147">    <span class="hljs-comment"># composition, not fusion through this op. triton_op/wrap_triton is PyTorch&#x27;s</span></span>
+<span class="code-line" data-line="148">    <span class="hljs-comment"># compiler-visible Triton route; this example intentionally does not dual-implement it.</span></span>
+<span class="code-line" data-line="149">    x = torch.randn((<span class="hljs-number">3</span>, <span class="hljs-number">65</span>), device=device)</span>
+<span class="code-line" data-line="150">    compiled = torch.<span class="hljs-built_in">compile</span>(<span class="hljs-keyword">lambda</span> value: rms_norm_f32(value), backend=backend, fullgraph=<span class="hljs-literal">True</span>)</span>
+<span class="code-line" data-line="151">    _close(compiled(x), _reference(x), <span class="hljs-string">f&quot;torch.compile fullgraph backend=<span class="hljs-subst">{backend}</span>&quot;</span>)</span>
+<span class="code-line" data-line="152">    <span class="hljs-keyword">if</span> device.<span class="hljs-built_in">type</span> == <span class="hljs-string">&quot;cpu&quot;</span> <span class="hljs-keyword">and</span> backend == <span class="hljs-string">&quot;aot_eager&quot;</span>:</span>
+<span class="code-line" data-line="153">        <span class="hljs-built_in">print</span>(<span class="hljs-string">&quot;NOTE CPU aot_eager checks graph composition only; no fusion/speed claim.&quot;</span>)</span>
+<span class="code-line" data-line="154"></span>
+<span class="code-line" data-line="155"></span>
+<span class="code-line" data-line="156"><span class="hljs-keyword">def</span> <span class="hljs-title function_">_model_norm</span>(<span class="hljs-params">x</span>):</span>
+<span class="code-line" data-line="157">    <span class="hljs-keyword">if</span> <span class="hljs-keyword">not</span> x.is_contiguous():</span>
+<span class="code-line" data-line="158">        <span class="hljs-keyword">raise</span> ValueError(<span class="hljs-string">&quot;MiniTransformer norm input must be contiguous; reshape would copy&quot;</span>)</span>
+<span class="code-line" data-line="159">    shape = x.shape</span>
+<span class="code-line" data-line="160">    <span class="hljs-keyword">return</span> rms_norm_f32(x.reshape(-<span class="hljs-number">1</span>, shape[-<span class="hljs-number">1</span>])).reshape(shape)</span>
+<span class="code-line" data-line="161"></span>
+<span class="code-line" data-line="162"></span>
+<span class="code-line" data-line="163"><span class="hljs-keyword">def</span> <span class="hljs-title function_">_check_model</span>(<span class="hljs-params">device</span>):</span>
+<span class="code-line" data-line="164">    <span class="hljs-comment"># TorchMini converts the exact same NumPy MiniTransformer weights to FP32.</span></span>
+<span class="code-line" data-line="165">    <span class="hljs-keyword">from</span> mini_transformer <span class="hljs-keyword">import</span> MiniTransformer</span>
+<span class="code-line" data-line="166">    <span class="hljs-keyword">from</span> torch_reference <span class="hljs-keyword">import</span> TorchMini</span>
+<span class="code-line" data-line="167">    <span class="hljs-keyword">import</span> numpy <span class="hljs-keyword">as</span> np</span>
+<span class="code-line" data-line="168">    base = MiniTransformer(seed=<span class="hljs-number">5</span>)</span>
+<span class="code-line" data-line="169">    model = TorchMini(base, device)</span>
+<span class="code-line" data-line="170">    ids = torch.tensor([[<span class="hljs-number">1</span>, <span class="hljs-number">3</span>, <span class="hljs-number">7</span>, <span class="hljs-number">8</span>, <span class="hljs-number">2</span>, <span class="hljs-number">4</span>, <span class="hljs-number">9</span>], [<span class="hljs-number">9</span>, <span class="hljs-number">2</span>, <span class="hljs-number">5</span>, <span class="hljs-number">6</span>, <span class="hljs-number">1</span>, <span class="hljs-number">0</span>, <span class="hljs-number">3</span>]], device=device)</span>
+<span class="code-line" data-line="171">    baseline, _ = model.forward(ids)</span>
+<span class="code-line" data-line="172">    replaced, _ = model.forward(ids, norm_fn=_model_norm)</span>
+<span class="code-line" data-line="173">    _close(replaced, baseline, <span class="hljs-string">&quot;MiniTransformer full logits&quot;</span>)</span>
+<span class="code-line" data-line="174"></span>
+<span class="code-line" data-line="175">    ref_cache = new_cache = <span class="hljs-literal">None</span></span>
+<span class="code-line" data-line="176">    ref_tokens, new_tokens = [], []</span>
+<span class="code-line" data-line="177">    <span class="hljs-keyword">for</span> i <span class="hljs-keyword">in</span> <span class="hljs-built_in">range</span>(ids.shape[<span class="hljs-number">1</span>]):</span>
+<span class="code-line" data-line="178">        out, ref_cache = model.forward(ids[:, i:i + <span class="hljs-number">1</span>], ref_cache)</span>
+<span class="code-line" data-line="179">        new, new_cache = model.forward(ids[:, i:i + <span class="hljs-number">1</span>], new_cache, norm_fn=_model_norm)</span>
+<span class="code-line" data-line="180">        ref_tokens.append(out); new_tokens.append(new)</span>
+<span class="code-line" data-line="181">    _close(torch.cat(new_tokens, <span class="hljs-number">1</span>), torch.cat(ref_tokens, <span class="hljs-number">1</span>), <span class="hljs-string">&quot;per-token cache logits&quot;</span>)</span>
+<span class="code-line" data-line="182"></span>
+<span class="code-line" data-line="183">    ref_cache = new_cache = <span class="hljs-literal">None</span></span>
+<span class="code-line" data-line="184">    ref_chunks, new_chunks = [], []</span>
+<span class="code-line" data-line="185">    <span class="hljs-keyword">for</span> start, end <span class="hljs-keyword">in</span> ((<span class="hljs-number">0</span>, <span class="hljs-number">3</span>), (<span class="hljs-number">3</span>, ids.shape[<span class="hljs-number">1</span>])):</span>
+<span class="code-line" data-line="186">        out, ref_cache = model.forward(ids[:, start:end], ref_cache)</span>
+<span class="code-line" data-line="187">        new, new_cache = model.forward(ids[:, start:end], new_cache, norm_fn=_model_norm)</span>
+<span class="code-line" data-line="188">        ref_chunks.append(out); new_chunks.append(new)</span>
+<span class="code-line" data-line="189">    _close(torch.cat(new_chunks, <span class="hljs-number">1</span>), torch.cat(ref_chunks, <span class="hljs-number">1</span>), <span class="hljs-string">&quot;chunked-prefill cache logits&quot;</span>)</span>
+<span class="code-line" data-line="190"></span>
+<span class="code-line" data-line="191">    numpy_logits, _ = base.forward(ids.cpu().numpy())</span>
+<span class="code-line" data-line="192">    <span class="hljs-comment"># NumPy reference accumulates FP64; compare values with an explicit tolerance,</span></span>
+<span class="code-line" data-line="193">    <span class="hljs-comment"># without casting it or weakening dtype checks for the FP32 operator tests.</span></span>
+<span class="code-line" data-line="194">    np.testing.assert_allclose(baseline.cpu().numpy(), numpy_logits, rtol=<span class="hljs-number">1e-4</span>, atol=<span class="hljs-number">1e-4</span>)</span>
+<span class="code-line" data-line="195">    <span class="hljs-built_in">print</span>(<span class="hljs-string">&quot;PASS MiniTransformer full/token/chunk paths; shared weights and tokens&quot;</span>)</span>
+<span class="code-line" data-line="196">    <span class="hljs-keyword">return</span> model, ids</span>
+<span class="code-line" data-line="197"></span>
+<span class="code-line" data-line="198"></span>
+<span class="code-line" data-line="199"><span class="hljs-keyword">def</span> <span class="hljs-title function_">_measure</span>(<span class="hljs-params">fn, device, repeats=<span class="hljs-number">30</span></span>):</span>
+<span class="code-line" data-line="200">    <span class="hljs-keyword">for</span> _ <span class="hljs-keyword">in</span> <span class="hljs-built_in">range</span>(<span class="hljs-number">5</span>):</span>
+<span class="code-line" data-line="201">        fn()</span>
+<span class="code-line" data-line="202">    <span class="hljs-keyword">if</span> device.<span class="hljs-built_in">type</span> == <span class="hljs-string">&quot;cuda&quot;</span>:</span>
+<span class="code-line" data-line="203">        torch.cuda.synchronize(device)</span>
+<span class="code-line" data-line="204">        start, end = torch.cuda.Event(enable_timing=<span class="hljs-literal">True</span>), torch.cuda.Event(enable_timing=<span class="hljs-literal">True</span>)</span>
+<span class="code-line" data-line="205">        start.record()</span>
+<span class="code-line" data-line="206">        <span class="hljs-keyword">for</span> _ <span class="hljs-keyword">in</span> <span class="hljs-built_in">range</span>(repeats): fn()</span>
+<span class="code-line" data-line="207">        end.record(); end.synchronize()</span>
+<span class="code-line" data-line="208">        <span class="hljs-keyword">return</span> start.elapsed_time(end) / repeats</span>
+<span class="code-line" data-line="209">    start = time.perf_counter()</span>
+<span class="code-line" data-line="210">    <span class="hljs-keyword">for</span> _ <span class="hljs-keyword">in</span> <span class="hljs-built_in">range</span>(repeats): fn()</span>
+<span class="code-line" data-line="211">    <span class="hljs-keyword">return</span> (time.perf_counter() - start) * <span class="hljs-number">1000</span> / repeats</span>
+<span class="code-line" data-line="212"></span>
+<span class="code-line" data-line="213"></span>
+<span class="code-line" data-line="214"><span class="hljs-keyword">def</span> <span class="hljs-title function_">_benchmark</span>(<span class="hljs-params">device, model, ids</span>):</span>
+<span class="code-line" data-line="215">    x = torch.randn((<span class="hljs-number">512</span>, <span class="hljs-number">128</span>), device=device)</span>
+<span class="code-line" data-line="216">    ref_ms = _measure(<span class="hljs-keyword">lambda</span>: _reference(x), device)</span>
+<span class="code-line" data-line="217">    op_ms = _measure(<span class="hljs-keyword">lambda</span>: rms_norm_f32(x), device)</span>
+<span class="code-line" data-line="218">    model_ref = _measure(<span class="hljs-keyword">lambda</span>: model.forward(ids), device, <span class="hljs-number">10</span>)</span>
+<span class="code-line" data-line="219">    model_op = _measure(<span class="hljs-keyword">lambda</span>: model.forward(ids, norm_fn=_model_norm), device, <span class="hljs-number">10</span>)</span>
+<span class="code-line" data-line="220">    <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;device=<span class="hljs-subst">{device}</span> FP32; RMS rows=512 cols=128 repeats=30&quot;</span>)</span>
+<span class="code-line" data-line="221">    <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;steady reference mean_ms=<span class="hljs-subst">{ref_ms:<span class="hljs-number">.6</span>f}</span>; registered mean_ms=<span class="hljs-subst">{op_ms:<span class="hljs-number">.6</span>f}</span>&quot;</span>)</span>
+<span class="code-line" data-line="222">    <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;model reference mean_ms=<span class="hljs-subst">{model_ref:<span class="hljs-number">.6</span>f}</span>; registered mean_ms=<span class="hljs-subst">{model_op:<span class="hljs-number">.6</span>f}</span>&quot;</span>)</span>
+<span class="code-line" data-line="223">    <span class="hljs-built_in">print</span>(<span class="hljs-string">&quot;NOTE local shape/device only; no speedup is inferred or generalized.&quot;</span>)</span>
+<span class="code-line" data-line="224"></span>
+<span class="code-line" data-line="225"></span>
+<span class="code-line" data-line="226"><span class="hljs-keyword">def</span> <span class="hljs-title function_">_parser</span>():</span>
+<span class="code-line" data-line="227">    parser = argparse.ArgumentParser(description=__doc__)</span>
+<span class="code-line" data-line="228">    parser.add_argument(<span class="hljs-string">&quot;--device&quot;</span>, choices=(<span class="hljs-string">&quot;cpu&quot;</span>, <span class="hljs-string">&quot;cuda&quot;</span>), default=<span class="hljs-string">&quot;cpu&quot;</span>)</span>
+<span class="code-line" data-line="229">    parser.add_argument(<span class="hljs-string">&quot;--compile-backend&quot;</span>, choices=(<span class="hljs-string">&quot;aot_eager&quot;</span>, <span class="hljs-string">&quot;inductor&quot;</span>), default=<span class="hljs-literal">None</span>,</span>
+<span class="code-line" data-line="230">                        <span class="hljs-built_in">help</span>=<span class="hljs-string">&quot;default: CPU aot_eager (graph only), CUDA inductor&quot;</span>)</span>
+<span class="code-line" data-line="231">    parser.add_argument(<span class="hljs-string">&quot;--benchmark&quot;</span>, action=<span class="hljs-string">&quot;store_true&quot;</span>, <span class="hljs-built_in">help</span>=<span class="hljs-string">&quot;time the actual local device after warmup&quot;</span>)</span>
+<span class="code-line" data-line="232">    <span class="hljs-keyword">return</span> parser</span>
+<span class="code-line" data-line="233"></span>
+<span class="code-line" data-line="234"></span>
+<span class="code-line" data-line="235"><span class="hljs-keyword">def</span> <span class="hljs-title function_">main</span>(<span class="hljs-params">argv=<span class="hljs-literal">None</span></span>):</span>
+<span class="code-line" data-line="236">    args = _parser().parse_args(argv)  <span class="hljs-comment"># --help completes before torch is imported.</span></span>
+<span class="code-line" data-line="237">    <span class="hljs-keyword">try</span>:</span>
+<span class="code-line" data-line="238">        <span class="hljs-keyword">import</span> torch <span class="hljs-keyword">as</span> torch_module</span>
+<span class="code-line" data-line="239">    <span class="hljs-keyword">except</span> ImportError <span class="hljs-keyword">as</span> exc:</span>
+<span class="code-line" data-line="240">        <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;SKIP: PyTorch unavailable: <span class="hljs-subst">{exc}</span>&quot;</span>)</span>
+<span class="code-line" data-line="241">        <span class="hljs-keyword">return</span> <span class="hljs-number">77</span></span>
+<span class="code-line" data-line="242">    <span class="hljs-keyword">if</span> args.device == <span class="hljs-string">&quot;cuda&quot;</span>:</span>
+<span class="code-line" data-line="243">        <span class="hljs-keyword">if</span> <span class="hljs-keyword">not</span> torch_module.cuda.is_available():</span>
+<span class="code-line" data-line="244">            <span class="hljs-built_in">print</span>(<span class="hljs-string">&quot;SKIP: CUDA runtime/device unavailable&quot;</span>)</span>
+<span class="code-line" data-line="245">            <span class="hljs-keyword">return</span> <span class="hljs-number">77</span></span>
+<span class="code-line" data-line="246">        <span class="hljs-keyword">try</span>:</span>
+<span class="code-line" data-line="247">            _triton_kernel()  <span class="hljs-comment"># Import/JIT decoration only; no kernel compile or launch here.</span></span>
+<span class="code-line" data-line="248">        <span class="hljs-keyword">except</span> ImportError <span class="hljs-keyword">as</span> exc:</span>
+<span class="code-line" data-line="249">            <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;SKIP: Triton unavailable: <span class="hljs-subst">{exc}</span>&quot;</span>)</span>
+<span class="code-line" data-line="250">            <span class="hljs-keyword">return</span> <span class="hljs-number">77</span></span>
+<span class="code-line" data-line="251"></span>
+<span class="code-line" data-line="252">    _register(torch_module)</span>
+<span class="code-line" data-line="253">    device = torch.device(args.device)</span>
+<span class="code-line" data-line="254">    backend = args.compile_backend <span class="hljs-keyword">or</span> (<span class="hljs-string">&quot;aot_eager&quot;</span> <span class="hljs-keyword">if</span> args.device == <span class="hljs-string">&quot;cpu&quot;</span> <span class="hljs-keyword">else</span> <span class="hljs-string">&quot;inductor&quot;</span>)</span>
+<span class="code-line" data-line="255">    <span class="hljs-keyword">for</span> rows, cols <span class="hljs-keyword">in</span> ((<span class="hljs-number">1</span>, <span class="hljs-number">1</span>), (<span class="hljs-number">3</span>, <span class="hljs-number">65</span>), (<span class="hljs-number">8</span>, <span class="hljs-number">128</span>), (<span class="hljs-number">0</span>, <span class="hljs-number">65</span>)):</span>
+<span class="code-line" data-line="256">        x = torch.randn((rows, cols), device=device)</span>
+<span class="code-line" data-line="257">        y = rms_norm_f32(x)</span>
+<span class="code-line" data-line="258">        _close(y, _reference(x), <span class="hljs-string">f&quot;shape=(<span class="hljs-subst">{rows}</span>,<span class="hljs-subst">{cols}</span>)&quot;</span>)</span>
+<span class="code-line" data-line="259">        <span class="hljs-keyword">assert</span> y.shape == x.shape <span class="hljs-keyword">and</span> y.is_contiguous() <span class="hljs-keyword">and</span> y <span class="hljs-keyword">is</span> <span class="hljs-keyword">not</span> x</span>
+<span class="code-line" data-line="260">        <span class="hljs-keyword">if</span> x.numel(): <span class="hljs-keyword">assert</span> y.untyped_storage().data_ptr() != x.untyped_storage().data_ptr()</span>
+<span class="code-line" data-line="261"></span>
+<span class="code-line" data-line="262">    storage = torch.randn((<span class="hljs-number">5</span>, <span class="hljs-number">65</span>), device=device)</span>
+<span class="code-line" data-line="263">    offset = storage[<span class="hljs-number">2</span>:<span class="hljs-number">5</span>, :]</span>
+<span class="code-line" data-line="264">    <span class="hljs-keyword">assert</span> offset.is_contiguous() <span class="hljs-keyword">and</span> offset.storage_offset() != <span class="hljs-number">0</span></span>
+<span class="code-line" data-line="265">    _close(rms_norm_f32(offset), _reference(offset), <span class="hljs-string">&quot;contiguous nonzero-offset slice&quot;</span>)</span>
+<span class="code-line" data-line="266">    _reject(<span class="hljs-string">&quot;noncontiguous model norm before reshape&quot;</span>, <span class="hljs-keyword">lambda</span>: _model_norm(torch.randn((<span class="hljs-number">2</span>, <span class="hljs-number">3</span>), device=device).t()))</span>
+<span class="code-line" data-line="267">    _reject(<span class="hljs-string">&quot;float16&quot;</span>, <span class="hljs-keyword">lambda</span>: rms_norm_f32(torch.ones((<span class="hljs-number">2</span>, <span class="hljs-number">4</span>), device=device, dtype=torch.float16)))</span>
+<span class="code-line" data-line="268">    _reject(<span class="hljs-string">&quot;noncontiguous stride&quot;</span>, <span class="hljs-keyword">lambda</span>: rms_norm_f32(torch.ones((<span class="hljs-number">3</span>, <span class="hljs-number">130</span>), device=device)[:, ::<span class="hljs-number">2</span>]))</span>
+<span class="code-line" data-line="269">    _reject(<span class="hljs-string">&quot;cols=0&quot;</span>, <span class="hljs-keyword">lambda</span>: rms_norm_f32(torch.empty((<span class="hljs-number">2</span>, <span class="hljs-number">0</span>), device=device)))</span>
+<span class="code-line" data-line="270">    _reject(<span class="hljs-string">&quot;cols=4097&quot;</span>, <span class="hljs-keyword">lambda</span>: rms_norm_f32(torch.empty((<span class="hljs-number">1</span>, <span class="hljs-number">4097</span>), device=device)))</span>
+<span class="code-line" data-line="271">    <span class="hljs-keyword">for</span> eps <span class="hljs-keyword">in</span> (<span class="hljs-number">0.0</span>, -<span class="hljs-number">1.0</span>, <span class="hljs-built_in">float</span>(<span class="hljs-string">&quot;nan&quot;</span>), <span class="hljs-built_in">float</span>(<span class="hljs-string">&quot;inf&quot;</span>)):</span>
+<span class="code-line" data-line="272">        _reject(<span class="hljs-string">f&quot;eps=<span class="hljs-subst">{eps}</span>&quot;</span>, <span class="hljs-keyword">lambda</span> value=eps: rms_norm_f32(torch.ones((<span class="hljs-number">1</span>, <span class="hljs-number">1</span>), device=device), value))</span>
+<span class="code-line" data-line="273"></span>
+<span class="code-line" data-line="274">    _check_grad(device)</span>
+<span class="code-line" data-line="275">    _check_opcheck(device)</span>
+<span class="code-line" data-line="276">    _check_compile(device, backend)  <span class="hljs-comment"># First compiled call is validation, never timed.</span></span>
+<span class="code-line" data-line="277">    model, ids = _check_model(device)</span>
+<span class="code-line" data-line="278">    <span class="hljs-keyword">if</span> args.benchmark: _benchmark(device, model, ids)</span>
+<span class="code-line" data-line="279">    <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;PASS all checks; torch=<span class="hljs-subst">{torch.__version__}</span>; device=<span class="hljs-subst">{device}</span>; backend=<span class="hljs-subst">{backend}</span>&quot;</span>)</span>
+<span class="code-line" data-line="280">    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span></span>
+<span class="code-line" data-line="281"></span>
+<span class="code-line" data-line="282"></span>
+<span class="code-line" data-line="283"><span class="hljs-keyword">if</span> __name__ == <span class="hljs-string">&quot;__main__&quot;</span>:</span>
+<span class="code-line" data-line="284">    <span class="hljs-keyword">raise</span> SystemExit(main())</span>
+<span class="code-line" data-line="285"><span class="hljs-keyword">else</span>:</span>
+<span class="code-line" data-line="286">    <span class="hljs-keyword">try</span>:</span>
+<span class="code-line" data-line="287">        <span class="hljs-keyword">import</span> torch <span class="hljs-keyword">as</span> _torch</span>
+<span class="code-line" data-line="288">    <span class="hljs-keyword">except</span> ImportError <span class="hljs-keyword">as</span> exc:</span>
+<span class="code-line" data-line="289">        <span class="hljs-keyword">raise</span> ImportError(<span class="hljs-string">&quot;PyTorch is required to import registered_rmsnorm; script mode supports SKIP/77&quot;</span>) <span class="hljs-keyword">from</span> exc</span>
+<span class="code-line" data-line="290">    _register(_torch)</span></code></pre></div>
+</details><h2 id="7-实践相同权重相同输入不同执行路径">7. 实践：相同权重、相同输入、不同执行路径<a class="heading-anchor" href="#7-%E5%AE%9E%E8%B7%B5%E7%9B%B8%E5%90%8C%E6%9D%83%E9%87%8D%E7%9B%B8%E5%90%8C%E8%BE%93%E5%85%A5%E4%B8%8D%E5%90%8C%E6%89%A7%E8%A1%8C%E8%B7%AF%E5%BE%84" aria-label="链接到7. 实践：相同权重、相同输入、不同执行路径">#</a></h2>
 <div class="code-panel"><div class="code-caption"><span>BASH</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-bash"><span class="code-line" data-line="1">python roadmap/curriculum/model-analysis/examples/mini_transformer.py</span>
 <span class="code-line" data-line="2">python roadmap/curriculum/model-analysis/examples/torch_reference.py --device cpu</span>
 <span class="code-line" data-line="3">python roadmap/curriculum/model-analysis/examples/torch_reference.py --device cuda</span>
