@@ -1,6 +1,6 @@
 # DSA：索引选择与稀疏 Attention
 
-长上下文中，除了保存 KV，还要决定一个 Query 读取多少历史位置。DSA（DeepSeek Sparse Attention）引入轻量 indexer，先选择位置，再对选中的 KV 执行主要 Attention。它与 MLA 的目标不同：MLA 改变缓存表示，DSA 改变本次主要计算访问的集合。
+长上下文中，除了保存 KV，还要决定一个 Query 读取多少历史位置。DSA（DeepSeek Sparse Attention）引入轻量 indexer，先选择位置，再对选中的 KV 条目执行主要 Attention。它与 MLA 的目标不同：MLA 改变缓存表示，DSA 改变本次主要计算访问的集合；在 V3.2 的实现里，选择对象是 MLA 的 latent/KV entry，而不是把完整 K/V 重新展开后再做一次无条件扫描。
 
 ## 1. 索引器选择的是位置
 
@@ -43,7 +43,7 @@ Softmax 的分母也变成所选集合的指数和。不能先算全部历史的
 
 ## 3. 复杂度要把 indexer 算进去
 
-每个 Query 的主要 Attention 由访问 T 个位置缩为 k 个，近似从 O(Td) 变成 O(kd)。但 indexer 仍可能扫描整个可见历史，另有 Top-K 和 gather 成本。
+对单个 Query，主要 Attention 从访问 T 个位置缩为 k 个，若 head 维度固定，主分支的点积与加权和可由 O(Td) 降为 O(kd)。但 indexer 仍可能扫描整个可见历史，另有 Top-K、索引读取和 gather 成本；“主分支变稀疏”不等于整条路径只剩 k 次读写。
 
 对整段 Prefill，轻量 indexer 的全范围评分也可能保留二次项。因此不能把整个 DSA 路径无条件写成 O(Tk)，更不能把 T/k 当作端到端加速倍数。应分别计数 indexer、选择、主 Attention、cache 读写和布局转换。
 
@@ -60,6 +60,12 @@ MLA 让这些历史状态以较小 latent 存储；DSA 让主 Attention 少读�
 - 选中的 K/V 如何寻址，是否先完整解压或物化；
 - 稀疏选择后使用什么分母，尾部、causal 和重复索引怎样处理。
 
+## 6. 求职时应能现场核对的三个问题
+
+1. 如果 `selected` 恰好覆盖全部历史，为什么重新计算的 Softmax 应与 dense Attention 一致？如果只保留一部分位置，为什么必须在所选集合内重新归一化？
+2. indexer 仍扫描全历史时，prefill 的复杂度账应怎样拆成 indexer、Top-K、gather 和主 Attention，而不是直接写成 `O(Tk)`？
+3. 如果一个索引 mask 广播到多个 Attention head，哪些张量仍按 head 独立计算，哪些缓存可以共享？回答必须同时给出 shape 和物理读取边界。
+
 数学检查同时验证“选中全部位置等于 dense”与“只选部分通常不等价”：
 
 ~~~bash
@@ -68,4 +74,4 @@ python roadmap/curriculum/papers/examples/attention_checks.py
 
 ## 参考阅读
 
-[DeepSeek-V3.2 论文](https://arxiv.org/abs/2512.02556) · [DeepSeek-V3.2-Exp](https://github.com/deepseek-ai/DeepSeek-V3.2-Exp)
+[DeepSeek-V3.2 论文](https://arxiv.org/abs/2512.02556) · [DeepSeek-V3.2-Exp 官方实现](https://github.com/deepseek-ai/DeepSeek-V3.2-Exp) · [V3.2 inference config](https://github.com/deepseek-ai/DeepSeek-V3.2-Exp/blob/main/inference/config_671B_v3.2.json)

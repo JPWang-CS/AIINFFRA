@@ -1,10 +1,8 @@
 # FlashAttention-2：从公式、Online Softmax 到 Triton 代码
 
-> 唯一入口：本文合并 FA2 论文精读与算法笔记。
 > 前置：[Online Softmax](online-softmax.md) · [FlashAttention 机制](flash-attention-mechanism.md)
 > 代码映射：[Triton 教学参考](../../reference/triton/flash_attention/flash_attn.py) · [CUDA 教学参考](../../reference/cuda/flash_attention/flash_attn.cu)
 > 论文：[FlashAttention-2, arXiv:2307.08691](https://arxiv.org/abs/2307.08691)
-> 状态：🚧 Agent 整合稿，仍需在 B3 亲手实现和 GPU 验证
 
 ---
 
@@ -136,7 +134,7 @@ $$
 - $i$：Q tile 编号；
 - $j$：K/V tile 编号。
 
-一个 thread block/program 固定负责 $Q_i$，依次扫描 $K_j,V_j$：
+在这个教学算法中，一个 thread block/program 固定负责 $Q_i$，依次扫描 $K_j,V_j$；论文级实现还会结合 batch、head、序列分块和硬件资源重新安排这些工作：
 
 $$
 S_{ij}=\frac{Q_iK_j^T}{\sqrt d}+M_{ij},
@@ -380,7 +378,7 @@ i=\text{pid},\qquad
 Q_i=Q[iB_r:(i+1)B_r,:].
 $$
 
-`grid = (triton.cdiv(seq_len, BLOCK_Q),)` 表示不同 Q tile 可以由不同 program 并行处理。这正是 FA2 沿 Q 序列维度增加 thread-block 并行度的直接映射。
+`grid = (triton.cdiv(seq_len, BLOCK_Q),)` 表示这份教学映射允许不同 Q tile 由不同 program 并行处理；它体现了 FA2 沿 Q 序列维度增加 thread-block 并行度的思路，但还没有表达完整的 batch/head 维度和论文级工作分配。
 
 ### 5.2 加载 $Q_i$，初始化 $m,\ell,U$
 
@@ -475,7 +473,7 @@ $$
 O_i=U_i/\ell_i.
 $$
 
-只有 $O_i\in\mathbb{R}^{B_r\times d_v}$ 写回 HBM。
+在这份 forward 教学映射中，只有 $O_i\in\mathbb{R}^{B_r\times d_v}$ 写回 HBM；实际训练实现还可能保存反向所需的统计量或采用不同的 checkpoint/recomputation 策略。
 
 ### 5.7 当前 Triton 教学参考的边界
 
@@ -515,7 +513,7 @@ $$
 
 ### 7.1 Causal mask
 
-对 query 位置 $r$ 和 key 位置 $s$：
+对 query 位置 $r$ 和 key 位置 $s$，因果 mask 定义为：
 
 $$
 S_{rs}=
@@ -546,7 +544,7 @@ $$
 - $\ell$ 跨多个 tile 累加正数；
 - $U$ 跨多个 tile 累加 $PV$。
 
-即使 Q/K/V 是 FP16 或 BF16，softmax 状态和 accumulator 通常使用 FP32，再在 store 时转目标 dtype。
+即使 Q/K/V 是 FP16 或 BF16，许多实现会用 FP32 保存 softmax 状态和 accumulator，再在 store 时转目标 dtype；具体选择仍由 kernel、硬件和精度要求决定。
 
 ---
 
@@ -564,7 +562,7 @@ $$
 
 可以走 Tensor Core；max、exp、加法、除法和 rescale 走标量/向量路径。后者 FLOPs 不一定多，但相对 Tensor Core 峰值吞吐低，可能占用显著时间。
 
-FA2 调整 online-softmax 记账，维护未归一化输出状态，把归一化尽量推迟，减少每个 tile 周围不必要的缩放、除法和状态操作。
+FA2 调整 online-softmax 的状态记账，维护未归一化输出状态，把最终归一化推迟，从而减少每个 tile 周围不必要的除法与状态操作；running max 改变时的重标定仍不可省略。
 
 注意：**不是完全取消重标定。** running max 改变时，旧 $\ell$ 和旧 $U$ 仍必须乘 $\alpha$；减少的是额外归一化和 non-matmul 工作。
 
@@ -627,7 +625,7 @@ FA2 更倾向于让 warp 各自拥有 Q tile 的不同行/输出子块，同时�
 
 | 维度 | FA1 核心 | FA2 增量 | 当前仓库教学代码 |
 |---|---|---|---|
-| exact attention | 是 | 是 | 目标是 |
+| exact attention | 是 | 是 | 目标是教学映射 |
 | 不保存完整 $S/P$ | 是 | 是 | 是 |
 | online softmax | 是 | 调整记账、减少 non-matmul | 已映射 |
 | Q tile 跨 block 并行 | 较受限 | 强化 | Triton grid 已体现 |
@@ -662,7 +660,7 @@ FA2 更倾向于让 warp 各自拥有 Q tile 的不同行/输出子块，同时�
 6. 为什么激活显存可以线性，但计算量仍然二次？
 7. A100 的 72% MFU 为什么不能直接推断 RTX 3090 也会达到 72%？
 
-七题能不看笔记讲清楚，才算真正掌握机制。
+这些问题覆盖公式、边界、并行分工与证据口径；回答时应能把每个结论落回相应状态更新、mask 条件或 profiler 指标。
 
 ---
 

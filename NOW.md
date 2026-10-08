@@ -7,20 +7,28 @@
 ## 课程网页
 
 - [静态课程入口](./roadmap/curriculum/gpu/course-site/index.html)
-- [当前实践：第一篇第二章《CUDA 执行模型与指令调度》→ 3.《SIMT：同一条指令不等于同一条数据路径》](./roadmap/curriculum/gpu/course-site/index.html?chapter=2#chapter-2-section-5)
+- [当前实践：第一篇第二章《CUDA 执行模型与指令调度》→ 4.《Block 波次与尾部利用率》](./roadmap/curriculum/gpu/course-site/index.html?chapter=2#chapter-2-section-8)
 - [当前论文：MLA（低维缓存与权重吸收）](./roadmap/curriculum/gpu/course-site/index.html?chapter=25)
 
 课程网页是预生成的静态文件。在文件管理器中双击 `roadmap\curriculum\gpu\course-site\index.html`，用浏览器阅读；不需要启动本机服务。若 Codex 内点击 Markdown 链接只显示 HTML 源码，请用文件管理器打开同一文件。
 
 ## 实践线：从模块化课程第一篇第一章重新开始（WIP）
 
-当前沿第一篇课程继续学习。第一章已读完，第二章第 1 节与第 2 节（含 2.1–2.3）已读；用户会自行跳过已经掌握的内容，既有实验不清零。PATH/HISTORY 中已有的 `LEETGPU_PASS`、`GPU_VALIDATED`、原始代码与性能证据继续有效，经过对应章节时直接复盘或跳过；遇到验收缺口、环境变化需复测或明确的后续优化，再按对应流程补齐。
+当前沿第一篇课程继续学习。第一章已读完，第二章第 1 节与第 2 节（含 2.1–2.3）及第 3 节《SIMT 与分支执行》已读；用户会自行跳过已经掌握的内容，既有实验不清零。PATH/HISTORY 中已有的 `LEETGPU_PASS`、`GPU_VALIDATED`、原始代码与性能证据继续有效，经过对应章节时直接复盘或跳过；遇到验收缺口、环境变化需复测或明确的后续优化，再按对应流程补齐。
 
-- 当前课：[第一篇第二章：CUDA 执行模型与指令调度 → 3.《SIMT：同一条指令不等于同一条数据路径》](./roadmap/curriculum/gpu/course-site/index.html?chapter=2#chapter-2-section-5)
+- 当前课：[第一篇第二章：CUDA 执行模型与指令调度 → 4.《Block 波次与尾部利用率》](./roadmap/curriculum/gpu/course-site/index.html?chapter=2#chapter-2-section-8)
 - 课程总入口：[GPU 硬件与性能基础](./roadmap/curriculum/gpu/README.md)
 - Softmax 服务器真实性能验证仍是历史未完成项，但不再作为当前入口；后续在对应算子章按验收补齐
 
-- 2026-09-18 已阅读完成第一章；第二章第 1 节与第 2 节（含 2.1–2.3）已读，第 3 节《SIMT：同一条指令不等于同一条数据路径》尚未阅读，下一入口为 `chapter=2#chapter-2-section-5`。当前课程状态保持 `WIP`，本次仅推进阅读。讨论过：warp 负责一行/列的优势取决于连续布局、warp 内归约和同步范围，不是通用规则；不将此记为该节已掌握。
+- 2026-10-08 已阅读第一篇第一章、第二章第 1 节与第 2 节（含 2.1–2.3），并完成第 3 节《SIMT 与分支执行》。下一入口为第 4 节《Block 波次与尾部利用率》：`chapter=2#chapter-2-section-8`。当前课程状态保持 `WIP`，本次仅推进阅读，未新增 GPU 验证事实。
+
+本次学习分析：讨论了行主序 GEMM 中 A[M,N]、B[N,K] 的地址展开，四条独立 FMA 累加链对 ILP 与求和顺序的影响，以及大数吃小数、FP32/FP64、树形归约、Kahan 与 FMA 的精度边界。从本轮提问看，你已经开始把调度改写与数值代价联系起来。接下来可练习用一段代码分别说明执行依赖、求和顺序和舍入误差，再用参考结果检验判断。
+
+下一步学习建议：先只读第 4 节，手算假设 4 个 SM、每个 SM 同时驻留 2 个 block、各 block 耗时相同的情形，分别求 grid=8/9/16/17 时的波数与末波 block 数；明确区分 block 波次尾部与 warp 分歧，暂时不需要跑 GPU。再读第 5 节，连接 input、accumulator、output dtype 与 FMA 精度。可用以下问题复述第 3 节：
+
+- 一个分支谓词下，warp 中哪些 lane 仍活动？谓词执行与真正分支在代价上如何区分？
+- warp 内寄存器交换解决什么问题，为什么不能替代 block 级内存同步？
+- 分支分歧、谓词执行和越界 mask 分别会怎样影响有效工作量与可观测性能？
 
 MatMul 已阶段性收口为 RTX 3090 `GPU_VALIDATED` baseline；已有数据不清零，NCU、PTX/SASS、spill/occupancy、低精度和多 shape 将在 GEMM 章内继续深化。
 

@@ -1,6 +1,6 @@
 # 第一章 访存与布局算子：从数据搬运到高效转置
 
-copy、transpose、permute、gather、scatter 和 embedding 的主要工作是移动数据。逻辑坐标决定值的来源与去向，stride 决定地址，线程分工决定一次内存指令覆盖哪些位置。
+copy（复制）、transpose（转置）、permute（轴置换）、gather（聚集读取）、scatter（分散写入）和 embedding（嵌入查表）的主要工作是移动数据。逻辑坐标决定值的来源与去向，stride（步长）决定地址，线程分工决定一次内存指令覆盖哪些位置。
 
 view 只改变张量的解释方式，物化转置则产生新的存储布局。两者的流量、别名关系和计时范围不同；对齐、尾部与共享内存转置将在具体实现中分别处理。
 
@@ -87,7 +87,7 @@ row-major contiguous 的二维 [M, N] 张量通常是 stride=[N, 1]；列方向�
 
 ### 2.3 元素大小决定跨度与流量账本
 
-float32 的 elementbyte=4，float16/bfloat16 为 2，int8 为 1。相同的 element stride 在不同 dtype 下对应不同 byte stride；相同 shape 在不同 dtype 下也有不同带宽账本。一个 float4 变量包含四个 float32，逻辑上仍是 4 个元素、16 bytes，不能因为 C++ 类型变宽就把有效工作量少算四倍。
+`float32` 的每元素大小为 4 bytes，`float16`/`bfloat16` 为 2，`int8` 为 1。相同的 element stride 在不同 dtype 下对应不同 byte stride；相同 shape 在不同 dtype 下也有不同的有效流量。一个 `float4` 变量包含四个 `float32`，逻辑上仍是 4 个元素、16 bytes，不能因为 C++ 类型变宽就把有效工作量少算四倍。
 
 对于 N 个元素、每元素 E bytes 的 out-of-place copy 或 transpose，理想有效数据量是
 
@@ -103,6 +103,8 @@ BW_{\text{effective}} = \frac{2NE}{t \times 10^9}\ \text{GB/s}.
 $$
 
 这只是“有用读写字节”除以时间，不是硬件真正从 DRAM 发出的字节数；不合并访问、尾部 sector、缓存回写和额外 staging 都可能让实际传输更多。
+
+这个计算描述完成任务所需的有效读写。实现层还需要根据各 lane 的地址判断请求能否合并，并处理尾部的无效位置；实际经过 L2 或 DRAM 的流量则由缓存行为共同决定。因此，比较带宽时应分别列出算法有效字节数和性能分析器测得的实际传输量。
 
 ## 3. CUDA 与 Triton 的最小 copy
 
@@ -266,7 +268,7 @@ if (out_row < N && out_col < M) {
 
 ## 7. 从转置推广到 gather、scatter、embedding 和数据打包
 
-这些算子的共同基础是索引映射，而不是某个固定的tile尺寸。
+这些算子的共同基础是索引映射，而不是某个固定的 tile（分块）尺寸。先确定逻辑坐标如何映射到地址，再讨论线程布局和缓存复用；否则即使 tile 看起来规则，也可能把重复读取或冲突写入隐藏起来。
 
 | 操作 | 数学/地址合同 | 首先要解决的性能或正确性问题 |
 |---|---|---|
@@ -371,6 +373,12 @@ Vector Add每元素需要两个输入读取和一个输出写入，FP32算法流
 
 > [!TIP] 保留问题，也保留判断依据
 > **同一行、同一地址、同一次warp请求、同一份缓存数据，是四个不同层次。** 先问清“重复”发生在哪一层，再决定是否需要shared staging、重新分块或改变布局。
+
+## 排错场景：输出正确，为什么仍可能是错误的布局实现
+
+1. 如果一个转置结果逐元素正确，但下游把它当 contiguous 读时变慢，先检查返回的是 stride view 还是已物化 storage；不要用一次 `x.transpose()` 的时间替代真实搬运。
+2. 如果 `x[:, ::2]` 传入后只有部分列错位，打印“传入指针对应的第一个逻辑元素地址”和各维 stride，确认没有把 `data_ptr()` 与底层 storage base 的 offset 重复相加。
+3. 如果 `float4` 版本只在大输入变快，先用起始偏移 0/1、每行 stride 和尾部 N=3/5/257 重现；N 可被 4 整除并不能证明每行地址满足 16B 对齐。
 
 ## LeetGPU：正确性与代码归档
 

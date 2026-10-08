@@ -1,6 +1,6 @@
 # 第四章 Activation 与 Fusion：从 SwiGLU 点算子到 MLP 的物化边界
 
-SwiGLU 包含两个上投影、一次激活与逐元素乘法，以及一个下投影：
+采用 SwiGLU（Swish-Gated Linear Unit，Swish 门控线性单元）的前馈模块包含两个上投影、一次激活与逐元素乘法，以及一个下投影：
 
 $$
 G=XW_{gate},\qquad U=XW_{up},\qquad
@@ -9,7 +9,7 @@ $$
 
 $X\in\mathbb R^{T\times H}$，$G,U,Z\in\mathbb R^{T\times I}$，$Y\in\mathbb R^{T\times H}$。$T$ 是 token 数，$H$ 是 hidden size，$I$ 是中间宽度，$\odot$ 表示逐元素乘法。上投影沿 $H$ 归约，下投影沿 $I$ 归约。
 
-融合要决定哪些中间值仍需存储：G/U 可以分开保存或打包，SiLU 与乘法可以同次读写，部分操作还可以放入 GEMM epilogue。省下的中间读写，要与新增寄存器、归约依赖和布局转换一起计算。
+融合要决定哪些中间值仍需存储：G/U 可以分开保存或打包，SiLU 与乘法可以同次读写，部分操作还可以放入 GEMM epilogue（矩阵乘累加后的写回阶段）。因此阅读本章时应沿着 `X → G/U → Z → Y` 的数据流判断边界：省下的是哪一次物化读写，新增的是哪些寄存器、归约依赖或布局转换。
 
 对应 A[M,N]×B[N,K] 的记号，两个上投影取 M=T、N=H、K=I；下投影取 M=T、N=I、K=H。符号改变后，归约轴和输出轴仍按各自矩阵的形状确定。
 
@@ -247,6 +247,8 @@ LeetGPU #83 的题面正好把这个边界写成一个可核对的合同：`x/re
 
 ## 6. FLOPs、bytes 和 launch 账本
 
+确定融合范围后，可以比较各方案产生的计算量和有效读写。下表按逻辑张量统计字节数；实际耗时还受到核函数启动、缓存命中和寄存器占用的影响，需要通过测量确认。
+
 令 `n=T*I`，每个元素占 `s` bytes。只计算 `G/U -> Z` 这一段，不把两次上投影和下投影藏掉：
 
 | 路径 | 逻辑读写 | 理想元素流量 |
@@ -278,6 +280,8 @@ $$
 FLOPs 也要分层：SiLU 至少包含 sigmoid 的指数/除法与一次乘法，SwiGLU 再有一次乘法；`XW_gate` 和 `XW_up` 各约 `2THI` FLOPs，`ZW_down` 约 `2TIH` FLOPs。只拿 pointwise 的 `n` 元素 bytes 去除整个 MLP 的总时间，会把三个 GEMM 的权重读、输出写和矩阵指令成本完全漏掉。报告时分别列出算法逻辑 bytes、实测 DRAM/L2 traffic、kernel-only 时间和 wrapper/端到端时间。
 
 ## 7. 从两个 GEMM 到完整 MLP 的融合粒度
+
+把两次上投影合并后，形状变为 `[T,2I]`，但门控仍要求同一 `(t,i)` 的两路结果同时可见；因此“少一次 launch”和“可以在同一 kernel 内消费”是两个不同判断。下面先沿坐标和归约依赖确认能否消费，再讨论物化边界。
 
 先看一个容易被“合并 GEMM”误导的形状。把两组上投影拼成
 

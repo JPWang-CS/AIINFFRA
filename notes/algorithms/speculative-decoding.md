@@ -1,16 +1,14 @@
 # Speculative Decoding（投机解码）
 
-> 推理系统技术类 · 用小草稿模型加速大模型的 decoding
+> 推理系统技术类 · 用草稿模型减少目标模型的串行解码轮次
 
 ---
 
 ## 解决了什么问题
 
-LLM decoding 是**逐 token 串行**的——每次只生成一个 token，然后将其加入上下文再生成下一个。这个过程是 **memory-bandwidth bound**：每次生成都要从 HBM 加载全部模型权重，计算量却只有矩阵-向量乘（极低的 arithmetic intensity）。
+LLM decoding 通常按 token 递推：每一步的输出决定下一步输入，因此目标模型需要多次串行调用。小 batch 时，权重和 KV 的读取可能使每步算术强度较低；但具体瓶颈仍取决于 batch、缓存驻留、融合和目标模型实现。
 
-**结果**：A100 80GB 跑 LLaMA-2-70B（FP16），batch=1 时吞吐只有 ~20 tokens/s，而理论算力（312 TFLOPS）几乎空转，实际 GPU 利用率 <5%。
-
-**核心问题**：能否在一次 forward pass（即一次全量模型调用）中生成多个 token？
+**核心问题**：能否让一个较小的草稿模型先提出一段候选，再让目标模型并行验证，从而用一次目标前向提交多个已验证 token？
 
 ---
 
@@ -19,61 +17,57 @@ LLM decoding 是**逐 token 串行**的——每次只生成一个 token，然�
 ### 基本版本：Draft-Verify Loop
 
 ```
-1. 用小模型（draft model）快速自回归生成 k 个 token
-   draft_tokens = small_model.generate(context, k=5)  # 超快，~5× 批量 forward
+1. 用小模型（draft model）快速自回归生成 k 个候选 token
+   draft_tokens = small_model.generate(context, k=5)
 
 2. 将 [context + draft_tokens] 送入大模型（target model）并行验证
-   target_logits = large_model.forward(context + draft_tokens)  # 一次 forward
-   # 注意：forward 是并行的（不是串行），因为 context + draft 作为完整序列输入
+   target_logits = large_model.forward(context + draft_tokens)  # 一次块前向
+   # 验证 draft[i] 使用尚未包含 draft[i] 的前缀处的 next-token logits
 
 3. 逐 token 检验（rejection sampling）：
    for i in range(k):
-       p = target_model.prob(draft_tokens[i])
-       q = draft_model.prob(draft_tokens[i])
-       if random() < p/q:          # 接受
+       p_vec = target_model.distribution_at(i)  # 目标在该位置的完整词表分布
+       q_vec = draft_model.distribution_at(i)
+       y = draft_tokens[i]
+       if random() < min(1, p_vec[y] / q_vec[y]):  # 按目标/草稿概率接受
            accepted_tokens.append(draft_tokens[i])
-       else:                        # 拒绝：从 target 分布重采样
-           accepted_tokens.append(sample(max(0, p - q)))
+       else:                        # 拒绝：从目标分布的残差重采样
+           residual = normalize(max_vector(0, p_vec - q_vec))
+           accepted_tokens.append(sample(residual))
            break  # 后续 token 都丢弃
 
-4. 净结果：一次 target forward 接受了 ~2-4 个 token（取决于 acceptance rate）
+4. 净结果：提交通过的草稿前缀，以及失败位置采样出的一个纠正 token；失败位置后的草稿状态回滚。若 k 个候选全通过，再按算法规则处理 bonus token。
 ```
 
-**为什么可行**：大模型 forward 是并行的（Transformer 可以同时计算所有位置），计算量是 O(k) 倍，但只算了一次 KV cache 加载；小模型 forward 很快（~1/10 时间）。
+**为什么可行**：因果 Transformer 可以在一次块前向中并行计算候选位置的 logits；目标模型仍需读取候选前缀对应的状态，但把多次串行提交改成一次验证。接受后提交通过的草稿前缀，并在首个失败位置提交目标分布采样出的纠正 token；失败位置后的草稿状态回滚。草稿、验证和提交成本都属于同一轮开销。
 
 ### 加速比分析
 
-设大模型耗时 $T_L$，小模型耗时 $T_S$，接受率 $\alpha$：
+设每个候选位置在前缀存活条件下的接受概率为 $p_i$，草稿长度为 $k$；$T_D(k)$、$T_T(k)$、$T_C(k)$ 分别表示本轮草稿生成、目标验证、提交/回滚及状态整理的耗时。草稿接受数的期望为：
 
 $$
-\text{理想加速比（当 } T_S \to 0 \text{ 时）} \approx \frac{k \cdot \alpha}{1 - \alpha^{k}} \quad\text{对于 k 个草稿 token}
+E[L_{\mathrm{acc}}]=\sum_{i=1}^{k}\prod_{j=1}^{i}p_j.
 $$
 
+在每轮验证都会提交一个纠正或 bonus token、且没有 EOS/长度截断时，目标上下文的期望前进量是 $1+E[L_{\mathrm{acc}}]$；遇到 EOS 或预算边界时应按实际提交规则截断。
+
 $$
-\text{实际加速比} \approx \frac{1 + \alpha + \alpha^{2} + \dots + \alpha^{k-1}}{1 + k \cdot T_S/T_L} \times \frac{T_L}{T_L}
-             = \frac{(1-\alpha^{k})/(1-\alpha)}{1 + k \cdot T_S/T_L}
+\text{token\ throughput\ proxy}=\frac{1+E[L_{\mathrm{acc}}]}{T_D(k)+T_T(k)+T_C(k)}.
 $$
 
-**典型数据**（Llama 2 70B 为 target，Llama 2 7B 为 draft，k=4）：
-- $\alpha \approx 0.75$（代码生成）, $0.55$（通用文本）
-- $T_S/T_L \approx 0.1$（7B vs 70B 参数比≈1/10）
-- 加速比：~2.5× 代码，~1.8× 通用文本
+这个表达式只是选择 k 的成本模型；端到端速度还受调度、batch 形状、KV 临时空间和请求混合影响。
 
 ---
 
 ## 关键数据/取舍
 
-| 场景 | 接受率 α | 加速比 | 原因 |
-|------|:--------:|:------:|------|
-| 代码生成（结构化） | 0.7-0.85 | 2-3× | 代码高度可预测 |
-| 数学推理 | 0.65-0.75 | 1.8-2.5× | 推导步骤有规律 |
-| 通用文本（聊天） | 0.5-0.65 | 1.5-2× | 多样性高 |
-| 创意写作 | 0.3-0.5 | 1.0-1.5× | 大小模型分布差异大 |
+| 场景特征 | 影响接受概率的因素 | 需要观察的结果 |
+|------|:--------:|:------:|
+| 结构化输出 | 草稿与目标的分布是否匹配 | 接受长度、验证时间、质量 |
+| 高随机性采样 | temperature/top-p 改变目标分布 | 接受率、残差采样成本 |
+| 大 batch 服务 | 目标模型可能已有更高并行度 | 请求级 TTFT/TPOT 与吞吐 |
 
-**限制条件**：
-- **Batch size 小时有效**：大 batch 时 target model 本身已经 compute-bound，加速比接近 1
-- **Draft model 质量重要**：同家族小模型效果好（Llama 7B for Llama 70B），不相关模型 α 很低
-- **Sampling temperature**：确定性采样（greedy, temperature=0）α ≈ 1，随机采样 α 降低
+草稿模型质量、采样温度、目标 batch 和验证形状共同决定收益。greedy 验证可以按 token ID 比较；随机采样必须使用目标分布与草稿分布的接受/残差规则，不能把 greedy 的接受率直接套用。
 
 ---
 
@@ -91,8 +85,7 @@ $$
       [X] [Y] [Z] [W]
 ```
 
-Target model 一次验证整棵树（用 tree attention mask），接受的最长路径作为输出。  
-理论上能更高效地"猜"正确 token，尤其适合 beam search 场景。
+Target model 一次验证整棵树（用 tree attention mask），再按目标分布的验证规则选择可提交路径。最长路径只有在特定 greedy/候选策略下才可能成为输出；树结构本身不保证 exact sampling 或分布保持。
 
 ### Medusa
 
@@ -115,20 +108,20 @@ draft_3 = MedusaHead3(h_t)   # 预测 token_{t+3}
 
 ## 在 Ascend 的对应
 
-Speculative decoding 是调度逻辑层面的优化，不依赖特定硬件指令。  
-Ascend NPU 上同样可以实现：CANN / MindSpore 已有实验性支持。  
-关键 kernel 挑战：**tree attention mask**（稀疏的 causal mask，每个 token 的 visible range 不同）需要 custom attention kernel。
+Speculative decoding 主要是调度与采样算法，不绑定某一种硬件指令；迁移到其他设备时仍需确认目标框架是否提供草稿/目标模型协同、树 mask、KV 回滚和随机采样实现。关键 kernel 挑战是 **tree attention mask**（每个 token 的可见范围不同）及其临时 KV 布局，具体支持情况应以目标版本源码和文档为准。
 
 ---
 
 ## 与我何干
 
-**C 线推理系统**：vLLM 0.3+ 支持 speculative decoding（`--speculative-model`），理解这个技术才能读懂相关代码。
+**推理系统代码阅读**：具体 vLLM 或其他引擎的 speculative decoding 参数、KV 回滚和调度 API 随版本变化，应以目标 checkout 和官方文档为准。
 
-**[面试]**：
-- "Speculative decoding 的原理？" → 小模型 draft k 个 token，大模型一次 verify，rejection sampling 保证分布等价
-- "什么时候有效？" → batch size 小 + 任务有规律性 + 大小模型同家族
-- "加速比多少？" → 代码生成约 2-3×，通用文本约 1.5-2×，大 batch 下无效
+## 求职追问与示范回答
+
+以下是教学示例，不代表个人实测：
+- “怎样说明投机解码保持目标分布？”——给出逐位置的完整目标分布 `p_vec` 与草稿分布 `q_vec`，对候选索引 y 以 `min(1,p_vec[y]/q_vec[y])` 接受；拒绝时从归一化的 `max(0,p_vec-q_vec)` 向量采样。若只比较 token ID，回答范围应限定为 greedy 验证。
+- “怎样选择草稿长度 k？”——对候选长度测量草稿、目标验证、提交/回滚成本，并按前缀条件计算期望接受长度；再放回真实 batch 与请求混合，比较 TTFT、TPOT、吞吐和显存。
+- “为什么接受率提高仍可能变慢？”——接受率只影响分子；更长候选也会增加验证矩阵、临时 KV、调度和提交成本，甚至把目标 batch 推出高效形状。
 
 ## 参考
 

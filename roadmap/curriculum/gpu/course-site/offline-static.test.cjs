@@ -20,7 +20,19 @@ assert(/const localFile = location\.protocol === 'file:'/.test(app), 'Missing lo
 assert(/if \(localFile\) \{\s*if \(replace\) location\.replace\(url\.href\);\s*else location\.assign\(url\.href\);/.test(app),
   'Local-file navigation must avoid history.pushState');
 assert(!/127\.0\.0\.1:8765/.test(now), 'Current course entry must not depend on a temporary server');
-assert(now.includes('./roadmap/curriculum/gpu/course-site/index.html?chapter=2#chapter-2-section-5'));
+const currentPractice = now.match(/^- \[当前实践：[^\]]+\]\(([^)]+)\)/m);
+assert(currentPractice, 'NOW must expose a Markdown link for 当前实践');
+const route = currentPractice[1];
+const routeMatch = route.match(/^\.\/(roadmap\/curriculum\/gpu\/course-site\/index\.html)(?:\?([^#]*))?(?:#(.+))?$/);
+assert(routeMatch, '当前实践 must use the repository-relative static course index');
+const query = new URLSearchParams(routeMatch[2] || '');
+const chapter = query.get('chapter');
+const fragment = routeMatch[3];
+assert(chapter && /^\d+$/.test(chapter), '当前实践 link must identify a numeric chapter');
+assert(fragment, '当前实践 link must identify a section fragment');
+assert(html.includes(`<article class="chapter" id="chapter-${chapter}" data-chapter="${chapter}"`),
+  `Current chapter article is missing: ${chapter}`);
+assert(html.includes(`id="${fragment}"`), `Current section fragment is missing: ${fragment}`);
 assert(now.includes('./roadmap/curriculum/gpu/course-site/index.html?chapter=25'));
 
 console.log('PASS: static entry/assets, embedded search/paper content, local-file navigation branch and server-free NOW links.');

@@ -1,8 +1,8 @@
 # 第三章 vLLM 应用：把算子能力放进真实请求路径
 
-vLLM 将请求转成 token 批次，安排模型执行，管理 KV，并将结果提交给请求。调度决策会改变 kernel 形状、缓存占用和等待时间。
+vLLM 将请求转成 token 批次，安排模型执行，管理 KV cache，并将结果提交给请求。分布式进程组会为每个参与进程分配一个 rank 编号；collective 指多个 rank 按同一顺序共同完成的通信操作。后文的 backend 是实际负责某类 Attention 或通信的实现路径，必须从版本与执行记录确认。调度决策会改变 kernel 形状、缓存占用和等待时间。
 
-分析从一次请求的调用路径开始：确认执行的 backend、输入布局和计时范围，再比较替换算子前后的单步与端到端结果。
+分析从一次请求的调用路径开始：先确认请求如何变成 batch、实际调用了哪个 backend、输入采用什么布局以及计时从哪里开始；再比较替换算子前后的单步与端到端结果。
 
 ## 1. 从请求到设备执行
 
@@ -22,11 +22,11 @@ while scheduler.has_work():
 
 plan 要说明计算哪些位置、每个请求已有多少 KV、结果写到哪里。模型返回后再推进计算与生成状态。计算若干输入 token，不代表返回相同数量的输出 token；未完成的 Prefill chunk 可能还没有可采样输出。
 
-具体安装版本的引擎、scheduler、worker/model runner、模型层与 Attention backend 可能有不同调用方式。类名相同也不保证同步/异步行为相同，需要结合实际配置和时间线确认。
+具体安装版本的引擎、scheduler（调度器）、worker/model runner（执行器）、模型层与 Attention backend 可能有不同调用方式。类名相同也不代表同步/异步行为相同，因此要把配置、日志和时间线放在一起核对。
 
 ## 2. token 预算不是请求数量
 
-一个 Decode 请求可能只需计算一个新位置，Prefill 请求则可能还剩数百个位置。限制最多几个请求，与限制本轮计算几个 token，是不同约束。
+一个 Decode 请求通常只需计算一个新位置，Prefill 请求则可能还剩数百个位置。调度器因此同时受活动请求数和本轮 token 预算约束：前者控制状态数量，后者控制本轮实际计算量。
 
 <!-- source-check: examples/scheduler_reference.py -->
 ~~~python
@@ -44,11 +44,11 @@ def allocate_tokens(demands, budget):
     return assignments
 ~~~
 
-预算为 4，先处理一个需求为 1 的 Decode，再处理需求为 8 的 Prefill，分配为 1+3；反过来则 Prefill 占满 4。这个模型演示顺序与预算的影响，不代表 vLLM 固定采用某一种优先级。
+预算为 4 时，先处理需求为 1 的 Decode，再处理需求为 8 的 Prefill，分配为 1+3；反过来则 Prefill 占满 4。这个例子把“顺序如何改变本轮 token 组成”展示出来，实际优先级仍需按目标版本配置与时间线确认。
 
-Chunked Prefill 把长输入拆小，为其他请求留下调度机会。块太小可能增加调度与 kernel 开销，块太大则延长其他请求的等待；要同时观察 TTFT、TPOT、吞吐与长尾。
+Chunked Prefill 把长输入拆成小块，为其他请求留下调度机会。块大小决定调度次数与单次等待：块小会增加提交和 kernel 开销，块大则延长其他请求等待。因此要同时观察首 token 时间（TTFT，Time To First Token）、每输出 token 时间（TPOT，Time Per Output Token）、吞吐和尾延迟。
 
-Continuous batching 在步与步之间加入或移除请求。batch 行号可以变化，请求身份不能丢：length、位置、KV 映射、采样状态和输出归属需要一起更新。
+Continuous batching（连续批处理）在迭代边界加入或移除请求。batch 行号可以变化，但请求身份必须随 length、位置、KV 映射、采样状态和输出归属一起更新。
 
 ## 3. KV 容量与前缀复用
 
@@ -83,7 +83,7 @@ model_revision 应覆盖影响计算的权重与配置，adapter 和位置也须
 
 KV offload 改变容量与传输路径，恢复时可能增加等待、预取与设备临时空间。H2D、网络和 HBM 带宽不是同一个指标。
 
-Prefill/Decode 分离让两阶段独立配置资源，但必须交接 KV 和请求状态。收益可能来自减少干扰或独立扩缩容，代价包括传输、排队与调度；短请求、低并发下未必划算，应和同条件共置基线比较。
+Prefill/Decode 分离让提示词处理和逐 token 生成使用独立资源池；交接时必须传递 KV 和请求状态。它可能减少两阶段之间的干扰，也可能增加 KV 传输、排队和调度成本，所以应在相同请求分布下与共置基线比较，并同时看 TTFT、TPOT 和尾延迟。
 
 ## 4. 确认真实 backend，再替换 kernel
 
@@ -147,7 +147,7 @@ vllm bench serve \
 | 显存下降 | cache 变小，导致更多重算或换出 |
 | kernel 更快 | 层外新增转换、通信或同步 |
 
-SLO（Service Level Objective，服务等级目标）约束下的有效吞吐，比无约束峰值更有意义。保存输入配置、软件版本、设备身份和逐请求结果，按同一边界比较。
+服务等级目标（SLO，Service Level Objective）约束下仍能满足时延要求的吞吐，更能反映实际收益。保存输入配置、软件版本、设备身份和逐请求结果，并按同一边界比较。
 
 无 GPU 时可以先核对预算与缓存身份：
 
@@ -155,11 +155,11 @@ SLO（Service Level Objective，服务等级目标）约束下的有效吞吐，
 python roadmap/curriculum/systems/examples/scheduler_reference.py
 ~~~
 
-系统组合没有对应的 LeetGPU 题。局部题面正确，还要在这里验证 backend 与请求路径；能返回文本不等于性能优化有效。
+系统组合没有对应的 LeetGPU 题。局部题面只能说明算子语义，系统章节还要沿请求路径确认 backend、缓存和调度；返回文本只能证明功能链路走通，性能收益仍需请求级测量。
 
 ## 7. 整网与算子：从请求形状追到设备执行
 
-一次推理不是一次 kernel launch，而是跨越请求状态、模型张量、框架调度和设备执行的多层路径：
+一次推理包含多次 kernel launch，路径跨越请求状态、模型张量、框架调度和设备执行：
 
 | 层次 | 主要工作 | 需要观察的对象 |
 |---|---|---|
@@ -179,7 +179,7 @@ GPU 与昇腾的分层可以用来互相理解，但接口和实现不能直接�
 | 设备通信 | HCCL 与实际 NPU 互连 | NCCL 与实际 GPU 互连 | 通信量、拓扑、同步点及其与计算的重叠 |
 | 设备内存 | NPU HBM、片上存储与 KV 分配 | GPU HBM、SMEM/寄存器与 KV 分配 | 读写字节、驻留时间、临时 buffer、碎片和并发容量 |
 
-这张表是分析视角的对应，不是 API 或硬件单元的一对一映射。比如，知道算子“可以入图”还不等于当前请求真的走了图执行；需核对启动配置、shape 分桶、编译/捕获日志和设备时间线。eager 下小 Decode kernel 可能被 CPU launch 间隙隔开；图执行可能压低重复提交开销，但不会减少 Attention 必须读取的历史信息，也不能证明某个 kernel 更快。
+这张表用于建立分析视角，不把 API 或硬件单元当作一对一对应。算子具备入图条件后，还要核对启动配置、shape 分桶、编译/捕获日志和设备时间线，才能确认当前请求确实走了图执行。eager 下小 Decode kernel 可能被 CPU 提交间隙隔开；图执行可以减少重复提交开销，但 Attention 仍需读取历史信息，目标 kernel 的变化仍要由 profiler 和端到端时间验证。
 
 ### 用一层模型把 shape 追到底
 
@@ -330,9 +330,9 @@ $$
 
 其中 `B` 是请求数，`S` 是每条序列实际保留的 token 数，`L=34`，因子 2 表示 K 和 V，`b=2 bytes` 表示 BF16。故每个请求、每个 token、跨所有层需要 `34×2×8×128×2=139,264 bytes=136 KiB`；32,768 token 的未分页逻辑值是 4.25 GiB。若按 128-token block 分配，129 个有效 token 要占两个 block，即 256 个槽位；实际 allocator 还需考虑共享、预留、量化、元数据与其它工作区。
 
-2.0 的总参数量与激活参数量也不能混作容量。以 Pro 标称 505B 参数为例，若所有参数都以 BF16 常驻，单看参数 payload 的粗略下限就是 `505×10⁹×2 / 2³⁰ ≈ 940.64 GiB`；实际部署还需权重切分/量化、buffer 和 KV 空间。`18B active`描述每 token 参与计算的参数规模，不代表只需加载 18B 权重。Flash 的 92B/6B 同理，不能由 6B 激活直接推导出权重可驻留大小。
+2.0 的总参数量与激活参数量也应分开核算。以 Pro 标称 505B 参数为例，若所有参数都以 BF16 常驻，单看参数 payload 的粗略下限就是 `505×10⁹×2 / 2³⁰ ≈ 940.64 GiB`；实际部署还需权重切分/量化、buffer 和 KV 空间。`18B active`描述每 token 参与计算的参数规模，不代表只需加载 18B 权重。Flash 的 92B/6B 同理，6B 激活量不能直接推出可驻留的权重大小。
 
-核心账本只用整数算术即可复核形状、权重与 KV 的数量级：
+核心核算表只用整数算术即可复核形状、权重与 KV 的数量级：
 
 ~~~python
 head_dim = HIDDEN // QUERY_HEADS
@@ -355,10 +355,10 @@ def paged_kv_bytes(tokens, batch, block_size):
     return blocks * block_size * batch * kv_bytes_per_token
 ~~~
 
-完整程序只复算 Embedded-7B 的 shape、参数与分页账本，不加载权重、不依赖 PyTorch，也不访问加速器：
+完整程序只复算 Embedded-7B 的 shape、参数与分页容量，不加载权重、不依赖 PyTorch，也不访问加速器：
 
 <details>
-<summary>展开完整 CPU 账本程序</summary>
+<summary>展开完整 CPU 核算程序</summary>
 
 <!-- source-check: examples/pangu_embedded7b_ledger.py -->
 ~~~python

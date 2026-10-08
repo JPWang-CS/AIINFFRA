@@ -19,7 +19,7 @@ const papers = [
   [34,'推理系统','Speculative Decoding','notes/algorithms/speculative-decoding.md'],
   [35,'推理系统','Prefill / Decode 分离','notes/algorithms/pd-disaggregation.md'],
   [36,'推理系统','PagedAttention','papers/inference/paged-attention.md'],
-  [37,'训练与优化','Adam、AdamW 与 Muon','notes/algorithms/optimizers-adam.md'],
+  [37,'训练与优化','Adam、AdamW 与训练状态','notes/algorithms/optimizers-adam.md'],
   [38,'训练与优化','ZeRO 与模型状态分片','papers/training/zero-paper.md'],
   [39,'模型架构','DeepSeek-V4.1-Flash：缓存、索引与训练推理协同','roadmap/curriculum/papers/deepseek-v41.md'],
   [40,'训练与优化','Scaling Law、强化学习与长任务推理','roadmap/curriculum/papers/inference-workloads.md'],
@@ -65,20 +65,9 @@ function prepare(text, paper, repo) {
   if(paper.id===20) text=text.replace(/^\*下一条建议学：.*$/m,'');
   if(paper.id===23) text=text.replace('七题能不看笔记讲清楚，才算真正掌握机制。','');
   if(paper.id===33) text=text.replace(/^\*{1,2}(?:理论线下一步|下一步)[：:][^\n]+$/gm,'');
-  if(paper.id===30) {
-    text=text.replace('，主线 A 第 3 步','')
-      .replace(/## 7\. 做完之后[\s\S]*$/, '## 7. 核对三笔账\n\n- 权重容量使用总参数和存储精度；单步权重访问还受共享层、batch 命中的专家集合和缓存复用影响。\n- KV 按实际保存的 latent、位置分支和元数据计数，再乘有效 token 数。\n- FLOPs、容量和读写量分别统计；用算术强度与实际时间线判断瓶颈。\n')
-      .replace(/\x60{3}text\ndecode 每 token：[\s\S]*?\x60{3}/,
-        '一次 Decode 的矩阵工作可按激活参数粗估，但读取量要按本批次实际访问的共享层与专家权重计算。1.37 TB 是本例 BF16 总权重容量，不是每 token 必然读取的字节数。Prefill 还包含 Attention、数据搬运和调度；其瓶颈需要结合输入长度、batch 和硬件判断。')
-      .replace('| Decode 每 token | ≈ 74 GFLOP + 读 1.37TB | memory-bound → 量化 + wideEP |',
-        '| Decode 每 token | 线性层约 74 GFLOP；读取量按实际权重访问计算 | 结合 batch、专家覆盖与带宽分析 |')
-      .replace('| 权重显存（BF16） | ≈ 1.37 TB | 必须多卡 + EP + FP8/FP4 |',
-        '| 权重显存（BF16） | ≈ 1.37 TB | 先计算容量，再选择分片、精度与卸载方案 |')
-      .replace('| Prefill FLOPs（4096 token） | ≈ 303 TFLOP | prefill 计算密集 → PD 分离 |',
-        '| Prefill FLOPs（4096 token） | 线性层约 303 TFLOP | 结合 shape、batch 与 Attention 工作量分析 |')
-      .replace('**一句话结论**：权重 1.37TB 决定"必须多卡 + EP + 量化"；量化到 FP8 直接少一半卡，这就是 FP8 在生产里是默认选项的原因。',
-        '1.37 TB 是仅权重容量。精度、分片、卸载和设备容量共同决定放置方案，KV、激活与通信缓冲需要额外空间。');
-  }
+  // Numerical and algorithmic corrections belong in the source note.
+  // Do not replace the tail of chapter 30: it contains reviewed derivations
+  // and interview exercises that must survive publication.
   if(paper.id===31) {
     text=text.replace(/^所以安排：.*$/m,'')
       .replace('## 13. 与 V3.2 的关系 & 学习挂载点','## 13. 与 V3.2 的机制差异')

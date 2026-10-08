@@ -1,6 +1,6 @@
 # 第三章 GEMM：从分块实现到性能优化
 
-矩阵乘法的分块同时影响输入复用、累加器大小和 GPU 驻留资源。较大的输出 tile 让输入参与更多乘加，也需要保留更多部分结果。
+矩阵乘法的分块（tile）同时影响输入复用、累加器大小和 GPU 驻留资源。较大的输出 tile 让输入参与更多乘加，也需要保留更多部分结果。
 
 从一个线程计算一个输出开始，再引入 shared tile、寄存器微块和矩阵指令，可以逐步看清地址、同步和资源需求怎样变化。已有 MatMul 配置扫描提供了相应的加速、退化与资源超限案例。
 
@@ -381,6 +381,8 @@ python roadmap/curriculum/operators/03-gemm/examples/cpu_hopper_swizzle_checks.p
 
 ## 4. 算术强度与资源账本：每个符号都要标出统计范围
 
+上一节的坐标和线程所有权只说明“谁计算哪个输出”，还没有说明一次计算需要搬运多少数据、哪些值必须驻留。下面把 tile、归约步和整个 grid 分开统计；这些是解释性能变化的中间模型，不是 profiler 的实测流量。
+
 对一个输出 tile `BM×BK`、归约 tile `BN`，本轮乘加的 FLOPs（Floating-point Operations，浮点运算次数）是
 
 $$
@@ -445,6 +447,8 @@ $$
 CPU 脚本对 `BM=64,BN=32,BK=64,s=4` 算出当前 tile 的输入字节为16384、理想输入 AI 为16 FLOP/B；这不是 GPU 测得的带宽，也不包含 C/旧 C。它的作用是防止推导时把输出列 tile、归约 tile 和元素大小混在一起。
 
 ## 5. SIMT FMA、Tensor Core 和 WMMA：指令语义先于峰值数字
+
+确定分块工作量后，还需要选择乘加的执行方式。线程级 FMA 与 Tensor Core 矩阵指令对数据布局和数值类型有不同要求，WMMA 则是调用矩阵运算的一种编程接口。选择实现时，应先确认其支持的输入、累加精度和分块形状，再处理边界并比较性能。
 
 SIMT（Single Instruction, Multiple Threads，单指令多线程）路径通常以线程为粒度执行标量或向量 FMA；Tensor Core 是 GPU 中面向矩阵乘加的专用计算单元。WMMA（Warp Matrix Multiply-Accumulate，线程束矩阵乘加）是 CUDA C++ 暴露的 warp-level 矩阵接口，MMA（Matrix Multiply-Accumulate，矩阵乘加）也常用来泛指对应的矩阵指令族。PTX（Parallel Thread Execution，并行线程执行）是 CUDA 编译链中的虚拟指令表示，SASS 是目标 GPU 的实际机器指令表示；看到 API 名称不能直接推断最终指令路径。
 
@@ -1803,6 +1807,12 @@ def grouped_tile_map(groups, bm: int, bk: int):
 ### 9.4 CPU 模型和实现边界
 
 本章示例中的 CPU 模型只验证地址、tile 覆盖、归约切分和 epilogue 顺序。它不模拟 warp、Tensor Core、shared bank、寄存器分配或 cache，也不产生新的真实 GPU 数字。真正实现时先固定 stride、dtype、累加精度和 `beta`/bias/activation 合同，再分别测 batched、ragged grouped、split-N 与 persistent 调度；不能把同一组 dense shape 的结果推广成所有扩展。
+
+## 排错场景：GEMM “能跑”却不等价或不值得优化
+
+1. 非整除 shape 只在最后一轮出错时，分别打印 A/B load mask 和 C store mask；`m<M && k<K` 不能替代归约轴的 `n<N`，也不能把一个 `other=0` mask 复制给另一输入。
+2. WMMA/cp.async 版本出现偶发错误时，先问“最后一个 shared 读者是谁、哪个事件宣布槽位可复用”，再看 tile 坐标；编译通过不代表 barrier、phase 或 warp 全员到达合同成立。
+3. tile 变大后 GFLOPS 下降时，固定 dtype、shape 和计时边界，分开看 output tile 资源、归约 stage、尾部浪费与 grid 波次；不要用单一理论 AI 或 Tensor Core 利用率替代资源证据。
 
 ## 10. 实践：正确性与性能对比
 

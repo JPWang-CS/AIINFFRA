@@ -32,7 +32,7 @@ $$
 
 朴素实现先算 `QK^T`，得到每个 batch/head 一张 `S×S` score 矩阵，再做 mask、softmax、`PV`。score 和 probability 如果以 dtype `s` 存储，各自大约需要 `BHS^2s` 字节；它们是否同时存在要按实际代码计数，不能因为最终输出是 FP32 就声称所有中间都自动是 FP32，也不能把 FP16/BF16 的 bytes 混进 FP32 表。
 
-Flash 风格实现改变的是存储路径：Q 取一个 tile 留在寄存器或片上存储，K/V 沿 sequence 方向分 tile 读取，直接更新输出状态，不物化完整 `S×S` score/prob。计算量仍是二次的。忽略 cache 命中、尾 mask 和无效槽位，只按有效元素估一个 Q 驻留、扫描 KV 的逻辑读写量：Q 和 O 各读/写一次，K/V 被每个 Q tile 扫描一次，因此
+Flash 风格实现改变的是存储路径，而不是注意力的可见集合：Q 取一个 tile 留在寄存器或片上存储，K/V 沿 sequence 方向分 tile 读取，直接更新输出状态，不物化完整 `S×S` score/prob。计算量仍是二次的。忽略 cache 命中、尾 mask 和无效槽位时，可以先按有效元素估算逻辑读写量：Q 和 O 各读/写一次，K/V 则被每个 Q tile 扫描一次，因此
 
 $$
 Bytes_{logical}\approx 2B H S D s\left(1+\left\lceil\frac{S}{B_Q}\right\rceil\right).
@@ -51,6 +51,8 @@ FLOPs_{causal,useful}=2BH S(S+1)D.
 $$
 
 但本章 kernel 的教学循环仍扫描每个 KV tile，只在 score 上屏蔽 future；边界 tile 和无效 lane 仍会执行部分指令。因此这个 unmasked-valid-domain FLOPs 不能当作实际指令量。若只按 `BQ=16,BKV=32` 的 padded tile 估算，QK+PV 的工作量是 `4BH ceil(S/BQ)BQ ceil(S/BKV)BKV D`；这只是 tile work estimate，不是硬件实测指令量。causal 也不能据此声称执行量或 traffic 自动减半：当前实现没有跳过 future tile，只是让无效 score 不进入状态。是否命中 L2、是否由更高层 cache 或融合路径缓解，要用 profiler 检查。
+
+这说明第一层差异是“是否物化完整矩阵”，第二层才是 tile 扫描带来的重复读取。接下来在线 Softmax 会把这条数据流写成可合并的状态；它解释的是如何保持数学等价，不会自动消除所有 Q/K/V 读写。
 
 ## 3. Online Softmax 的三个状态
 
@@ -177,6 +179,8 @@ $$
 这正是 [#80 Grouped Query Attention](https://github.com/AlphaGPU/leetgpu-challenges/tree/main/challenges/medium/80_grouped_query_attention) 的无 batch 题面边界；本章 `[B,H,S,D]` square wrapper 没有实现它。GQA 可以作为 CPU 映射模型加入，但不能把它写进当前 Triton kernel 后仍称“同一 baseline”。同理，varlen 需要每个 batch 的绝对 offset 和长度，causal diagonal 不能继续用 `k_abs≤q_abs` 的单一方形坐标替代。
 
 ## 6. FA1、FA2 与 warp 组织：不要压扁成一句“分块”
+
+到这里，教学 baseline 已经给出 `[B,H,S,D]` 的地址、Q tile 的所有权、KV 扫描和 `(m,l,U)` 递推。下面转向固定版本的 FlashAttention 作者实现，关注的是同一数据流如何分配给 CTA、warp 或 warpgroup；这些源码检查是实现证据，不能反过来扩大教学 wrapper 的 shape 或 dtype 合同。
 
 FlashAttention 初版的并行组织首先沿 batch/head 分工；论文 FlashAttention-2 说明 FA2 forward 又把 Q 的 row tiles 分给 CTA，循环结构可以读成 outer-Q、inner-KV。这里的“Q tile”是算法/程序组织，不等于旧 CUDA 教学例子中一个 `blockIdx.x` 就完整代表 FA1 原始实现。
 
@@ -521,6 +525,8 @@ git -C flash-attention-fa3 checkout 8d3a3b80d4758ebde5a867c50d24d4351443cf2b
 在作者代码支持的 shape/mask/dtype 组合上，再与同语义 PyTorch math/reference 比较输出与误差；逐项改变 `B_Q/B_K`、GQA/varlen、causal 与 head dimensions 时，先看实际 dispatch 选择，再检查 registers/thread、shared memory、spill 和 kernel 时间。真实构建、设备 correctness、计时与 profiler 需在目标设备现场记录，本页的 CPU 通过不替代其中任何一项。
 
 ## 7. 精度路线和官方源诊断
+
+并行划分之外，数值路径也会改变指令选择和误差。比较 FP32 教学实现与作者库的 FP16、BF16 或 FP8 实现时，应分别注明输入类型、累加类型、指数计算和掩码条件，再比较资源占用与耗时。不同精度的结果可以并列展示，但不能直接将速度差归因于分块或流水优化。
 
 本章 baseline 固定 FP32 输入、FP32 accumulator、`tl.dot(..., input_precision="ieee")`。验证参考用 `torch.matmul`、TF32 关闭、full FP32 score/softmax/PV，容差 `rtol=atol=1e-4`。FP16/BF16 Tensor Core 路线应另列输入 bytes、乘法精度、累加 dtype、转换位置和容差；不能拿 FP32 baseline 的 FLOPs/bytes 表冒充半精度性能，也不能把“accumulator 是 FP32”写成所有中间乘法都是 IEEE FP32。
 

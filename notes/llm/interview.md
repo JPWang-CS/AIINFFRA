@@ -4,9 +4,9 @@
 
 ## 回答方法与准备范围
 
-每题都沿着“模型/请求条件 → 公式或算法 → 代码与数据流 → 正确性和性能证据 → 反例”展开。先说清模型形状、batch、prompt/output 长度、dtype、量化配置和测量边界，再讨论 bottleneck。一个 kernel 加速不等于服务端端到端提升；mean throughput 也不能替代 TTFT、TPOT 与尾延迟。无实测时不要填推测倍数。
+每题都沿着“模型/请求条件 → 公式或算法 → 代码与数据流 → 正确性和性能证据 → 反例”展开。先说清模型形状（shape）、batch、prompt/output 长度、数据类型（dtype）、量化配置和测量边界，再判断瓶颈（bottleneck）。单个 kernel 变快只有在关键路径上才可能改善服务端时间；平均吞吐（mean throughput）也必须和首 token 时间（TTFT，Time To First Token）、每输出 token 时间（TPOT，Time Per Output Token）及尾延迟一起看。没有实测时只写待验证假设，不填推测倍数。
 
-本笔记的准备重点是 LLM Prefill/Decode、KV cache、Attention、量化和推理服务；GPU 体系结构及算子优化仍是第一核心。分布式训练、编译器及多 vendor 深入程度应根据岗位样本定向准备。岗位要求、个人资格年限、课程内容和个人成绩必须分开陈述。
+本笔记的准备重点是 LLM 的 Prefill（提示词阶段）、Decode（逐 token 阶段）、KV cache、Attention、量化和推理服务；GPU 体系结构及算子优化仍是第一核心。分布式训练、编译器及多厂商（multi-vendor）深入程度应根据岗位样本定向准备。岗位要求、个人资格年限、课程内容和个人成绩必须分开陈述。
 
 | 能力 | 课程/材料入口 | 可出示的证据 | 分类 |
 |---|---|---|---|
@@ -21,7 +21,7 @@
 
 ### MHA、GQA、MQA 与 KV 容量
 
-MHA 为每个 query head 配置相应的 K/V head；MQA 让多个 query head 共享一个 KV head；GQA 则把 query heads 分组，每组共享一个 KV head。假设模型有 $L$ 层、batch 中共 $B$ 条缓存序列、每条缓存 $S$ 个 token、$H_{KV}$ 个 KV heads、每 head 维度 $D$、每元素 $b$ bytes，则不含分页对齐和元数据时：
+多头注意力（MHA，Multi-Head Attention）为每个 query head 配置相应的 K/V head；多查询注意力（MQA，Multi-Query Attention）让多个 query head 共享一个 KV head；分组查询注意力（GQA，Grouped-Query Attention）则把 query heads 分组，每组共享一个 KV head。假设模型有 $L$ 层、batch 中共 $B$ 条缓存序列、每条缓存 $S$ 个 token、$H_{KV}$ 个 KV heads、每 head 维度 $D$、每元素 $b$ bytes，则不含分页对齐和元数据时：
 
 $$
 \mathrm{KV\ bytes}=2\,L\,B\,S\,H_{KV}\,D\,b.
@@ -29,7 +29,7 @@ $$
 
 系数 2 来自 K 和 V。固定其他维度时，GQA 相对 MHA 的 KV 元素量比例约为 $H_{KV}/H_Q$；节省幅度取决于模型配置，不能把单个模型的 head 数或 MiB 数推广到所有模型。Decode 要读取历史 KV 计算注意力，但每步的瓶颈还受 batch、KV 长度、cache 层级、权重流量和调度影响。GQA 降低 KV 容量/流量的同时，也影响模型结构与质量，应按目标模型讨论。
 
-追问“怎么验证”时，可先用配置值算理论字节数，再检查框架分配与 block table，最后用不同 batch/context length 的显存和请求 trace 对照。若实际分配高于公式，检查对齐、碎片、scale/metadata、临时 buffer、beam/copy-on-write 与实现布局，而不是修改理论公式来凑数。
+验证路径是：先用模型配置计算理论字节数，再检查框架分配与 block table，最后用不同 batch/context length 的显存和请求 trace 对照。若实际分配更高，应沿对齐、碎片、scale/metadata、临时 buffer、beam/copy-on-write 与实现布局逐项定位。
 
 ### MLA 的低维缓存与权重吸收
 
@@ -63,7 +63,7 @@ $$
 
 它按均方根缩放，不像 LayerNorm 那样先减均值；算子实现仍需做 reduction、归一化和逐元素缩放。融合与精度行为依输入 dtype、累加 dtype、向量长度和 kernel 实现验证。
 
-MoE 的稀疏路由不代表实际计算和通信成本都按激活专家比例缩小。要同时考虑 router、token-to-expert dispatch/combine、专家负载不均、容量/丢 token 策略、all-to-all、权重放置和小 GEMM 效率。面试时画出 token 路由和返回的路径，结合专家并行拓扑与 token 分布说明瓶颈；不能只用“每 token 激活 k 个专家”推算端到端加速。
+MoE（Mixture of Experts，混合专家）的稀疏路由只减少部分专家计算，实际成本还由 router、token-to-expert dispatch/combine、专家负载、容量/丢 token 策略、all-to-all、权重放置和小 GEMM 效率共同决定。回答时可画出 token 从路由到专家再返回的路径，结合专家并行拓扑与 token 分布定位瓶颈；“每 token 激活 k 个专家”只能估算局部计算量，不能替代端到端测量。
 
 ## Attention 与长上下文
 
@@ -74,6 +74,12 @@ MoE 的稀疏路由不代表实际计算和通信成本都按激活专家比例�
 它仍然要读取输入 Q/K/V 并输出结果；实际 HBM 流量受 tile、片上存储预算、head dimension、causal/sparse mask、反向实现和硬件影响。论文的 IO 复杂度结论有其 SRAM/问题规模假设，不能说“所有 HBM IO 都是 O(N)”或宣称端到端固定 3–4 倍。FlashAttention-2 还调整并行划分与工作分配；回答“为什么更快”时要说出论文版本和对应机制，不能把 FA1/FA2 或某个库的实现混为一谈。
 
 可拿来追问的验证链是：对齐参考实现和数值容差 → 对不同序列长度/head_dim/batch 做正确性 → 分别测 kernel 与完整模型 → 查看显存峰值和 Nsight 指标 → 用服务请求指标确认端到端受益。短序列、很小 batch、不同融合/库基线或非 attention 主导的模型，可能无法显著获益。
+
+解释 FlashAttention 的优化原理时，可以组织为以下完整表述：
+
+> 标准稠密注意力需要计算各个 Query 与可见 Key 的相关性。FlashAttention 将这些计算分块，并用在线 Softmax 合并每行的最大值、指数和与输出累加，因此无需在显存中保存完整的分数和概率矩阵。它减少的是中间结果的存储与读写，稠密注意力的主要计算量仍随序列长度呈二次增长。实际收益取决于分块、片上资源和对照实现，应在相同形状、精度与掩码条件下验证。
+
+这是一段算法说明；若继续介绍个人实现，应另外说明所用版本、代码改动及实际测量结果。
 
 ### PagedAttention、Continuous Batching 与 Chunked Prefill
 
@@ -124,6 +130,70 @@ DP、TP、PP、EP 的通信模式分别与梯度同步、层内切分、层间�
 | GQA | [论文笔记](../../papers/attention/gqa.md) | head 共享关系、KV 容量比例、质量与带宽取舍 |
 | Triton 编译模型 | [论文笔记](../../papers/compiler/triton-paper.md)、[编译实现笔记](../cuda/triton-under-the-hood.md) | block-level 抽象、编译映射、性能可移植性的边界 |
 | 量化 | [INT8/FP8 资料](../algorithms/quantization-int8-fp8.md)、[量化章节](../../roadmap/curriculum/quantization/README.md) | 数值范围、校准/缩放、kernel 路径与精度评估 |
+
+## 现场推导与工程追问
+
+以下题目用于检验前文概念能否落实到计算和决策，并非某家公司的固定题库。先独立写出假设、维度和结果，再阅读解释；回答中出现的测量数字必须来自自己的实验。
+
+### GQA 的缓存减少了多少，为什么显存没有同比下降
+
+假设模型有 32 层、32 个 Query heads、8 个 KV heads，每个 head 维度为 128。4 条序列均缓存 8192 个 token，K/V 都用 BF16，暂不计分页和其他开销。
+
+代入前文公式：
+
+$$
+M=2\times32\times4\times8192\times8\times128\times2
+ =4\,294\,967\,296\ \mathrm{bytes}=4\ \mathrm{GiB}.
+$$
+
+如果改为 32 个 KV heads，其他条件不变，缓存为 16 GiB。减少的是这部分有效 KV 数据，不是模型权重、激活、工作区和预留缓存池；因此进程总显存不会自动降为四分之一。若按张量并行分片，还应核对 KV head 是否可整除并行数，以及框架是否复制了部分 heads。
+
+进一步追问：分页块长为 16 时，长度为 17 的单条序列需要两个块，当前占用 32 个 token 槽，其中 15 个尚未使用。实际服务应逐请求计算向上取整，不能把“每请求最多浪费 15 槽”当作所有请求的平均浪费。算法关系见 [GQA 原论文](https://arxiv.org/abs/2305.13245)，块管理见 [PagedAttention 论文](https://arxiv.org/abs/2309.06180)。
+
+### 两个 Attention 分块的输出能否直接取平均
+
+不能。块 A、B 分别保留最大分数 $m_A,m_B$、指数和 $\ell_A,\ell_B$ 和未归一化 Value 累加 $u_A,u_B$。令 $m=\max(m_A,m_B)$，则
+
+$$
+\ell=e^{m_A-m}\ell_A+e^{m_B-m}\ell_B,\qquad
+u=e^{m_A-m}u_A+e^{m_B-m}u_B,\qquad o=u/\ell.
+$$
+
+两个块的指数基准不同，必须先统一基准，再合并分母和分子。例如 A 只有分数 0、Value 2，B 只有分数 $\ln3$、Value 10，最终输出为 $(2+3\times10)/(1+3)=8$，不是两个块输出的算术平均 6。
+
+全遮挡块需要单独处理：其归一化和为零，不应直接计算 $-\infty-(-\infty)$。至于整行没有可见 Key 时返回零、NaN 还是报错，应服从算子约定，并与参考实现对齐。推导和分块实现见[在线 Softmax](../algorithms/online-softmax.md)与 [FlashAttention](../algorithms/flash-attention-mechanism.md)。
+
+### MLA 为什么不能把缓存公式直接乘二
+
+普通 K/V 是两份张量；MLA 的内容 Key 和 Value 可以从同一个压缩向量恢复。假设每层缓存 512 个内容元素和 64 个位置元素、均为 BF16，则每 token 每层的有效数据是 $(512+64)\times2=1152$ 字节，而不是 $2\times512\times2+64\times2$。这是指定表示下的计算例子，不代表某个部署版本的实际分配。
+
+追问不能停在容量：如果直接恢复所有历史 K/V，再执行普通 Attention，会增加哪些临时张量和读写？权重吸收为什么要求线性变换，位置旋转为什么要单独讨论？回答时应给出 $W^{UK}:[d_k,d_c]$、$q:[d_k]$ 和压缩缓存 $c:[d_c]$，确认 $(W^{UK})^Tq$ 的维度是 $d_c$。对应推导见 [MLA 课程笔记](../algorithms/mla-deepseek.md)。
+
+### 投机解码为什么不是“目标模型概率最高就接受”
+
+在随机采样设定下，令目标分布为 $p$、草稿分布为 $q$。从 $q$ 提出的候选 $x$ 按 $\min(1,p(x)/q(x))$ 接受；发生拒绝时，从归一化后的 $\max(p-q,0)$ 重新采样。它与“候选是否等于目标 argmax”的贪心验证不是同一个问题。
+
+用只有 A、B 两个 token 的例子检验：$q=(0.8,0.2)$、$p=(0.5,0.5)$。A 的接受概率为 0.625，B 为 1；直接接受的概率质量分别是 0.5 和 0.2，剩余 0.3 在拒绝后补给 B，最终分布正好是 p。如果拒绝后仍直接从 p 采样，结果就会改变。
+
+工程上还要确认温度、Top-K/Top-P 等处理后的分布一致，以及拒绝后的 KV 回滚、位置编号和 RNG 状态。分布等价不要求在任意不同实现中逐次产生相同 token。算法依据为 [Speculative Decoding 原论文](https://arxiv.org/abs/2211.17192)。
+
+### 权重文件变小了，为什么 W4A16 反而更慢
+
+先区分存储格式和计算格式。低位宽权重可能需要解包、加载分组 scale、反量化，再进入矩阵计算；这些成本未必能被节省的访存抵消。小矩阵还可能受 launch 或调度开销主导。比较时固定模型、输入、输出长度、质量要求和计时范围，再检查反量化是否融合、布局是否适合目标 kernel，以及实际调用了哪条指令路径。
+
+理解缩放算法可以从 $Y=XW$ 出发。令可逆对角矩阵为 D，则 $(XD^{-1})(DW)=XW$；量化前这是等价变换，分别量化两侧后则不再保证数值完全一致。某个通道的激活范围被压缩时，相应权重范围会扩大，校准需要评估两侧误差，而不是只追求激活最大值变小。与此相关的原始方法见 [SmoothQuant](https://arxiv.org/abs/2211.10438) 和 [AWQ](https://arxiv.org/abs/2306.00978)。
+
+### 吞吐提高而 P99 恶化，是否应上线
+
+缺少目标和负载时不能回答。先说明指标是请求完成时间、TTFT、TPOT 还是单个 token 的间隔，再区分输入到达率、请求长度分布、成功率和超时策略。更大的 batch 可能提高设备利用率，同时延长排队或单轮执行；只统计完成请求，还可能漏掉已经超时的慢请求。
+
+可以先固定到达过程和样本集，对照排队时间、Prefill、逐轮 Decode 和 KV 传输的 trace。若瓶颈来自长 Prefill 插入 Decode，考虑分块与调度；若来自 KV 容量不足和反复抢占，先检查缓存与并发；若来自跨资源池传输，则评估数据量和网络拥塞。不同原因需要不同实验，不能先决定用 PD 分离再寻找理由。
+
+### ZeRO-3 分片以后，为什么仍然会 OOM
+
+分片后的持久模型状态只是峰值显存的一部分。计算某层时可能要聚合参数，预取可能让下一层同时驻留，此外还有激活、通信 buffer、算子工作区、allocator 保留空间和未释放引用。应按执行时间线统计同时存活的对象，不能把整模型账本除以数据并行数就当作峰值。
+
+现场可以先画出一层的“参数聚合—前向/反向—梯度归约—释放”过程，再解释预取深度与显存的权衡。检查工具应能够区分已分配与已保留空间，并把峰值定位到具体阶段。状态分片的基本语义见 [ZeRO 论文笔记](../../papers/training/zero-paper.md)；实际聚合和释放时机仍需结合框架版本。
 
 ## 项目证据模板
 

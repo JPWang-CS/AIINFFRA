@@ -1,16 +1,27 @@
 # GPU 高性能算子与 LLM 系统面试准备
 
-本文面向已有 NPU 算子经验、准备转向 GPU 高性能算子与 LLM 性能优化的工程师。复习时以 CUDA/Triton 实现、性能分析和真实项目为主，模型结构及推理问题结合[LLM 面试笔记](../notes/llm/interview.md)展开。
+本文面向已有 NPU 算子经验、准备转向 GPU 高性能算子与大语言模型（LLM，Large Language Model）性能优化的工程师。复习时以 CUDA/Triton 实现、性能分析和真实项目为主，模型结构及推理问题结合[LLM 面试笔记](../notes/llm/interview.md)展开。
 
 ## 复习原则
 
-回答一个优化问题时，沿着“工作负载与正确性要求 → 瓶颈假设 → 代码改动 → 可观测证据 → 反例与边界”连续展开。先说明输入形状、dtype、布局、误差容限和测量范围，再解释为何改某段代码；最后说清用什么 profiler/基准验证、还有哪些情形可能让结论失效。数字只引用注明设备、版本、shape、精度和计时口径的真实记录。没有实验的内容标为待验证假设，不用峰值规格替代实测。
+回答一个优化问题时，沿着“工作负载与正确性要求 → 瓶颈假设 → 代码改动 → 可观测证据 → 反例与边界”连续展开。先说明输入形状（shape）、数据类型（dtype）、布局、误差容限和测量范围，再解释为何修改某段代码；最后说明用哪一种性能分析器（profiler）或基准验证，以及哪些条件会改变结论。数字只引用注明设备、版本、shape、精度和计时口径的真实记录；没有实验的内容标为待验证假设，不用峰值规格替代实测。
 
 学习材料、LeetGPU 通过、真实设备验证、岗位要求和个人工作经历是不同证据。课程覆盖只说明仓库有相应教材；不能据此声称读者已掌握或已满足招聘条件。
 
 ## 能力与证据定位
 
-以下采用招聘方公开的两个岗位作为样本，用于核对能力要求，不据此统计市场频率。课程以 GPU 架构、CUDA/Triton 和算子优化为主干，量化与模型性能分析为核心应用，框架接入和真实系统验证用于展示工程效果。RadixArk 样本另有 4 年以上经验要求；岗位年限、地域等资格条件需单独核对，不能用课程学习替代。
+2026-09-25 查阅的公开职位反映了几种不同的工作侧重。以下比较用于选择准备深度；职位可能更新，具体年限和地域要求以招聘页面为准。
+
+| 公开岗位样本 | 主要技术要求 | 准备时应突出什么 |
+|---|---|---|
+| [NVIDIA：CUTLASS Kernels](https://nvidia.wd5.myworkdayjobs.com/en-US/NVIDIAExternalCareerSite/job/US-CA-Santa-Clara/Senior-Software-Engineer--CUTLASS-Kernels-_JR2018988) | Tensor Core 算子、C++/Python DSL、计算机体系结构与汇编 | 分块与布局、矩阵指令、编译资源及不同形状下的性能 |
+| [NVIDIA：AI Inference Performance](https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite/job/US-CA-Santa-Clara/Senior-Software-Engineer---AI-Inference-Performance_JR2024262) | 模型到服务的性能分析、可复现基准、推理引擎和通信 | 局部优化如何改变端到端指标，如何设置性能回归检查 |
+| [腾讯：高性能算子优化](https://careers.tencent.com/jobdesc.html?postId=2072509101644103680) | CUDA/CUTLASS/Triton、集合通信、通信计算重叠 | 计算与通信的依赖关系、并行组织、正确性和工具证据 |
+| [Inferact：Kernel Engineering](https://jobs.ashbyhq.com/inferact/384d9db8-c712-4caa-8091-444b4189e161) | GPU kernel、性能分析、低精度及推理引擎贡献 | 自写算子的实现细节、基准质量、与引擎的接入方式 |
+| [Anthropic：Performance Engineer, GPU](https://job-boards.greenhouse.io/anthropic/jobs/4926227008) | 自定义算子、框架、分布式和大规模性能优化 | 如何跨层定位问题，以及优化在真实负载中的效果 |
+| [Tilde：Kernel Engineer](https://jobs.ashbyhq.com/tilderesearch/bc4e4071-cf64-4460-8265-b1e5a603d6b8) | 算法能力、GPU 编程、技术表达及可展示产物 | 能解释的实现、公开贡献或技术记录，而非只列工具名 |
+
+据此，算子岗位应重点准备线程与数据布局、同步、数值和性能分析；推理岗位还需说明模型状态、调度与请求指标。偏编译器或分布式的职位，则应进一步准备中间表示、代码生成或通信协议。下面将这些要求映射到课程中的具体材料。
 
 | 能力 | 对应课程 | 面试中应能说明或展示 |
 |---|---|---|
@@ -38,7 +49,7 @@ Coalescing 按同一条 warp 访存指令的地址合并请求。连续 32 个�
 
 面试中可以从地址式入手：FP32 读取的字节地址为 `base + 4*lane` 时，相邻 lane 读取相邻元素；行主序矩阵沿行方向跨步时，则应把行跨度代入公式。随后检查生成的访存指令、DRAM/L1/L2 流量和 sector 指标。数据已在缓存、规模很小或瓶颈不在访存时，减少请求数量未必缩短整体时间。
 
-Shared memory bank conflict 也不能只背“32 banks，所有冲突都串行”。对通常的 32-bit word 访问，bank 映射会让连续 word 分散到不同 bank；同一请求中多个 lane 访问同一 bank 的不同地址时，可能需要多个服务阶段。[CUDA 编程指南的 shared-memory 章节](https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/writing-cuda-kernels.html#shared-memory)说明了 bank conflict 与矩阵转置例子；广播同一地址等访问有不同规则，宽数据、向量化与具体代际也会影响行为。矩阵转置中常用 padding 或 swizzle 改变 shared-memory 布局；随后确认冲突指标和总耗时，不能只凭代码形状断言已解决。
+共享内存的 bank conflict 来自一次访问中对存储 bank 的竞争。对典型的 32 位字访问，连续字分布到不同 bank；多个 lane 读取同一 bank 的不同地址时，可能需要分次服务。同地址广播、宽类型和向量指令需要另按实际访问规则分析。矩阵转置中的 padding 或 swizzle 通过改变地址映射减少竞争，应再用冲突指标与耗时确认效果。[CUDA 编程指南](https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/writing-cuda-kernels.html#shared-memory)提供了相应的访问模型。
 
 ### 延迟、Occupancy 与性能指标
 
@@ -62,7 +73,7 @@ Tensor Core 是矩阵乘加数据路径，不是任何 FP16/INT8 代码都会自
 
 Triton 提供块级张量编程与 JIT 编译；开发者写 tile 计算和指针表达式，编译器负责将逻辑张量映射到线程/warp，并选择/生成相应指令与数据布局。它不会对任意程序自动保证 coalescing、Tensor Core 使用或接近某固定百分比的峰值。面试可沿一个 MatMul 例子解释 `program_id`、tile、`tl.load` mask、`tl.dot`、编译期配置、layout 和生成代码，然后在多 shape 上与 PyTorch/cuBLAS 基线比较正确性和耗时。
 
-Triton 便于表达和迭代，但“开发速度提升 10 倍”或“固定达到 CUDA 的 93–95%”没有跨 workload 的普适依据。性能受 shape、dtype、layout、编译器版本、调优空间与基线影响。PyTorch 集成也不等于 kernel 函数能被调用：生产级 custom op 还涉及 schema/dispatch、设备与 dtype 检查、fake/meta 行为、Autograd、编译/打包、测试和版本兼容。根据目标需求选 Python/Triton 接口或 C++/CUDA custom operator，并用官方 `torch.library`/`cpp_extension` 路径与实际项目约束验证。
+Triton 的表达效率适合快速试验分块和融合，但运行性能仍取决于输入形状、布局、编译器和对照实现。接入 PyTorch 时，还需声明算子接口与输入修改行为，检查设备和类型，提供编译期间的形状推导，并按需实现反向传播。Python/Triton 接口与 C++/CUDA 扩展各有适用场景，应结合项目的构建、部署与版本要求选择。
 
 ### 什么时候讨论 Persistent Kernel
 
@@ -72,7 +83,7 @@ Persistent kernel 是让有限数量的 CTA/warp 长时间驻留并循环处理�
 
 ### Prefill、Decode 与 KV cache
 
-Prefill 通常有较大的序列维度和矩阵工作量，常见情况下计算并行度较高；Decode 每步生成少量 token，可能更受权重/KV 读取、batch、cache 和 launch 影响。但这是工作负载倾向，不是由阶段名称决定的硬约束。短 prompt、小 batch、长上下文、并发请求、权重驻留或融合都会改变瓶颈。用请求级时间线和代表性的 batch、prompt length、decode length 矩阵验证，并分别报告 TTFT、TPOT、吞吐与尾延迟。
+Prefill（提示词阶段）一次处理多个输入位置并写入各层 KV cache；Decode（逐 token 阶段）通常每步处理一个新位置并读取历史 KV。Prefill 往往有较大的矩阵工作量，Decode 则更容易受到权重/KV 读取、batch、缓存和 launch 的影响，但真正的瓶颈仍由 shape、并发和实现路径决定。首 token 时间（TTFT，Time To First Token）包含排队、调度和 Prefill；每输出 token 时间（TPOT，Time Per Output Token）描述生成阶段的平均步进成本。应以请求级时间线和代表性的 batch、prompt length、decode length 组合验证，并同时报告吞吐与尾延迟。
 
 对没有前缀共享、长度均为 S 的 B 条序列，L 层普通 MHA/GQA 的 KV 有效数据量为
 
@@ -80,11 +91,17 @@ $$
 B_{KV}=2\,L\,S\,H_{KV}\,D\,B\,b.
 $$
 
-其中 $L$ 为层数，$S$ 为缓存 token 数，$H_{KV}$ 为 KV head 数，$D$ 为 head dimension，$B$ 为 batch/序列数，$b$ 为每元素字节数，系数 2 对应 K 和 V。分页、对齐、元数据、不同序列长度和量化 scale 会改变真实分配。GQA 在 head dimension 与序列长度等条件相同的情况下，KV heads 从 $H_Q$ 减少为 $H_{KV}$，理想 KV 元素数按 $H_{KV}/H_Q$ 缩小；不要在缺少模型配置时引用固定 MiB 数。
+其中 $L$ 为层数，$S$ 为缓存 token 数，$H_{KV}$ 为 KV head 数，$D$ 为 head dimension，$B$ 为 batch/序列数，$b$ 为每元素字节数，系数 2 对应 K 和 V。分页、对齐、元数据、不同序列长度和量化 scale 会改变真实分配。GQA 在 head dimension 与序列长度等条件相同的情况下，将 KV heads 从 $H_Q$ 减少为 $H_{KV}$，理想 KV 元素数按 $H_{KV}/H_Q$ 缩小；没有模型配置时，只能说明这个比例，不能代入固定 MiB 数。
 
 Decode 每步也不总是“完整读取全部权重”。单序列、较低 batch 且权重远大于 cache 时，权重流量常是重要项；但批处理复用、cache 层级、并发与实现会改变从 HBM 实际读取的字节。可先在“相关权重各读取一次”的假设下估算字节数，再用实际流量验证；MoE 则按该批次涉及的共享层和专家计算，不能直接把总参数容量当作每步读取量。
 
-PagedAttention 通过块表将逻辑 token 块映射到物理 KV 块，降低连续大块预分配带来的碎片并支持灵活调度/共享；block size、复制/写时共享语义和调度策略属于具体实现。不要把某个历史版本的默认 block token 数或碎片百分比说成所有 vLLM 版本的固定事实。Continuous batching 在迭代边界动态调整活动请求，也不保证任意负载获得固定倍数吞吐提升；应用相同请求分布测 TTFT、TPOT、吞吐、公平性和 P95/P99。
+PagedAttention 通过块表将逻辑 token 块映射到物理 KV 块，降低连续大块预分配带来的碎片并支持灵活调度/共享；block size、复制/写时共享语义和调度策略由具体实现决定。Continuous batching 在迭代边界动态调整活动请求；其效果应在相同请求分布下用 TTFT、TPOT、吞吐、公平性和 P95/P99 验证。
+
+回答“为什么 kernel 加速后，服务吞吐没有提高”时，可以先给出机制，再说明验证方法：
+
+> 服务吞吐取决于请求处理过程中限制整体速度的环节。若优化的 kernel 占比较小，或节省的时间被布局转换、KV 搬运和调度等待抵消，局部加速就难以转化为服务收益。应先比较算子输出，再核对模型对应位置的 logits，随后在相同请求分布下检查时间线、TTFT、TPOT 和吞吐。局部算子的加速结果仍然有效，但其适用范围应与请求级结果分别陈述。
+
+这段表述解释分析方法；用于项目回答时，再补充本人实际修改的位置、测量条件和结果。
 
 ### 量化：方法、误差与部署性能
 
@@ -100,11 +117,75 @@ Prefill-Decode 分离把两阶段放在不同资源池以隔离服务目标或�
 
 ## 分布式训练：回答时先声明假设
 
-Data Parallel、Tensor Parallel、Pipeline Parallel、Expert Parallel 切分的对象和通信路径不同。DP 复制模型并对梯度做 collective；TP 切层内矩阵并频繁交换部分结果；PP 按层分段传激活，可能有 pipeline bubble；EP 为 MoE 专家分片并涉及 token dispatch。并行选择取决于模型形状、显存、拓扑、batch/sequence、通信实现和目标延迟，不存在适用于所有集群的固定 3D 配方。
+通信进程组为每个参与进程分配一个 rank 编号；collective 是所有相关 rank 按相同顺序共同完成的通信操作。Data Parallel（DP，数据并行）、Tensor Parallel（TP，张量并行）、Pipeline Parallel（PP，流水线并行）和 Expert Parallel（EP，专家并行）切分的对象与通信路径不同：DP 复制模型并同步梯度，TP 切分层内矩阵并交换部分结果，PP 按层分段传递激活，EP 为 MoE 专家分片并传递 token。并行选择取决于模型形状、显存、拓扑、batch/sequence、通信实现和目标延迟，不能套用固定的 3D 配方。
 
-ZeRO/FSDP 按阶段切分 optimizer state、gradient 和 parameter，可减少每 rank 的持有量，但实际节省与参数/梯度/optimizer dtype、临时 buffer、激活、通信 bucket、预取和 checkpoint 策略有关。不要背固定“4×/8×”或未经推导的通信倍数。可以先画单 rank 显存账本，再说明一个同步窗口内何时 all-gather/reduce-scatter，并用实际配置与 trace 校验。Ring all-reduce 的每 rank 传输量可在经典 ring 算法假设下推导为约 $2(P-1)/P$ 个 payload 大小（$P$ 个 rank），但 NCCL 可按消息大小、拓扑和配置选择不同算法/协议，理论传输量不证明链路已饱和或通信必为瓶颈。
+ZeRO/FSDP 按阶段切分 optimizer state、gradient 和 parameter，可减少每 rank 的持有量，但实际节省与参数/梯度/optimizer dtype、临时 buffer、激活、通信 bucket、预取和 checkpoint 策略有关。应先画单 rank 显存核算表，再说明一个同步窗口内何时 all-gather/reduce-scatter，并用实际配置与 trace 校验。Ring all-reduce 的每 rank 传输量可在经典 ring 算法假设下推导为约 $2(P-1)/P$ 个 payload 大小（$P$ 个 rank），但 NCCL 可按消息大小、拓扑和配置选择不同算法/协议，理论传输量不证明链路已饱和或通信必为瓶颈。
 
 混合精度、loss scaling 与 activation checkpointing 的取舍也要注明训练目标和框架策略。checkpointing 以重算换激活存储，重算比例取决于选择哪些节点及实现；不能把某个理论渐近估计或常见开销百分比当作所有模型的实测。Nsight Systems、框架 profiler、通信库日志和 step time 一起回答“计算还是通信限制”。若应聘方向是 GPU kernel/inference，分布式训练可按岗位要求准备，不要让它替代 CUDA/Triton 核心实践。
+
+## 求职场景中的问题与推理
+
+公开面试经历可帮助了解问题如何展开。例如，一篇[算子开发实习面试自述](https://www.nowcoder.com/feed/main/detail/57033fe8898b4e85b97c48d8b2dcfb28)涉及矩阵乘、Softmax、bank conflict 和缓存；一篇[GPU 岗位技术筛选自述](https://www.reddit.com/r/qualcomm/comments/1sebf82/qualcomm_finished_gpu_screening_round_how_to/)涉及体系结构、存储层次与量化。这些是个人报告，无法据此断言某家公司固定考什么。以下练习由岗位要求、课程内容和官方技术说明综合设计，答案不采用面经中未经核实的硬件解释。
+
+### 给定线程地址，如何判断访问是否合并
+
+设 32 个 lane 各读取一个 FP32 元素，起始地址按 32 字节对齐。地址为 `base+4*lane` 时，128 个有效字节覆盖 4 个 sector；若整体偏移一个 float，范围变成字节 4–131，就覆盖 5 个 sector。换成 `base+128*lane`，每个 lane 落入不同 sector，这条 warp 指令需要覆盖 32 个 sector。
+
+推导时先写地址集合，再计算它覆盖的事务单元；线程编号连续只是形成合并访问的一种方式。若这些地址命中缓存，实际 DRAM 流量又与请求覆盖范围不同。这一练习考查地址推理，不能仅用“行访问快、列访问慢”作答。访问模型见 [Writing SIMT Kernels](https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/writing-cuda-kernels.html)。
+
+### 增大 tile 后复用更多，为什么反而变慢
+
+较大的输出 tile 使输入参与更多乘加，同时需要保存更多累加值；流水 stage 增加还会占用更多共享内存。若因此减少驻留 CTA、发生寄存器溢出，或让尾部无效工作增加，减少的访存未必足以补偿其他成本。
+
+回答应明确改的是输出 tile、归约 tile 还是流水深度，再对照寄存器、共享内存、有效 warp、访存流量与耗时。已有 GEMM 实验中出现过 tiled 慢于 naive 的结果，可以用来说明优化需要验证；缺少计数器时，应将缓存与占用率解释列为假设，而不把它们当成已经确认的原因。
+
+### 归约长度不是 block 大小的整数倍，尾部如何处理
+
+先明确归约的数学单位元。无效位置在求和中贡献 0，在最大值归约中贡献负无穷。若后续会读取这些线程负责的共享内存位置，就需要先写入单位元，再按协作协议同步。归约范围、内存初始化和同步参与范围是三个分别检查的问题。
+
+追问 warp 级实现时，还应说明参与掩码与源 lane 的有效性。`__shfl_sync` 用于寄存器交换，不替代通过共享内存交接数据所需的内存顺序；跨 warp 协作还需选择覆盖整个协作组的同步。具体规则见 [CUDA 线程协作原语](https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/cpp-language-extensions.html)。
+
+### 程序只在某些输入上报非法访问，应如何定位
+
+保留最小失败形状和固定输入，先检查索引、stride、对齐、尾块及输出容量，再将首次错误与对应 kernel 联系起来。CUDA 启动通常异步，同步调用可能只是报告先前错误的位置。应同时检查启动返回状态和执行完成状态。
+
+工具也要对应问题类型：Compute Sanitizer 的 `memcheck` 检查越界和未对齐访问，`racecheck` 主要检查共享内存访问冲突，`initcheck` 检查未初始化的设备全局内存读取，`synccheck` 检查同步原语的非法使用。某一工具通过，不代表所有竞争或数值错误都被排除。依据：[Compute Sanitizer](https://docs.nvidia.com/compute-sanitizer/ComputeSanitizer/index.html)。
+
+### 普通计时与 Nsight Compute 的结果为何不一致
+
+先对齐测量范围，再检查采集方式。Nsight Compute 可能为采集不同指标重放 kernel，并改变缓存、频率或并发条件；这些行为会使测量与应用的自然执行不同。在 profiler 运行期间包围程序的主机计时或 CUDA Event，也可能包含采集开销。
+
+应保存一份不启用 profiler 的稳定基准，用 Nsight Systems 观察整体时间线，再对选中的 kernel 收集指标。比较不同配置时保持重放与缓存设置一致；需要研究真实缓存预热时，按工具支持的重放模式设计实验。依据：[Nsight Compute 的计时与可复现性说明](https://docs.nvidia.com/nsight-compute/ProfilingGuide/)。
+
+### 同为 FP32，为何两个矩阵乘结果不一致
+
+FP32 存储并不能独立决定乘法输入精度。应检查是否启用了 TF32、累加类型、FMA、归约顺序和输出转换，并排除索引或边界错误。比较时固定输入和容差，分别记录最大绝对误差与相对误差。
+
+项目中的 Triton MatMul 保留了默认精度失败与 `input_precision='ieee'` 通过的两份记录，适合解释定位过程。回答时应说清修改改变了哪条数值路径，以及性能对照是否也采用同一精度要求；单凭输出 dtype 相同，不能将二者视为公平的性能对照。
+
+### Kernel 正确，接入 torch.compile 后为何失败
+
+独立调用只覆盖设备计算的一部分要求。编译器还需要算子 schema、输入输出别名与修改信息，以及 FakeTensor 下的形状、类型和设备推导。带梯度的算子还需正确注册反向传播，并检查保存状态与输入生命周期。
+
+`torch.library.opcheck` 检查注册契约和相关组合行为，不证明梯度公式数学正确；梯度仍需独立参考或 `gradcheck`。应进一步覆盖非连续输入、边界尺寸、动态形状及目标编译路径。依据：[PyTorch 自定义算子教程](https://docs.pytorch.org/tutorials/advanced/cpp_custom_ops.html)。
+
+### C++ 对象离开作用域后，GPU 能否继续使用它的内存
+
+主机函数返回与 GPU 工作完成是两个时刻。即使主机侧用 RAII 管理资源，若析构发生在异步使用结束之前，仍可能产生生命周期错误。需要说明指针由谁拥有、在哪个 stream 使用，以及释放如何依赖最后一次设备访问。
+
+同样，另一个 stream 消费结果前，需要正确的事件或其他依赖关系。面试中可以画出“分配—生产—消费—释放”的顺序，再解释哪些操作由流内顺序保证、哪些需要跨流连接，而不是给每次调用都加全设备同步。对应代码在[同步与异步执行课程](curriculum/gpu/04-synchronization-and-asynchronous-execution/README.md)。
+
+### 两卡张量并行应该拼接结果还是求和
+
+考虑 `Y=XW`。若按 W 的输出列切分，各卡得到不同输出列，可以拼接成 Y；若按归约维切分 X 和 W，各卡得到同形状的部分和，需要求和。先根据矩阵维度推导输出语义，再选择 AllGather、AllReduce 或 ReduceScatter。
+
+若每张卡都给部分和加上完整 bias，归约后就会重复添加。KV head 数较少时，也可能发生跨卡复制，不能仅用总 KV 容量除以卡数估算每卡占用。推导与代码见[多 GPU 课程](curriculum/systems/multi-gpu/README.md)。
+
+### 没有 NVIDIA 生产经历，如何说明 NPU 经验的价值
+
+选择一个亲自做过的算子，说明输入形状、数值要求、数据分块、片上复用、同步及实际工具结果，再解释迁移到 GPU 后哪些机制需要重新验证。能够清楚解释一次失败优化及其后续定位，通常比罗列硬件名词更有信息量。
+
+简历与回答中的工作经历、个人实验和论文分析应注明来源。可展示已有代码、性能记录、复现步骤和明确的后续问题；尚未完成的服务器实验保留为计划。岗位对工作年限或生产经验的要求，需要在投递时单独核对。
 
 ## 系统设计与项目回答
 
@@ -130,4 +211,4 @@ ZeRO/FSDP 按阶段切分 optimizer state、gradient 和 parameter，可减少�
 - PyTorch, [Custom C++ and CUDA Operators](https://docs.pytorch.org/tutorials/advanced/cpp_custom_ops.html)。用于核实 custom op schema、注册、测试及扩展构建路径。
 - Dao et al., [FlashAttention](https://arxiv.org/abs/2205.14135)；Dao, [FlashAttention-2](https://tridao.me/publications/flash2/flash2.pdf)。IO 复杂度和并行划分应依论文条件理解。
 - Lin et al., [AWQ](https://arxiv.org/abs/2306.00978)；Xiao et al., [SmoothQuant](https://arxiv.org/abs/2211.10438)。分别核对激活感知的训练后权重量化与 W8A8 的等价缩放方法。
-- [Anthropic GPU Performance Engineer](https://job-boards.greenhouse.io/anthropic/jobs/4926227008)；[RadixArk Cross-Hardware Inference](https://job-boards.greenhouse.io/radixark/jobs/4343666009)。仅作两个岗位能力样本，不据此声称市场频率、个人资格或投递情况。
+- 岗位样本及核对日期见本文开头的岗位对照表。招聘页面可能更新或撤下；这些样本用于区分准备方向，不代表市场频率、个人资格或投递情况。

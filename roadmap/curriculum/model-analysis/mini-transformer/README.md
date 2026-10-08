@@ -1,8 +1,8 @@
 # 第二章 Mini Transformer：把算子放进完整前向
 
-这个小型 Transformer 使用固定随机权重和固定 token，比较整段前向、逐 token Decode 与分块输入的结果。NumPy float64 提供数值参考，PyTorch FP32 使用相同权重。
+这个小型 Transformer 使用固定随机权重和固定 token，比较整段前向、逐 token Decode（逐 token 解码）与分块输入的结果。NumPy float64 提供数值参考，PyTorch FP32 使用相同权重。
 
-模型有两层，hidden dimension 为 64，Query/KV heads 为 4/2，head dimension 为 16，SwiGLU 中间维度为 96，词表为 128。省略 bias、dropout 和训练，RMSNorm 缩放权重固定为 1。它用于检查算子组合，不需要下载语言模型。
+模型有两层，隐藏维度（hidden dimension）为 64，Query/KV head 数为 4/2，每个 head 的维度（head dimension）为 16，SwiGLU 中间维度为 96，词表为 128。省略 bias、dropout 和训练，RMSNorm 缩放权重固定为 1。它用于检查算子组合，不需要下载语言模型。
 
 ## 1. block 的输入输出与残差
 
@@ -29,7 +29,7 @@ def rms_norm(x, eps=1e-6):
 
 ## 2. RoPE 的绝对位置不能每步清零
 
-已有 past 个 token，新输入的绝对位置为 past,…,past+S-1。每次 Decode 都从位置 0 旋转会改变 Attention；cached K 已旋转，也不能重复旋转。
+已有 past 个 token 时，新输入的绝对位置为 past,…,past+S-1。每次 Decode 都从位置 0 旋转会改变 Attention；已经缓存并旋转过的 K 也不能再次旋转。
 
 <!-- source-check: ../examples/mini_transformer.py -->
 ~~~python
@@ -111,7 +111,7 @@ chunked Prefill 中，新的 Query 既能看到历史 cache，也能看到本 ch
 
 ## 5. 三种执行方式对照
 
-同一组固定 token 分别整段执行、每次一个 token、先 3 个再执行剩余 chunk。比较的是对应输入位置的 logits，不是让三个随机采样过程碰巧生成相同文本。
+同一组固定 token 分别整段执行、每次一个 token、先 3 个再执行剩余 chunk。比较的是对应输入位置的 logits，而不是让三个随机采样过程碰巧生成相同文本。
 
 ~~~python
 full, _ = model.forward(tokens)
@@ -126,7 +126,7 @@ np.testing.assert_allclose(
 
 再把输入后半段改掉，检查前半段输出不变。这个实验能发现错误因果范围；cache 形状检查则能发现按 Hq 错存 KV、batch 变化或层间状态串用。
 
-稳定的 prefix cache 只代表已计算输入位置。采样出的下一个 token 尚未进入模型时，不应该声称它的 KV 已写入。完整生成循环应按这个顺序推进，不能先增长 length 再读取尚未生成的数据。
+稳定的前缀缓存（prefix cache）只代表已经计算过的输入位置。采样出的下一个 token 尚未再次进入模型时，不能声称它的 KV 已写入。完整生成循环应先读取当前 cache、计算新位置、写入对应 KV，再采样下一 token，不能先增长 length 再读取尚未生成的数据。
 
 ## 6. 算子替换要检查什么
 
@@ -137,13 +137,15 @@ baseline, _ = model.forward(ids)
 norm_sum = lambda x: x * torch.rsqrt(
     (x*x).sum(-1, keepdim=True) / x.shape[-1] + 1e-6
 )
-replaced, _ = model.forward(ids, norm_fn=norm_sum)
+replaced, _ = model.forward(ids, norm=norm_sum)
 torch.testing.assert_close(replaced, baseline, rtol=1e-4, atol=1e-4)
 ~~~
 
-换成二维 row-wise kernel 时，将 [B,S,D] 映射到 [BS,D]，计算后恢复形状。若必须先 contiguous，新增拷贝要计入模型时间。gamma、输出分配和 dtype 转换也不能从替换成本里消失。
+换成二维按行 kernel 时，将 [B,S,D] 映射到 [BS,D]，计算后恢复形状。若必须先变成连续布局（contiguous），新增拷贝要计入模型时间；gamma、输出分配和 dtype 转换也不能从替换成本中省略。
 
 Attention 的接口更复杂：Prefill 与 Decode、MHA 与 GQA、连续 cache 与分页 cache 都不一定兼容。适配必须维护真实布局与状态，不能只把调用函数名换掉。先检查单次输出，再检查多步 cache 和生成行为。
+
+算子替换需要沿完整前向检查影响：归一化与投影产生输入张量，RoPE 使用绝对位置，Attention 读取历史与当前 KV，随后通过残差连接进入前馈层。替换前后应保持这些数学语义与状态关系一致，分别比较整段、逐 token 和分块执行的结果。执行路径可以不同，但新增的布局转换、缓存复制与框架调用都应计入端到端测量。
 
 ### 6.1 从核函数到框架算子
 

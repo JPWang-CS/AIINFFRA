@@ -1,5 +1,7 @@
 # DeepSeek-V4.1-Flash：从缓存压缩到训练与推理协同
 
+本文按 DeepSeek-AI 技术报告 v1（2026-09-17）和固定版本作者推理参考阅读；报告中的参数、缓存 payload、评测和部署策略必须分别标注口径，不能把最小实现、论文公式和线上服务默认值混成一项事实。
+
 长任务经常重复这样的过程：读上下文、生成一段内容、调用工具，再把工具结果追加进上下文。模型需要解决的不只是“这一轮 Attention 能不能更快”，还包括新输入要经过多少层、历史状态有几份、下次命中缓存时能恢复哪些状态，以及这些状态通过哪条链路搬回来。
 
 DeepSeek-V4.1-Flash 把这些问题放在一起设计。读它时可以始终追踪四个对象：**当前 hidden state、持久 global KV、每层局部 SWA KV、用于选择 global KV 的索引**。它们不是同一份数据，也不共享完全相同的生命周期。
@@ -1085,4 +1087,4 @@ python roadmap/curriculum/papers/examples/v41_checks.py
 
 ## 参考阅读
 
-[DeepSeek-V4.1-Flash 技术报告](../../../downloads/DeepSeek_V41_Tech_Report.pdf) · [固定版本作者推理参考](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/tree/dba1be0a40aa45a94ad051997016db3960a90277/inference) · [固定版本编码与评测文件](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/tree/dba1be0a40aa45a94ad051997016db3960a90277) · [DeepGEMM Mega mHC API](https://github.com/deepseek-ai/DeepGEMM/blob/78b69000794d0937b47ae3387eff7663410264d1/csrc/apis/mega_mhc.hpp) · [SM100 kernel](https://github.com/deepseek-ai/DeepGEMM/blob/78b69000794d0937b47ae3387eff7663410264d1/deep_gemm/include/deep_gemm/impls/sm100_mega_mhc.cuh) · [API test](https://github.com/deepseek-ai/DeepGEMM/blob/78b69000794d0937b47ae3387eff7663410264d1/tests/test_mega_mhc.py)。
+[DeepSeek-V4.1-Flash 技术报告](https://arxiv.org/abs/2609.19969) · [DeepSeek-V4.1-Flash 官方模型仓库](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/tree/main) · [固定版本作者推理参考](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/tree/dba1be0a40aa45a94ad051997016db3960a90277/inference) · [固定版本编码与评测文件](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/tree/dba1be0a40aa45a94ad051997016db3960a90277) · [DeepGEMM Mega mHC API](https://github.com/deepseek-ai/DeepGEMM/blob/78b69000794d0937b47ae3387eff7663410264d1/csrc/apis/mega_mhc.hpp) · [SM100 kernel](https://github.com/deepseek-ai/DeepGEMM/blob/78b69000794d0937b47ae3387eff7663410264d1/deep_gemm/include/deep_gemm/impls/sm100_mega_mhc.cuh) · [API test](https://github.com/deepseek-ai/DeepGEMM/blob/78b69000794d0937b47ae3387eff7663410264d1/tests/test_mega_mhc.py)。

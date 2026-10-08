@@ -7,12 +7,12 @@
 
 ## 解决了什么问题
 
-FlashAttention 已经把"别读写 N×N 中间矩阵"做到极致。2026 年的新优化从两个方向继续压长序列推理的成本：
+FlashAttention 已经把“避免物化 N×N 中间矩阵”推进到很高水平。SageAttention3（2025-05）与 Kascade（2025-12）分别从量化和结构复用继续压长序列推理的成本：
 
-1. **带宽再降一个量级**：把 Q/K 直接量化到 FP4（SageAttention3），attention 的矩阵乘走 Blackwell 的 FP4 tensor core
+1. **降低注意力矩阵乘的操作数精度**：SageAttention3 用 NVFP4 微缩放，把 Q、K、注意力块 P 和 V 都送入两个 FP4 矩阵乘；它不是只量化 Q/K 的缓存技巧
 2. **只给重要 token 花算力**：跨层复用 top-k 索引，只算最相关的历史（Kascade）
 
-两者都不改整体架构，近似/无损各有取舍，目标是让长上下文更便宜。
+两者都主要改 attention 的执行路径，但收益依赖量化误差、候选覆盖、块密度、硬件和工作负载；“更便宜”需要在相同质量与端到端口径下验证。
 
 ---
 
@@ -20,20 +20,20 @@ FlashAttention 已经把"别读写 N×N 中间矩阵"做到极致。2026 年的�
 
 ### 核心思路
 
-- 把 Q/K 量化到 **FP4（microscaling 格式：每块带一个小 scale）**，V 保持更高精度
-- 用 Blackwell 的 FP4 tensor core 做 QK^T 和 PV 两个矩阵乘
-- Q/K 的 HBM 带宽直接降 **4x**（相对 BF16）；长序列时 attention 是带宽瓶颈，收益最大
+- 把 Q、K、P、V 的 tile 量化到 **NVFP4（E2M1；1×16 量化组，每组使用 E4M3 scale）**，由 FP4MM 同时接收 FP4 数据和对应 scale
+- 用 Blackwell 的 FP4 Tensor Core 做 `QK^T` 和 `P V`；`P` 还使用两级缩放：先按行把 online-softmax 的 P 调整到 E4M3 更易表示的范围，再做第二层 FP4 微缩放
+- 裸数据编码从 BF16 到 4-bit 只说明 payload 的位宽变化，不等于 HBM traffic 或 kernel 时间也按 4 倍变化；scale、读写合并、softmax、转换和工作集都会参与。长序列也不必然是带宽瓶颈
 - 论文还探索了 8-bit 训练（SageBwd），训练侧仍是开放问题
 
 ### 关键数据与取舍
 
-- 长序列推理相对 FlashAttention 快 **2-5x**（论文口径，长序列优势最明显）
+- 论文摘要报告在 RTX 5090 上达到 1038 TOPS、相对当时最快 FlashAttention 约 5×；这不是跨 GPU、跨 shape 的统一 2–5× 结论
 - 依赖 Blackwell FP4 硬件；4090（Ada）没有 FP4 tensor core，只能学原理
-- 属于"插拔式"：不需要重新训练模型，推理时直接换 kernel（HF 上有现成模型权重直接跑）
+- 论文把推理路径描述为 plug-and-play，但是否能直接替换仍取决于模型 dtype、量化校准、kernel 和硬件；不要把论文实现自动等同于任意 Hugging Face checkpoint
 
 取舍：
 
-- FP4 只有 2-3 bit 尾数，精度靠 microscaling 的 per-block scale 兜底
+- NVFP4 的 E2M1 是 1 个符号位、2 个指数位和 1 个尾数位；精度与范围依赖每个 1×16 block 的 E4M3 scale，不能把它写成“2–3 bit 尾数”
 - 量化误差对长上下文/检索类任务更敏感，上线前必须评测
 - 和 FP8 时代一样的问题：量化注意力最终是"默认选项"还是"可选优化"，取决于精度-速度权衡
 
@@ -43,10 +43,10 @@ FlashAttention 已经把"别读写 N×N 中间矩阵"做到极致。2026 年的�
 
 ### 核心思路
 
-两个观察：
+作者方法依赖在实验模型中观察到的两个性质：
 
-1. **post-softmax 注意力天然稀疏**：多数历史 token 的权重接近 0
-2. **高权重 key 的身份在相邻层之间很稳定**：这一层重要的 token，下一层通常也重要
+1. 部分注意力分布的概率质量集中在较少历史位置。
+2. 某些层和 head 之间的重要位置存在可利用的相似性。
 
 做法：
 
@@ -56,18 +56,18 @@ FlashAttention 已经把"别读写 N×N 中间矩阵"做到极致。2026 年的�
 ```
 
 - anchor 层不是随便选的：用动态规划在开发集上挑"跨层相似度最大"的层组合
-- 训练免：任何现成模型都能套，不需要重新训练
+- 训练免：论文方法不要求重新训练，但 anchor 层集合、head mapping、候选策略仍需针对具体 checkpoint 和开发集选择；不能把“training-free”写成“任何模型无需校准即可套用”
 - kernel 做 tile 级操作（tile_size=32），目前主要支持 fp16，vLLM 集成在 experimental 分支
 
 ### 关键数据与取舍
 
-- top-k = 10% 时：H100 上 decode 最快 **4.1x**、prefill **2.2x**
+- 论文与官方仓库在 `top-k=10%` 的配置下报告相对 FlashAttention-3 baseline 的最高 4.1× decode、2.2× prefill；这是 attention 测量口径，不是整模型吞吐
 - anchor 层越多越准但越贵；DP 选层是部署前要做一次的工作
-- 稀疏率越高精度掉得越快；10% 附近是论文推荐的工作点
+- 稀疏率越高精度可能下降；10% 是论文报告的一组实验点，不是对所有模型和任务的通用推荐值
 
 取舍：
 
-- **和 DSA 对比**：DSA 用可学习 indexer（要训练、每层每头动态选），Kascade 用结构复用（免训练、跨层共享同一批索引）——两条路正好是"学习 vs 结构"的对照
+- **和 DSA 对比**：DSA 的公开 V3.2 实现由 indexer 产生选择，并且其 mask/共享粒度要按实现核对；不能把它概括成“每层每头都独立动态选”。Kascade 则在 anchor 层计算选择、在 reuse 层复用经过模型选择的索引，二者是“重新评分/选择”与“跨层复用”的对照
 - 跨层复用假设"相邻层高权重 key 稳定"，如果模型不满足这个性质（深层语义变化大），需要更多 anchor 层兜底
 
 ---
@@ -75,20 +75,26 @@ FlashAttention 已经把"别读写 N×N 中间矩阵"做到极致。2026 年的�
 ## 与主线的关系：2026 注意力优化全景
 
 ```text
-可编程：FlexAttention + FA4      → 任意 mask/块稀疏，编译器生成 kernel
-量化：  SageAttention3           → Q/K 压到 FP4，带宽 4x 下降
-稀疏：  DSA（可学习 indexer）     → top-k 动态选择，生产已验证
-稀疏：  Kascade（跨层复用）       → 免训练，anchor layer 静态复用
+可编程：FlexAttention + FA4      → score/mask 规则与块稀疏元数据进入后端
+量化：  SageAttention3           → Q/K/P/V 的 NVFP4 矩阵乘与两级 P scale
+稀疏：  DSA（indexer 选择）       → 选择集合改变主 Attention 访问，cache 仍按实际保存计
+稀疏：  Kascade（跨层复用）       → anchor 选择与 reuse 层复用，需按模型选择 mapping
 ```
 
-面试口径："FlashAttention 之后 attention 还能怎么优化？" 标准答法就是上面四条线，能各说一句核心机制 + 一个数字。
+回答“FlashAttention 之后还能怎么优化”时，先分别说清改变的是 score 规则、operand 精度、访问集合还是跨层索引复用，再给出论文指定硬件和 baseline 的数字；不要把四个方向压成一张无条件的加速表。
 
 ## 与我何干
 
 - **理论线**：SageAttention3 挂"量化"子类，Kascade 挂"注意力演进"子类——正好把你已有的 INT8/FP8 知识和 FA 知识接上
-- **硬件限制**：两个方案都主要在 H100/Blackwell 上验证，本地 4090 只做概念、不做实机
-- **C 阶段**：读 vLLM 源码时可以看 Kascade 的 paged kernel 集成分支，和 PagedAttention 的 block 结构直接相关
+- **硬件限制**：SageAttention3 的原生 FP4 路径需要对应硬件；Kascade 的运行支持还取决于内核和软件版本，不能仅凭论文在 H100 上测量就判定其他设备不可运行。
+- **C 阶段**：可以阅读官方仓库的 experimental vLLM integration branch；仓库明确说明该分支和 paged kernels 仍会变化，不能把它写成主线 vLLM 的稳定默认路径
+
+## 求职核对题
+
+- SageAttention3 的 FP4 量化降低了哪些 operand 的表示与搬运成本？为什么“缓存是 FP4”不等于“硬件一定执行原生 FP4 MMA”？
+- Kascade 的 anchor 层为何需要开发集上的层选择和 head mapping？如果候选池漏掉深层真正需要的 token，后续 Top-K 能否补回？
+- 报告中的 4.1×/2.2×比较了哪一个 attention baseline、硬件和 top-k 比例？怎样设计 ablation 才能把 index reuse 与 kernel tile 优化分开？
 
 ---
 
-*配套：[DSA 稀疏注意力](dsa-sparse-attention.md) · [FA4/FlexAttention](fa4-flexattention.md) · [量化 INT8/FP8](quantization-int8-fp8.md)*
+*配套：[SageAttention3 原论文](https://arxiv.org/abs/2505.11594) · [Kascade 原论文](https://arxiv.org/abs/2512.16391) · [Kascade 官方仓库](https://github.com/microsoft/kascade) · [DSA 稀疏注意力](dsa-sparse-attention.md) · [FA4/FlexAttention](fa4-flexattention.md) · [量化 INT8/FP8](quantization-int8-fp8.md)*

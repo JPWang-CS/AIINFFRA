@@ -2,7 +2,7 @@
 
 ## 1. 计时范围与 CUDA Event
 
-先决定测 kernel 本身还是包含主机调度、数据复制和同步的完整调用。`fn` 是每次执行一次待测算子的无参函数；`warmup` 次数用于让首次编译、模块加载等初始化离开稳态计时；`repeats` 次数用于平均多次执行。CUDA Event（CUDA 事件）记录设备时间线上的起止位置，不包含 Python 调用本身的全部主机耗时。
+先决定测 kernel 本身，还是测包含主机调度、数据复制和同步的完整调用。`fn` 是每次执行一次待测算子的无参函数；`warmup` 次数用于让首次编译、模块加载等初始化离开稳态计时，`repeats` 次数用于重复执行。CUDA Event（CUDA 事件）记录设备时间线上的起止位置，因此不包含 Python 调用本身的全部主机耗时。
 
 ```python
 warmup = 10
@@ -192,7 +192,7 @@ $$
 P_{attainable}\le\min(P_{peak},AI\times BW).
 $$
 
-这里的 bytes 必须注明口径。算法最小 bytes 假定每个输入/输出只从该层存储读写一次；真实 kernel 可能因未合并访问、cache miss、重读、write-allocate、padding 或中间结果而产生更多 traffic。Nsight Compute 的 DRAM/L2 bytes 和 requested/actual throughput 才能把算法下界替换为观测流量。
+这里的 bytes 必须注明口径。算法最小 bytes 假定每个输入/输出只从该层存储读写一次；真实 kernel 可能因未合并访问、cache miss、重读、write-allocate、padding 或中间结果而产生更多 traffic。只有结合 Nsight Compute 的 DRAM/L2 bytes 与 requested/actual throughput，才能用观测流量替换算法下界。
 
 ### 3.1 Vector Add 数值算例
 
@@ -298,7 +298,7 @@ CUDA_CHECK(cudaStreamDestroy(latency_stream));
 
 下面使用已保存的 Triton MatMul 实现与服务器测量。表中分别列出形状、精度、配置和计时条件；设备型号相同，不代表测量条件相同。
 
-`solutions/triton/matmul.py` 使用 `A[M,N] @ B[N,K] = C[M,K]` 的行主序布局：`BLOCK_M` 切输出行 M，`BLOCK_K` 切输出列 K，`BLOCK_N` 切归约维 N。这个命名与很多把 N 当输出列的 GEMM 伪代码不同，读 sweep 表时必须以源码指针公式和 `grid=(cdiv(M,BLOCK_M), cdiv(K,BLOCK_K))` 为准。
+`solutions/triton/matmul.py` 使用 `A[M,N] @ B[N,K] = C[M,K]` 的行主序布局。`BLOCK_M` 切输出行 M，`BLOCK_K` 切输出列 K，`BLOCK_N` 切归约维 N；这个命名与很多把 N 当输出列的 GEMM 伪代码不同。因此读 sweep 表时，应以源码指针公式和 `grid=(cdiv(M,BLOCK_M), cdiv(K,BLOCK_K))` 为准。
 
 第一批是固定 `M=8192,N=6144,K=4096`、IEEE FP32、`tl.dot(input_precision="ieee")` 且 PyTorch `allow_tf32=False` 的候选 sweep：
 

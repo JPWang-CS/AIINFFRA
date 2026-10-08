@@ -1,7 +1,7 @@
 # DeepSeek-V4：CSA + HCA（主线 A 增量笔记）
 
 > 挂靠：主线 A（DeepSeek-V3.2 → V4，第 2 步注意力之后做增量）
-> 状态：🚧 Agent 草稿（2026-08-14），待随主线 A 第 3 步消化，不计入已学
+> 状态：待随主线 A 第 3 步消化；本页内容按公开 V4 技术文档、模型卡和固定实现核对，不把二手解读当作官方配置
 > 先决条件：先消化 [FA1 机制](flash-attention-mechanism.md)、[MLA](mla-deepseek.md)、[DSA](dsa-sparse-attention.md)——这篇是"V3.2 打底 + V4 增量"，不是从零科普。
 
 ## 0. 这篇笔记回答什么问题
@@ -10,7 +10,7 @@
 
 **为什么主线不直接切到 V4？**
 
-1. V3.2 是完整的开源基线：config 字段齐全、手算工作纸已建、推理栈支持成熟（vLLM / TRT-LLM / SGLang / TileRT 都有 sparse MLA）。V4 的官方 config 目前公开不完整，直接上手会缺一块。
+1. V3.2 是完整的开源基线：config 字段齐全、手算工作纸已建。V4 虽已有官方模型卡、API 与 checkpoint/实现资料，但不同发布线的配置和推理后端仍需按版本核对，不能把某个 recipe 当成全系列稳定接口。
 2. V4 的省账要用 V3.2 当分母：官方说"1M 上下文下 V4-Pro 的 prefill FLOPs ≈ V3.2 的 27%、KV ≈ 10%"。不先算懂 V3.2，这个 27%/10% 就没有意义。
 3. V4 不是全新架构，是 V3.2 的下一代：它保留了 MLA 的低秩 latent 骨架，把 DSA 的"选 token"升级成"先压缩、再稀疏"。顺序应该是 FA2 → MLA → DSA → 再看 V4 怎么改。
 
@@ -20,7 +20,7 @@
 
 | 日期 | 事件 | 内容 |
 |---|---|---|
-| 2026-04-24 | V4 系列预览发布 + 开源 | V4-Pro（约 1.6T 总参 / 约 49B 激活，另有一说 1.5T）、V4-Flash（284B / 约 13B 激活）；原生 1M 上下文 |
+| 2026-04-24 | V4 系列预览发布 + 开源 | V4-Pro（约 1.6T 总参 / 约 49B 激活）、V4-Flash（官方模型卡列 285B / 约 13B 激活）；原生 1M 上下文 |
 | 2026-07-31 | V4-Flash-0731 正式版 | Flash 线转正 |
 | 2026-08-13 | V4-Pro-0813 正式版 | 架构/参数与预览版一致（fingerprint `fp_v4pro_20260812`），变化全在后训练：DeepSWE 12.8→62.7、NL2Repo 38.5→61.5、DSBench-Hard 67.2；API 新增 Responses + Anthropic 协议；推理三档 none/high/max；官方预告近期涨价 |
 
@@ -230,7 +230,7 @@ V4 是"架构省 + 工程省"一起上的，只学注意力不学工程会漏一
 
 | 指标 | V3.2 | V4-Pro | V4-Flash |
 |---|---|---|---|
-| 总参数 | ~685B | ~1.6T（另一口径 1.5T） | 284B |
+| 总参数 | ~685B（口径见 V3.2 工作纸） | ~1.6T | 285B（官方模型卡） |
 | 激活参数 | 37B | ~49B | ~13B |
 | 层数 | ~61 | 61 + MTP | 43 |
 | 注意力 | MLA + DSA | CSA + HCA（MLA 骨架） | 同左 |
@@ -263,3 +263,5 @@ V4 是"架构省 + 工程省"一起上的，只学注意力不学工程会漏一
 - idlemachines：DeepSeek V4 from the inside
 - 21 经济：V4-Pro 正式版发布细节
 - LMSYS：SGLang Day 0
+
+主要一手来源：[DeepSeek V4 模型卡](https://fe-static.deepseek.com/chat/transparency/deepseek-V4-model-card-EN.pdf) · [DeepSeek API 更新记录](https://api-docs.deepseek.com/updates/) · [DeepSeek-V4-Flash serving recipe](https://github.com/vllm-project/recipes/blob/main/models/deepseek-ai/DeepSeek-V4-Flash.yaml)。

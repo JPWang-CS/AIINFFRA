@@ -1,6 +1,6 @@
 # Flash Attention 机制详解
 
-> 注意力演进类 · IO-aware tiling + online softmax · A5 读代码前必看
+> 注意力机制：IO-aware tiling 与 online softmax
 
 ---
 
@@ -10,7 +10,7 @@
 1. **显存 $O(N^{2})$**：$N \times N$ 的 attention 矩阵（$QK^{T}$ 和 softmax 后的权重）必须写回 HBM
 2. **Bandwidth-bound**：每次 forward 都要从 HBM 读写这个巨大矩阵，HBM 带宽成为限制
 
-序列长度 N=4096 时，FP16 的 attention 矩阵就要 32MB（单头）；N=16384 时 512MB。A100 的 HBM 带宽只有 1.5TB/s，读写这个矩阵吃掉大量时间。
+序列长度 N=4096 时，FP16 的单头 attention 矩阵约占 32 MiB；N=16384 时约占 512 MiB。矩阵随序列长度平方增长，读写它会形成显著的 HBM 流量；实际耗时还取决于实现、shape、精度和设备，不能由容量示例直接推出固定带宽或加速比。
 
 ## 核心思路（3 个技巧组合）
 
@@ -28,7 +28,7 @@ $$
 每次只在 SRAM (shared memory / L1) 里处理 **$B_r \times B_c$** 的小 attention tile，算完后立即用它更新输出，**不写回 HBM**。
 
 ### 2. Online Softmax（增量更新 O）
-因为分块了，softmax 的 max 和 sum 要增量维护（详见 [online-softmax.md](online-softmax.md)）。对 Q 的每一行，跨 K/V 块维护运行态 $(m,\ \ell,\ O)$，第 $j$ 个 K/V 块到来时：
+因为分块了，softmax 的 max 和 sum 要增量维护（详见 [online-softmax.md](online-softmax.md)）。对一个 Q tile 的每一行，跨 K/V tile 维护运行态 $(m,\ \ell,\ O)$；第 $j$ 个 K/V tile 到来时：
 
 $$
 \begin{aligned}
@@ -59,59 +59,54 @@ $$
     O = O * correction[:, None] + P @ V_block  # [Br,d]·[Br,1]沿d广播 + [Br,Bc]@[Bc,d] → [Br,d]
     m = m_new                           # [Br]
 
-  O /= l                                # [Br,d] / [Br] → [Br,d]   最后才归一化
+  O /= l[:, None]                        # [Br,d] / [Br,1]，沿特征维广播
 ```
 
 关键 ①：**O 累积的是未归一化的 `P @ V`**（`P = exp(S - m_new)`），除以 `l` 的归一化**只在最后做一次**——不能在循环里用 `softmax(S)` 提前归一化，否则各块的分母不一致，结果错。
 关键 ②：**每来一个 K/V 块就同步修正 m、l、O**（旧的 O 和 l 都乘 correction 拉回同一基准），最终得到与整行一次性算 softmax 完全相同的输出。
 
 ### 3. Recomputation（反向时不存 attention）
-前向不存 $N \times N$ 的 attention 矩阵（省显存），反向传播时从 Q/K/V 重新算一遍。因为**重算比存储+读取更快**（HBM 慢，compute 快）。
+前向不存 $N \times N$ 的 attention 矩阵（省显存）；需要反向传播时，常见实现从 Q/K/V 和保存的统计量重新计算局部结果。重算是否划算取决于 HBM 流量、片上复用、算术吞吐和反向实现，不能概括为“重算必然更快”。
 
-只需要额外存：
-- `m` 和 `l`（每行 2 个 FP32，总共 2N 个数）
-- Q/K/V 本身（本来就要存）
+反向需要保存或重新获得输入、前向输出及归一化统计。统计可以表示为每行的 m、l，也可合并为 log-sum-exp；具体 dtype、布局和其他训练状态取决于实现。下面的容量表仅比较选定张量，不是训练峰值显存。
 
 ## 数据对比
 
-| 方法 | 显存（N=4096, d=64, FP16） | Seq=4096 延迟 (A100) | Seq=16384 |
+| 方法 | 显存示例（N=4096, d=64, FP16） | 延迟 | Seq=16384 |
 |------|:---:|:---:|:---:|
-| PyTorch naive | 32 MB (attention) + 1.5 MB (QKV) | 100 ms | OOM |
-| Flash Attention | 1.5 MB (QKV) + 0.064 MB (m,l) | **20 ms** | 400 ms |
+| PyTorch naive | 32 MiB (attention) + 1.5 MiB (QKV) | 需按固定环境实测 | 需按固定环境实测 |
+| FlashAttention | 1.5 MiB (QKV) + 0.03125 MiB (m,l，统计量按 FP32 估算) | 需按固定环境实测 | 需按固定环境实测 |
 
-**提速**: ~5× (短序列) ~ 10×+ (长序列，naive 会 OOM)  
-**显存节省**: $O(N^{2}) \to O(N)$
+**显存复杂度**: 中间 attention 矩阵从 $O(N^{2})$ 降为与 tile 状态和输出相关的线性规模；具体常数取决于实现是否保存额外统计量。
 
 ## 伪代码（单头，forward）
 
 ```python
 # Q, K, V: [N, d]
 Br, Bc = 32, 32  # block size
-Tr = N // Br
-Tc = N // Bc
+Tr = (N + Br - 1) // Br
+Tc = (N + Bc - 1) // Bc
 
-O = torch.zeros(N, d)      # 输出
-m = torch.full((N,), -inf) # running max (每行)
-l = torch.zeros(N)         # running sum (每行)
+O = torch.zeros_like(Q, dtype=torch.float32)  # 教学参考：FP32 输出与累加
 
 for i in range(Tr):  # 遍历 Q 的块
     Qi = Q[i*Br : (i+1)*Br, :]  # [Br, d]
-    Oi = torch.zeros(Br, d)
-    mi = torch.full((Br,), -inf)
-    li = torch.zeros(Br)
+    Oi = torch.zeros_like(Qi, dtype=torch.float32)
+    mi = torch.full((Qi.shape[0],), -float('inf'), device=Q.device)
+    li = torch.zeros(Qi.shape[0], device=Q.device)
     
     for j in range(Tc):  # 遍历 K 的块
         Kj = K[j*Bc : (j+1)*Bc, :]  # [Bc, d]
         Vj = V[j*Bc : (j+1)*Bc, :]
         
-        S = Qi @ Kj.T  # [Br, Bc] attention scores
+        S = (Qi.float() @ Kj.float().T) / (d ** 0.5)  # 尾块按实际长度计算
         
         # Online softmax update
-        mi_new = torch.maximum(mi, S.max(dim=1))
+        mi_new = torch.maximum(mi, S.max(dim=1).values)
         correction = torch.exp(mi - mi_new)
         li = li * correction + torch.sum(torch.exp(S - mi_new[:, None]), dim=1)
         
-        Oi = Oi * correction[:, None] + (torch.exp(S - mi_new[:, None]) @ Vj)
+        Oi = Oi * correction[:, None] + (torch.exp(S - mi_new[:, None]) @ Vj.float())
         mi = mi_new
     
     O[i*Br : (i+1)*Br, :] = Oi / li[:, None]
@@ -119,18 +114,20 @@ for i in range(Tr):  # 遍历 Q 的块
 
 ## Causal Mask（因果注意力优化）
 
-Decoder 的 causal mask 是下三角：`QK^T` 的上三角全是 -inf（未来 token 不能看）。
+Decoder 的 causal mask 是下三角：`QK^T` 的上三角全是 $-\infty$（未来 token 不能看）。
 
-Flash Attention **自动利用这个结构**：第 i 个 Q 块只需要处理前 i 个 K 块，后面的直接跳过。计算量和访存都省一半。
+FlashAttention 可以利用这个结构：第 $i$ 个 Q tile 不必计算确定被 mask 的未来 K tile；但 tile 边界、序列长度和实现的 mask 处理会影响实际节省，不能把计算量或访存一概写成减半。
+
+求职追问可以落到实现边界：显存收益来自不物化完整 score/probability 矩阵和 tile 复用，而不是把 dense attention 的计算复杂度改成线性；重算是否划算要看反向的重算范围与实际内存/计算瓶颈；任意 mask 虽可保持数学定义，但非规则 mask 可能破坏 tile 跳过与访存规律，必须按 shape 和 mask 分布测量。
 
 ## 在 Ascend 的对应
 
-和你写 Ascend Cube 算子的 tiling 策略完全一样：
+它与 Ascend Cube 算子的 tiling 可以在数据分块层面类比：
 - **CUDA Flash Attn 的 Br×Bc tile** = Ascend 的 L1 Buffer 分块大小
 - **Online 更新** = Ascend `Pipe` 的流式处理（不存完整中间矩阵）
 - **Recomputation** = Ascend 也常用（前向省片上内存，反向重算）
 
-区别：Ascend 有 `MatMul` 指令直接算 tile，CUDA 要手写循环；但思想完全一致。
+区别在于具体算子接口、片上存储层次、同步和矩阵乘指令不同；CUDA 参考实现需要显式表达这些边界，不能只凭 tile 名称推断两种平台的执行路径。
 
 ## 与我何干
 
@@ -138,23 +135,18 @@ Flash Attention **自动利用这个结构**：第 i 个 Q 块只需要处理前
 
 **B3 Triton Flash Attn (算子线 B)**：用 Triton 重写，会发现 tiling 和 online softmax 的逻辑简洁很多（Triton 帮你管线程），但核心算法一模一样。
 
-**C2 vLLM PagedAttention**：Flash Attn 是 PagedAttention 的基础——PagedAttention 把 KV Cache 切成 block，每个 block 的 attention 计算就是 Flash Attn 的一个 tile。
+**C2 vLLM PagedAttention**：两者都要处理分块后的 K/V 数据，但 page 是 KV cache 的分配与寻址单位，计算 tile 是 kernel 内部的工作单位；一个 page 不必等于一个 attention tile。实现需要额外处理 page table、非连续物理位置和 tile 内的加载组合。
 
-**[面试]** 必考：
-- "Flash Attention 为什么快？" → tiling 避免 HBM 读写 N×N 矩阵 + online softmax
-- "为什么 recomputation 反而更快？" → HBM 慢（1.5TB/s），重算在 SRAM 里（19TB/s），带宽差 10×+
-- "Flash Attention 显存复杂度？" → O(N)，只存 Q/K/V + m/l
-- "能处理任意 mask 吗？" → 可以，但非结构化 mask（如稀疏 mask）加速效果会打折扣，causal 是最优情况
 
 ## 论文 + 代码
 
-- **论文精读**: [papers/attention/flash-attention.md](../../papers/attention/flash-attention.md)
+- **论文精读**: [FlashAttention 原论文](https://arxiv.org/abs/2205.14135)
 - **参考实现**: [reference/cuda/flash_attention/flash_attn.cu](../../reference/cuda/flash_attention/flash_attn.cu) (单头 causal, Br=Bc=32)
-- **官方 repo**: [HazyResearch/flash-attention](https://github.com/Dao-AILab/flash-attention)（多头、backward、优化版 Flash-2/3）
+- **作者仓库**: [Dao-AILab/flash-attention](https://github.com/Dao-AILab/flash-attention)（多头、backward、Flash-2/3 实现）
 
 ## Flash Attention 2 / 3 简述
 
-- **Flash-2**: 改进 work partitioning（每个 block 处理更多 Q，减少跨 block 通信），~2× 提速
+- **Flash-2**: 改进 work partitioning，减少非矩阵乘开销，并在单头场景跨 thread block 并行；论文报告的速度取决于 GPU、shape、精度和基线，不能简写为无条件的“~2×”。
 - **Flash-3**: 针对 H100 的异步 WGMMA + TMA，进一步压榨硬件
 
 核心算法（tiling + online softmax）没变，优化的是 GPU 硬件利用率。

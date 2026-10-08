@@ -1,6 +1,6 @@
 # 第六章 Decode / PagedAttention：从单 Query 数学到分页 KV 访问
 
-Decode 每步处理新 Query，各请求的历史长度却不同。页表把逻辑序列映射到物理 KV 页，多组 Query head 还可能共享同一 KV head。
+Decode（单步解码）每步处理新 Query，各请求的历史长度却不同。PagedAttention（分页注意力）的页表把逻辑序列映射到物理 KV 页，多组 Query head 还可能共享同一 KV head。
 
 分页改变地址组织，Attention 的加权和仍按逻辑位置计算。实现需要把页内偏移、有效长度、在线归约以及缓存引用的生命周期对应起来。
 
@@ -45,7 +45,7 @@ $$
 
 举一个故意非连续的例子：T=4，请求 b=0 的 table[0]=[7,2]，逻辑长度为 7。逻辑 token 0,1,2,3 访问物理 page 7 的 offset 0,1,2,3；token 4,5,6 访问物理 page 2 的 offset 0,1,2。物理地址顺序是 7,7,7,7,2,2,2，不能把物理 page 编号当作逻辑顺序，也不能通过 cache[0:length] 这样的连续切片替代 page table。
 
-分页没有改变 attention 的有效集合。下面 K[b,t,…]、V[b,t,…] 表示经页表解释后的逻辑张量，不要求实际物化成连续数组。对 Query head hq，它仍然计算
+分页没有改变 attention 的有效集合。下面的 `K[b,t,…]`、`V[b,t,…]` 只是经页表解释后的逻辑张量，并不要求实际物化成连续数组。对 Query head `hq`，计算仍然是
 
 $$
 s_t=\frac{Q[b,h_q,:]\cdot K[b,t,kv\_head(h_q),:]}{\sqrt D},\qquad
@@ -53,7 +53,7 @@ O[b,h_q,:]=\frac{\sum_{t=0}^{L_b-1}\bigl[e^{s_t}V[b,t,kv\_head(h_q),:]\bigr]}
 {\sum_{t=0}^{L_b-1}e^{s_t}}.
 $$
 
-因此普通分页通常不会减少有效 KV 读取数量；它解决的是变长请求的物理分配、碎片和调度问题。若想减少有效读取，需要滑窗、稀疏选择、结构化压缩或其它改变可见集合的机制，不能把 page table 本身写成稀疏 attention。
+所以，普通分页通常不会减少有效 KV 读取数量。它解决的是变长请求的物理分配、碎片和调度：先由 `lengths` 确定逻辑 token 集合，再由 `table` 找到物理页，最后由 GQA 映射确定 KV head。若要减少有效读取，必须改变可见集合，例如使用滑窗、稀疏选择或结构化压缩；page table 本身不是稀疏 attention。
 
 > [!IMPORTANT] 三笔账分开算
 > **分页管理物理地址；GQA 减少 KV head 数；稀疏选择减少本次参与 Attention 的位置。** 容量节省、算法读取量和 profiler 的 DRAM bytes 不是同一个数字。
@@ -61,6 +61,8 @@ $$
 页表的实际读取必须带双重边界：逻辑 token 先检查 t < lengths[b]，再检查逻辑 page 在 max_pages 内，加载出的物理 page 还要检查 0 <= physical < P。实现可以先构造带有候选 offset 的向量指针，只要后续 masked load/store 严格阻止无效 lane 解引用；不能在无效 logical page 上无 mask 加载 physical page ID，也不能对无效指针做无 mask 读写。无效槽位用 -1 是 metadata 的明确哨兵。
 
 ## 容量、padding 与有效 HBM 流量账本
+
+上一节的公式回答“读哪些逻辑 token”；本节再分别计算物理池容量、padding、metadata 和 split workspace。它们服务于不同问题，不能把分配容量直接写成有效计算流量，也不能把有效流量直接写成 profiler 的 HBM bytes。
 
 若请求逻辑长度为 L，分配的 page 数是
 
@@ -447,6 +449,8 @@ torch.testing.assert_close(got, expected, rtol=1e-4, atol=1e-4)
 不要只看输出形状或最后一项。先核对整张输出，再测试跨页、长短请求混合和非法写入；同一页上的公式、kernel 与参考实现可以直接逐项对照。
 
 ## 实践：写题、验证与性能对比
+
+验证顺序沿着同一条数据流：先用连续参考确认 attention 数学，再用 page table 确认逻辑到物理的地址映射，随后检查 append/COW 的生命周期，最后才比较 paged、预 gather dense 和端到端 wrapper 的时间边界。
 
 ### LeetGPU：正确性与代码归档
 

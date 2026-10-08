@@ -1,8 +1,8 @@
 # MLA（Multi-head Latent Attention）：从论文公式到 Decode 代码
 
-> 本笔记按 DeepSeek-V2 论文第 2.1 节和 Appendix C 重写。目标不是只记住“MLA 压缩 KV Cache”，而是能回答：压缩了什么、为什么 RoPE 要拆开、Decode 时为什么不用把历史 K/V 完整解压出来，以及代码中的 Cache 和矩阵乘法分别是什么形状。
+> 本笔记按 DeepSeek-V2 论文第 2.1 节和 Appendix C 展开：压缩对象、RoPE 解耦、Decode 的权重吸收，以及 Cache 与矩阵乘法的形状。
 >
-> 代码状态：下面的代码是解释论文机制的 reference code，不是生产实现；当前没有 MLA Triton kernel、LeetGPU 结果或真实 GPU benchmark。
+> 边界：下面的代码用于解释论文机制，不是生产实现；当前没有 MLA Triton kernel、LeetGPU 结果或真实 GPU benchmark。
 
 论文：[DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model](https://arxiv.org/abs/2405.04434)
 
@@ -235,7 +235,7 @@ v_j^C：n_h * d_h 个元素
 c_j^KV：d_c 个元素
 ~~~
 
-但是 Decode 时并不应该机械地把所有历史 c_j^KV 恢复成完整 K/V；weight absorption 会进一步消除这部分工作。
+这里讨论的是 content 分支；完整 Cache 还包括后文的 $k_R$。Decode 时不应机械地把所有历史 $c_j^{KV}$ 恢复成完整 K/V；weight absorption 会进一步消除这部分工作。
 
 ---
 
@@ -263,7 +263,7 @@ $$
 W_{UQ}\in\mathbb{R}^{n_hd_h\times d_c'}
 $$
 
-Query 只属于当前 token，不会像历史 K/V 一样长期放入 KV Cache。因此：
+Query 只属于当前 token，不会像历史 K/V 一样长期放入 KV Cache。因此，Q compression 的主要收益落在当前计算和训练 activation，而不是直接减少历史 Cache：
 
 ~~~
 KV compression → 直接减少 Decode KV Cache
@@ -608,7 +608,7 @@ k_R_cache : [T, d_h_R]
 
 ---
 
-## 9. KV Cache 账本：元素数和 bytes 分开算
+## 9. KV Cache：元素数和 bytes 分开计算
 
 论文 Table 1 统计的是**每个 token、每层的元素数量**，不是直接统计 bytes。设层数为 l：
 
@@ -899,21 +899,26 @@ k_r_cache : [layers, batch, sequence, d_h_R]
 
 ~~~python
 # 伪代码，不是当前可运行 kernel
-q_latent = load_current_query_latent()       # [BLOCK_H, d_c_q]
+c_q = load_current_query_latent()           # [d_c_q]，当前 token 的共享 Query latent
 c_kv = load(c_kv_cache + kv_offsets)         # [BLOCK_T, d_c]
 k_r = load(k_r_cache + kv_offsets)           # [BLOCK_T, d_r]
 
-q_in_latent = tl.dot(c_q, W_QK)            # [BLOCK_H, d_c]
+q_in_latent = project_query_heads(c_q, W_QK) # [BLOCK_H, d_c]；逐 head 使用吸收后的矩阵
 content_score = tl.dot(q_in_latent, tl.trans(c_kv))  # [BLOCK_H, BLOCK_T]
-rope_score = tl.dot(q_r, tl.trans(k_r))    # [BLOCK_H, BLOCK_T]
+rope_score = tl.dot(q_r, tl.trans(k_r))      # [BLOCK_H, BLOCK_T]
 scores = (content_score + rope_score) * scale
 
-p = online_softmax(scores)
-latent_acc += p[:, :, None] * c_kv[None, :, :]
-out += tl.dot(latent_acc, tl.trans(W_OV))
+m_new = maximum(m, rowmax(scores))
+alpha = exp(m - m_new)
+p = exp(scores - m_new[:, None])             # 未归一化 tile 权重
+latent_acc = alpha[:, None] * latent_acc + tl.dot(p, c_kv)  # [BLOCK_H, d_c]
+l = alpha * l + rowsum(p)
+m = m_new
+# 扫完所有 KV tile 后：latent_out = latent_acc / l[:, None]
+# 再通过 W_OV 合成输出
 ~~~
 
-实现时要注意：
+这里不能把每个 tile 单独做出的 `softmax(scores)` 直接相加；跨 tile 的最大值变化必须同步重标定 `latent_acc` 与 `l`。`p @ c_kv` 沿历史位置维求和，输出是每个 head 的压缩 Value 累加，不能保留未归约的 `[head, token, latent]` 外积。`project_query_heads` 仅表示逐 head 的线性投影，不是可直接调用的 Triton API。实现时还要注意：
 
 1. c_KV 的最后一维是 d_c，不是完整的 H × d_h；
 2. k_R 是额外的 RoPE Cache，不能丢掉；
