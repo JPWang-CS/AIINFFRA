@@ -7,6 +7,10 @@
 
 ## 0. 最后更新
 
+- 2026-10-09（用户阅读到第一篇第二章第 6 节《依赖链、分支与执行调度实验》开头；第一章及第二章第 1–5 节已读，第 6 节实验尚未执行。同步 PATH/NOW 当前入口。讨论已归档至[CUDA 执行模型讨论记录](./roadmap/curriculum/decisions/2026-10-09-cuda-execution-discussion.md)。归档涵盖分歧是否重复执行、谓词与双候选计算、独立线程调度、shuffle 来源 lane/寄存器、尾部负载均衡、GPU SM 与 Ascend C 调度层次、`fmaf` 文档及 FP16 输入/FP32 计算/累加与输出类型。课程正文补充两 lane shuffle 示例、SM 选择就绪 warp 的解释及尾部方法适用条件。历史实验状态和 MLA 论文进度不变；未新增 GPU 实验，网页与文档检查由主 Agent 复核；未 commit/push。）
+
+- 2026-10-09（按用户反馈通读并改写第二章 14 节正文：用代码执行顺序解释驻留、就绪与发射，补清分歧/谓词/双候选选择、shuffle 参与线程与来源 lane、block 波次尾部、FP16 保存后 FP32 运算以及输出转换；后半章拆开 CUDA Tile、Python、context、C++ 资源管理、设备链接、日志与 ABI 查询的长句。完整程序和运行命令保留，42 个原有围栏内容经 SHA256 对照一致，33 个标题未改名；FMA 工作量与重复启动计时边界已明确。来源与复核范围写入 `.codex/course-source-index.json`。教材校订不推进 PATH/NOW，不增加设备实验或性能成绩；未 commit/push。）
+
 - 2026-10-08（用户完成第一篇第二章第 3 节《SIMT 与分支执行》的阅读与讨论；沿用第一章及第二章前两节记录，当前入口移至第 4 节《Block 波次与尾部利用率》，锚点为 `chapter=2#chapter-2-section-8`。讨论覆盖行主序 GEMM 地址展开、四独立 FMA 累加链对 ILP 与求和顺序的影响，以及大数吃小数、FP32/FP64、树形归约、Kahan 与 FMA 的精度边界。建议先手算 4 个 SM、每 SM 2 个 block、等时 block 下 grid=8/9/16/17 的波数和末波 block 数，区分 block 波次尾部与 warp 分歧，再读第 5 节连接 input/accumulator/output dtype 与 FMA 精度。无新增 GPU 实验。）
 
 - 2026-09-25（继续按全文阅读方式复核课程阅读器全部 39 篇正文：18 篇主课、21 篇论文/算法专题，另补两份面试资料。逐篇记录阅读障碍与来源，核对招聘样本并加入现场推导和排错问题；修正 GDN 状态更新、MLA 跨块归约、GQA 论文结果表、投机采样、低精度表示、KV 单位与分片生命周期等错误。维护旧小节编号与合并段落的重定向，取消会覆盖修订正文的旧发布替换。原始 solutions/reference、已有实验、PATH/NOW 不变；未提交或推送。覆盖、返工、CPU 检查和网页验收的最终结果见 `.codex/full-reader-review-2026-09-25.md`。论文笔记全文走读不等于逐页重读所有原始 PDF，也不代表新的 GPU 验证。）

@@ -1,0 +1,33 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CUDA 执行模型讨论记录（2026-10-09） · AIINFFRA 附属文档</title><script src="../../../../theme.js?v=3aab643066da"></script><link rel="stylesheet" href="../../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../../styles.css?v=deca86f54b40"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../../index.html?chapter=1">返回课程</a></nav><button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换到浅色模式">浅色</button></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · roadmap/curriculum/decisions/2026-10-09-cuda-execution-discussion.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E5%B7%B2%E8%AE%A8%E8%AE%BA%E5%B9%B6%E7%A1%AE%E8%AE%A4">已讨论并确认</a></li><li><a href="#%E5%88%86%E6%94%AF%E8%B0%93%E8%AF%8D%E4%B8%8E%E4%B8%A4%E8%BE%B9%E9%83%BD%E8%AE%A1%E7%AE%97">分支、谓词与两边都计算</a></li><li><a href="#%E7%8B%AC%E7%AB%8B%E7%BA%BF%E7%A8%8B%E8%B0%83%E5%BA%A6%E4%B8%8E%E7%AD%89%E5%BE%85">独立线程调度与等待</a></li><li><a href="#shuffle-%E7%9A%84%E6%9D%A5%E6%BA%90-lane%E5%A4%9A%E4%B8%AA%E5%80%BC%E4%B8%8E%E5%AF%84%E5%AD%98%E5%99%A8">Shuffle 的来源 lane、多个值与寄存器</a></li><li><a href="#%E5%B0%BE%E5%9D%97%E4%B8%8E%E8%B4%9F%E8%BD%BD%E5%9D%87%E8%A1%A1">尾块与负载均衡</a></li><li><a href="#fmaf-%E4%B8%8E%E8%BE%93%E5%85%A5%E8%AE%A1%E7%AE%97%E7%B4%AF%E5%8A%A0%E8%BE%93%E5%87%BA%E7%B1%BB%E5%9E%8B">fmaf 与输入、计算、累加、输出类型</a></li><li><a href="#%E5%B7%B2%E8%9E%8D%E5%85%A5%E8%AF%BE%E7%A8%8B">已融入课程</a></li><li><a href="#%E5%B0%9A%E5%BE%85%E5%AE%9E%E9%AA%8C%E7%A1%AE%E8%AE%A4">尚待实验确认</a></li></ol></nav><div class="markdown-body"><h1 id="cuda-执行模型讨论记录2026-10-09">CUDA 执行模型讨论记录（2026-10-09）<a class="heading-anchor" href="#cuda-%E6%89%A7%E8%A1%8C%E6%A8%A1%E5%9E%8B%E8%AE%A8%E8%AE%BA%E8%AE%B0%E5%BD%952026-10-09" aria-label="链接到CUDA 执行模型讨论记录（2026-10-09）">#</a></h1>
+<p>本记录整理围绕第二章执行模型的问答。下列用户问题均为概括，不是逐字引用；技术解释由 Agent 整理。课程正文已吸收适合连续阅读的解释。这里的概念讨论不代表 CUDA kernel 已编译或在 GPU 上验证。</p>
+<h2 id="已讨论并确认">已讨论并确认<a class="heading-anchor" href="#%E5%B7%B2%E8%AE%A8%E8%AE%BA%E5%B9%B6%E7%A1%AE%E8%AE%A4" aria-label="链接到已讨论并确认">#</a></h2>
+<h3 id="分支谓词与两边都计算">分支、谓词与两边都计算<a class="heading-anchor" href="#%E5%88%86%E6%94%AF%E8%B0%93%E8%AF%8D%E4%B8%8E%E4%B8%A4%E8%BE%B9%E9%83%BD%E8%AE%A1%E7%AE%97" aria-label="链接到分支、谓词与两边都计算">#</a></h3>
+<p>**用户问题（概括）：**一个 warp 的 lane 分别进入 even/odd 分支时，是否等于整个 warp 执行两次？如果两边代码都要发指令，那是不是还是执行两次？用谓词或先计算两个候选再选择，是否真的更快？</p>
+<p>**Agent 整理：**显式分歧分支会让 warp 分别处理两条指令路径，每条路径只让相应活动 lane 参与；不是每个线程都把两个分支的函数各算一遍。谓词执行可以减少跳转控制，但两条路径的指令仍可能都需要调度。若源码先计算两个候选值再选择，每个线程确实可能执行两份算术；编译器也可能改写纯算术，因此要查看生成代码。短小工作可能值得用谓词省跳转，长工作若整 warp 选择一致，则真实分支可能跳过另一条路径；应结合指令数量、活动 lane 和分支一致性判断。</p>
+<h3 id="独立线程调度与等待">独立线程调度与等待<a class="heading-anchor" href="#%E7%8B%AC%E7%AB%8B%E7%BA%BF%E7%A8%8B%E8%B0%83%E5%BA%A6%E4%B8%8E%E7%AD%89%E5%BE%85" aria-label="链接到独立线程调度与等待">#</a></h3>
+<p>**用户问题（概括）：**Volta 起的独立线程调度如何理解？Ascend 的 AIV/AIC 和 GPU SM 的差别是否是后者能在一个任务等待时继续做别的工作？</p>
+<p>**Agent 整理：**warp 中某些线程等待时，其余线程的执行位置可以不同；硬件仍按活动线程组织 warp 指令。若一个 warp 因普通数据依赖暂时不能发射，SM 可以选择另一个已驻留且就绪的 warp，不必等当前 block 结束。Ascend C 的核实例任务划分与 SM 的 warp 发射属于不同抽象层，不能从这一点推出 AIV/AIC 等待时不能调度其他任务。正文保留这一层次边界，具体行为仍要按设备架构和编程模型分析。</p>
+<h3 id="shuffle-的来源-lane多个值与寄存器">Shuffle 的来源 lane、多个值与寄存器<a class="heading-anchor" href="#shuffle-%E7%9A%84%E6%9D%A5%E6%BA%90-lane%E5%A4%9A%E4%B8%AA%E5%80%BC%E4%B8%8E%E5%AF%84%E5%AD%98%E5%99%A8" aria-label="链接到Shuffle 的来源 lane、多个值与寄存器">#</a></h3>
+<p><strong>用户问题（概括）：</strong><code>__shfl_sync(mask, value, 0)</code> 是否只由 lane 0 提供值？若需要两个线程的值怎么办？<code>value</code> 为什么说是寄存器？</p>
+<p>**Agent 整理：**每个参与线程都传入自己的 <code>value</code>；参数 <code>0</code> 指定结果从 lane 0 取得。需要 lane 0 与 lane 1 的值时，所有参与线程分别执行两次 shuffle，来源参数为 0 和 1。普通局部标量通常由寄存器承载，因此 shuffle 的操作数是每线程的寄存器值；若发生寄存器溢出，编译器会先取回操作数。有效来源 lane 必须参与调用并持有已定义的值，mask 也必须符合实际参与线程。</p>
+<h3 id="尾块与负载均衡">尾块与负载均衡<a class="heading-anchor" href="#%E5%B0%BE%E5%9D%97%E4%B8%8E%E8%B4%9F%E8%BD%BD%E5%9D%87%E8%A1%A1" aria-label="链接到尾块与负载均衡">#</a></h3>
+<p>**用户问题（概括）：**除增大每轮处理量使其整除、或均分尾部数据外，还有哪些负载均衡办法？</p>
+<p>**Agent 整理：**可以合并独立小任务、对耗时不均的可拆任务使用动态领取、调整 tile/block 工作量与资源占用，或为边界形状采用专用 kernel。动态调度不能消除等时不可拆任务的尾部下界：17 个等时 block 分到 8 个执行位置，至少有一处处理 3 个 block；补 7 个空 block 凑 24 个不会减少计算。CUDA 会在 block 释放资源后继续安排后续 block，不能把“波”误解为全设备的硬同步屏障。</p>
+<h3 id="fmaf-与输入计算累加输出类型"><code>fmaf</code> 与输入、计算、累加、输出类型<a class="heading-anchor" href="#fmaf-%E4%B8%8E%E8%BE%93%E5%85%A5%E8%AE%A1%E7%AE%97%E7%B4%AF%E5%8A%A0%E8%BE%93%E5%87%BA%E7%B1%BB%E5%9E%8B" aria-label="链接到fmaf 与输入、计算、累加、输出类型">#</a></h3>
+<p><strong>用户问题（概括）：</strong><code>fmaf</code> 的官方文档入口在哪里？低精度输入为什么还会在代码中转换？输入转 FP32 后是否就按 FP32 乘法？输出类型能说明累加类型或 Tensor Core 路径吗？</p>
+<p>**Agent 整理：**官方入口为 <a href="https://docs.nvidia.com/cuda/cuda-math-api/cuda_math_api/group__CUDA__MATH__SINGLE.html#_CPPv44fmaffff"><code>fmaf</code> CUDA Math API</a>。FP16 输入可转换为 FP32，再用普通 FP32 FMA 累加；转换只保留 FP16 已存下的数值，不会还原舍入前丢失的信息。Tensor Core MMA 是另一条矩阵计算路径，需看操作数类型、指令与累加器定义。输入存储类型、乘法路径、累加器类型和写回类型应分别从代码/API/生成指令确认，不能仅凭输出 dtype 推断其余三者。</p>
+<h2 id="已融入课程">已融入课程<a class="heading-anchor" href="#%E5%B7%B2%E8%9E%8D%E5%85%A5%E8%AF%BE%E7%A8%8B" aria-label="链接到已融入课程">#</a></h2>
+<ul>
+<li>第二章 §2.3：补充一个 warp 等待时 SM 如何选择其他就绪 warp，并说明 Ascend C 软件核任务划分与 GPU warp 发射的层次不同。</li>
+<li>第二章 §3.1–§3.2：保留分歧与谓词解释；补充从 lane 0 和 lane 1 各取一个寄存器值的完整 warp 示例及参与条件。</li>
+<li>第二章 §4：列出合并任务、动态领取、资源/粒度调整、边界专用 tile 的适用情形，并用 17 个等时 block、8 个执行位置说明动态调度的限制。</li>
+<li>第二章 §5：已提供 <code>fmaf</code> 与 MMA 官方文档链接，并解释低精度存储、FP32 转换与累加、MMA 和输出转换的区别。</li>
+<li>第二章 §6：现有实验用四个 kernel 对比单依赖链、四条独立累加链、显式分支和双候选选择；每轮工作量不同，判断性能时须结合正确性与机器指令，不能只比时间。</li>
+</ul>
+<h2 id="尚待实验确认">尚待实验确认<a class="heading-anchor" href="#%E5%B0%9A%E5%BE%85%E5%AE%9E%E9%AA%8C%E7%A1%AE%E8%AE%A4" aria-label="链接到尚待实验确认">#</a></h2>
+<ul>
+<li>运行 §6 的四个 kernel，分别记录正确性、耗时和寄存器用量；对照反汇编确认编译器是否保留分支、谓词化或双候选算术。</li>
+<li>在目标 GPU 上验证不同任务粒度与形状下的尾部影响；当前 17/8 是等时、不可拆任务的简化模型，不是实测时间预测。</li>
+<li>本记录中的说明是概念解释，不构成新 CUDA 编译、GPU 正确性或性能结果。</li>
+</ul>
+</div></main><script src="../../../../reader.js"></script></body></html>

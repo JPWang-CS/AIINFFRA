@@ -1,5 +1,20 @@
 {
   "version": 1,
+  "execution_chapter_language_review_2026_10_09": {
+    "source": "roadmap/curriculum/gpu/02-cuda-execution-and-scheduling/README.md",
+    "scope": "All 14 sections: continuous prose review and code-to-explanation checks. Long restrictions replaced with concrete execution, dtype, coordinate, API and resource-lifetime explanations.",
+    "preservation": "All 42 pre-edit fenced blocks retain their normalized-text SHA256 values; all 33 heading lines remain unchanged. Original solutions and example source files were not edited.",
+    "repairs": "Resident/ready/issue and in-order instruction progress; conditional branch versus predicated execution versus eager selection; shuffle participant mask and source lane; block-wave versus tile boundary; FP16 storage then FP32 arithmetic; explicit input/accumulator/output mapping; FMA work counts and launch-loop timing; Python interface roles; context/module/argument storage; C++ ownership and device linking; logging and ABI-version queries.",
+    "primary_checks": [
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/03-advanced/advanced-kernel-programming.html",
+      "https://triton-lang.org/main/python-api/generated/triton.language.dot.html",
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/lazy-loading.html",
+      "https://docs.nvidia.com/cuda/cutile-python/performance.html",
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/error-log-management.html"
+    ],
+    "external_review": "DeepSeek read-only second review failed before launch because its configured CLI entry was missing (ENOENT); no worker review output was accepted.",
+    "validation_boundary": "Source preservation, rendering and reader regression checks only. CUDA/Triton/cuTile compilation, device correctness and profiling are left for the corresponding lesson."
+  },
   "operator_reader_review_2026_09_23": {
     "scope": "Operator chapters 7-15: source-to-code and formula-to-exercise continuity, LeetGPU challenge contract versus extension experiments, blank device measurements and public bookmark compatibility.",
     "audit": ".codex/operator-reader-audit-2026-09-23.md",

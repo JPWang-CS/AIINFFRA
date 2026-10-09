@@ -35,7 +35,7 @@
 
 | 模块 | 路由 | 状态 |
 |---|---|---|
-| GPU 架构与性能 | [课程路由](./roadmap/curriculum/gpu/README.md) | `WIP`；第一篇第一章已读完，第二章第 1 节与第 2 节（含 2.1–2.3）及第 3 节《SIMT 与分支执行》已读，下一入口为第 4 节 `chapter=2#chapter-2-section-8`（2026-10-08）；用户可自行跳过已掌握内容；既有阅读/实验事实不清零、不降级 |
+| GPU 架构与性能 | [课程路由](./roadmap/curriculum/gpu/README.md) | `WIP`；第一篇第一章已读完，第二章第 1–5 节（含子节）已读，当前到第 6 节《依赖链、分支与执行调度实验》开头，实验尚未执行（2026-10-09）；用户可自行跳过已掌握内容；既有阅读/实验事实不清零、不降级 |
 | 算子实现与优化 | [算子路由](./roadmap/curriculum/operators/README.md) | 九类算子正文及页内实践已形成；原有实验状态保持独立 |
 | 算子内的深入优化 | 各算子正文；[实验检查表](./roadmap/curriculum/performance/README.md)按需使用 | MatMul已有部分证据；未另设优化课 |
 | 量化与模型 GPU 分析 | [量化](./roadmap/curriculum/quantization/README.md) · [Prefill/Decode/Mini Transformer](./roadmap/curriculum/model-analysis/README.md) | 量化及模型分析/Mini Transformer 正文已形成；组合实测未新增 |
@@ -43,7 +43,7 @@
 
 ### 第一篇当前入口
 
-[第一篇第二章：CUDA 执行模型与指令调度 → 4.《Block 波次与尾部利用率》](./roadmap/curriculum/gpu/course-site/index.html?chapter=2#chapter-2-section-8)是当前入口；第一章已读完，第二章第 1 节与第 2 节（含 2.1–2.3）及第 3 节《SIMT 与分支执行》已读（2026-10-08）。本次仅推进阅读，实践线保持 `WIP`，未新增 GPU 验证事实，既有证据保持不变。
+[第一篇第二章：CUDA 执行模型与指令调度 → 6.《依赖链、分支与执行调度实验》](./roadmap/curriculum/gpu/course-site/index.html?chapter=2#chapter-2-section-12)是当前入口；第一章已读完，第二章第 1–5 节（含子节）已读，当前到第 6 节开头，尚未执行该节实验（2026-10-09）。实践线保持 `WIP`，既有实验与论文状态不变。
 
 ## 5. 论文线状态
 
