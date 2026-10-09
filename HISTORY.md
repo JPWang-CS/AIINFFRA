@@ -7,6 +7,8 @@
 
 ## 0. 最后更新
 
+- 2026-10-10（根据 RTX 3090 服务器 branch-probe 原始日志更新第二章第 6 节正文与日志归档，未改 PATH/NOW。正文现把旧 divergent/predicated 的短路径共同开销与新 probe 的 flags、steps、warp 内路径组织、计时方法和输出字段连起来；记录 `steps=1/32/256` 的 uniform/split 中位数分别为 `0.013455/0.013578`、`0.016404/0.024617`、`0.076534/0.147702` ms，比例为 `1.009132/1.500624/1.929890`。原始服务器输出完整保存至[branch probe 日志](./notes/cuda/logs/2026-10-10-branch-probe-rtx3090.txt)，保留原日志中的 min/max 统计文本；本轮只更新课程正文和记录，不改源码、PATH/NOW 或历史 GPU 状态。）
+
 - 2026-10-09（在原 execution-and-scheduling.cu 中新增 `--branch-probe` 与 `--self-test`，并保存修改前完整程序快照 `execution_and_scheduling_baseline_2026_10_09.cu`；probe 使用同一 kernel、lane-split/warp-uniform flags、guard、CPU reference、交替 event 计时和 steps=1/32/256 脚本。Windows 本机 `nvcc -arch=sm_86` 编译退出 0，CPU self-test PASS；本机无 `nvidia-smi`，未运行 GPU probe，保持 `WIP`，待服务器同路径 `git pull` 后执行；未 commit/push。）
 
 - 2026-10-09（用户在同一 RTX 3090 上完成 `-arch=sm_86` native 复测：小 shape 普通运行、大 shape 普通运行和小 shape compute-sanitizer memcheck 均通过，四个 kernel 各自 CPU reference PASS，memcheck `ERROR SUMMARY: 0 errors`；无 n=1,048,576 sanitizer 结果。sm86 整理的 ptxas 报告为 predicated/divergent/independent/dependent 分别 12/10/14/9 registers，372/372/376/376 B cmem[0]，0 stack、0 spill stores、0 spill loads，编译单元 0 gmem，cmem[2] 未报告。课程 README 已保留首次默认构建 8 行表和 sm52 资源表，并新增 native 8 行表、sm86 资源表及大 shape 并排比较；sm52 的 7/10/7/8 与 sm86 的 9/14/10/12 来自不同目标，不能解释为运行时寄存器或 occupancy 变化。默认与 native 大 shape 几乎同值，未声称显著加速；待检查 SASS 与多轮计时。PATH/NOW 保持第 6 节 `GPU_VALIDATED`、整体 `WIP`，不推进第 7 节，MLA 与历史算子成绩不变；未改源码；课程网页构建与检查通过；未 commit/push。）

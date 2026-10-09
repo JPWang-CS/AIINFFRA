@@ -1,0 +1,113 @@
+root@autodl-container-65f44f8da3-5220cd42:~/Learn/AIINFFRA/roadmap/curriculum/gpu/02-cuda-execution-and-scheduling# bash examples/run_branch_probe.sh
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function '_ZN56_GLOBAL__N__081cf575_27_execution_and_scheduling_cu_main19branch_probe_kernelEPKfPKhPfii' for 'sm_86'
+ptxas info    : Function properties for _ZN56_GLOBAL__N__081cf575_27_execution_and_scheduling_cu_main19branch_probe_kernelEPKfPKhPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, 384 bytes cmem[0]
+ptxas info    : Function properties for _ZN54_INTERNAL_081cf575_27_execution_and_scheduling_cu_main56_GLOBAL__N__081cf575_27_execution_and_scheduling_cu_main10even_chainEfi
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Function properties for _ZN54_INTERNAL_081cf575_27_execution_and_scheduling_cu_main56_GLOBAL__N__081cf575_27_execution_and_scheduling_cu_main9odd_chainEfi
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Compiling entry function '_ZN56_GLOBAL__N__081cf575_27_execution_and_scheduling_cu_main24predicated_select_kernelEPKfPfi' for 'sm_86'
+ptxas info    : Function properties for _ZN56_GLOBAL__N__081cf575_27_execution_and_scheduling_cu_main24predicated_select_kernelEPKfPfi
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 12 registers, 372 bytes cmem[0]
+ptxas info    : Compiling entry function '_ZN56_GLOBAL__N__081cf575_27_execution_and_scheduling_cu_main23divergent_branch_kernelEPKfPfi' for 'sm_86'
+ptxas info    : Function properties for _ZN56_GLOBAL__N__081cf575_27_execution_and_scheduling_cu_main23divergent_branch_kernelEPKfPfi
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, 372 bytes cmem[0]
+ptxas info    : Compiling entry function '_ZN56_GLOBAL__N__081cf575_27_execution_and_scheduling_cu_main31independent_accumulators_kernelEPKfPfii' for 'sm_86'
+ptxas info    : Function properties for _ZN56_GLOBAL__N__081cf575_27_execution_and_scheduling_cu_main31independent_accumulators_kernelEPKfPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 14 registers, 376 bytes cmem[0]
+ptxas info    : Compiling entry function '_ZN56_GLOBAL__N__081cf575_27_execution_and_scheduling_cu_main22dependent_chain_kernelEPKfPfii' for 'sm_86'
+ptxas info    : Function properties for _ZN56_GLOBAL__N__081cf575_27_execution_and_scheduling_cu_main22dependent_chain_kernelEPKfPfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 9 registers, 376 bytes cmem[0]
+branch_probe self-test PASS
+branch_probe GPU=NVIDIA GeForce RTX 3090 cc=8.6 driver=13020 runtime=12040
+branch_probe n=257 steps=8 repeats=3 rounds=3 block=256 grid=2
+branch_probe kernel numRegs=10 sharedBytes=0 localBytes=0 theoretical_blocks_per_sm=6
+branch_probe pattern=uniform_pre even=129 odd=128 max_abs_error=0 guard=PASS PASS
+branch_probe pattern=split_pre even=129 odd=128 max_abs_error=0 guard=PASS PASS
+branch_probe round=0 order=uniform-split uniform_ms=0.003755 split_ms=0.003413
+branch_probe round=1 order=split-uniform uniform_ms=0.003413 split_ms=0.003723
+branch_probe round=2 order=uniform-split uniform_ms=0.003648 split_ms=0.003072
+branch_probe uniform min_ms=0.003755 median_ms=0.003648 max_ms=0.003648
+branch_probe split min_ms=0.003413 median_ms=0.003413 max_ms=0.003072
+branch_probe split_median/uniform_median=0.935673
+branch_probe pattern=split_final even=129 odd=128 max_abs_error=0 guard=PASS PASS
+branch_probe overall PASS
+========= COMPUTE-SANITIZER
+branch_probe GPU=NVIDIA GeForce RTX 3090 cc=8.6 driver=13020 runtime=12040
+branch_probe n=257 steps=8 repeats=3 rounds=3 block=256 grid=2
+branch_probe kernel numRegs=10 sharedBytes=0 localBytes=0 theoretical_blocks_per_sm=6
+branch_probe pattern=uniform_pre even=129 odd=128 max_abs_error=0 guard=PASS PASS
+branch_probe pattern=split_pre even=129 odd=128 max_abs_error=0 guard=PASS PASS
+branch_probe round=0 order=uniform-split uniform_ms=0.059392 split_ms=0.061440
+branch_probe round=1 order=split-uniform uniform_ms=0.059051 split_ms=0.059339
+branch_probe round=2 order=uniform-split uniform_ms=0.058592 split_ms=0.057344
+branch_probe uniform min_ms=0.059392 median_ms=0.059051 max_ms=0.058592
+branch_probe split min_ms=0.061440 median_ms=0.059339 max_ms=0.057344
+branch_probe split_median/uniform_median=1.004877
+branch_probe pattern=split_final even=129 odd=128 max_abs_error=0 guard=PASS PASS
+branch_probe overall PASS
+========= ERROR SUMMARY: 0 errors
+branch_probe GPU=NVIDIA GeForce RTX 3090 cc=8.6 driver=13020 runtime=12040
+branch_probe n=1048576 steps=1 repeats=50 rounds=9 block=256 grid=4096
+branch_probe kernel numRegs=10 sharedBytes=0 localBytes=0 theoretical_blocks_per_sm=6
+branch_probe pattern=uniform_pre even=524288 odd=524288 max_abs_error=0 guard=PASS PASS
+branch_probe pattern=split_pre even=524288 odd=524288 max_abs_error=0 guard=PASS PASS
+branch_probe round=0 order=uniform-split uniform_ms=0.013414 split_ms=0.013578
+branch_probe round=1 order=split-uniform uniform_ms=0.013373 split_ms=0.013620
+branch_probe round=2 order=uniform-split uniform_ms=0.013540 split_ms=0.013537
+branch_probe round=3 order=split-uniform uniform_ms=0.013455 split_ms=0.013674
+branch_probe round=4 order=uniform-split uniform_ms=0.013509 split_ms=0.013537
+branch_probe round=5 order=split-uniform uniform_ms=0.013435 split_ms=0.013625
+branch_probe round=6 order=uniform-split uniform_ms=0.013532 split_ms=0.013517
+branch_probe round=7 order=split-uniform uniform_ms=0.013455 split_ms=0.013606
+branch_probe round=8 order=uniform-split uniform_ms=0.013526 split_ms=0.013537
+branch_probe uniform min_ms=0.013414 median_ms=0.013455 max_ms=0.013526
+branch_probe split min_ms=0.013578 median_ms=0.013578 max_ms=0.013537
+branch_probe split_median/uniform_median=1.009132
+branch_probe pattern=split_final even=524288 odd=524288 max_abs_error=0 guard=PASS PASS
+branch_probe overall PASS
+branch_probe GPU=NVIDIA GeForce RTX 3090 cc=8.6 driver=13020 runtime=12040
+branch_probe n=1048576 steps=32 repeats=50 rounds=9 block=256 grid=4096
+branch_probe kernel numRegs=10 sharedBytes=0 localBytes=0 theoretical_blocks_per_sm=6
+branch_probe pattern=uniform_pre even=524288 odd=524288 max_abs_error=0 guard=PASS PASS
+branch_probe pattern=split_pre even=524288 odd=524288 max_abs_error=0 guard=PASS PASS
+branch_probe round=0 order=uniform-split uniform_ms=0.016404 split_ms=0.024596
+branch_probe round=1 order=split-uniform uniform_ms=0.016364 split_ms=0.024743
+branch_probe round=2 order=uniform-split uniform_ms=0.016436 split_ms=0.024617
+branch_probe round=3 order=split-uniform uniform_ms=0.016773 split_ms=0.024901
+branch_probe round=4 order=uniform-split uniform_ms=0.016466 split_ms=0.024576
+branch_probe round=5 order=split-uniform uniform_ms=0.016364 split_ms=0.024749
+branch_probe round=6 order=uniform-split uniform_ms=0.016474 split_ms=0.024617
+branch_probe round=7 order=split-uniform uniform_ms=0.016343 split_ms=0.024752
+branch_probe round=8 order=uniform-split uniform_ms=0.016401 split_ms=0.024474
+branch_probe uniform min_ms=0.016404 median_ms=0.016404 max_ms=0.016401
+branch_probe split min_ms=0.024596 median_ms=0.024617 max_ms=0.024474
+branch_probe split_median/uniform_median=1.500624
+branch_probe pattern=split_final even=524288 odd=524288 max_abs_error=0 guard=PASS PASS
+branch_probe overall PASS
+branch_probe GPU=NVIDIA GeForce RTX 3090 cc=8.6 driver=13020 runtime=12040
+branch_probe n=1048576 steps=256 repeats=50 rounds=9 block=256 grid=4096
+branch_probe kernel numRegs=10 sharedBytes=0 localBytes=0 theoretical_blocks_per_sm=6
+branch_probe pattern=uniform_pre even=524288 odd=524288 max_abs_error=0 guard=PASS PASS
+branch_probe pattern=split_pre even=524288 odd=524288 max_abs_error=0 guard=PASS PASS
+branch_probe round=0 order=uniform-split uniform_ms=0.076534 split_ms=0.147640
+branch_probe round=1 order=split-uniform uniform_ms=0.076554 split_ms=0.147844
+branch_probe round=2 order=uniform-split uniform_ms=0.076776 split_ms=0.147784
+branch_probe round=3 order=split-uniform uniform_ms=0.076677 split_ms=0.147795
+branch_probe round=4 order=uniform-split uniform_ms=0.076719 split_ms=0.147702
+branch_probe round=5 order=split-uniform uniform_ms=0.076247 split_ms=0.147884
+branch_probe round=6 order=uniform-split uniform_ms=0.076324 split_ms=0.146903
+branch_probe round=7 order=split-uniform uniform_ms=0.076104 split_ms=0.147079
+branch_probe round=8 order=uniform-split uniform_ms=0.076409 split_ms=0.146944
+branch_probe uniform min_ms=0.076534 median_ms=0.076534 max_ms=0.076409
+branch_probe split min_ms=0.147640 median_ms=0.147702 max_ms=0.146944
+branch_probe split_median/uniform_median=1.929890
+branch_probe pattern=split_final even=524288 odd=524288 max_abs_error=0 guard=PASS PASS
+branch_probe overall PASS
+branch_probe results: /tmp/branch-probe-NEQldh

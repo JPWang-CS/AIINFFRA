@@ -524,13 +524,27 @@ predicated     0.0113 ms max_abs_error=1.1920929e-07 PASS
 
 偶数位置走 `even_path(x)=fmaf(x,1.25,0.5)`，奇数位置走 `odd_path(x)=fmaf(x,0.75,-0.25)`。divergent 版本按条件只计算对应路径；predicated 版本先计算两条路径再选择。CPU reference 使用普通乘加，GPU 使用 FMA，因此出现 `1.1920929e-07` 的舍入差；`1e-4` 容差下两者都 PASS。大输入两者分别为 11.8 us 和 11.3 us，差 0.5 us。
 
-`steps` 只控制两个累加 kernel；分支和选择每个元素各执行一次对应计算。程序只为累加链打印 `source_FMA_GFLOP_s`，这两行只打印平均时间、最大误差和 PASS。
+`steps` 只控制两个累加 kernel；这里的两条候选路径各只有一次 FMA。程序只为累加链打印 `source_FMA_GFLOP_s`，这两行只打印平均时间、最大误差和 PASS。
 
 小输入 `257 / 20 / 5` 中，divergent 和 predicated 都是 0.0027 ms、error `5.9604645e-08`、PASS。
 
-接着看 SASS 中的条件跳转、谓词与 FMA，确认这两种源码分别生成了哪些指令。
+两种写法的耗时接近，原因在于候选路径很短，数组读写、内核启动和提交等共同开销会稀释计算部分的差异。编译器还可以将短分支改写为谓词执行；源码中的函数名不能直接说明最终生成了哪些指令。查看 SASS 中的条件跳转、谓词和 FMA，才能进一步对应两种写法。条件执行与短分支优化规则见 [CUDA 12.4 SIMT Architecture](https://docs.nvidia.com/cuda/archive/12.4.0/cuda-c-programming-guide/index.html#simt-architecture) 和 [Control Flow Instructions](https://docs.nvidia.com/cuda/archive/12.4.0/cuda-c-programming-guide/index.html#control-flow-instructions)。
 
-在同一文件中还加入了一个受控 branch probe。它只改变 `flags`，仍调用同一个 `branch_probe_kernel`：`warp_uniform[i]=((i/32)&1)==0` 让一个 warp 走同一路径，`lane_split[i]=(i&1)==0` 让同一 warp 的 lane 交错走两条路径。`steps` 只改变两条链的循环长度；每个 kernel 启动的线程数、输入数组和输出 guard 都相同。运行脚本后先检查输出，再读取 SASS 并比较三个 steps 的多轮中位数。
+为了把路径差异拉长，新增 probe 仍调用同一个 `branch_probe_kernel`，只改变 `flags`。`flags[i]=1` 调 `even_chain`，`flags[i]=0` 调 `odd_chain`；每个函数的循环都依赖上一步的 `x`，每个线程做 `steps` 次 FMA。`__noinline__` 保留函数调用边界，`#pragma unroll 1` 保留运行时循环。
+
+<!-- source-check: examples/execution_and_scheduling.cu -->
+~~~cpp
+void make_probe_flags(int n, bool warp_uniform,
+                      std::vector<unsigned char>& flags) {
+    flags.resize(n);
+    for (int i = 0; i < n; ++i) {
+        flags[i] = warp_uniform ? (((i / 32) & 1) == 0)
+                                : ((i & 1) == 0);
+    }
+}
+~~~
+
+`warp_uniform` 中 i=0–31 全走 even，i=32–63 全走 odd；`lane_split` 中每个 warp 的偶数 lane 走 even，奇数 lane 走 odd。两种 flags 使用相同 kernel、相同输入规模、相同线程配置和相同每线程 steps；`n=1,048,576` 可被 64 整除，两条路径各有 524,288 个元素。
 
 <!-- source-check: examples/execution_and_scheduling.cu -->
 ~~~cpp
@@ -560,15 +574,100 @@ __global__ void branch_probe_kernel(const float* input,
 }
 ~~~
 
+沿着一个线程的执行顺序看：先用 block 编号和线程编号算出元素位置 `i`，越过数组边界的线程立即退出；有效线程读取 `flags[i]` 和 `input[i]`，进入对应的累加函数，完成循环后把返回值写入 `output[i]`。循环中的 `x` 是该线程的局部计算值，每次 FMA 都使用上一次的结果。两种模式中，每个线程都只计算自己选中的一条链，因此总有效 FMA 数都是 `n×steps`；相同位置的元素可以选中不同的链，输出分别与各自的 CPU 参考值比较。
+
 在章目录下运行：
 
 ~~~bash
 bash examples/run_branch_probe.sh
 ~~~
 
-脚本默认用 `-arch=sm_86` 编译，先跑 CPU self-test，再跑 `257 / 8 / 3 / 3` 小输入；如果系统有 Compute Sanitizer 就做 memcheck，否则明确打印 SKIP；随后保存 SASS，并分别用 `steps=1/32/256`、`n=1,048,576`、`repeats=50`、`rounds=9` 输出 uniform/split 的 min、median、max 和中位数比值。`cudaFuncGetAttributes` 的 registers、stack/local/shared 与 theoretical blocks/SM 是编译/运行时查询信息；理论驻留 block 不是实测 occupancy。输出目录由脚本打印，原有数据不会删除。
+脚本默认用 `-arch=sm_86` 编译，先跑 CPU self-test，再用 `n=257、steps=8、repeats=3、rounds=3` 检查尾块，并运行 Compute Sanitizer memcheck；随后保存 SASS，分别测量 `steps=1/32/256` 的大输入。缺少检查工具时，脚本会打印相应的 SKIP。本次服务器完成了 memcheck，最后打印的结果目录为 `/tmp/branch-probe-NEQldh`。
 
-入口参数依次为 n、迭代次数 steps 和重复次数 repeats，默认值为 `1<<20`、200、50，block 固定为 256 个线程。完整实现如下：
+服务器先输出环境和资源字段：
+
+~~~text
+branch_probe GPU=NVIDIA GeForce RTX 3090 cc=8.6 driver=13020 runtime=12040
+branch_probe n=1048576 steps=256 repeats=50 rounds=9 block=256 grid=4096
+branch_probe kernel numRegs=10 sharedBytes=0 localBytes=0 theoretical_blocks_per_sm=6
+~~~
+
+`cc=8.6` 对应本次 `sm_86` 编译目标。`driver=13020` 表示驱动支持 CUDA 13.2，`runtime=12040` 表示使用 CUDA 12.4 Runtime；版本号含义见 [CUDA Runtime Version Management](https://docs.nvidia.com/cuda/archive/12.4.0/cuda-runtime-api/group__CUDART____VERSION.html)。大输入有 1,048,576 个元素，每个 block 包含 256 个线程，因此 `grid=1048576/256=4096`，没有不完整的尾块。
+
+编译时的 `ptxas` 报告与运行时资源查询相互对应：
+
+~~~text
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, 384 bytes cmem[0]
+~~~
+
+| 字段 | 含义 |
+|---|---|
+| `numRegs=10` | kernel 每线程使用的寄存器数 |
+| `sharedBytes=0` / `localBytes=0` | 静态共享内存为 0，每线程本地内存为 0 |
+| `stack frame=0` / `spill stores=0` / `spill loads=0` | 编译产物没有栈帧和寄存器溢出读写 |
+| `cmem[0]=384` | kernel 参数等使用的常量内存，不是每线程 384 字节 |
+| `theoretical_blocks_per_sm=6` | occupancy API 按资源计算的驻留上限；每 block 有 8 个 warp，6 个 block 共 48 个 warp，不是计时期间的实测驻留数 |
+
+输入、flags 和输出由 `cudaMalloc` 在运行时分配。编译开头的 `0 bytes gmem` 不代表程序没有使用显存。报告中还列出了原来的四个 kernel，因为它们在同一个源文件中；这次脚本启动的是 `branch_probe_kernel`。
+
+小输入首先给出工具自检和两种模式的数值检查结果：
+
+~~~text
+branch_probe self-test PASS
+branch_probe pattern=uniform_pre even=129 odd=128 max_abs_error=0 guard=PASS PASS
+branch_probe pattern=split_pre even=129 odd=128 max_abs_error=0 guard=PASS PASS
+~~~
+
+CPU self-test 检查 flags 计数、参考值、非法参数、哨兵和 NaN 逻辑。`_pre` 表示正式计时前的 GPU 输出检查。`n=257` 需要两个 block：第一个处理 256 个元素，第二个只有一个有效线程，其余线程在边界判断处退出。两种 flags 都分配了 129 个 even 元素和 128 个 odd 元素。
+
+`max_abs_error=0` 表示这次所有输出都与 CPU `std::fma` 参考值一致。输出区前后各放置 32 个 float 哨兵，`guard=PASS` 表示这些保护值没有被写坏。每轮计时结束后也会检查保护区，最后再检查最后执行模式的数值结果。`overall PASS` 汇总数值、保护区和有限且大于零的计时检查；三组大输入也都通过了这些检查。
+
+Compute Sanitizer 对同一个小输入报告：
+
+~~~text
+========= ERROR SUMMARY: 0 errors
+~~~
+
+它在运行期间检查内存访问，插桩增加了额外耗时。因此性能表使用普通运行的数据，memcheck 记录用于检查内存错误。
+
+大输入计时开始前，两种模式各预热 3 次。每一轮分别启动 50 次，CUDA event 总时间除以 50，得到该轮的平均单次耗时；再对 9 个轮均值取中位数。预热、数据拷贝和结果检查都在计时区间外，连续启动之间的提交空隙会计入时间。先后次序每轮交换，输出中的前两轮例如：
+
+~~~text
+branch_probe round=0 order=uniform-split uniform_ms=0.076534 split_ms=0.147640
+branch_probe round=1 order=split-uniform uniform_ms=0.076554 split_ms=0.147844
+~~~
+
+本次大输入的正常计时为：
+
+| steps | uniform median (ms) | split median (ms) | split / uniform |
+|---:|---:|---:|---:|
+| 1 | 0.013455 | 0.013578 | 1.009132 |
+| 32 | 0.016404 | 0.024617 | 1.500624 |
+| 256 | 0.076534 | 0.147702 | 1.929890 |
+
+这个表比较同一 kernel 下的两种 flags 分布。比值取自程序内部未舍入的计时值，前两列显示到小数点后六位。
+
+`steps=1` 时，两者相差 `0.000123 ms = 0.123 us`，split 约多 0.9% 耗时。每条路径只有一次 FMA，启动、读写和调用等共同开销稀释了计算路径的差别。这与原来短路径实验耗时接近的现象一致。
+
+`steps=32` 时，split 从 0.016404 ms 增加到 0.024617 ms，约多 50.1% 耗时。随着循环变长，warp 内两条计算路径的额外执行成本开始明显影响总时间。
+
+`steps=256` 时，uniform 为 76.534 us，split 为 147.702 us，约多 93.0% 耗时。uniform 的一个 warp 只执行一条长路径，32 个 lane 都参加其中的 FMA；split 的 warp 要分别执行两条长路径，每条路径只有对应的 16 个 lane 参加。线程的有效计算量相同，但完成这些计算需要更多 warp 指令发射。随着路径计算占比增加，总耗时比接近两倍；启动和数据读写等共同开销并没有一起翻倍。
+
+因此，分析分支性能时，应同时看 warp 内的路径分布和每条路径的计算长度。`flags` 控制前者，`steps` 控制后者。不同 warp 可以执行不同路径，优化时重点是让同一个 warp 内尽量保持路径一致。若通过数据分组实现这一点，也要把分组和恢复输出顺序的成本计入总时间。
+
+进一步使用 profiler 时，可在两段 FMA 循环中观察每条 warp 指令的活跃 lane 数：uniform 预期为 32，split 预期为 16。对应的 SASS 已由脚本保存到 `/tmp/branch-probe-NEQldh/branch_probe.sass.txt`，可继续核对选路与循环跳转。
+
+原始日志中的 min/max 有一处统计打印错误：旧实现从未排序的原始 vector 取 `front/back`，而中位数函数排序的是副本。`efdf4f2` 已修正这一问题，中位数和比值不受影响。根据本次九轮输出复算，256 次循环的统计为：
+
+~~~text
+uniform min_ms=0.076104 median_ms=0.076534 max_ms=0.076776
+split   min_ms=0.146903 median_ms=0.147702 max_ms=0.147884
+~~~
+
+这两行是对原始数据的复算，原始日志保留原样。首次默认构建对照见[实验记录](../../../../notes/cuda/execution-and-scheduling-rtx3090-2026-10-09.md)，本次完整服务器输出见[branch probe 日志](../../../../notes/cuda/logs/2026-10-10-branch-probe-rtx3090.txt)。
+
+下面保留原始四项对照的完整程序，其入口参数为 `n、steps、repeats`，默认值分别是 `1<<20、200、50`，block 固定为 256 个线程。受控实验使用上面的 `--branch-probe` 入口，另有 `rounds` 参数。
 
 <details>
 <summary>完整初次实测程序（原始四项对照）</summary>
