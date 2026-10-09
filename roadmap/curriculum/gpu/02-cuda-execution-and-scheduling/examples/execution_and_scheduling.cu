@@ -287,7 +287,13 @@ bool probe_guards_ok(const std::vector<float>& storage, int n) {
     return true;
 }
 
-float probe_median(std::vector<float> values);
+struct ProbeStats {
+    float min_ms;
+    float median_ms;
+    float max_ms;
+};
+
+ProbeStats probe_stats(std::vector<float> values);
 
 bool probe_self_test() {
     bool ok = true;
@@ -347,8 +353,24 @@ bool probe_self_test() {
         ok = ok && !parse_probe_options(7, too_many, &parsed,
                                         &parsed_self_test);
     }
-    ok = ok && probe_median({1.0f, 9.0f, 3.0f, 5.0f}) == 4.0f;
-    ok = ok && probe_median({7.0f}) == 7.0f;
+    const std::vector<float> odd_samples{9.0f, 1.0f, 5.0f};
+    const std::vector<float> even_samples{9.0f, 1.0f, 5.0f, 3.0f};
+    const std::vector<float> repeated_samples{4.0f, 4.0f, 4.0f};
+    const std::vector<float> single_sample{7.0f};
+    const ProbeStats odd_stats = probe_stats(odd_samples);
+    const ProbeStats even_stats = probe_stats(even_samples);
+    const ProbeStats repeated_stats = probe_stats(repeated_samples);
+    const ProbeStats single_stats = probe_stats(single_sample);
+    ok = ok && odd_stats.min_ms == 1.0f && odd_stats.median_ms == 5.0f &&
+         odd_stats.max_ms == 9.0f;
+    ok = ok && even_stats.min_ms == 1.0f && even_stats.median_ms == 4.0f &&
+         even_stats.max_ms == 9.0f;
+    ok = ok && repeated_stats.min_ms == 4.0f &&
+         repeated_stats.median_ms == 4.0f && repeated_stats.max_ms == 4.0f;
+    ok = ok && single_stats.min_ms == 7.0f && single_stats.median_ms == 7.0f &&
+         single_stats.max_ms == 7.0f;
+    ok = ok && odd_samples == std::vector<float>({9.0f, 1.0f, 5.0f});
+    ok = ok && even_samples == std::vector<float>({9.0f, 1.0f, 5.0f, 3.0f});
     std::puts(ok ? "branch_probe self-test PASS" : "branch_probe self-test FAIL");
     return ok;
 }
@@ -371,17 +393,19 @@ float measure_probe(Launch launch, int repeats) {
     return elapsed_ms / static_cast<float>(repeats);
 }
 
-float probe_median(std::vector<float> values) {
+ProbeStats probe_stats(std::vector<float> values) {
     std::sort(values.begin(), values.end());
-    if ((values.size() & 1) != 0) return values[values.size() / 2];
-    return 0.5f * (values[values.size() / 2 - 1] +
-                   values[values.size() / 2]);
+    const float median = (values.size() & 1) != 0
+                             ? values[values.size() / 2]
+                             : 0.5f * (values[values.size() / 2 - 1] +
+                                       values[values.size() / 2]);
+    return ProbeStats{values.front(), median, values.back()};
 }
 
 void print_probe_stats(const char* name, const std::vector<float>& values) {
-    const float median = probe_median(values);
+    const ProbeStats stats = probe_stats(values);
     std::printf("branch_probe %s min_ms=%.6f median_ms=%.6f max_ms=%.6f\n",
-                name, values.front(), median, values.back());
+                name, stats.min_ms, stats.median_ms, stats.max_ms);
 }
 
 void reset_probe_output(float* device_storage, int n,
@@ -568,8 +592,8 @@ bool run_branch_probe(const ProbeOptions& options) {
     if (ok) {
         print_probe_stats("uniform", uniform_times);
         print_probe_stats("split", split_times);
-        const float uniform_median = probe_median(uniform_times);
-        const float split_median = probe_median(split_times);
+        const float uniform_median = probe_stats(uniform_times).median_ms;
+        const float split_median = probe_stats(split_times).median_ms;
         if (std::isfinite(uniform_median) && uniform_median > 0.0f &&
             std::isfinite(split_median) && split_median > 0.0f) {
             std::printf("branch_probe split_median/uniform_median=%.6f\n",
