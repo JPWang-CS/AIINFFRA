@@ -7,6 +7,12 @@
 
 ## 0. 最后更新
 
+- 2026-10-09（在原 execution-and-scheduling.cu 中新增 `--branch-probe` 与 `--self-test`，并保存修改前完整程序快照 `execution_and_scheduling_baseline_2026_10_09.cu`；probe 使用同一 kernel、lane-split/warp-uniform flags、guard、CPU reference、交替 event 计时和 steps=1/32/256 脚本。Windows 本机 `nvcc -arch=sm_86` 编译退出 0，CPU self-test PASS；本机无 `nvidia-smi`，未运行 GPU probe，保持 `WIP`，待服务器同路径 `git pull` 后执行；未 commit/push。）
+
+- 2026-10-09（用户在同一 RTX 3090 上完成 `-arch=sm_86` native 复测：小 shape 普通运行、大 shape 普通运行和小 shape compute-sanitizer memcheck 均通过，四个 kernel 各自 CPU reference PASS，memcheck `ERROR SUMMARY: 0 errors`；无 n=1,048,576 sanitizer 结果。sm86 整理的 ptxas 报告为 predicated/divergent/independent/dependent 分别 12/10/14/9 registers，372/372/376/376 B cmem[0]，0 stack、0 spill stores、0 spill loads，编译单元 0 gmem，cmem[2] 未报告。课程 README 已保留首次默认构建 8 行表和 sm52 资源表，并新增 native 8 行表、sm86 资源表及大 shape 并排比较；sm52 的 7/10/7/8 与 sm86 的 9/14/10/12 来自不同目标，不能解释为运行时寄存器或 occupancy 变化。默认与 native 大 shape 几乎同值，未声称显著加速；待检查 SASS 与多轮计时。PATH/NOW 保持第 6 节 `GPU_VALIDATED`、整体 `WIP`，不推进第 7 节，MLA 与历史算子成绩不变；未改源码；课程网页构建与检查通过；未 commit/push。）
+
+- 2026-10-09（用户在 RTX 3090 上执行第一篇第二章第 6 节依赖链、分支与执行调度实验：`n=257, steps=20, repeats=5` 尾块检查、同 shape compute-sanitizer memcheck，以及 `n=1048576, steps=200, repeats=50` 正式测量均通过；四个 kernel 各自 CPU reference PASS。正式性能表已填入课程 README，逐字输出保存至[实验原始日志](./notes/cuda/logs/2026-10-09-execution-and-scheduling-rtx3090.txt)，代码→输出讲解保存至[RTX 3090 实验笔记](./notes/cuda/execution-and-scheduling-rtx3090-2026-10-09.md)。本轮把第 6 节设备正确性记为 `GPU_VALIDATED`，课程整体仍 `WIP`；用户日志中的 `7/10/7/8` 寄存器数明确为 sm_52 编译报告，不能当 RTX 3090 运行资源。下一步先做结果分析，再在同一 3090 用 `-arch=sm_86` 重编 `/tmp/cuda-execution-sm86`、复跑并读 fatbin/SASS；尚未执行。MLA、历史算子成绩和第 7 节入口不变；未改源码；课程网页构建与检查通过；未 commit/push。）
+
 - 2026-10-09（用户阅读到第一篇第二章第 6 节《依赖链、分支与执行调度实验》开头；第一章及第二章第 1–5 节已读，第 6 节实验尚未执行。同步 PATH/NOW 当前入口。讨论已归档至[CUDA 执行模型讨论记录](./roadmap/curriculum/decisions/2026-10-09-cuda-execution-discussion.md)。归档涵盖分歧是否重复执行、谓词与双候选计算、独立线程调度、shuffle 来源 lane/寄存器、尾部负载均衡、GPU SM 与 Ascend C 调度层次、`fmaf` 文档及 FP16 输入/FP32 计算/累加与输出类型。课程正文补充两 lane shuffle 示例、SM 选择就绪 warp 的解释及尾部方法适用条件。历史实验状态和 MLA 论文进度不变；未新增 GPU 实验，网页与文档检查由主 Agent 复核；未 commit/push。）
 
 - 2026-10-09（按用户反馈通读并改写第二章 14 节正文：用代码执行顺序解释驻留、就绪与发射，补清分歧/谓词/双候选选择、shuffle 参与线程与来源 lane、block 波次尾部、FP16 保存后 FP32 运算以及输出转换；后半章拆开 CUDA Tile、Python、context、C++ 资源管理、设备链接、日志与 ABI 查询的长句。完整程序和运行命令保留，42 个原有围栏内容经 SHA256 对照一致，33 个标题未改名；FMA 工作量与重复启动计时边界已明确。来源与复核范围写入 `.codex/course-source-index.json`。教材校订不推进 PATH/NOW，不增加设备实验或性能成绩；未 commit/push。）

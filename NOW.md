@@ -14,13 +14,14 @@
 
 ## 实践线：第一篇第二章，执行调度实验（WIP）
 
-第一章已读完，第二章第 1–5 节（含子节）已读。当前到第 6 节《依赖链、分支与执行调度实验》开头，实验尚未执行。既有实验和性能证据保持有效。
+第一章已读完，第二章第 1–5 节（含子节）已读。第 6 节《依赖链、分支与执行调度实验》已在 RTX 3090 完成默认构建与 `sm_86` native 的小/大 shape 实测及小 shape memcheck，设备正确性记为 `GPU_VALIDATED`；当前焦点为“检查最终 SASS 与多轮计时”，课程整体仍为 `WIP`。既有实验和性能证据保持有效。
 
 - 当前课：[第一篇第二章：CUDA 执行模型与指令调度 → 6.《依赖链、分支与执行调度实验》](./roadmap/curriculum/gpu/course-site/index.html?chapter=2#chapter-2-section-12)
 - 课程总入口：[GPU 硬件与性能基础](./roadmap/curriculum/gpu/README.md)
 - Softmax 服务器真实性能验证仍是历史未完成项，但不再作为当前入口；后续在对应算子章按验收补齐
 
-- 2026-10-09 阅读到第 6 节开头。下一步先读本节四个 kernel 的功能、每轮工作量与 correctness 说明，再运行本节已有实验；讨论记录见[CUDA 执行模型讨论（2026-10-09）](./roadmap/curriculum/decisions/2026-10-09-cuda-execution-discussion.md)。
+- 2026-10-09 已完成第 6 节默认构建与 `sm_86` native 用户复测。四个 kernel、尾块、各自 CPU reference、计时边界和源码 FMA 吞吐的讲解见[RTX 3090 实验笔记](./notes/cuda/execution-and-scheduling-rtx3090-2026-10-09.md)；默认构建原始日志见[实验原始日志](./notes/cuda/logs/2026-10-09-execution-and-scheduling-rtx3090.txt)，sm86 原始日志见[sm86 原始日志](./notes/cuda/logs/2026-10-09-execution-and-scheduling-rtx3090-sm86.txt)，讨论记录见[CUDA 执行模型讨论（2026-10-09）](./roadmap/curriculum/decisions/2026-10-09-cuda-execution-discussion.md)。下一步检查最终 SASS 与多轮计时。
+- 当前新增的 `--branch-probe` 仍是 `WIP`：代码已进入同一 `.cu` 和服务器同路径脚本，下一步由服务器 `git pull` 后编译运行；本机只有真实 nvcc 编译与 CPU self-test，未宣称 GPU probe 通过。
 
 MatMul 已阶段性收口为 RTX 3090 `GPU_VALIDATED` baseline；已有数据不清零，NCU、PTX/SASS、spill/occupancy、低精度和多 shape 将在 GEMM 章内继续深化。
 

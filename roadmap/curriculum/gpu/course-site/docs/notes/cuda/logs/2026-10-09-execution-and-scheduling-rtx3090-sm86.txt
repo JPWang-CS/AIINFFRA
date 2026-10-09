@@ -1,0 +1,46 @@
+CUDA execution-and-scheduling sm_86 native-target rerun log
+Date: 2026-10-09 (Asia/Shanghai)
+
+The three run-output blocks below are preserved verbatim from the user's log.
+The GPU is the same NVIDIA GeForce RTX 3090 and the toolkit is CUDA 12.4
+V12.4.131 from the preceding record. Driver version, clocks, power and server
+git revision remain unspecified.
+
+--- compile command (user-provided) ---
+$ nvcc -O3 -std=c++17 -lineinfo --resource-usage -arch=sm_86 examples/execution_and_scheduling.cu -o /tmp/cuda-execution-sm86
+
+--- regular run, small shape (verbatim) ---
+$ /tmp/cuda-execution-sm86 257 20 5
+dependent      0.0035 ms max_abs_error=0 PASS source_FMA_GFLOP_s=2.953
+independent    0.0029 ms max_abs_error=0 PASS source_FMA_GFLOP_s=14.342
+divergent      0.0027 ms max_abs_error=5.9604645e-08 PASS
+predicated     0.0027 ms max_abs_error=5.9604645e-08 PASS
+
+--- compute-sanitizer memcheck, small shape (verbatim) ---
+$ compute-sanitizer --tool memcheck --error-exitcode=1 /tmp/cuda-execution-sm86 257 20 5
+========= COMPUTE-SANITIZER
+dependent      0.1593 ms max_abs_error=0 PASS source_FMA_GFLOP_s=0.065
+independent    0.0604 ms max_abs_error=0 PASS source_FMA_GFLOP_s=0.681
+divergent      0.0565 ms max_abs_error=5.9604645e-08 PASS
+predicated     0.0557 ms max_abs_error=5.9604645e-08 PASS
+========= ERROR SUMMARY: 0 errors
+
+--- regular run, large shape (verbatim) ---
+$ /tmp/cuda-execution-sm86 1048576 200 50
+dependent      0.0201 ms max_abs_error=0 PASS source_FMA_GFLOP_s=20855.398
+independent    0.0576 ms max_abs_error=0 PASS source_FMA_GFLOP_s=29132.291
+divergent      0.0118 ms max_abs_error=1.1920929e-07 PASS
+predicated     0.0113 ms max_abs_error=1.1920929e-07 PASS
+
+--- resource-usage report (整理自用户日志，不是上述程序输出原文) ---
+ptxas target sm_86:
+predicated_select Used 12 registers, 372 bytes cmem[0]
+divergent_branch  Used 10 registers, 372 bytes cmem[0]
+independent_accumulators Used 14 registers, 376 bytes cmem[0]
+dependent_chain Used 9 registers, 376 bytes cmem[0]
+each kernel: 0 stack frame, 0 spill stores, 0 spill loads
+compilation unit: 0 gmem
+
+No cmem[2] value was supplied in this report; it is not interpreted as zero.
+The sm_52 and sm_86 reports target different compilation architectures and
+their register counts must not be read as a runtime register transition.

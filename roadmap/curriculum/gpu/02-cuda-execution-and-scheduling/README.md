@@ -418,26 +418,22 @@ torch.backends.cuda.matmul.allow_tf32 = False
 
 ## 6. 依赖链、分支与执行调度实验
 
-本实验把前面的机制写成四个 kernel：单条依赖链、四条独立累加链、显式分支、先算两边再选择。每个 kernel 使用自己的 CPU 参考结果检查输出，然后测耗时和寄存器用量。
-
-两组比较都要先算工作量。独立累加链每轮做 4 次 FMA，依赖链每轮做 1 次；选择版本的源码先算两条路径，分支版本每个线程只计算其中一条。时间和工作量一起记录，才能解释差异。
-
-Linux 服务器从仓库根目录执行以下命令；PowerShell 在 `roadmap/curriculum/gpu/02-cuda-execution-and-scheduling` 目录执行相应命令。先以 `n=257` 检查尾块，再用 `n=1<<20` 测量较大输入。
+本实验在 NVIDIA GeForce RTX 3090、CUDA 12.4（`V12.4.131`）上使用 `sm_86` native 目标。四个 kernel 各自用 CPU 参考实现检查输出，再测平均耗时和源码 FMA 吞吐。命令参数依次是 `n`、`steps`、`repeats`：`257 / 20 / 5` 使用 256-thread block，网格为 2 个 block，第二个尾块只有 1 个有效线程；`1,048,576 / 200 / 50` 用来比较吞吐。
 
 ```bash
 cd roadmap/curriculum/gpu/02-cuda-execution-and-scheduling
-nvcc -O3 -std=c++17 -lineinfo --resource-usage \
-  examples/execution_and_scheduling.cu -o /tmp/cuda-execution
-/tmp/cuda-execution 257 20 5
-compute-sanitizer --tool memcheck --error-exitcode=1 /tmp/cuda-execution 257 20 5
-/tmp/cuda-execution 1048576 200 50
+nvcc -O3 -std=c++17 -lineinfo --resource-usage -arch=sm_86 \
+  examples/execution_and_scheduling.cu -o /tmp/cuda-execution-sm86
+/tmp/cuda-execution-sm86 257 20 5
+compute-sanitizer --tool memcheck --error-exitcode=1 /tmp/cuda-execution-sm86 257 20 5
+/tmp/cuda-execution-sm86 1048576 200 50
 ```
 
-程序逐项检查输出，出现非有限值或超过容差时返回失败。`source_FMA_GFLOP_s` 用源码中的 FMA 次数估算吞吐，每次 FMA 计 2 FLOP。编译器可能改写指令；报告机器实际执行的工作量时，还需查看生成代码和计数器。
+程序先计算 CPU 参考值：两个累加版本使用 `std::fma`，分支版本使用普通乘加表达式。每个 kernel 预热一次，再重复启动 `repeats` 次，用 CUDA event 测量总时间，除以重复次数得到平均单次耗时 `ms`。输入、输出拷贝在计时区间外，连续提交之间的空隙计入总时间。测量结束后，程序把 GPU 结果拷回主机，逐项比较参考值，得到所有元素的最大绝对差 `max_abs_error`。结果有限、误差不超过 `1e-4` 且计时有效时，打印 PASS。`source_FMA_GFLOP_s` 表示按源码计算的浮点吞吐，单位是每秒十亿次浮点操作，一个 FMA 按乘法和加法计两次操作。
 
 ### 6.1 依赖链与四条独立累加链
 
-依赖链每元素做 steps 次 FMA，每次等待上一次 x。独立版本维护 x0、x1、x2、x3，每轮分别更新，最后求平均。例如 steps 为 200 时，前者每元素做 200 次 FMA，后者做 800 次。应分别计算时间和每秒完成的源码 FMA 数。
+依赖链每元素做 steps 次 FMA，每次等待上一次 x。独立版本维护 x0、x1、x2、x3，每轮分别更新，先求和、减去 `0.6f`，再乘 `0.25f`。steps 为 200 时，前者每元素做 200 次 FMA，后者做 800 次；两个 kernel 使用各自的 CPU reference，输出不要求相同。
 
 <!-- source-check: examples/execution_and_scheduling.cu -->
 ~~~cpp
@@ -470,6 +466,19 @@ __global__ void independent_accumulators_kernel(const float* input,
     output[i] = 0.25f * (x0 + x1 + x2 + x3 - 0.6f);
 }
 ~~~
+
+本次大输入的输出为：
+
+~~~text
+dependent      0.0201 ms max_abs_error=0 PASS source_FMA_GFLOP_s=20855.398
+independent    0.0576 ms max_abs_error=0 PASS source_FMA_GFLOP_s=29132.291
+~~~
+
+每个版本与自己的参考函数比较；两个累加版本的初值和计算路径不同。dependent 每元素做 `200` 次 FMA，共 `209,715,200` 个 FMA，即 `419,430,400` FLOPs，耗时 20.1 us。independent 每元素做 `800` 次 FMA，共 `838,860,800` 个 FMA，即 `1,677,721,600` FLOPs，耗时 57.6 us。四倍源码工作用了约 2.87 倍时间，所以按源码 FMA 数计，单位时间工作量约高 40%，对应约 20.9 TFLOP/s 和 29.1 TFLOP/s。四个累加器属于同一线程，彼此不依赖，增加可连续发射的独立计算指令。
+
+本次编译报告显示，单链每线程使用 9 个寄存器，四链使用 14 个。按 [Ampere Tuning Guide](https://docs.nvidia.com/cuda/ampere-tuning-guide/index.html#occupancy)，RTX 3090 的每个 SM 最多同时驻留 48 个 warp，并有 65,536 个 32 位寄存器。每个 block 的 256 个线程组成 8 个 warp，按 warp 数量上限可以容纳 6 个 block。未计分配取整时，单链每块使用 `9×256=2304` 个寄存器，四链每块使用 `14×256=3584` 个；六个 block 分别需要 13,824 和 21,504 个。实际分配会按硬件粒度取整，可用 occupancy API 查询最终能驻留多少个 block。
+
+小输入 `257 / 20 / 5` 中，dependent 为 0.0035 ms、error 0、PASS、2.953 GFLOP/s；independent 为 0.0029 ms、error 0、PASS、14.342 GFLOP/s。
 
 ### 6.2 分支与双路径选择
 
@@ -506,14 +515,65 @@ __global__ void predicated_select_kernel(const float* input, float* output,
 }
 ~~~
 
-主机代码用相同输入分别计算四份 CPU 参考。每个 kernel 先预热，再用 CUDA events 包住重复启动，取平均时间；复制回主机后检查最大绝对误差。这个平均值包含重复启动之间可能出现的空隙，单次 kernel 的设备执行时间可另用 profiler 查看。
+sm86 native 大输入输出如下：
+
+~~~text
+divergent      0.0118 ms max_abs_error=1.1920929e-07 PASS
+predicated     0.0113 ms max_abs_error=1.1920929e-07 PASS
+~~~
+
+偶数位置走 `even_path(x)=fmaf(x,1.25,0.5)`，奇数位置走 `odd_path(x)=fmaf(x,0.75,-0.25)`。divergent 版本按条件只计算对应路径；predicated 版本先计算两条路径再选择。CPU reference 使用普通乘加，GPU 使用 FMA，因此出现 `1.1920929e-07` 的舍入差；`1e-4` 容差下两者都 PASS。大输入两者分别为 11.8 us 和 11.3 us，差 0.5 us。
+
+`steps` 只控制两个累加 kernel；分支和选择每个元素各执行一次对应计算。程序只为累加链打印 `source_FMA_GFLOP_s`，这两行只打印平均时间、最大误差和 PASS。
+
+小输入 `257 / 20 / 5` 中，divergent 和 predicated 都是 0.0027 ms、error `5.9604645e-08`、PASS。
+
+接着看 SASS 中的条件跳转、谓词与 FMA，确认这两种源码分别生成了哪些指令。
+
+在同一文件中还加入了一个受控 branch probe。它只改变 `flags`，仍调用同一个 `branch_probe_kernel`：`warp_uniform[i]=((i/32)&1)==0` 让一个 warp 走同一路径，`lane_split[i]=(i&1)==0` 让同一 warp 的 lane 交错走两条路径。`steps` 只改变两条链的循环长度；每个 kernel 启动的线程数、输入数组和输出 guard 都相同。运行脚本后先检查输出，再读取 SASS 并比较三个 steps 的多轮中位数。
+
+<!-- source-check: examples/execution_and_scheduling.cu -->
+~~~cpp
+__device__ __noinline__ float even_chain(float x, int steps) {
+#pragma unroll 1
+    for (int step = 0; step < steps; ++step) {
+        x = fmaf(x, 1.000001f, 0.00001f);
+    }
+    return x;
+}
+
+__device__ __noinline__ float odd_chain(float x, int steps) {
+#pragma unroll 1
+    for (int step = 0; step < steps; ++step) {
+        x = fmaf(x, 0.999999f, -0.00001f);
+    }
+    return x;
+}
+
+__global__ void branch_probe_kernel(const float* input,
+                                    const unsigned char* flags,
+                                    float* output, int n, int steps) {
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n) return;
+    output[i] = flags[i] ? even_chain(input[i], steps)
+                         : odd_chain(input[i], steps);
+}
+~~~
+
+在章目录下运行：
+
+~~~bash
+bash examples/run_branch_probe.sh
+~~~
+
+脚本默认用 `-arch=sm_86` 编译，先跑 CPU self-test，再跑 `257 / 8 / 3 / 3` 小输入；如果系统有 Compute Sanitizer 就做 memcheck，否则明确打印 SKIP；随后保存 SASS，并分别用 `steps=1/32/256`、`n=1,048,576`、`repeats=50`、`rounds=9` 输出 uniform/split 的 min、median、max 和中位数比值。`cudaFuncGetAttributes` 的 registers、stack/local/shared 与 theoretical blocks/SM 是编译/运行时查询信息；理论驻留 block 不是实测 occupancy。输出目录由脚本打印，原有数据不会删除。
 
 入口参数依次为 n、迭代次数 steps 和重复次数 repeats，默认值为 `1<<20`、200、50，block 固定为 256 个线程。完整实现如下：
 
 <details>
-<summary>完整 host、CPU reference 与计时代码</summary>
+<summary>完整初次实测程序（原始四项对照）</summary>
 
-<!-- source-check: examples/execution_and_scheduling.cu -->
+<!-- source-check: examples/execution_and_scheduling_baseline_2026_10_09.cu -->
 ~~~cpp
 #include <cuda_runtime.h>
 
@@ -733,29 +793,7 @@ int main(int argc, char** argv) {
 
 </details>
 
-记录结果时，每个 kernel 单独填写时间、误差和寄存器数。FMA 两个版本再按各自工作量计算吞吐，并结合就绪 warp 和等待原因解释结果。表中设备字段和测量值留到实际运行时填写。
-
-```powershell
-nvcc -O3 -std=c++17 -lineinfo --resource-usage `
-  examples/execution_and_scheduling.cu -o execution_and_scheduling.exe
-
-./execution_and_scheduling.exe 1048576 200 50
-```
-
-分别记录四个 kernel 的结果。`257` 用于覆盖非整除尾块；大输入按 200 steps、50 次重复计时。
-
-| Kernel | n | steps | repeats | threads/block | 实际 GPU | correctness / max abs error | 平均调用 ms | 源码归一化 GFLOP/s |
-|---|---:|---:|---:|---:|---|---|---:|---:|
-| dependent | 257 | 20 | 5 | 256 | — | — | — | — |
-| independent | 257 | 20 | 5 | 256 | — | — | — | — |
-| divergent | 257 | 20 | 5 | 256 | — | — | — | 不适用 |
-| predicated | 257 | 20 | 5 | 256 | — | — | — | 不适用 |
-| dependent | 1,048,576 | 200 | 50 | 256 | — | — | — | — |
-| independent | 1,048,576 | 200 | 50 | 256 | — | — | — | — |
-| divergent | 1,048,576 | 200 | 50 | 256 | — | — | — | 不适用 |
-| predicated | 1,048,576 | 200 | 50 | 256 | — | — | — | 不适用 |
-
-dependent 的绝对时间更短时，先考虑它的源码 FMA 数只有 independent 的四分之一，再看归一化吞吐。若 independent 使用更多寄存器、导致就绪 warp 减少，这项改写也可能得不偿失。源码计数、编译器指令和实际时间三份数据要对得上。
+完整程序的 fold 代码负责统一分配、warmup、event 平均、copy-back 和四份 CPU reference。`n=257` 时 `grid=2`，第二个 256-thread block 只有一个线程处理尾元素；四个 kernel 的小输入均 PASS，误差分别为 0 或 `5.9604645e-08`，小输入 memcheck 为 0 errors。首次默认构建的对照见[实验记录](../../../../notes/cuda/execution-and-scheduling-rtx3090-2026-10-09.md)，完整逐字输出见[sm86 原始日志](../../../../notes/cuda/logs/2026-10-09-execution-and-scheduling-rtx3090-sm86.txt)。
 
 ## 7. 从 CUDA 源码到 PTX 与 SASS
 

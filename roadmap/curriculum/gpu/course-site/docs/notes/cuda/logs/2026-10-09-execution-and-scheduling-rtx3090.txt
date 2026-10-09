@@ -1,0 +1,57 @@
+CUDA execution-and-scheduling experiment log
+Date: 2026-10-09 (Asia/Shanghai)
+
+The three run-output blocks below are preserved verbatim from the user's log.
+The environment block preserves the environment fields supplied by the user;
+driver version, clocks, power and server git revision were not supplied.
+
+--- environment (user-provided fields) ---
+$ nvidia-smi --query-gpu=name --format=csv,noheader
+NVIDIA GeForce RTX 3090
+$ nvcc --version
+Cuda compilation tools, release 12.4, V12.4.131
+Build cuda_12.4.r12.4/compiler.34097967_0
+
+--- compile command (user-provided) ---
+$ nvcc -O3 -std=c++17 -lineinfo --resource-usage \
+  examples/execution_and_scheduling.cu -o /tmp/cuda-execution
+
+--- regular run, small shape (verbatim) ---
+$ /tmp/cuda-execution 257 20 5
+dependent      0.0041 ms max_abs_error=0 PASS source_FMA_GFLOP_s=2.510
+independent    0.0035 ms max_abs_error=0 PASS source_FMA_GFLOP_s=11.811
+divergent      0.0031 ms max_abs_error=5.9604645e-08 PASS
+predicated     0.0031 ms max_abs_error=5.9604645e-08 PASS
+
+--- compute-sanitizer memcheck, small shape (verbatim) ---
+$ compute-sanitizer --tool memcheck --error-exitcode=1 /tmp/cuda-execution 257 20 5
+========= COMPUTE-SANITIZER
+dependent      0.0582 ms max_abs_error=0 PASS source_FMA_GFLOP_s=0.177
+independent    0.0571 ms max_abs_error=0 PASS source_FMA_GFLOP_s=0.720
+divergent      0.0567 ms max_abs_error=5.9604645e-08 PASS
+predicated     0.0567 ms max_abs_error=5.9604645e-08 PASS
+========= ERROR SUMMARY: 0 errors
+
+--- regular run, large shape (verbatim) ---
+$ /tmp/cuda-execution 1048576 200 50
+dependent      0.0202 ms max_abs_error=0 PASS source_FMA_GFLOP_s=20813.007
+independent    0.0576 ms max_abs_error=0 PASS source_FMA_GFLOP_s=29111.584
+divergent      0.0118 ms max_abs_error=1.1920929e-07 PASS
+predicated     0.0113 ms max_abs_error=1.1920929e-07 PASS
+
+--- resource-usage report (整理自用户日志，不是上述程序输出原文) ---
+ptxas for sm_52:
+predicated_select Used 8 registers, 340 bytes cmem[0]
+divergent_branch  Used 7 registers, 340 bytes cmem[0]
+independent_accumulators Used 10 registers, 344 bytes cmem[0], 4 bytes cmem[2]
+dependent_chain Used 7 registers, 344 bytes cmem[0], 4 bytes cmem[2]
+all four kernels: 0 stack frame, 0 spill stores, 0 spill loads, 0 gmem
+
+The resource report is explicitly a sm_52 compilation report. CUDA 12.4.1's
+default target is sm_52; an sm_52 cubin cannot run as a native cubin on the
+RTX 3090 (compute capability 8.6), so the driver normally needs embedded PTX
+JIT. The measured GPU is an RTX 3090, so these register counts must not be
+reported as the RTX 3090's running resource usage. The next check is to compile
+with -arch=sm_86, inspect the resulting fatbin/SASS (including whether PTX JIT
+is involved), and repeat the same commands. The sanitizer block above covers
+only n=257, steps=20, repeats=5; no n=1048576 sanitizer run was supplied.
