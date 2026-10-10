@@ -3,9 +3,6 @@ model_reasoning_effort = "medium"
 # OpenAI official context window for GPT-6 Astra: 1,050,000 tokens.
 # Source: https://developers.openai.com/api/docs/models/gpt-6-astra
 model_context_window = 1050000
-# Load the project-scoped catalog so Astra uses the official 1,050,000-token window.
-# Source: https://developers.openai.com/codex/config-reference/
-model_catalog_json = "C:/Users/w00939120/.codex/aiinffra-model-catalog-gpt6-astra.json"
 
 sandbox_mode = "danger-full-access"
 model_verbosity = "high"

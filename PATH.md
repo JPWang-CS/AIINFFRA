@@ -35,7 +35,7 @@
 
 | 模块 | 路由 | 状态 |
 |---|---|---|
-| GPU 架构与性能 | [课程路由](./roadmap/curriculum/gpu/README.md) | `WIP`；第一篇第一章已读完，第二章第 1–5 节（含子节）已读；第 6 节《依赖链、分支与执行调度实验》已在 RTX 3090 完成默认构建与 `sm_86` native 两组 shape 实测、小 shape memcheck，记为 `GPU_VALIDATED`（2026-10-09）；当前待检查最终 SASS 与多轮计时，不自动推进第 7 节；用户可自行跳过已掌握内容；既有阅读/实验事实不清零、不降级 |
+| GPU 架构与性能 | [课程路由](./roadmap/curriculum/gpu/README.md) | `WIP`；第一篇第一章已读完，第二章第 1–5 节（含子节）已读；第 6 节 base 与 branch-probe 在 RTX 3090 的正确性和 memcheck 已通过，多轮测量完成（2026-10-10），记为 `GPU_VALIDATED`；实验数据见[原始日志](./notes/cuda/logs/2026-10-10-branch-probe-rtx3090.txt)。当前同页分析已有结果并核对服务器实际二进制最终 SASS，不自动推进第 7 节；阅读断点不变 |
 | 算子实现与优化 | [算子路由](./roadmap/curriculum/operators/README.md) | 九类算子正文及页内实践已形成；原有实验状态保持独立 |
 | 算子内的深入优化 | 各算子正文；[实验检查表](./roadmap/curriculum/performance/README.md)按需使用 | MatMul已有部分证据；未另设优化课 |
 | 量化与模型 GPU 分析 | [量化](./roadmap/curriculum/quantization/README.md) · [Prefill/Decode/Mini Transformer](./roadmap/curriculum/model-analysis/README.md) | 量化及模型分析/Mini Transformer 正文已形成；组合实测未新增 |
@@ -43,7 +43,7 @@
 
 ### 第一篇当前入口
 
-[第一篇第二章：CUDA 执行模型与指令调度 → 6.《依赖链、分支与执行调度实验》](./roadmap/curriculum/gpu/course-site/index.html?chapter=2#chapter-2-section-12)是当前入口；第一章已读完，第二章第 1–5 节（含子节）已读，第 6 节默认构建与 `sm_86` native 设备正确性已在 RTX 3090 通过并记为 `GPU_VALIDATED`，当前焦点是“检查最终 SASS 与多轮计时”。实践线整体保持 `WIP`，既有实验与论文状态不变。
+[第一篇第二章：CUDA 执行模型与指令调度 → 6.《依赖链、分支与执行调度实验》](./roadmap/curriculum/gpu/course-site/index.html?chapter=2#chapter-2-section-12)是当前入口；第一章已读完，第二章第 1–5 节（含子节）已读。第 6 节 base 与 branch-probe 在 RTX 3090 的正确性和 memcheck 已通过，多轮测量完成（2026-10-10），记为 `GPU_VALIDATED`；实验记录见[原始日志](./notes/cuda/logs/2026-10-10-branch-probe-rtx3090.txt)。实践线整体保持 `WIP`，当前同页分析结果并核对服务器实际二进制最终 SASS，不自动推进第 7 节；阅读断点不变。
 
 ## 5. 论文线状态
 

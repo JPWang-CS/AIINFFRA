@@ -7,6 +7,8 @@
 
 ## 0. 最后更新
 
+- 2026-10-10（从 `78c2df9` 快进同步远端 `main` 至 `a61ab1a`，包含 `39b5531`、`efdf4f2`、`a61ab1a` 三个提交。快进前确认 `.codex/course-section-anchors.json` 的 worktree blob 与 HEAD 同为 `f5b2e5a900d06921a0a0a5d89c549bf7c8f5b144` 且未暂存；先将原始字节备份至 `C:\Users\w00939120\AppData\Local\Temp\aiinffra-anchor-backup-12082c4b-cb98-45e3-9873-9df8381986bf\course-section-anchors.json`，再刷新该路径索引并确认无 staged diff，随后 `git merge --ff-only origin/main` 成功。根据远端 RTX 3090 branch-probe 原始日志核对进度：base 实验与 probe 正确性通过；`n=257` CPU reference/guard PASS、memcheck 0 errors；`n=1,048,576` 的 `steps=1/32/256` 各 9 轮、每轮 50 次，overall PASS，中位数比为 `1.009132/1.500624/1.929890`。原始日志 min/max 因统计打印 bug 无效，未用作结论；`efdf4f2` 修复源码统计逻辑但不改写旧日志。本次仅更新 PATH/NOW/HISTORY 的恢复状态，未运行 GPU；保留第二章第 6 节实验前的原阅读日期/断点，下一步同页分析结果并核对服务器实际二进制最终 SASS。本机 nvcc 静态 SASS 不等同服务器二进制 SASS。未 commit/push；旧日期记录中的“当时未运行”保留为历史事实。）
+
 - 2026-10-10（根据 RTX 3090 服务器 branch-probe 原始日志更新第二章第 6 节正文与日志归档，未改 PATH/NOW。正文现把旧 divergent/predicated 的短路径共同开销与新 probe 的 flags、steps、warp 内路径组织、计时方法和输出字段连起来；记录 `steps=1/32/256` 的 uniform/split 中位数分别为 `0.013455/0.013578`、`0.016404/0.024617`、`0.076534/0.147702` ms，比例为 `1.009132/1.500624/1.929890`。原始服务器输出完整保存至[branch probe 日志](./notes/cuda/logs/2026-10-10-branch-probe-rtx3090.txt)，保留原日志中的 min/max 统计文本；本轮只更新课程正文和记录，不改源码、PATH/NOW 或历史 GPU 状态。）
 
 - 2026-10-09（在原 execution-and-scheduling.cu 中新增 `--branch-probe` 与 `--self-test`，并保存修改前完整程序快照 `execution_and_scheduling_baseline_2026_10_09.cu`；probe 使用同一 kernel、lane-split/warp-uniform flags、guard、CPU reference、交替 event 计时和 steps=1/32/256 脚本。Windows 本机 `nvcc -arch=sm_86` 编译退出 0，CPU self-test PASS；本机无 `nvidia-smi`，未运行 GPU probe，保持 `WIP`，待服务器同路径 `git pull` 后执行；未 commit/push。）
