@@ -646,31 +646,30 @@ branch_probe round=1 order=split-uniform uniform_ms=0.076554 split_ms=0.147844
 | 32 | 0.016404 | 0.024617 | 1.500624 |
 | 256 | 0.076534 | 0.147702 | 1.929890 |
 
-这个表比较同一 kernel 下的两种 flags 分布。比值取自程序内部未舍入的计时值，前两列显示到小数点后六位。
+steps 从 1 增加到 32、256 时，split 相对 uniform 的额外耗时由约 0.9% 增加到 50.1%、93.0%。短路径中，启动、访存和函数调用等共同开销稀释了分歧的影响；计算链变长后，两种路径组织的差距逐渐显现。
 
-`steps=1` 时，两者相差 `0.000123 ms = 0.123 us`，split 约多 0.9% 耗时。每条路径只有一次 FMA，启动、读写和调用等共同开销稀释了计算路径的差别。这与原来短路径实验耗时接近的现象一致。
+uniform 的一个 warp 内，32 个线程走同一条路径；split 中，两组 16 个线程分别走两条路径，执行一条时另一组不参与。两种模式的有效计算量相同，但 split 需要执行两条路径的 warp 指令，因此长路径耗时接近 uniform 的两倍。
 
-`steps=32` 时，split 从 0.016404 ms 增加到 0.024617 ms，约多 50.1% 耗时。随着循环变长，warp 内两条计算路径的额外执行成本开始明显影响总时间。
+优化重点是减少 warp 内部的长路径分歧。若先对数据分组，分组和输出回排也应计入总时间。Profiler 可检查 FMA 循环每条 warp 指令的活跃线程数：uniform 预期 32，split 预期 16。
 
-`steps=256` 时，uniform 为 76.534 us，split 为 147.702 us，约多 93.0% 耗时。uniform 的一个 warp 只执行一条长路径，32 个 lane 都参加其中的 FMA；split 的 warp 要分别执行两条长路径，每条路径只有对应的 16 个 lane 参加。线程的有效计算量相同，但完成这些计算需要更多 warp 指令发射。随着路径计算占比增加，总耗时比接近两倍；启动和数据读写等共同开销并没有一起翻倍。
+<details>
+<summary>统计修正与原始记录</summary>
 
-因此，分析分支性能时，应同时看 warp 内的路径分布和每条路径的计算长度。`flags` 控制前者，`steps` 控制后者。不同 warp 可以执行不同路径，优化时重点是让同一个 warp 内尽量保持路径一致。若通过数据分组实现这一点，也要把分组和恢复输出顺序的成本计入总时间。
-
-进一步使用 profiler 时，可在两段 FMA 循环中观察每条 warp 指令的活跃 lane 数：uniform 预期为 32，split 预期为 16。对应的 SASS 已由脚本保存到 `/tmp/branch-probe-NEQldh/branch_probe.sass.txt`，可继续核对选路与循环跳转。
-
-原始日志中的 min/max 有一处统计打印错误：旧实现从未排序的原始 vector 取 `front/back`，而中位数函数排序的是副本。`efdf4f2` 已修正这一问题，中位数和比值不受影响。根据本次九轮输出复算，256 次循环的统计为：
+旧实现从未排序的原始 vector 取 `front/back`，导致 min/max 误取首末轮；中位数和比值计算正确。以下数字为原始九轮输出的复算：
 
 ~~~text
 uniform min_ms=0.076104 median_ms=0.076534 max_ms=0.076776
 split   min_ms=0.146903 median_ms=0.147702 max_ms=0.147884
 ~~~
 
-这两行是对原始数据的复算，原始日志保留原样。首次默认构建对照见[实验记录](../../../../notes/cuda/execution-and-scheduling-rtx3090-2026-10-09.md)，本次完整服务器输出见[branch probe 日志](../../../../notes/cuda/logs/2026-10-10-branch-probe-rtx3090.txt)。
+原始记录见[实验记录](../../../../notes/cuda/execution-and-scheduling-rtx3090-2026-10-09.md)、[branch probe 日志](../../../../notes/cuda/logs/2026-10-10-branch-probe-rtx3090.txt)和[sm86 原始日志](../../../../notes/cuda/logs/2026-10-09-execution-and-scheduling-rtx3090-sm86.txt)。对应的 SASS 保存在 `/tmp/branch-probe-NEQldh/branch_probe.sass.txt`。
 
-下面保留原始四项对照的完整程序，其入口参数为 `n、steps、repeats`，默认值分别是 `1<<20、200、50`，block 固定为 256 个线程。受控实验使用上面的 `--branch-probe` 入口，另有 `rounds` 参数。
+</details>
+
+下面保留原始四项对照的完整程序；受控实验使用上面的 `--branch-probe` 入口。
 
 <details>
-<summary>完整初次实测程序（原始四项对照）</summary>
+<summary>完整程序：原始四项对照</summary>
 
 <!-- source-check: examples/execution_and_scheduling_baseline_2026_10_09.cu -->
 ~~~cpp
@@ -892,8 +891,6 @@ int main(int argc, char** argv) {
 
 </details>
 
-完整程序的 fold 代码负责统一分配、warmup、event 平均、copy-back 和四份 CPU reference。`n=257` 时 `grid=2`，第二个 256-thread block 只有一个线程处理尾元素；四个 kernel 的小输入均 PASS，误差分别为 0 或 `5.9604645e-08`，小输入 memcheck 为 0 errors。首次默认构建的对照见[实验记录](../../../../notes/cuda/execution-and-scheduling-rtx3090-2026-10-09.md)，完整逐字输出见[sm86 原始日志](../../../../notes/cuda/logs/2026-10-09-execution-and-scheduling-rtx3090-sm86.txt)。
-
 ## 7. 从 CUDA 源码到 PTX 与 SASS
 
 代码从源码到设备执行，经过三个表示：
@@ -953,38 +950,176 @@ compute-sanitizer --tool memcheck --error-exitcode=1 ./execution_check 257 20 5
 
 缩小问题时，只保留一个失败形状、一个实现和固定输入；记录完整命令、首个错误及对应源码位置。修复后重新进行数值比较和边界测试，再恢复异步执行与性能计时。
 
+## 8. 从编译产物到 kernel 启动
+
+第 7 节已经说明 CUDA 源码如何落成 PTX 与 SASS。这里先把 Runtime API 和 Driver API 放回一次实际启动：它们都是 CPU 侧控制 GPU 的函数接口；前者包装常规启动步骤，后者让程序显式操作每个步骤。
+
+以向量加法 `vector_add` 为例，主机先选择一张 GPU，再取得使用这张 GPU 的运行环境。这个环境叫 context（上下文），保存该设备的显存分配、已装载代码和执行资源；它不是线程 block 或 SM。接着，程序把设备代码装载成 module（代码包），再用编译代码中的函数名字查找 `vector_add`。编译代码中用于查找函数或变量的名字称为符号，Driver 找到后返回 `CUfunction` 句柄；句柄只是 API 识别这个 kernel 的标识。
+
+主机随后准备参数，把启动请求排进 stream（执行队列）。GPU 按 stream 中的顺序执行，主机在同步或读回结果时等待完成。CUDA C++ 的 `kernel<<<grid, block, shared_bytes, stream>>>(args)` 启动语法由编译器生成主机侧调用，Runtime 负责传参和代码装载等步骤；Driver API 则由程序显式调用选设备、取得 context、装载 module、查找函数和启动 kernel 的接口。
+
+一个 CPU 线程调用 Driver API 时，使用的是它当前选中的 current context；另一个 CPU 线程可以选中自己的 context。Runtime 通常共享设备的 primary context（主上下文）：`cuDevicePrimaryCtxRetain` 取得使用权，`cuCtxSetCurrent` 将它设为当前环境，最后用对应的 release 归还使用权。本例在同一 context 中分配显存、取得函数和启动 kernel，保持资源的所属关系一致；自行创建的 context 则在使用结束后调用对应的 destroy 操作。
+
 <details>
-<summary>进一步阅读：CUDA Tile、Driver API、CUDA Python 与 C++ 高级接口</summary>
+<summary>PTX、Driver 启动参数与完整向量加法程序</summary>
 
-## 8. CUDA Tile 的数据组织与执行接口
+下面程序嵌入一段 PTX，按“取得主上下文→装载模块→查找 kernel→分配显存→传参启动→复制结果”的顺序执行。PTX 声明三个 64 位设备地址和一个 32 位整数 n，主机侧必须按同样宽度准备参数。
 
-普通 CUDA SIMT kernel 先写一个线程负责哪些元素，再安排 warp 和 block 协作。CUDA Tile 则让代码直接处理一组元素，称为 tile；编译器负责把这组计算分配给硬件线程，并选择加载和计算指令。两者使用同一 GPU，区别在于程序员怎样表达工作。
+```cpp
+.visible .entry vector_add(
+    .param .u64 param_a,
+    .param .u64 param_b,
+    .param .u64 param_c,
+    .param .u32 param_n
+)
+{
+    .reg .pred %p<2>;
+    .reg .b32 %r<4>;
+    .reg .b64 %rd<7>;
+    .reg .f32 %f<4>;
 
-例如向量加法，SIMT 写法给每个线程计算 `blockIdx.x*blockDim.x+threadIdx.x`。tile 写法则选择第 bid 个 128 元素块，整块相加后写回。程序员仍要选择块大小、数据类型和 grid，并处理最后一个不完整块。
+    ld.param.u64 %rd1, [param_a];
+    ld.param.u64 %rd2, [param_b];
+    ld.param.u64 %rd3, [param_c];
+    ld.param.u32 %r2, [param_n];
+    mov.u32 %r0, %ctaid.x;
+    mov.u32 %r1, %ntid.x;
+    mov.u32 %r3, %tid.x;
+    mad.lo.u32 %r0, %r1, %r0, %r3;
+    setp.ge.u32 %p1, %r0, %r2;
+    @%p1 bra DONE;
 
-CUDA Tile 的 Python 接口是 `cuda.tile`；C++ 接口使用 `cuda_tile.h` 和 `cuda::tiles`。本节 C++ 示例按 CUDA Toolkit 13.3 编写，运行前应核对 Toolkit、Python 包、驱动和 GPU 的支持范围。Triton 使用自己的编译系统；示例之间可以对照数学算法，具体 API 和编译配置分别按各自文档使用。
+    cvt.u64.u32 %rd4, %r0;
+    shl.b64 %rd4, %rd4, 2;
+    add.u64 %rd5, %rd1, %rd4;
+    add.u64 %rd6, %rd2, %rd4;
+    ld.global.f32 %f1, [%rd5];
+    ld.global.f32 %f2, [%rd6];
+    add.f32 %f3, %f1, %f2;
+    add.u64 %rd5, %rd3, %rd4;
+    st.global.f32 [%rd5], %f3;
 
-### 8.1 Array、tile 和硬件缓冲区是三个层次
+DONE:
+    ret;
+}
+```
 
-Array 是设备内存中的数组，带有形状、数据类型和步长。Tile 是 kernel 当前计算的一组值，形状在编译时确定。例如从 `A[10,16]` 中加载一个 `2×4` tile，得到八个数值；源数组仍保存在显存中。编译器决定这八个值在计算中使用哪些寄存器和共享内存。
+启动参数数组 `kernel_params` 中，每一项指向主机上保存参数值的变量。`&d_a` 指向主机变量 d_a；Driver 从那里取出 d_a 保存的设备地址值，复制到 kernel 参数区。GPU 用这个设备地址访问数组，不使用主机地址 &d_a。
 
-因此，`tile.shape=(2,4)` 描述两行、四列的数据组织。线程数与资源用量由编译结果决定：编译报告给出寄存器和共享内存需求，机器指令显示实际搬运及计算方式。
+这个例子使用同步 HtoD（Host to Device，CPU 到 GPU）和 DtoH（Device to Host，GPU 到 CPU）复制数据，主机缓冲区由 std::vector 保存。改用异步复制时，页锁定内存指传输期间不会被操作系统换出的主机内存；应核对该 API 的要求，并让缓冲区一直存活到传输完成。
 
-Tile 按值计算：`y=x+1` 得到新的 tile 值，随后 store 才会把它写回数组。把 x 赋给另一个 tile 变量后，也应按独立的值使用，而非把它当成可修改 x 的别名。Tile 各维大小要求为 2 的幂，源数组可以是任意合法长度；例如长度 1025 的向量用长度 128 的 tile 加尾部处理完成。
+<!-- source-check: examples/driver_api_vector_add.cu -->
+```cpp
+    CU_CHECK(cuDevicePrimaryCtxRetain(&context, device));
+    CU_CHECK(cuCtxSetCurrent(context));
+    CU_CHECK(cuStreamCreate(&stream, CU_STREAM_DEFAULT));
+    CU_CHECK(cuModuleLoadDataEx(&module, kVectorAddPtx, 0, nullptr, nullptr));
+    CU_CHECK(cuModuleGetFunction(&function, module, "vector_add"));
 
-Triton 中也需要分清地址和读出的值：
+    CU_CHECK(cuMemAlloc(&d_a, bytes));
+    CU_CHECK(cuMemAlloc(&d_b, bytes));
+    CU_CHECK(cuMemAlloc(&d_c, bytes));
+    // Synchronous copies accept these std::vector pageable host buffers.
+    CU_CHECK(cuMemcpyHtoD(d_a, host_a.data(), bytes));
+    CU_CHECK(cuMemcpyHtoD(d_b, host_b.data(), bytes));
 
-~~~python
-offsets = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
-ptrs = a + offsets                         # 指针组成的 tile，还没有读取 a
-x = tl.load(ptrs, offsets < N, other=0.0)   # 数据组成的 tile
-y = x + 1.0                               # 新的逻辑值
-tl.store(c + offsets, y, offsets < N)       # 写入 c 的有效元素
+    CU_CHECK(cuLaunchKernel(function,
+                            blocks, 1, 1,
+                            threads, 1, 1,
+                            0, stream, kernel_params, nullptr));
+    CU_CHECK(cuStreamSynchronize(stream));
+    CU_CHECK(cuMemcpyDtoH(host_c.data(), d_c, bytes));
+```
+
+装载 PTX 时为当前 GPU 编译设备代码，称为 JIT（即时编译）。`cuModuleLoadDataEx` 的 numOptions 指定配置项数量，options 和 optionValues 分别传选项及对应值；本例没有配置，前两者传 `0,nullptr`，optionValues 也传 nullptr。启动 kernel 后，主机继续执行，因此检查结果前先等待 stream 完成。
+
+释放资源时先等设备结束使用，再销毁 stream、释放显存、卸载 module，最后 release 主上下文。主上下文由 retain/release 配对管理；自行创建的 context 才使用对应的 destroy 操作。
+
+```bash
+nvcc -std=c++17 -O2 roadmap/curriculum/gpu/02-cuda-execution-and-scheduling/examples/driver_api_vector_add.cu -lcuda -o driver_api_vector_add
+./driver_api_vector_add --help
+./driver_api_vector_add 257
+```
+
+程序找不到设备时退出 77，表示跳过；其他 Driver 错误返回失败。PTX 声明 `.target sm_70` 和 `.version 7.0`，Driver 装载时为兼容的实际 GPU 进行 JIT。编译这个主机程序仍需要 Toolkit 头文件、主机编译工具和兼容驱动。
+
+</details>
+
+### 8.1 Runtime 初始化、lazy loading 与错误定位
+
+Runtime 初始化会准备运行时状态和上下文；设备代码装载则把某个 kernel 的代码准备好。这两项开销可能发生在不同位置。
+
+Lazy loading（延迟装载）把代码装载推迟到第一次需要该 kernel 时；eager 模式则提前装载。CUDA 11.7 引入这项功能，Linux 从 12.2、Windows 从 12.3 起默认采用 lazy。进程启动前可设置 `CUDA_MODULE_LOADING=LAZY` 或 EAGER，运行时可用 `cuModuleGetLoadingMode` 查询。
+
+如果要提前准备指定 kernel，用 `cudaFuncGetAttributes` 或 `cuModuleGetFunction` 触发装载。`cudaFree(nullptr)` 可用于准备 Runtime/context，但预载某个 kernel 还需要前面这些函数级操作。
+
+下面示例比较首次启动 add_one 与提前装载。传入 `--preload` 时，程序先调用 `cudaFuncGetAttributes`。启动后检查 `cudaGetLastError()`，同步时再检查设备执行错误。调试可使用 `CUDA_LAUNCH_BLOCKING=1` 使调用阻塞；正式计时恢复正常异步方式。
+
+
+<details>
+<summary>Runtime 初始化、预载与错误检查示例</summary>
+
+<!-- source-check: examples/runtime_lazy_loading.cu -->
+```cpp
+    // This explicit no-op allocation forces Runtime/context initialization;
+    // it does not, by itself, prove every kernel module has been loaded.
+    CUDA_CHECK(cudaFree(nullptr));
+    CUDA_CHECK(cudaMalloc(&device_input, n * sizeof(int)));
+    CUDA_CHECK(cudaMalloc(&device_output, n * sizeof(int)));
+    CUDA_CHECK(cudaMemcpy(device_input, input.data(), n * sizeof(int),
+                          cudaMemcpyHostToDevice));
+
+    if (preload) {
+        cudaFuncAttributes attributes{};
+        CUDA_CHECK(cudaFuncGetAttributes(&attributes, add_one));
+        std::printf("kernel preloaded: registers=%d\n", attributes.numRegs);
+    } else {
+        std::printf("first kernel launch is the first use of add_one\n");
+    }
+
+    add_one<<<blocks, threads>>>(device_input, device_output, n);
+    // Immediate check reports launch/configuration errors.  Execution faults
+    // are observed at the stream synchronization boundary below.
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+```
+
+```bash
+nvcc -std=c++17 -O2 roadmap/curriculum/gpu/02-cuda-execution-and-scheduling/examples/runtime_lazy_loading.cu -o runtime_lazy_loading
+CUDA_MODULE_LOADING=LAZY ./runtime_lazy_loading
+CUDA_MODULE_LOADING=EAGER ./runtime_lazy_loading --preload
+CUDA_LAUNCH_BLOCKING=1 ./runtime_lazy_loading
+```
+</details>
+
+
+比较首次调用延迟时，分别计时：Runtime/context 初始化、函数预载、首次启动和预热后的重复启动。这样能判断额外时间花在初始化、JIT/代码装载还是 kernel 本身。若错误在同步处报告，检查同一 stream 中此前提交的操作；同步函数可能只是等到了并报告了那个错误。
+
+## 9. 从线程分工到数据分块
+
+tile 是 kernel 按数据块表达的一组逻辑数据值；它不是新增的内存层。普通 CUDA SIMT kernel 先写每个线程负责哪些元素，再安排 warp 和 block 协作；CUDA Tile 则把一组元素作为 tile 交给编译器，具体由哪些硬件线程执行、使用哪些加载和计算指令由编译结果决定。
+
+例如向量加法，SIMT 写法给每个线程计算 `blockIdx.x*blockDim.x+threadIdx.x`；tile 写法按逻辑块编号 `bid` 选择第一个或后续的 128 元素块，整块相加后写回。两种写法都要选择块大小、数据类型和 grid，并处理最后一个不完整块。
+
+CUDA Tile 与 Triton 都可以把一组元素作为逻辑工作块表达；具体接口、编译版本和设备支持范围放在 9.6 的接口补充中，算法部分先按数据责任和地址关系阅读。
+
+### 9.1 从一个元素到一块数据
+
+长度 256 的向量可以由第 0 个 tile 负责逻辑元素 0..127、第 1 个 tile 负责逻辑元素 128..255。128 是本例的逻辑元素数；物理线程数和线程如何取得这些值由编译结果决定。SIMT 版本把责任写到每个线程，tile 版本把同一责任写成一整块数据。
+
+普通 CUDA C++ 显式写一个线程的元素索引：
+
+~~~cpp
+__global__ void add_simt(const float* a, const float* b, float* c, int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) c[i] = a[i] + b[i];
+}
+// n > 0；a、b、c 指向至少 n 个 float，c 不与输入重叠。
+add_simt<<<(n + 127) / 128, 128, 0, stream>>>(a, b, c, n);
 ~~~
+### 9.2 坐标怎样落到元素和地址
 
-`ptrs` 保存一组地址，`tl.load` 得到这些地址中的值。编译器再把这组访问分配给线程；要确认某个 lane 访问哪些元素，需要检查编译后的布局。
-
-### 8.2 Tile 坐标和元素坐标不能混用
+Array 是设备内存中的数组；shape（形状）说明各维有多少个元素，row-major（按行连续）布局把同一行的相邻元素放在连续位置。tile 坐标选中哪一块，局部坐标再选中块内哪一个元素，最后按数组的 shape 和 stride（步长）计算地址。stride 表示相邻索引之间跨过多少个元素或多少字节，单位由接口决定；下面的公式先以元素为单位，换算字节地址时再乘 `sizeof(T)`。
 
 设 Array 的 shape 为 `(M,N)`，tile 的 shape 为 `(TM,TN)`。tile 坐标 `(bm,bn)` 中的局部元素 `(i,j)` 对应：
 
@@ -1005,22 +1140,94 @@ $$
 | 0 | A[2,8]，偏移 40 | A[2,9]，41 | A[2,10]，42 | A[2,11]，43 |
 | 1 | A[3,8]，偏移 56 | A[3,9]，57 | A[3,10]，58 | A[3,11]，59 |
 
-规则 tile-space load 用块坐标 `(1,2)` 选择整块。gather 用元素索引选择具体位置。Triton 的指针写法则构造每个元素地址。使用哪个接口，就按哪个接口的坐标含义传参。
+规则 tile-space load 用块坐标 `(1,2)` 选择整块。gather 是为每个元素提供自己的索引，从不连续位置读取数据。Triton 的指针写法则构造每个元素地址。使用哪个接口，就按哪个接口的坐标含义传参。
 
-规则二维访问把形状和步长交给编译器，有利于选择适合整块搬运的指令；支持的设备上可采用 Tensor Memory Accelerator（TMA，张量内存加速器）。Gather 适合查表、置换和由数据决定的索引。TMA 的实际选用结果仍以生成指令为准。
+规则二维访问把形状和步长交给编译器，有利于选择适合整块搬运的指令；支持的 GPU 上可采用 Tensor Memory Accelerator（TMA，专用的张量搬运单元）。Gather 适合查表、置换和由数据决定的索引。TMA 的实际选用结果仍以生成指令为准。
 
-### 8.3 同一个向量加法，三种表达
+### 9.3 逻辑 tile、Array 与硬件线程资源
 
-普通 CUDA C++ 显式写一个线程的元素索引：
+前面的二维示例中，`tile.shape=(2,4)` 表示两行四列、共八个逻辑值；编译器把对这些值的加载、计算和写回分配给硬件线程，并安排寄存器等资源。
 
-~~~cpp
-__global__ void add_simt(const float* a, const float* b, float* c, int n) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < n) c[i] = a[i] + b[i];
-}
-// n > 0；a、b、c 指向至少 n 个 float，c 不与输入重叠。
-add_simt<<<(n + 127) / 128, 128, 0, stream>>>(a, b, c, n);
+下面换成一维向量。源数组可以是任意合法长度，例如长度 1025 的向量，用长度 128 的 tile 处理时，最后一块只有一个有效元素。Triton 的向量加一先计算这组元素的地址，再读出值：
+
+~~~python
+offsets = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
+ptrs = a + offsets                         # 指针组成的 tile，还没有读取 a
+x = tl.load(ptrs, offsets < N, other=0.0)   # 数据组成的 tile
+y = x + 1.0                               # 新的逻辑值
+tl.store(c + offsets, y, offsets < N)       # 写入 c 的有效元素
 ~~~
+
+`ptrs` 保存一组地址，尚未读取数据；`tl.load` 得到这些地址中的值，`x + 1.0` 产生新的逻辑值，`tl.store` 才写回有效元素。编译器再把这组访问分配给线程；要确认某个 lane 访问哪些元素，需要检查编译后的布局。
+
+### 9.4 尾块与加载前保护
+
+mask 是标记每个位置是否有效的布尔条件。长度 129、tile 长度 128 时，grid 有两个 tile block。第二个 block 只有第一个元素有效，其余 127 个加载位置由 mask 排除并填零，输出只存第一个位置。长度为零时在 host 直接返回，不发起零大小 grid，也不读取一个完全处于 Array 外的 tile。
+
+grid 必须按数组长度正确计算。上述规则处理的是与数组边界部分相交的尾块。gather 按每个元素自己的索引读取，scatter 按每个元素自己的目标索引写回；这两类访问以及完全在数组外的块，需要按相应接口的边界规则检查。
+
+归约是把一组元素合成为一个结果。求和与 GEMM 的无效归约项可填零；求最大值通常填负无穷，例如有效值全是负数时，填零会错误地把最大值变成零。Softmax 则应先排除无效位置，再让它们的指数贡献为零。
+
+`ct.where(mask,x,y)` 选择已经计算出的值。若先加载 x 时地址越界，随后选择 y 也无法补救。因此先保护 load/store 的边界，再选择结果。
+
+### 9.5 分块大小、数据复用与 FP32 累加器
+
+采用 `A[M,N] @ B[N,K] = C[M,K]`，N 是归约维。对每个输出 `C[m,k]`，程序沿 `n=0..N-1` 计算 `A[m,n] * B[n,k]` 并求和；累加器（accumulator）保存已经算出的部分和。BM、BN、BK 分别表示输出行块、归约维块和输出列块的尺寸。一个 tile block 负责 BM 行、BK 列输出，每轮加载 A 的 BM×BN 块和 B 的 BN×BK 块，让已加载的数据参与多次乘加，再把结果加入同一个累加器。
+
+同一块 A 或 B 数据被多个乘加复用时，读取流量相对减少。累加器要保存 BM×BK 个 FP32 部分和，因此增大 BM 或 BK 会增大它；增大 BN 则扩大每轮加载的输入块，不改变输出块的大小。这些选择会影响寄存器、共享内存等资源用量。下面的完整 cuTile GEMM 代码把这个循环写成具体接口：
+
+<details>
+<summary>cuTile GEMM kernel 与接口细节</summary>
+
+~~~python
+@ct.kernel
+def matmul_tiles(A, B, C, BM: ct.Constant[int],
+                 BN: ct.Constant[int], BK: ct.Constant[int]):
+    bm, bk = ct.bid(0), ct.bid(1)
+    steps = ct.num_tiles(A, axis=1, shape=(BM, BN))
+    acc = ct.full((BM, BK), 0, dtype=ct.float32)
+    for bn in range(steps):
+        a = ct.load(A, index=(bm, bn), shape=(BM, BN),
+                    padding_mode=ct.PaddingMode.ZERO)
+        b = ct.load(B, index=(bn, bk), shape=(BN, BK),
+                    padding_mode=ct.PaddingMode.ZERO)
+        acc = ct.mma(a, b, acc)
+    ct.store(C, index=(bm, bk), tile=acc.astype(C.dtype))
+~~~
+
+输入是连续二维 FP16 数组，累加器是 FP32，grid 为 `(ceil(M/BM),ceil(K/BK))`，即行、列方向的输出块数分别向上取整。Tile 大小按目标矩阵指令的支持范围选择。`ct.mma` 返回新累加器，所以每轮要把返回值赋给 acc。完成全部归约后再转换输出，保留归约过程的 FP32 累加精度。
+
+</details>
+
+它与 Triton 的 `acc += tl.dot(tile_a,tile_b)` 表达相同的分块算法。比较两个实现时，固定形状和数值类型，再看各自的数据复用、生成指令、寄存器与共享内存用量，以及实际时间。
+
+以输入元素占 s 字节计算，一轮理想 tile 加载需要：
+
+$$
+B_{\mathrm{load}}=s(B_MB_N+B_NB_K),\qquad
+F_{\mathrm{tile}}=2B_MB_NB_K.
+$$
+
+增大 BM 或 BK 可让已加载数据参加更多乘加，提高这部分计算与读取的比值；同时 acc 要保存更多 FP32 值，占用更多资源。完整性能估算还要加入输出写回和缓存行为，并检查资源增加后还能驻留多少 block。
+
+### 9.6 cuTile 接口、编译提示与性能证据
+
+CUDA Tile 的 Python 接口是 `cuda.tile`；C++ 接口使用 `cuda_tile.h` 和 `cuda::tiles`。下面的 C++ 示例按 CUDA Toolkit 13.3 编写，运行前应核对 Toolkit、Python 包、驱动和 GPU 的支持范围；Triton 使用自己的编译系统。
+<details>
+<summary>cuTile 向量加法接口、完整 Python 测试与编译提示</summary>
+
+
+在读取 C++ 示例前，先对应接口和动作：
+
+| 接口或参数 | 作用 |
+|---|---|
+| `tensor_span` | 描述指针及其数组维度 |
+| `partition_view` | 按指定 `shape` 观察并分割该数组 |
+| `extents` | 给出各维长度 |
+| `128_ic` | 编译期整数常量 128 |
+| `bid` | 当前逻辑块的编号 |
+| `load_masked` / `store_masked` | 加载或写回时保护尾部无效位置 |
+| `assume_aligned` | 声明地址已经满足对齐条件，不会自动修复地址 |
 
 CUDA Tile C++ 则为指针附上数组 shape，再定义分块：
 
@@ -1051,7 +1258,9 @@ __tile_global__ void add_tile(const float* __restrict__ a,
 add_tile<<<(n + 127) / 128, 1, 0, stream>>>(a, b, c, n);
 ~~~
 
-`128_ic` 在编译时确定 tile 大小，n 在运行时给出数组长度。`load_masked` 负责部分尾块；普通 load 要求整块有效。`assume_aligned` 只告知编译器地址已经对齐。比如原始 FP32 指针 a 对齐到 16 字节，a+1 会偏移 4 字节，此时需要重新检查对齐。
+`128_ic` 在编译时确定 tile 大小，n 在运行时给出数组长度。`load_masked` 负责部分尾块；普通 load 要求整块有效。`assume_aligned` 只告知编译器地址已经对齐，不会替程序调整地址；这里的 16 字节对齐表示地址是 16 的整数倍。比如原始 FP32 指针 a 对齐到 16 字节，a+1 会偏移 4 字节，此时需要重新检查对齐。
+
+CUDA Tile 的 tile 各维大小要求为 2 的幂；这是该具体接口的编译约束，不是所有分块算法或硬件 tile 的通用规则。源数组仍可以是任意合法长度，尾部由 mask 或对应边界模式处理。
 
 下面的 Python 程序用 PyTorch 分配数组，用 cuTile kernel 做加法。测试输入选用可精确表示的小整数，便于逐元素检查。输出额外分配七个元素作为哨兵区，传入 kernel 的数组视图只包含前 n 个元素；运行后检查哨兵是否仍完整。
 
@@ -1177,196 +1386,200 @@ if __name__ == "__main__":
 
 `ct.load` 用数组长度判断尾部，index 表示 tile 编号。示例加载时把尾部无效位置填零，存储时只写有效元素。`ct.Constant[int]` 让 tile 大小成为编译期参数；改变它可能生成另一份专门编译的 kernel。
 
-### 8.4 尾块：哪些元素需要有定义
+编译 hint 是给编译器的建议性信息。occupancy hint 给出希望每个 SM 驻留多少个 CTA，CTA 在 CUDA 中就是 thread block；latency hint 用 1 到 10 表示预期 DRAM（这里指显存）流量的轻重，值较大时编译器可能增加预取深度。预取是提前加载后续计算要用的数据，以便搬运与当前计算重叠。allow_tma 只允许编译器在支持的设备上考虑 TMA 搬运。具体定义见 [cuTile 性能提示](https://docs.nvidia.com/cuda/cutile-python/performance.html)，实际采用哪些指令仍看生成代码。
 
-长度 129、tile 长度 128 时，grid 有两个 tile block。第二个 block 只有第一个元素有效，其余 127 个加载位置填零，输出只存第一个位置。长度为零时在 host 直接返回，不发起零大小 grid，也不读取一个完全处于 Array 外的 tile。
-
-grid 必须按数组长度正确计算。上述规则处理的是与数组边界部分相交的尾块；完全在数组外的块、gather 和 scatter 访问，需要按相应接口的边界规则检查。
-
-填充值要保持后续运算的结果。求和与 GEMM 的无效归约项可填零；求最大值通常填负无穷，例如有效值全是负数时，填零会错误地把最大值变成零。Softmax 则应先排除无效位置，再让它们的指数贡献为零。
-
-`ct.where(mask,x,y)` 选择已经计算出的值。若先加载 x 时地址越界，随后选择 y 也无法补救。因此先保护 load/store 的边界，再选择结果。
-
-### 8.5 GEMM 的循环与 accumulator 并没有消失
-
-采用 `A[M,N] @ B[N,K] = C[M,K]`，N 是归约维。一个 tile block 负责 BM 行、BK 列输出，每轮加载 A 的 BM×BN 块和 B 的 BN×BK 块，相乘后加入同一个累加器，直到 N 维处理完：
-
-~~~python
-@ct.kernel
-def matmul_tiles(A, B, C, BM: ct.Constant[int],
-                 BN: ct.Constant[int], BK: ct.Constant[int]):
-    bm, bk = ct.bid(0), ct.bid(1)
-    steps = ct.num_tiles(A, axis=1, shape=(BM, BN))
-    acc = ct.full((BM, BK), 0, dtype=ct.float32)
-    for bn in range(steps):
-        a = ct.load(A, index=(bm, bn), shape=(BM, BN),
-                    padding_mode=ct.PaddingMode.ZERO)
-        b = ct.load(B, index=(bn, bk), shape=(BN, BK),
-                    padding_mode=ct.PaddingMode.ZERO)
-        acc = ct.mma(a, b, acc)
-    ct.store(C, index=(bm, bk), tile=acc.astype(C.dtype))
-~~~
-
-输入是连续二维 FP16 数组，累加器是 FP32，grid 为 `(ceil(M/BM),ceil(K/BK))`。Tile 大小按目标矩阵指令的支持范围选择。`ct.mma` 返回新累加器，所以每轮要把返回值赋给 acc。完成全部归约后再转换输出，保留归约过程的 FP32 累加精度。
-
-它与 Triton 的 `acc += tl.dot(tile_a,tile_b)` 表达相同的分块算法。比较两个实现时，固定形状和数值类型，再看各自的数据复用、生成指令、寄存器与共享内存用量，以及实际时间。
-
-以输入元素占 s 字节计算，一轮理想 tile 加载需要：
-
-$$
-B_{\mathrm{load}}=s(B_MB_N+B_NB_K),\qquad
-F_{\mathrm{tile}}=2B_MB_NB_K.
-$$
-
-增大 BM 或 BK 可让已加载数据参加更多乘加，提高这部分计算与读取的比值；同时 acc 要保存更多 FP32 值，占用更多资源。完整性能估算还要加入输出写回和缓存行为，并检查资源增加后还能驻留多少 block。
-
-### 8.6 编译器提示和性能证据
-
-CUDA Tile 的优化提示（hints）提供编译时信息。occupancy hint 给出希望每个 SM 驻留多少个 CTA；CTA 在 CUDA 中就是 thread block。加载和存储的 latency hint 用 1 到 10 表示预期 DRAM 流量的轻重，值较大时编译器可能增加预取深度。allow_tma 允许编译器考虑 TMA 搬运。具体定义见 [cuTile 性能提示](https://docs.nvidia.com/cuda/cutile-python/performance.html)，选用结果看生成指令。
-
-这些提示与 Triton 的 num_warps、num_stages 各有自己的定义。修改提示后，先比较生成代码，再测寄存器、共享内存、驻留 warp、访存指令和时间。若生成代码相同，两份配置实际上使用了同一个实现。
+Triton 的 num_warps 指定每个 program 使用的 warp 数，num_stages 控制编译器安排的流水阶段数；它们与 cuTile 的上述提示是不同参数。修改后，比较生成代码，再测寄存器、共享内存、驻留 warp、访存指令和时间，判断这次参数调整的实际效果。
 
 Host 程序可以让 SIMT kernel 和 tile kernel 先后处理同一显存数组，用 stream 保证顺序。它们的设备函数调用规则则分开：C++ tile 函数与普通 `__device__` 函数不能直接互调。
 
-## 9. Driver API、Runtime API、context 与 module
+</details>
 
-Runtime API 和 Driver API 都可以分配显存、创建 stream 和启动 kernel。Runtime API 的函数以 cuda 开头，适合常规 CUDA C++ 程序：写 `kernel<<<...>>>(args)` 时，编译器生成主机侧启动代码，Runtime 配合完成参数传递和设备代码装载。
 
-Driver API 的函数以 cu 开头，需要程序显式选设备、管理 context、装载代码模块并查找 kernel。它可在运行时把 PTX 编译成设备机器码，这个过程称为即时编译（JIT）。框架后端和运行时编译器常使用这种方式。
+### 9.7 高级 view、shape 变换与原子更新
 
-Context（上下文）保存设备地址空间、已装载模块和执行状态。一个主机线程调用 Driver API 时，操作的是该线程当前选中的 context；另一个主机线程可以选择自己的 current context。
+滑动窗口的相邻 tile 可能重叠；不同 block 也可能同时把部分结果累加到同一个输出位置。前者要按坐标计算每个窗口覆盖的元素，后者要用原子加法让同一位置的并发更新不丢失。
 
-Runtime 通常使用设备的主上下文（primary context）。与 Driver 混用时，常见步骤是：`cuDevicePrimaryCtxRetain` 取得该设备的主上下文，再用 `cuCtxSetCurrent` 将它设为当前上下文。显存指针、stream 和函数句柄都来自相应 context，使用时必须保持所属关系；在一个 context 中取得的普通资源句柄不能随意交给另一个 context。
+view（视图）规定数组地址与坐标之间的关系，不复制数据。Array 保存设备数组的信息，Tile 保存当前计算的一组值，TiledView 规定怎样把数组分成 tile；真正的 `load` 才按这个关系读取值。这里的步长也称 `stride`：例如行跨度为 4 个 `int32` 元素，就是 16 字节。
 
-Module（模块）保存装载的设备代码和符号。程序用 kernel 的符号名查找函数，得到 `CUfunction` 句柄；句柄是后续 API 识别这项资源的标识。
+对连续 row-major 的二维数组 `A[R,C]`，元素 `(i,j)` 的字节地址为：
 
-下面程序嵌入一段 PTX，按“取得主上下文→装载模块→查找 kernel→分配显存→传参启动→复制结果”的顺序执行。PTX 声明三个 64 位设备地址和一个 32 位整数 n，主机侧必须按同样宽度准备参数。
+$$
+addr(i,j)=base+(iC+j)\,sizeof(T).
+$$
 
-```cpp
-.visible .entry vector_add(
-    .param .u64 param_a,
-    .param .u64 param_b,
-    .param .u64 param_c,
-    .param .u32 param_n
-)
-{
-    .reg .pred %p<2>;
-    .reg .b32 %r<4>;
-    .reg .b64 %rd<7>;
-    .reg .f32 %f<4>;
+Tile 形状为 `(r,c)`，起点步长为 `(u,v)` 时，第 `(p,q)` 个 tile 从元素坐标 `(pu,qv)` 开始。默认步长等于 tile 大小，相邻块正好衔接。若 u 小于 r，相邻块会重叠；u 大于 r，则留出空隙。`view.load((1,0))` 选择行方向的第二个 tile，元素起点按上述公式计算。
 
-    ld.param.u64 %rd1, [param_a];
-    ld.param.u64 %rd2, [param_b];
-    ld.param.u64 %rd3, [param_c];
-    ld.param.u32 %r2, [param_n];
-    mov.u32 %r0, %ctaid.x;
-    mov.u32 %r1, %ntid.x;
-    mov.u32 %r3, %tid.x;
-    mad.lo.u32 %r0, %r1, %r0, %r3;
-    setp.ge.u32 %p1, %r0, %r2;
-    @%p1 bra DONE;
+以 `A=arange(16).reshape(4,4)` 为例，每个 int32 占 4 字节，跨到下一行要加 16 字节。`tiled_view((2,4),traversal_steps=(1,4))` 每块取两行、四列，但行起点每次只加 1。因此 tile `(1,0)` 覆盖 `[[4,5,6,7],[8,9,10,11]]`，与前一个 tile 重叠一行。可以先在 CPU 上手算这些元素位置，再检查 GPU 编译结果中的线程分配。
 
-    cvt.u64.u32 %rd4, %r0;
-    shl.b64 %rd4, %rd4, 2;
-    add.u64 %rd5, %rd1, %rd4;
-    add.u64 %rd6, %rd2, %rd4;
-    ld.global.f32 %f1, [%rd5];
-    ld.global.f32 %f2, [%rd6];
-    add.f32 %f3, %f1, %f2;
-    add.u64 %rd5, %rd3, %rd4;
-    st.global.f32 [%rd5], %f3;
+`reshape` 保持元素序列，只改变分组方式，并要求元素总数相等。例如 `(2,4)` 改为 `(4,2)`，展平序列仍是 `4,5,6,7,8,9,10,11`。`transpose` 交换两个轴，`permute` 按指定次序排列多个轴；轴就是行、列等索引方向，交换轴会改变元素的逻辑位置。
 
-DONE:
-    ret;
-}
+这些操作先得到新的 tile 值，store 才把值写回数组。编译器可能用寄存器重排或线程间交换实现变换，实际成本需要检查生成指令。
+
+下面程序把逻辑 view、重叠访问、reshape、transpose 和三维 permute 写成 cuTile kernel。`A=arange(16).reshape(4,4)` 的第二个窗口从第 1 行开始，因此与第一个窗口重叠一行；另一个 kernel 让 8 个 tile block 对同一计数位置各加 4，原子加法的结果为 `8×4=32`。三个输出的含义分别为：`flat_out` 保持 tile 行优先次序，`transpose_out` 展示轴交换，`permuted_out` 展示轴序 `(2,0,1)`。
+
+<details>
+<summary>完整 view 与 atomic 示例</summary>
+
+<!-- source-check: examples/cuda_tile_views_atomics.py -->
+```python
+#!/usr/bin/env python3
+"""Exercise cuTile tiled views, shape operations, and reduction atomics."""
+
+import sys
+
+
+def main() -> int:
+    try:
+        import torch
+        import cuda.tile as ct
+    except ImportError as error:
+        print(f"SKIP: PyTorch or cuTile is unavailable: {error}")
+        return 77
+
+    if not torch.cuda.is_available():
+        print("SKIP: no usable CUDA device")
+        return 77
+
+    @ct.kernel
+    def transform(source, flat_out, transpose_out, permuted_out):
+        bid = ct.bid(0)
+        source_view = source.tiled_view(
+            (2, 4),
+            padding_mode=ct.PaddingMode.ZERO,
+            traversal_steps=(1, 4),
+        )
+        tile = source_view.load((bid, 0))
+        flat_view = flat_out.tiled_view((1, 8))
+        transposed_view = transpose_out.tiled_view((1, 8))
+        flat_view.store((bid, 0), tile.reshape((1, 8)))
+        transposed_view.store((bid, 0), ct.transpose(tile).reshape((1, 8)))
+
+        if bid == 0:
+            cube = ct.arange(8, dtype=ct.int32).reshape((2, 2, 2))
+            permuted = ct.permute(cube, (2, 0, 1))
+            permuted_out.tiled_view((8,)).store(0, permuted.reshape((8,)))
+
+    @ct.kernel
+    def add_one_tile_per_block(counter):
+        view = counter.tiled_view((1,))
+        increment = ct.full((1,), 4, dtype=ct.int32)
+        # No old value is needed: use TiledView's reduction-style atomic form.
+        view.atomic_store_add(0, increment)
+
+    source = torch.arange(16, dtype=torch.int32, device="cuda").reshape(4, 4)
+    flat_out = torch.full((2, 8), -1, dtype=torch.int32, device="cuda")
+    transpose_out = torch.full((2, 8), -1, dtype=torch.int32, device="cuda")
+    permuted_out = torch.full((8,), -1, dtype=torch.int32, device="cuda")
+    counter = torch.zeros((1,), dtype=torch.int32, device="cuda")
+    stream = torch.cuda.current_stream()
+
+    ct.launch(stream, (2,), transform,
+              (source, flat_out, transpose_out, permuted_out))
+    ct.launch(stream, (8,), add_one_tile_per_block, (counter,))
+    stream.synchronize()
+
+    expected_flat = torch.tensor(
+        [[0, 1, 2, 3, 4, 5, 6, 7], [4, 5, 6, 7, 8, 9, 10, 11]],
+        dtype=torch.int32,
+        device="cuda",
+    )
+    expected_transpose = torch.tensor(
+        [[0, 4, 1, 5, 2, 6, 3, 7], [4, 8, 5, 9, 6, 10, 7, 11]],
+        dtype=torch.int32,
+        device="cuda",
+    )
+    expected_permute = torch.tensor(
+        [0, 2, 4, 6, 1, 3, 5, 7], dtype=torch.int32, device="cuda"
+    )
+    torch.testing.assert_close(flat_out, expected_flat, rtol=0, atol=0)
+    torch.testing.assert_close(transpose_out, expected_transpose, rtol=0, atol=0)
+    torch.testing.assert_close(permuted_out, expected_permute, rtol=0, atol=0)
+    torch.testing.assert_close(
+        counter, torch.tensor([32], dtype=torch.int32, device="cuda"), rtol=0, atol=0
+    )
+    print("view/reshape/transpose/permute/atomic checks: PASS")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
 ```
 
-启动参数数组 `kernel_params` 中，每一项指向主机上保存参数值的变量。例如设备地址保存在变量 d_a 中，传参时交给 Driver 的是 &d_a，Driver 再复制 d_a 的值给 kernel。
+</details>
 
-这个例子使用同步 HtoD/DtoH，在主机与设备之间复制数据，主机缓冲区由 std::vector 保存。改用异步复制时，应核对该 API 的页锁定要求，并让缓冲区一直存活到传输完成。
+CPU 手算可独立核对变换：tile `[[4,5,6,7],[8,9,10,11]]` 展平为 `[4,5,6,7,8,9,10,11]`；转置后按行展平为 `[4,8,5,9,6,10,7,11]`。三维 `cube=arange(8).reshape(2,2,2)` 使用轴序 `(2,0,1)` 后展平为 `[0,2,4,6,1,3,5,7]`。CPU 检查只验证坐标公式，不模拟 GPU atomic 的并发执行或硬件布局。
 
-<!-- source-check: examples/driver_api_vector_add.cu -->
-```cpp
-    CU_CHECK(cuDevicePrimaryCtxRetain(&context, device));
-    CU_CHECK(cuCtxSetCurrent(context));
-    CU_CHECK(cuStreamCreate(&stream, CU_STREAM_DEFAULT));
-    CU_CHECK(cuModuleLoadDataEx(&module, kVectorAddPtx, 0, nullptr, nullptr));
-    CU_CHECK(cuModuleGetFunction(&function, module, "vector_add"));
+<details>
+<summary>原子接口、内存顺序与跨 block 依赖</summary>
 
-    CU_CHECK(cuMemAlloc(&d_a, bytes));
-    CU_CHECK(cuMemAlloc(&d_b, bytes));
-    CU_CHECK(cuMemAlloc(&d_c, bytes));
-    // Synchronous copies accept these std::vector pageable host buffers.
-    CU_CHECK(cuMemcpyHtoD(d_a, host_a.data(), bytes));
-    CU_CHECK(cuMemcpyHtoD(d_b, host_b.data(), bytes));
+`ct.atomic_add(array,indices,update)` 对每个指定数组元素做原子加法，返回该元素更新前的值。默认检查索引，默认内存顺序为 acquire-release（约束相关读写的先后关系），作用范围为 device（同一 GPU 上的参与者）。原子性针对每个元素分别成立；一个 tile 中多个元素的更新没有统一的先后顺序。
 
-    CU_CHECK(cuLaunchKernel(function,
-                            blocks, 1, 1,
-                            threads, 1, 1,
-                            0, stream, kernel_params, nullptr));
-    CU_CHECK(cuStreamSynchronize(stream));
-    CU_CHECK(cuMemcpyDtoH(host_c.data(), d_c, bytes));
+若只需要累计，不需要旧值，可用 `TiledView.atomic_store_add(tile_index,update_tile)`。两种接口都保护各自的原子更新；让所有线程或 block 等到一起，则需要另行安排同步和 kernel 顺序。
+
+cuTile 代码按逻辑 block 和 tile 描述计算，线程分配由编译器完成；kernel 中没有普通 SIMT 的显式 barrier（让参与线程等候的同步点）。普通 load/store 默认使用较弱的内存顺序，不能据此保证另一个 block 已完成写入。原子更新只保护同一元素的更新，不等于让所有线程或 block 互相等待；跨 block 的原子交换应按文档选取内存顺序和作用范围。
+
+若一个 kernel 产生数组，另一个 kernel 读取它，可以把两次启动排到同一 stream，建立先后顺序。使用不同 stream 时，则用 event 或依赖关系让读取等待写入完成。主机想检查结果时，还要等设备工作结束。
+
+</details>
+
+从仓库根目录运行 `python roadmap/curriculum/gpu/02-cuda-execution-and-scheduling/examples/cuda_tile_views_atomics.py`。在 CUDA 13.3/cuTile 1.4 系列环境中，检查数组变换结果及计数 32。原子加法的到达次序可以不同，整数总和应相同。下面的 CPU 模型只计算坐标与预期值，设备程序再检验实际执行结果。
+
+<details>
+<summary>纯 CPU 坐标模型</summary>
+
+<!-- source-check: examples/cuda_tile_views_cpu_model.py -->
+```python
+#!/usr/bin/env python3
+"""Check cuTile view coordinates and shape transforms without CUDA."""
+
+
+def main() -> None:
+    array = [[row * 4 + col for col in range(4)] for row in range(4)]
+
+    def read_window(tile_row: int) -> list[list[int]]:
+        origin_row = tile_row * 1  # traversal_steps[0]
+        origin_col = 0 * 4
+        return [
+            array[row][origin_col:origin_col + 4]
+            for row in range(origin_row, origin_row + 2)
+        ]
+
+    first = read_window(0)
+    second = read_window(1)
+    assert first == [[0, 1, 2, 3], [4, 5, 6, 7]]
+    assert second == [[4, 5, 6, 7], [8, 9, 10, 11]]
+    assert first[1] == second[0]  # the one-row traversal step overlaps
+
+    flattened = [value for row in second for value in row]
+    assert flattened == [4, 5, 6, 7, 8, 9, 10, 11]
+    transposed = [second[row][col] for col in range(4) for row in range(2)]
+    assert transposed == [4, 8, 5, 9, 6, 10, 7, 11]
+
+    cube = [[[i * 4 + j * 2 + k for k in range(2)]
+             for j in range(2)] for i in range(2)]
+    permuted = [cube[j][k][i] for i in range(2)
+                for j in range(2) for k in range(2)]
+    assert permuted == [0, 2, 4, 6, 1, 3, 5, 7]
+
+    # Eight blocks each add four to one counter; this is only arithmetic,
+    # not a CPU simulation of CUDA's concurrent atomic implementation.
+    assert sum(4 for _ in range(8)) == 32
+    print("CPU tile-view coordinate model: PASS")
+
+
+if __name__ == "__main__":
+    main()
 ```
 
-`cuModuleLoadDataEx` 接收两个 JIT 配置参数 numOptions、options；没有配置时传 `0,nullptr`。启动 kernel 后，主机继续执行，因此检查结果前先等待 stream 完成。
+</details>
 
-释放资源时先等设备结束使用，再销毁 stream、释放显存、卸载 module，最后 release 主上下文。主上下文由 retain/release 配对管理；自行创建的 context 才使用对应的 destroy 操作。
+## 10. Python 与 C++ 的调用边界和资源生命周期
 
-```bash
-nvcc -std=c++17 -O2 roadmap/curriculum/gpu/02-cuda-execution-and-scheduling/examples/driver_api_vector_add.cu -lcuda -o driver_api_vector_add
-./driver_api_vector_add --help
-./driver_api_vector_add 257
-```
+同一张 GPU 上的计算，无论从 Python 还是 C++ 发起，都要处理设备地址、context、stream、完成顺序和资源生命周期。绑定接口是某种语言对现有函数接口的包装，例如用 Python 调用 CUDA 的 C 接口；不同语言可以使用不同包装，但必须遵守同样的资源和执行顺序。
 
-程序找不到设备时退出 77，表示跳过；其他 Driver 错误返回失败。PTX 声明 `.target sm_70` 和 `.version 7.0`，Driver 装载时为兼容的实际 GPU 进行 JIT。编译这个主机程序仍需要 Toolkit 头文件、主机编译工具和兼容驱动。
+### 10.1 Python host 控制与 device kernel 的边界
 
-### 9.1 Runtime 初始化、lazy loading 与错误定位
-
-Runtime 初始化会准备运行时状态和上下文；设备代码装载则把某个 kernel 的代码准备好。这两项开销可能发生在不同位置。
-
-Lazy loading（延迟装载）把代码装载推迟到第一次需要该 kernel 时；eager 模式则提前装载。CUDA 11.7 引入这项功能，Linux 从 12.2、Windows 从 12.3 起默认采用 lazy。进程启动前可设置 `CUDA_MODULE_LOADING=LAZY` 或 EAGER，运行时可用 `cuModuleGetLoadingMode` 查询。
-
-如果要提前准备指定 kernel，用 `cudaFuncGetAttributes` 或 `cuModuleGetFunction` 触发装载。`cudaFree(nullptr)` 可用于准备 Runtime/context，但预载某个 kernel 还需要前面这些函数级操作。
-
-下面示例比较首次启动 add_one 与提前装载。传入 `--preload` 时，程序先调用 `cudaFuncGetAttributes`。启动后检查 `cudaGetLastError()`，同步时再检查设备执行错误。调试可使用 `CUDA_LAUNCH_BLOCKING=1` 使调用阻塞；正式计时恢复正常异步方式。
-
-<!-- source-check: examples/runtime_lazy_loading.cu -->
-```cpp
-    // This explicit no-op allocation forces Runtime/context initialization;
-    // it does not, by itself, prove every kernel module has been loaded.
-    CUDA_CHECK(cudaFree(nullptr));
-    CUDA_CHECK(cudaMalloc(&device_input, n * sizeof(int)));
-    CUDA_CHECK(cudaMalloc(&device_output, n * sizeof(int)));
-    CUDA_CHECK(cudaMemcpy(device_input, input.data(), n * sizeof(int),
-                          cudaMemcpyHostToDevice));
-
-    if (preload) {
-        cudaFuncAttributes attributes{};
-        CUDA_CHECK(cudaFuncGetAttributes(&attributes, add_one));
-        std::printf("kernel preloaded: registers=%d\n", attributes.numRegs);
-    } else {
-        std::printf("first kernel launch is the first use of add_one\n");
-    }
-
-    add_one<<<blocks, threads>>>(device_input, device_output, n);
-    // Immediate check reports launch/configuration errors.  Execution faults
-    // are observed at the stream synchronization boundary below.
-    CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaDeviceSynchronize());
-```
-
-```bash
-nvcc -std=c++17 -O2 roadmap/curriculum/gpu/02-cuda-execution-and-scheduling/examples/runtime_lazy_loading.cu -o runtime_lazy_loading
-CUDA_MODULE_LOADING=LAZY ./runtime_lazy_loading
-CUDA_MODULE_LOADING=EAGER ./runtime_lazy_loading --preload
-CUDA_LAUNCH_BLOCKING=1 ./runtime_lazy_loading
-```
-
-比较首次调用延迟时，分别计时：Runtime/context 初始化、函数预载、首次启动和预热后的重复启动。这样能判断额外时间花在初始化、JIT/代码装载还是 kernel 本身。若错误在同步处报告，检查同一 stream 中此前提交的操作；同步函数可能只是等到了并报告了那个错误。
-
-## 10. CUDA Python：控制 API 与 kernel DSL 是两层
-
-Python 程序可以在 CPU 上管理设备，也可以通过专用接口定义 GPU kernel。这里按用途分开：
+普通 Python 函数在 CPU 上执行。Python 可以调用已有的 CUDA 算子，也可以通过专用的 kernel 接口编写 GPU 代码；这种描述设备计算的专用语言或接口称为 DSL（Domain-Specific Language，领域专用语言）。绑定 API 则在主机侧选择设备和 context、分配资源并提交 stream 操作。下表按用途区分这些接口：
 
 | 接口 | 用途 | 例子 |
 |---|---|---|
@@ -1376,7 +1589,7 @@ Python 程序可以在 CPU 上管理设备，也可以通过专用接口定义 G
 | `cuda.tile` | 定义按 tile 编写的 kernel | 每个 tile block 计算一组元素 |
 | CuPy、PyTorch | 管理数组并调用计算实现 | 分配设备张量、管理当前 stream |
 
-DSL（Domain-Specific Language，领域专用语言）指这里用于描述设备计算的接口。使用普通 Python 函数调用这些库时，主机代码仍在 CPU 上执行；提交的 kernel 在 GPU 上执行。
+这些库可以共同处理同一批数据。例如 PyTorch 分配数组，另一库提交 kernel，再由 PyTorch 读取结果；读取必须等待此前的写入完成，后面会说明如何用 stream 或 event 建立这个顺序。
 
 NumPy 数组保存在主机内存，其 data 地址指向 CPU 可以访问的位置。Driver 分配得到的 `CUdeviceptr` 是设备地址，应交给匹配的设备和 context 使用。对于 FP32 向量，第 i 个元素相对起点偏移 4i 字节；C++ 的 float 指针加 i 会自动乘 4，Driver 的 CUdeviceptr 按字节计数，调用者自己计算字节偏移。
 
@@ -1557,186 +1770,16 @@ if __name__ == "__main__":
 
 使用这些库时，要显式处理三个地方。Numba 设备 kernel 用 `i<n` 保护边界；CuPy 分配 FP32 数组写 `cp.zeros(shape,dtype=np.float32)`，因为它的默认 float 类型通常是 FP64；等待单个 stream 用 `stream.synchronize()`。CuPy 的设备同步由 `cp.cuda.Device` 提供，Numba 的设备级同步是 `cuda.synchronize()`。
 
-Numba kernel 可以使用 CuPy 的当前 stream：先取得 `cp_stream=cp.cuda.get_current_stream()`，再用 `cuda.external_stream(cp_stream.ptr)` 包装，启动时传入这个 stream。两边要使用同一设备和 context，CuPy stream 的所有者也要一直存活；Numba 包装对象不会替它销毁资源。
+Numba kernel 可以使用 CuPy 的当前 stream：先取得 `cp_stream=cp.cuda.get_current_stream()`，再用 `cuda.external_stream(cp_stream.ptr)` 包装，启动时传入这个 stream。这个包装对象只是借用 CuPy 的 stream，不负责销毁它；两边要使用同一设备和 context，CuPy stream 的所有者也要一直存活。
 
-跨库传数组时，CUDA Array Interface（CUDA 数组接口）提供地址、形状、类型和 stream 信息。消费者要按这个接口处理生产者的完成顺序，确保读取时数据已经写好。
+跨库传数组时，CUDA Array Interface（CUDA 数组接口，CAI）是传递地址、形状、数据类型和 stream 等元数据的约定。例如 CuPy 在 stream A 中写入数组，Numba 在同一 stream 或等待相应 event 后才能读取；消费者要按 CAI 提供的完成顺序处理，确保数据已经写好。
 
 按参数手算一次：设备地址 P 指向 4 字节分配，`cuMemsetD32Async(P,0,1,S)` 将一个 32 位值写成零，操作排入 stream S。同步后读回并断言零值，才检查到实际写入。释放 P 前要等设备完成使用。
 
 运行上述两份设备程序需要相应 Python 库、兼容驱动和 GPU。主机侧语法及坐标计算可以单独检查，设备访问和数值输出留到对应环境执行。
 
-## 11. cuTile 的 view、shape 变换与原子更新
 
-Array 保存设备数组的信息，Tile 保存当前计算的一组值，TiledView 则规定怎样把数组分成 tile。创建 view 只建立坐标关系，实际 load 时才读取数据。程序员指定 tile 形状和访问步长，编译器安排硬件线程处理这些元素。
-
-对连续 row-major 的二维数组 `A[R,C]`，元素 `(i,j)` 的字节地址为：
-
-$$
-addr(i,j)=base+(iC+j)\,sizeof(T).
-$$
-
-Tile 形状为 `(r,c)`，起点步长为 `(u,v)` 时，第 `(p,q)` 个 tile 从元素坐标 `(pu,qv)` 开始。默认步长等于 tile 大小，相邻块正好衔接。若 u 小于 r，相邻块会重叠；u 大于 r，则留出空隙。`view.load((1,0))` 选择行方向的第二个 tile，元素起点按上述公式计算。
-
-以 `A=arange(16).reshape(4,4)` 为例，每个 int32 占 4 字节，跨到下一行要加 16 字节。`tiled_view((2,4),traversal_steps=(1,4))` 每块取两行、四列，但行起点每次只加 1。因此 tile `(1,0)` 覆盖 `[[4,5,6,7],[8,9,10,11]]`，与前一个 tile 重叠一行。可以先在 CPU 上手算这些元素位置，再检查 GPU 编译结果中的线程分配。
-
-Reshape 保持元素序列，只改变分组方式，并要求元素总数相等。例如 `(2,4)` 改为 `(4,2)`，展平序列仍是 `4,5,6,7,8,9,10,11`。Transpose 交换两个轴，permute 按指定次序排列多个轴，会改变元素的逻辑位置。
-
-这些操作先得到新的 tile 值，store 才把值写回数组。编译器可能用寄存器重排或线程间交换实现变换，实际成本需要检查生成指令。
-
-下面程序把逻辑 view、重叠访问、reshape、transpose 和三维 permute 写成 cuTile kernel，并让八个 tile block 对同一计数位置各加 4。三个输出的含义分别为：`flat_out` 保持 tile 行优先次序，`transpose_out` 展示轴交换，`permuted_out` 展示轴序 `(2,0,1)`；计数结果为 `8×4=32`。
-
-<details>
-<summary>完整 view 与 atomic 示例</summary>
-
-<!-- source-check: examples/cuda_tile_views_atomics.py -->
-```python
-#!/usr/bin/env python3
-"""Exercise cuTile tiled views, shape operations, and reduction atomics."""
-
-import sys
-
-
-def main() -> int:
-    try:
-        import torch
-        import cuda.tile as ct
-    except ImportError as error:
-        print(f"SKIP: PyTorch or cuTile is unavailable: {error}")
-        return 77
-
-    if not torch.cuda.is_available():
-        print("SKIP: no usable CUDA device")
-        return 77
-
-    @ct.kernel
-    def transform(source, flat_out, transpose_out, permuted_out):
-        bid = ct.bid(0)
-        source_view = source.tiled_view(
-            (2, 4),
-            padding_mode=ct.PaddingMode.ZERO,
-            traversal_steps=(1, 4),
-        )
-        tile = source_view.load((bid, 0))
-        flat_view = flat_out.tiled_view((1, 8))
-        transposed_view = transpose_out.tiled_view((1, 8))
-        flat_view.store((bid, 0), tile.reshape((1, 8)))
-        transposed_view.store((bid, 0), ct.transpose(tile).reshape((1, 8)))
-
-        if bid == 0:
-            cube = ct.arange(8, dtype=ct.int32).reshape((2, 2, 2))
-            permuted = ct.permute(cube, (2, 0, 1))
-            permuted_out.tiled_view((8,)).store(0, permuted.reshape((8,)))
-
-    @ct.kernel
-    def add_one_tile_per_block(counter):
-        view = counter.tiled_view((1,))
-        increment = ct.full((1,), 4, dtype=ct.int32)
-        # No old value is needed: use TiledView's reduction-style atomic form.
-        view.atomic_store_add(0, increment)
-
-    source = torch.arange(16, dtype=torch.int32, device="cuda").reshape(4, 4)
-    flat_out = torch.full((2, 8), -1, dtype=torch.int32, device="cuda")
-    transpose_out = torch.full((2, 8), -1, dtype=torch.int32, device="cuda")
-    permuted_out = torch.full((8,), -1, dtype=torch.int32, device="cuda")
-    counter = torch.zeros((1,), dtype=torch.int32, device="cuda")
-    stream = torch.cuda.current_stream()
-
-    ct.launch(stream, (2,), transform,
-              (source, flat_out, transpose_out, permuted_out))
-    ct.launch(stream, (8,), add_one_tile_per_block, (counter,))
-    stream.synchronize()
-
-    expected_flat = torch.tensor(
-        [[0, 1, 2, 3, 4, 5, 6, 7], [4, 5, 6, 7, 8, 9, 10, 11]],
-        dtype=torch.int32,
-        device="cuda",
-    )
-    expected_transpose = torch.tensor(
-        [[0, 4, 1, 5, 2, 6, 3, 7], [4, 8, 5, 9, 6, 10, 7, 11]],
-        dtype=torch.int32,
-        device="cuda",
-    )
-    expected_permute = torch.tensor(
-        [0, 2, 4, 6, 1, 3, 5, 7], dtype=torch.int32, device="cuda"
-    )
-    torch.testing.assert_close(flat_out, expected_flat, rtol=0, atol=0)
-    torch.testing.assert_close(transpose_out, expected_transpose, rtol=0, atol=0)
-    torch.testing.assert_close(permuted_out, expected_permute, rtol=0, atol=0)
-    torch.testing.assert_close(
-        counter, torch.tensor([32], dtype=torch.int32, device="cuda"), rtol=0, atol=0
-    )
-    print("view/reshape/transpose/permute/atomic checks: PASS")
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
-```
-
-</details>
-
-CPU 手算可独立核对变换：tile `[[4,5,6,7],[8,9,10,11]]` 展平为 `[4,5,6,7,8,9,10,11]`；转置后按行展平为 `[4,8,5,9,6,10,7,11]`。三维 `cube=arange(8).reshape(2,2,2)` 使用轴序 `(2,0,1)` 后展平为 `[0,2,4,6,1,3,5,7]`。CPU 检查只验证坐标公式，不模拟 GPU atomic 的并发执行或硬件布局。
-
-`ct.atomic_add(array,indices,update)` 对每个指定数组元素做原子加法，返回该元素更新前的值。默认检查索引，默认内存顺序为 acquire-release，作用范围为 device。原子性针对每个元素分别成立；一个 tile 中多个元素的更新没有统一的先后顺序。
-
-若只需要累计，不需要旧值，可用 `TiledView.atomic_store_add(tile_index,update_tile)`。两种接口都保护各自的原子更新；让所有线程或 block 等到一起，则需要另行安排同步和 kernel 顺序。
-
-cuTile 代码按逻辑 block 和 tile 描述计算，线程分配由编译器完成；kernel 中没有普通 SIMT 的显式线程 barrier。普通 load/store 默认使用较弱的内存顺序，不能据此保证另一个 block 已完成写入。跨 block 的原子交换应按文档选取内存顺序和作用范围。
-
-若一个 kernel 产生数组，另一个 kernel 读取它，可以把两次启动排到同一 stream，建立先后顺序。使用不同 stream 时，则用 event 或依赖关系让读取等待写入完成。主机想检查结果时，还要等设备工作结束。
-
-从仓库根目录运行 `python roadmap/curriculum/gpu/02-cuda-execution-and-scheduling/examples/cuda_tile_views_atomics.py`。在 CUDA 13.3/cuTile 1.4 系列环境中，检查数组变换结果及计数 32。原子加法的到达次序可以不同，整数总和应相同。下面的 CPU 模型只计算坐标与预期值，设备程序再检验实际执行结果。
-
-<details>
-<summary>纯 CPU 坐标模型</summary>
-
-<!-- source-check: examples/cuda_tile_views_cpu_model.py -->
-```python
-#!/usr/bin/env python3
-"""Check cuTile view coordinates and shape transforms without CUDA."""
-
-
-def main() -> None:
-    array = [[row * 4 + col for col in range(4)] for row in range(4)]
-
-    def read_window(tile_row: int) -> list[list[int]]:
-        origin_row = tile_row * 1  # traversal_steps[0]
-        origin_col = 0 * 4
-        return [
-            array[row][origin_col:origin_col + 4]
-            for row in range(origin_row, origin_row + 2)
-        ]
-
-    first = read_window(0)
-    second = read_window(1)
-    assert first == [[0, 1, 2, 3], [4, 5, 6, 7]]
-    assert second == [[4, 5, 6, 7], [8, 9, 10, 11]]
-    assert first[1] == second[0]  # the one-row traversal step overlaps
-
-    flattened = [value for row in second for value in row]
-    assert flattened == [4, 5, 6, 7, 8, 9, 10, 11]
-    transposed = [second[row][col] for col in range(4) for row in range(2)]
-    assert transposed == [4, 8, 5, 9, 6, 10, 7, 11]
-
-    cube = [[[i * 4 + j * 2 + k for k in range(2)]
-             for j in range(2)] for i in range(2)]
-    permuted = [cube[j][k][i] for i in range(2)
-                for j in range(2) for k in range(2)]
-    assert permuted == [0, 2, 4, 6, 1, 3, 5, 7]
-
-    # Eight blocks each add four to one counter; this is only arithmetic,
-    # not a CPU simulation of CUDA's concurrent atomic implementation.
-    assert sum(4 for _ in range(8)) == 32
-    print("CPU tile-view coordinate model: PASS")
-
-
-if __name__ == "__main__":
-    main()
-```
-
-</details>
-
-## 12. CUDA C++：执行空间、对象生命周期与设备链接
+### 10.2 C++ 执行位置、显存管理与设备链接
 
 NVCC 编译 .cu 文件时，分别处理主机代码和设备代码。函数前的限定符说明它在哪一侧使用：
 
@@ -1749,14 +1792,14 @@ NVCC 编译 .cu 文件时，分别处理主机代码和设备代码。函数前�
 
 Kernel 调用辅助函数时，该函数必须有设备端版本。双限定符函数要让函数体分别通过两侧编译；必要时用 `#if defined(__CUDA_ARCH__)` 选择设备编译分支。这个宏表示当前设备编译目标，运行时查询 GPU 则使用设备属性 API。
 
-模板在实际调用处生成相应实例。设备调用的实例也要满足设备编译要求。扩展 lambda 用限定符标明执行位置，并传入 `--extended-lambda` 编译选项。捕获的值保存在 lambda 对象里；若捕获了主机指针，它仍指向原来的主机地址，不能直接拿来访问普通设备数组。
+模板按参数类型生成相应函数实例，例如同一份乘二函数分别用于 int 和 float。设备调用的实例也要满足设备编译要求。lambda 是没有单独函数名的小函数对象，可以保存外部值；扩展 lambda 用限定符标明执行位置，并传入 `--extended-lambda` 编译选项。捕获的值保存在 lambda 对象里；若捕获了主机指针，它仍指向原来的主机地址，不能直接拿来访问普通设备数组。
 
-一个 .cu 文件单独编译得到一个编译单元（translation unit）。下面程序让 kernel 调用另一个文件定义的设备函数，并展示模板、lambda 和两种共享内存分配。
+显存管理对象 `DeviceBuffer` 负责分配和释放显存；传给 kernel 的 `DeviceSpan` 只携带设备地址和长度，不会替调用方释放显存。异步操作完成前，管理对象和 stream 都必须继续存活。对象创建时执行构造函数、结束生命周期时执行析构函数，把资源的取得和释放放进这两个过程，称为 RAII（Resource Acquisition Is Initialization，对象生命周期管理资源）。
 
-主机用 DeviceBuffer 管理显存，在对象析构时释放资源。这是 RAII（Resource Acquisition Is Initialization，用对象生命周期管理资源）的用法。传给 kernel 的 DeviceSpan 则只保存设备指针和长度，由设备代码据此访问数组。
+一个 `.cu` 连同它包含的头文件一起形成一个编译输入，称为 translation unit（编译单元）。跨 `.cu` 文件调用设备函数时，要启用 RDC（可重定位设备代码）：先分别编译各文件中的设备代码，再由设备链接器连接这些定义。下面程序把这些调用关系和两种共享内存分配放在一起。
 
 <details>
-<summary>跨 translation unit 的 device 函数声明</summary>
+<summary>供另一个编译单元使用的设备函数声明</summary>
 
 <!-- source-check: examples/cpp_device_ops.cuh -->
 ```cpp
@@ -1769,7 +1812,7 @@ extern __device__ int scale_in_other_tu(int value);
 </details>
 
 <details>
-<summary>device 函数定义所在的 translation unit</summary>
+<summary>设备函数定义所在的编译单元</summary>
 
 <!-- source-check: examples/cpp_device_ops.cu -->
 ```cpp
@@ -1783,7 +1826,7 @@ extern __device__ int scale_in_other_tu(int value) {
 </details>
 
 <details>
-<summary>host/device 调用、shared storage 与异步 owner 的完整程序</summary>
+<summary>主机与设备调用、共享内存和显存管理的完整程序</summary>
 
 <!-- source-check: examples/cpp_language_support.cu -->
 ```cpp
@@ -1892,15 +1935,18 @@ int main(int argc, char** argv) {
 
 </details>
 
-twice<T> 根据参数类型生成函数，主机和设备 lambda 分别调用它。Kernel 还调用另一个 .cu 文件中的 scale_in_other_tu。要让跨文件调用成立，声明与定义必须一致，并启用可重定位设备代码（RDC），让设备链接器连接这些定义。
+`twice<T>` 在调用处生成对应类型的函数实例，主机和设备 lambda 分别调用它。Kernel 还调用另一个 `.cu` 文件中的 `scale_in_other_tu`；声明、定义和设备链接输入必须一致。
 
-设备函数默认具有外部链接属性，示例仍在声明中写 extern。CUDA 13 改变了部分 kernel 和设备变量的默认链接属性，因此维护跨文件代码时要按符号类别检查。相关类别包括 `__global__` 函数和 `__device__`、`__constant__`、`__managed__` 变量，不能套用同一条默认规则。
+<details>
+<summary>C++ 补充：链接属性、设备对象和间接调用限制</summary>
+
+设备函数默认具有 external linkage（外部链接属性，可被其他编译单元引用），示例仍在声明中写 extern。CUDA 13 改变了部分 kernel 和设备变量的默认链接属性，因此维护跨文件代码时要按符号类别检查。相关类别包括 `__global__` 函数和 `__device__`、`__constant__`、`__managed__` 变量，不能套用同一条默认规则。
 
 Runtime 把 kernel 参数的字节复制到设备参数区；这个过程不会替程序在 GPU 上调用对象的自定义复制构造函数。若把负责释放显存的对象传进去，主机上的临时对象可能在 kernel 完成前析构，从而提前释放 GPU 仍在使用的内存。
 
 所以示例把 DeviceBuffer 留在主机，只传入简单的 DeviceSpan。程序先等待设备完成、复制结果，再让管理对象析构。使用 stream/event 安排异步执行时，也必须让释放发生在最后一次访问结束之后。
 
-带 `__device__`、`__shared__`、`__constant__`、`__managed__` 或 `__tile__` 存储限定符的类类型变量，不支持非空构造函数和析构函数。因此，需要在析构时释放资源的管理对象留在主机侧。
+带 `__device__`、`__shared__`、`__constant__`、`__managed__` 或 `__tile__` 存储空间限定符的类类型变量，不支持非空构造函数和析构函数。因此，需要在析构时释放资源的管理对象留在主机侧；这个限制针对这些存储空间中的类变量，不扩展到所有 tile 局部类。
 
 固定版本声明 staging[128]，并用线程编号访问它；示例按 128 个线程启动。改变线程数时，要同时检查数组容量、初始化范围和读取位置。动态版本使用 `extern __shared__`，启动的第三个参数指定每块字节数，这里传 `threads*sizeof(int)`。
 
@@ -1925,7 +1971,9 @@ Runtime 把 kernel 参数的字节复制到设备参数区；这个过程不会�
 
 std::vector 等普通容器通常管理主机数据。设备函数需要使用明确支持设备执行的 API，例如 CUDA C++ 标准库 cuda::std 中的相应实现。模板和 constexpr 的函数体同样要满足调用侧的编译要求。
 
-将 `sm_XX` 换成目标设备的 Compute Capability，从仓库根目录编译并运行：
+</details>
+
+Compute Capability（计算能力）是 GPU 支持的 CUDA 硬件功能版本，例如 8.9 对应编译目标 sm_89。将命令中的占位符 `sm_XX` 换成实际目标，再从仓库根目录编译并运行：
 
 ```bash
 nvcc -std=c++17 --extended-lambda -arch=sm_XX -dc -I roadmap/curriculum/gpu/02-cuda-execution-and-scheduling/examples roadmap/curriculum/gpu/02-cuda-execution-and-scheduling/examples/cpp_device_ops.cu -o cpp_device_ops.o
@@ -1938,15 +1986,19 @@ nvcc -arch=sm_XX cpp_language_support.o cpp_device_ops.o cpp_device_link.o -o cp
 
 命令按三步进行：-dc 分别编译各个 .cu 文件并保留可链接的设备代码，-dlink 连接其中的设备函数和变量，最后完成主机链接。也可用 `-rdc=true` 让 NVCC 安排设备链接。若报告设备符号缺失，先核对声明、定义和参与链接的文件；主机库搜索参数 -L/-l 解决的是另一侧的链接问题。
 
-## 13. Error Log：从错误码追到更具体的 API 诊断
+## 11. 错误定位与 Driver 接口兼容性
 
-返回码先说明错误类别。例如 CUDA_ERROR_INVALID_VALUE 表示参数无效，但定位时还需要知道哪个参数、哪次调用出了问题。Driver 的 Error Log Management（错误日志管理）提供更具体的英文诊断，本节程序按 Toolkit 13.3 接口编写。
+当第 7.1 节已经把问题定位到 Driver 调用、启动或同步边界后，需要两类信息继续缩小范围：返回码先给出错误类别，Error Log 记录具体入口、参数和诊断文本；版本查询与 Driver entry point（运行时取得函数地址）则回答当前编译时头文件、Runtime、驱动和目标函数接口是否匹配。
+
+### 11.1 Error Log：从错误类别追到具体调用
+
+第 7.1 节的错误阶段表先帮助你判断问题发生在编译、链接、装载、启动还是执行；这里处理已经拿到 Driver 返回码的情况。例如 `CUDA_ERROR_INVALID_VALUE` 只说明参数无效，Error Log Management（错误日志管理）再提供具体入口和英文诊断。本节探针按 Toolkit 13.3 接口编写。
 
 启动进程前把 CUDA_LOG_FILE 设为 stderr、stdout 或文件路径，可记录时间、线程、来源、级别、API 入口和消息。程序仍应检查每次调用的返回码、启动错误和同步处的执行错误；日志只补充支持接口的诊断。
 
-cuLogsDumpToFile 把缓冲日志写入文件，cuLogsDumpToMemory 把它们写入主机缓冲区。要只读新日志，先用 `cuLogsCurrent(&iterator,0)` 保存当前位置，再从这个 CUlogIterator 开始导出；读取后位置会推进。传空 iterator 则读取当前缓存，最多 100 条。
+cuLogsDumpToFile 把缓冲日志写入文件，cuLogsDumpToMemory 把它们写入主机缓冲区。要只读新日志，先用 `cuLogsCurrent(&iterator,0)` 保存当前位置；iterator 是指向下一条待读消息的位置，再从这个 CUlogIterator 开始导出，读取后位置会推进。传空 iterator 则读取当前缓存，内部最多保留 100 条记录。
 
-内存导出最多使用 25,600 字节，容量不足时会带截断提示并舍弃较老条目。库还可用 cuLogsRegisterCallback 注册自己的消息处理函数，再用返回的句柄调用 cuLogsUnregisterCallback 注销；回调签名为 `void callback(void* userData, CUlogLevel level, char* message, size_t length)`。
+导出时提供的 25,600 字节主机缓冲区足以容纳这批保留记录；如果容量不足，会带截断提示并舍弃较老条目。库还可用 cuLogsRegisterCallback 注册 callback（库产生消息时调用的用户函数），再用返回的句柄调用 cuLogsUnregisterCallback 注销；回调签名为 `void callback(void* userData, CUlogLevel level, char* message, size_t length)`。
 
 本节按 Driver 13.3 的覆盖范围使用这些函数。某些接口尚未提供 Error Log 诊断；文件路径也可能在首次写日志时才检查，所以应以返回码和实际日志共同定位。
 
@@ -2006,7 +2058,10 @@ nvcc -std=c++17 roadmap/curriculum/gpu/02-cuda-execution-and-scheduling/examples
 CUDA_LOG_FILE=stderr ./error_log_probe
 ```
 
-## 14. Driver Entry Points 与版本查询
+
+### 11.2 Driver Entry Points、版本查询与 ABI
+
+版本查询和按 Driver entry point 取得函数指针，是兼容性问题的另一层。函数调用的参数、返回值等二进制传递约定称为 ABI（Application Binary Interface，应用二进制接口）；headers 是编译时包含的头文件，PFN 类型则规定指定版本的参数类型和返回类型。下面先区分各版本数字，再按指定 ABI 取得地址。
 
 程序里常见的三个版本查询分别回答不同问题：
 
@@ -2018,9 +2073,9 @@ CUDA_LOG_FILE=stderr ./error_log_probe
 
 驱动安装包的版本号和 GPU 的计算能力则另行查询。记录这些数字时，应带上查询名称，才能判断它描述哪一部分环境。
 
-Driver Entry Point Access 在运行时取得某个 Driver 函数的地址，程序再通过该函数指针调用。ABI（Application Binary Interface，应用二进制接口）约定参数和返回值怎样传递；函数指针类型必须与查得的那一版接口匹配。
+Driver Entry Point Access 在运行时取得某个 Driver 函数的地址，程序再通过该函数指针调用；函数指针类型必须与查得的那一版接口匹配。这个地址用于 CPU 调用 Driver 函数，与第 8 节用来标识 GPU kernel 的 CUfunction 句柄不同。
 
-Toolkit 的 cudaTypedefs.h 为各版接口提供 PFN_... 类型。下面查询 CUDA 11.2 版 cuMemAllocAsync，使用 `PFN_cuMemAllocAsync_v11020`，并向 cuGetProcAddress 请求版本 11020。这里的版本是所需接口版本，不能随意换成当前 Toolkit 或驱动查询值。
+Toolkit 的 cudaTypedefs.h 为各版接口提供 PFN_... 类型。下面查询 CUDA 11.2 版 cuMemAllocAsync，使用 `PFN_cuMemAllocAsync_v11020`，并向 cuGetProcAddress 请求版本 11020；11020 是所需的 11.2 接口版本，不等同于当前 Toolkit 或驱动的查询值。
 
 查找后检查三项：CUresult 返回码、CUdriverProcAddressQueryResult 查找状态，以及函数指针是否为空。它们分别说明调用有没有成功、所需接口是否找到，以及是否得到了可调用地址。
 
@@ -2093,7 +2148,6 @@ nvcc -std=c++17 roadmap/curriculum/gpu/02-cuda-execution-and-scheduling/examples
 ./driver_entry_point_query
 ```
 
-</details>
 
 ## 参考阅读
 

@@ -74,6 +74,49 @@ function state(env, chapter, part) {
 (async () => {
   const e=boot('?chapter=2');
   state(e,2,'gpu');
+  // Chapter 2 keeps the migrated section IDs stable while its tail is now
+  // grouped under four new H2 headings. Reuse this DOM session so every
+  // legacy subsection link exercises the same navigation/folding state.
+  const chapter2 = e.d.querySelector('.chapter[data-chapter="2"]');
+  assert(chapter2, 'Missing chapter 2 article');
+  for (const id of [28,21,51,52]) {
+    const heading = chapter2.querySelector('#chapter-2-section-'+id);
+    assert(heading, 'Missing chapter 2 core heading '+id);
+    assert.equal(heading.tagName,'H2','Chapter 2 core section must be H2: '+id);
+    assert(!heading.closest('.markdown-body details'),
+      'Chapter 2 core H2 must remain visible outside a fold: '+id);
+  }
+  const chapter2Legacy = new Map([
+    [21,/从线程分工到数据分块/],
+    [22,/逻辑 tile、Array/],
+    [23,/坐标怎样落到元素和地址/],
+    [24,/从一个元素到一块数据/],
+    [25,/尾块与加载前保护/],
+    [26,/分块大小、数据复用与 FP32 累加器/],
+    [27,/cuTile 接口、编译提示/],
+    [28,/从编译产物到 kernel 启动/],
+    [29,/Runtime 初始化、lazy loading/],
+    [30,/Python host 控制/],
+    [31,/高级 view、shape/],
+    [32,/C\+\+ 执行位置、显存管理/],
+    [33,/Error Log/],
+    [34,/Driver Entry Points/],
+  ]);
+  for (const [id, semantic] of chapter2Legacy) {
+    const link = e.d.querySelector(
+      '[data-sidebar-part="gpu"] details[data-nav-chapter="2"] ' +
+      'a[data-section-link="chapter-2-section-'+id+'"]'
+    );
+    assert(link, 'Missing chapter 2 legacy section link '+id);
+    assert.match(link.textContent, semantic, 'Legacy section meaning changed '+id);
+    link.click();
+    assert.equal(e.w.location.hash,'#chapter-2-section-'+id);
+    assert.equal(e.w.__scrollTarget,'chapter-2-section-'+id);
+    const target = e.d.getElementById('chapter-2-section-'+id);
+    assert(target, 'Missing chapter 2 legacy target '+id);
+    assert(!target.closest('details:not([open])'),
+      'Legacy chapter 2 target remains inside a closed fold '+id);
+  }
   click(e,'[data-part-link="operators"]');
   state(e,7,'operators');
   click(e,'[data-sidebar-part="operators"] [data-chapter-link="7"]');
