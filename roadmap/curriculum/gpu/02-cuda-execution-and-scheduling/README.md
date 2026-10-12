@@ -893,34 +893,187 @@ int main(int argc, char** argv) {
 
 ## 7. 从 CUDA 源码到 PTX 与 SASS
 
-代码从源码到设备执行，经过三个表示：
+CUDA 源文件包含 CPU 侧控制代码和 GPU kernel。沿第 6 节的单链 FMA 例子看编译过程，可以分清两边的代码如何进入最终程序，以及 PTX、SASS 分别能说明什么。
 
-1. CUDA C++ 源码写线程索引、数据类型、地址和同步函数。
-2. PTX（Parallel Thread Execution，并行线程执行）是中间指令表示，可以检查分支、谓词、访存空间和 FMA/MMA 操作。
-3. SASS 是目标 GPU 的机器指令，用来确认最终使用了哪些加载、计算、同步和矩阵指令。
+<!-- source-check: examples/execution_and_scheduling.cu -->
+~~~cpp
+__global__ void dependent_chain_kernel(const float* input, float* output,
+                                       int n, int steps) {
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n) return;
+    float x = input[i];
+    for (int step = 0; step < steps; ++step) {
+        x = fmaf(x, 1.000001f, 0.00001f);
+    }
+    output[i] = x;
+}
+~~~
 
-命令如下：
+下面只展示 host 启动部分。示例假定 `device_input` 已填入有效输入、`device_output` 已分配；重点是配置 launch、检查提交状态并等待执行完成：
 
-```powershell
-nvcc -O3 -std=c++17 -lineinfo --resource-usage `
-  examples/execution_and_scheduling.cu -o execution_and_scheduling.exe
-
-nvcc -O3 -std=c++17 -ptx -arch=sm_XX `
-  examples/execution_and_scheduling.cu -o execution_and_scheduling.ptx
-
-nvcc -O3 -std=c++17 -cubin -arch=sm_XX `
-  examples/execution_and_scheduling.cu -o execution_and_scheduling.cubin
-
-cuobjdump --dump-ptx execution_and_scheduling.exe > execution_and_scheduling.ptx.txt
-cuobjdump --dump-sass execution_and_scheduling.exe > execution_and_scheduling.sass.txt
-nvdisasm --print-code --print-line-info execution_and_scheduling.cubin
+```cpp
+const int n = 1 << 20;
+const int threads = 256;
+const int blocks = (n + threads - 1) / threads;
+dependent_chain_kernel<<<blocks, threads>>>(
+    device_input, device_output, n, 200);
+cudaError_t launch_status = cudaGetLastError();
+if (launch_status == cudaSuccess) {
+    launch_status = cudaDeviceSynchronize();
+}
 ```
 
-把 `sm_XX` 换成目标设备的计算能力。编译报告中的 registers、shared、local 分别说明寄存器、共享内存和 local memory 的用量；`cuobjdump` 或 `nvdisasm` 展示最终指令。比较配置时，应使用同一台设备对应的编译产物。
+这段 host 代码和 CUDA Runtime API 调用在 CPU 上运行；带 `__global__` 的函数体在 GPU 上运行。三尖括号里的 `blocks`、`threads` 设置 grid 和 block，括号里的参数才是传给 kernel 的值。launch 返回后先检查配置错误；同步调用再报告此前 kernel 的执行错误。
 
-调试先用小输入。启动后检查配置错误，在 stream/device 同步处再检查执行错误。`CUDA_LAUNCH_BLOCKING=1` 让错误更接近出错调用被报告，`compute-sanitizer` 检查非法内存访问等问题。这些工具会改变执行条件，正式性能计时应关闭它们。
+完整程序应在 `launch_status` 非 `cudaSuccess` 时报告错误并停止，不读取输出；同步状态也要检查成功后，才能进行结果比较。
 
-Triton 的 PTX/cubin 由运行时编译并保存到缓存。先运行待测 kernel，再从当前版本的缓存中找到与该配置对应的文件；缓存路径和文件组织随版本变化。检查时固定输入精度、形状和容差，确保分析的机器码对应这次实际启动。
+`nvcc` 是编译阶段的驱动，负责解析 `.cu` 并协调主机与设备编译；CUDA driver 在运行时根据当前 GPU 选择兼容 cubin，或在受支持条件下将 PTX JIT 后加载。普通 `gcc`/`g++` 或 `cl` 不直接识别 `<<<...>>>`。例如 host 代码中的 `dependent_chain_kernel<<<blocks, threads>>>(...)` 会先由 `nvcc` 转换成标准 host C++ 调用包装；`nvcc` 同时把已编译的设备映像嵌入合成后的 host 代码，再交给 host compiler 编译。
+
+| 阶段 | 编译器处理 |
+|---|---|
+| 解析与分离 | `nvcc` 识别 `.cu` 中的 host/device 区域，并分别预处理。 |
+| device 编译 | NVCC device 前端生成 PTX；`ptxas` 为目标 `sm_XX` 生成 cubin；fatbin 收集 cubin，也可包含 PTX 回退。 |
+| host 合成 | `nvcc` 将 CUDA 扩展（包括 kernel launch）改写为标准 C++ host constructs，并把 fatbin 映像嵌入合成代码。 |
+| host 编译与链接 | `gcc`/`g++` 或 `cl` 编译带嵌入设备映像的 host 代码生成 object；链接时加入 CUDA Runtime，生成 `.exe` 或 Linux 可执行文件。 |
+| 装载与执行 | CUDA driver 为当前 GPU 选择兼容 cubin；没有合适 cubin 时，只有 fatbin 含受支持的 PTX 且 driver 能处理，才会执行 PTX JIT。 |
+
+分离编译时，host object 与 relocatable device code 可先分别生成，再由设备链接阶段解析跨编译单元的 device 调用。
+
+常见后缀标识不同产物：`.cpp` 通常是主机 C++ 源码；`.cu` 可同时写 host 代码和 kernel；`.ptx` 是虚拟指令集文本；`.cubin` 是目标 GPU 的设备二进制；`.fatbin` 可装多个 cubin 和/或 PTX；`.o` 是编译得到的目标文件，可能只含主机代码，也可能含可重定位设备代码；`.exe` 是 Windows 可执行程序。后缀不能说明 fatbin 是否包含 PTX 回退，需用工具检查。
+
+PTX（Parallel Thread Execution）是面向虚拟 ISA（指令集架构，Instruction Set Architecture）的中间表示，使用虚拟寄存器。`ptxas` 按目标架构分配物理寄存器、选择指令并安排控制流；SASS 是目标 GPU 机器指令的可读反汇编，GPU 实际执行 cubin 中编码的机器指令。源代码一行可能被合并、展开或消除，一条 PTX 也可能变成多条 SASS。PTX 虚拟寄存器编号和 `.reg` 声明数都不能直接当作每线程物理寄存器数。
+
+以下 PTX 和 SASS 是教学示意，不是某次真实反汇编。寄存器编号仅用于说明数据角色，地址构造和参数初始化有意省略；实际指令顺序、分支布局和修饰符会随编译器、Toolkit、编译选项和目标 GPU 改变。
+
+真实 `.ptx` 文件顶部还包含 `.version`、`.target` 和 `.address_size`，分别声明 PTX 版本、虚拟或目标架构，以及地址宽度；以下只摘出 kernel 主体。
+
+语法上，`.visible .entry` 声明 kernel 入口，`.param` 声明入口参数，`.reg` 声明虚拟寄存器；`%p<2>` 这类范围声明会编号为 `%p0`、`%p1`，`%r<5>` 则编号为 `%r0` 到 `%r4`。`.b32`、`.b64` 表示位宽，`.f32` 表示 32 位浮点，`.u32`/`.s32` 分别表示无符号/有符号 32 位整数；`%p` 是 predicate（谓词）寄存器。`r`、`rd`、`f` 是寄存器名的常见约定，具体类型由声明与指令后缀决定。
+
+```ptx
+// 教学示意：虚拟寄存器和指令序列会随实际编译改变。
+.visible .entry dependent_chain(
+    .param .u64 input,
+    .param .u64 output,
+    .param .s32 n,
+    .param .s32 steps
+)
+{
+.reg .pred %p<2>;
+.reg .b32 %r<5>;
+.reg .b64 %rd<5>;
+.reg .f32 %f<3>;
+ld.param.u64 %rd0, [input];
+ld.param.u64 %rd1, [output];
+cvta.to.global.u64 %rd0, %rd0;
+cvta.to.global.u64 %rd1, %rd1;
+ld.param.s32 %r3, [n];
+ld.param.s32 %r4, [steps];
+mov.u32 %r0, %ctaid.x;
+mov.u32 %r1, %ntid.x;
+mov.u32 %r2, %tid.x;
+mad.lo.u32 %r0, %r0, %r1, %r2;
+setp.ge.s32 %p0, %r0, %r3;
+@%p0 bra DONE;
+mul.wide.s32 %rd2, %r0, 4;
+add.s64 %rd3, %rd0, %rd2;
+ld.global.f32 %f0, [%rd3];
+mov.f32 %f1, 0f3F800008;
+mov.f32 %f2, 0f3727C5AC;
+mov.s32 %r2, 0;
+LOOP:
+setp.ge.s32 %p1, %r2, %r4;
+@%p1 bra STORE;
+fma.rn.f32 %f0, %f0, %f1, %f2;
+add.s32 %r2, %r2, 1;
+bra LOOP;
+STORE:
+add.s64 %rd4, %rd1, %rd2;
+st.global.f32 [%rd4], %f0;
+DONE:
+ret;
+}
+```
+
+`%tid.x`、`%ctaid.x`、`%ntid.x` 是线程、block 和 block 尺寸的特殊寄存器；`mov` 将它们读入普通虚拟寄存器，`mad.lo` 计算线性索引。`setp` 设置 predicate，`@%p0 bra` 在索引越界时跳过读写。`mul.wide` 把 `float` 元素索引变成 64 位字节偏移；`%rd2` 始终保存偏移，`%rd3`、`%rd4` 分别保存输入和输出地址。`ld.global`/`st.global` 标出 global 地址空间。循环 predicate 在 `step >= steps` 时退出；`fma.rn.f32` 执行 FP32 融合乘加并按最近偶数舍入，下一轮继续使用 `%f0`，保留单链依赖。PTX 的 `0f` 前缀表示后续 8 个十六进制数按 IEEE 754 FP32 位型解释：`0f3F800008` 对应 `1.000001f`，`0f3727C5AC` 对应 `0.00001f`。
+
+SASS 使用目标 GPU 的物理寄存器和指令编码。表中地址构造、常量初始化及进入循环前的判断有意省略；64 位输入、输出地址分别占 `R6:R7`、`R8:R9` 寄存器对，访存指令以寄存器对的起始寄存器作为地址操作数。循环片段采用 post-test 形式，进入前必须检查 `steps > 0`；本节主示例传入 200。若 `steps=0`，应跳过循环并直接存储输入值，不能执行一次 FMA。
+
+| 指令示意 | 数据角色与作用 |
+|---|---|
+| `S2R R3, SR_TID.X` | 读取 `threadIdx.x`；后续索引计算省略，线性索引放在 `R4`，元素数 `n` 放在 `R5` |
+| `ISETP.GE.AND P0, PT, R4, R5, PT`；`@P0 BRA DONE` | 比较 `i >= n`；越界线程跳过读写 |
+| `LDG.E R0, [R6]` | 从输入地址寄存器对读取 `x` 到 `R0` |
+| `ISETP.GT.AND P2, PT, R11, RZ, PT`；`@!P2 BRA STORE` | 循环入口前检查 `steps > 0`；零步时直接写回 `x` |
+| `FFMA R0, R0, R1, R2` | 令 `R1` 为 scale、`R2` 为 bias，执行 `x = x * scale + bias` |
+| `IADD3 R10, R10, 0x1, RZ` | 将循环计数器 `R10` 加一；`R11` 保存 `steps` |
+| `ISETP.LT.AND P1, PT, R10, R11, PT`；`@P1 BRA LOOP` | post-test 回边：`step < steps` 时再执行一轮；否则落到 store |
+| `STG.E [R8], R0` | 将结果写入输出地址寄存器对 |
+
+`PT` 和 `RZ` 分别是 predicate 真值与零寄存器。真实反汇编可能重排地址计算、合并操作，或把边界处理改成谓词化访存；应从目标代码确认分支结构和 FMA 是否仍沿同一累加值形成依赖链。表中的寄存器编号是自洽的教学角色分配，不对应某次实际分配。
+
+`.reg .f32` 等 PTX 声明使用的是虚拟寄存器；实际每线程物理寄存器数应读 `ptxas` 报告或 `cuobjdump --dump-resource-usage`。`local` 访问也不自动等于 spill：动态寻址的局部数组可能使用 local memory，spill 是寄存器分配不足时的另一种来源。应结合 spill/local 字节报告、SASS 中的 local load/store，以及对应源码对象一起判断。
+
+静态编译与反汇编不需要 GPU，但需要完整 CUDA Toolkit 和可用 host compiler。实际启动、数值正确性、Compute Sanitizer 和性能测量需要兼容设备与驱动。`-O3` 主要设置 host 编译器的优化级别；device 端优化由 CUDA 编译流程及目标架构相关选项决定，不能把 `-O3` 单独视作 GPU 优化或性能证据。`-lineinfo` 加入源码行映射，通常保留优化，但源码行与机器指令不是一对一关系。`-G` 生成设备调试代码，会改变优化和资源用量，不能用它的计时代表正式构建。
+
+先用 `nvcc --list-gpu-code` 查看当前 Toolkit 支持生成的 `sm_XX`。命令中的 `XX` 要替换成目标计算能力的主版本和次版本拼接值：例如 CC 8.6 对应 `86`，CC 8.9 对应 `89`。这两个只是示例，实际值要按设备和当前 Toolkit 确认。编译产物检查时固定 Toolkit、host compiler、优化级别和目标架构，并让可执行文件、单独生成的 PTX 与 cubin 使用同一个目标，避免比较到不同架构的代码：
+
+```powershell
+# 示例为 CC 8.6；按目标设备改成实际支持的 sm_XX。
+nvcc --list-gpu-code
+$arch = "sm_86"
+nvcc -O3 -std=c++17 -lineinfo --resource-usage -arch=$arch `
+  examples/execution_and_scheduling.cu -o execution_check.exe
+nvcc -O3 -std=c++17 -lineinfo -ptx -arch=$arch `
+  examples/execution_and_scheduling.cu -o execution_check.ptx
+nvcc -O3 -std=c++17 -lineinfo -cubin -arch=$arch `
+  examples/execution_and_scheduling.cu -o execution_check.cubin
+cuobjdump --dump-ptx execution_check.exe > execution_check.ptx.txt
+cuobjdump --dump-sass execution_check.exe > execution_check.sass.txt
+cuobjdump --dump-resource-usage execution_check.exe
+nvdisasm --print-code --print-line-info execution_check.cubin
+```
+
+Linux 上可使用相同选项：
+
+```bash
+# 示例为 CC 8.6；按目标设备改成实际支持的 sm_XX。
+nvcc --list-gpu-code
+arch=sm_86
+nvcc -O3 -std=c++17 -lineinfo --resource-usage -arch="$arch" \
+  examples/execution_and_scheduling.cu -o execution_check
+nvcc -O3 -std=c++17 -lineinfo -ptx -arch="$arch" \
+  examples/execution_and_scheduling.cu -o execution_check.ptx
+nvcc -O3 -std=c++17 -lineinfo -cubin -arch="$arch" \
+  examples/execution_and_scheduling.cu -o execution_check.cubin
+cuobjdump --dump-ptx execution_check > execution_check.ptx.txt
+cuobjdump --dump-sass execution_check > execution_check.sass.txt
+cuobjdump --dump-resource-usage execution_check
+nvdisasm --print-code --print-line-info execution_check.cubin
+ldd ./execution_check
+readelf -d ./execution_check
+./execution_check 257 20 5
+compute-sanitizer --tool memcheck --error-exitcode=1 ./execution_check 257 20 5
+```
+
+上面的编译、反汇编、`ldd` 与 `readelf` 检查可在没有 GPU 的主机上完成；最后两条会启动 kernel 并运行 sanitizer，需要兼容设备与驱动。
+
+需要同时嵌入指定架构 cubin 与可供兼容设备 JIT 的 PTX 时，可构建 fatbin：
+
+```bash
+nvcc -O3 -std=c++17 -lineinfo \
+  -gencode 'arch=compute_86,code=[sm_86,compute_86]' \
+  examples/execution_and_scheduling.cu -o execution_fallback
+cuobjdump --list-elf execution_fallback
+cuobjdump --list-ptx execution_fallback
+```
+
+上例以 CC 8.6 展示成对填写的目标值；按实际设备与 Toolkit 支持结果，同时替换 `compute_86` 和 `sm_86` 中的版本号。`compute_XX` 是虚拟计算能力和 PTX 目标，`sm_XX` 是实际 GPU 的 cubin 目标。PTX 回退只有在 fatbin 确实包含该 PTX，且目标驱动支持时才可用。PowerShell 可用相同的 `-gencode` 选项，并将输出名改为 `.exe`。
+
+检查依赖链时，在 PTX 中定位循环回边与 `fma.rn.f32`，在 SASS 中查找 `FFMA`、循环计数和分支；若编译器展开循环或合并指令，应以真实控制流及读写同一累加寄存器的依赖为准。检查路径选择时沿 predicate 设置和条件 `BRA` 追踪两条路径；若变成谓词执行或选择指令，就记录实际形式，不从 C++ 函数名推断。检查 local/spill 时对照 `ptxas` 的 spill bytes/local bytes、SASS 中 local load/store 与源码里的动态索引对象。`--resource-usage`、`cuobjdump`、`nvdisasm` 用于查看资源和代码；`ldd`、`readelf -d` 检查 Linux host 动态库。主机崩溃时可运行 `gdb --args ./execution_check 257 20 5`，再用 `run` 和 `bt` 查看调用栈。`CUDA_LAUNCH_BLOCKING=1` 和 Compute Sanitizer 可帮助定位设备执行错误，但会改变执行条件，正式计时应关闭。
+
+Triton 的 PTX/cubin 通常由运行时编译并写入缓存。先运行目标 kernel，再按当前 Triton 版本、设备、dtype、shape 和编译配置定位对应缓存产物；缓存布局会随版本变化。将缓存中的 PTX/cubin 与这次实际 launch 的输入配置对应起来，再检查指令和资源，避免把其他配置的文件当作本次结果。
+
+编译阶段可对照 [NVCC compilation trajectory](https://docs.nvidia.com/cuda/cuda-compiler-driver-nvcc/index.html#the-cuda-compilation-trajectory)；fatbin、cubin 与反汇编工具见 [CUDA Binary Utilities](https://docs.nvidia.com/cuda/cuda-binary-utilities/index.html)；PTX 的指令、特殊寄存器和修饰符见 [PTX ISA](https://docs.nvidia.com/cuda/parallel-thread-execution/)。
 
 ### 7.1 编译、链接与运行时错误
 
@@ -952,7 +1105,7 @@ compute-sanitizer --tool memcheck --error-exitcode=1 ./execution_check 257 20 5
 
 ## 8. 从编译产物到 kernel 启动
 
-第 7 节已经说明 CUDA 源码如何落成 PTX 与 SASS。这里先把 Runtime API 和 Driver API 放回一次实际启动：它们都是 CPU 侧控制 GPU 的函数接口；前者包装常规启动步骤，后者让程序显式操作每个步骤。
+程序装载设备代码后，CPU 侧通过 Runtime API 或 Driver API 建立启动所需的设备上下文、代码模块和 kernel 句柄，再把 launch 请求提交到 stream。两套 API 都控制 GPU；Runtime 封装常见步骤，Driver API 则让程序显式管理这些对象。
 
 以向量加法 `vector_add` 为例，主机先选择一张 GPU，再取得使用这张 GPU 的运行环境。这个环境叫 context（上下文），保存该设备的显存分配、已装载代码和执行资源；它不是线程 block 或 SM。接着，程序把设备代码装载成 module（代码包），再用编译代码中的函数名字查找 `vector_add`。编译代码中用于查找函数或变量的名字称为符号，Driver 找到后返回 `CUfunction` 句柄；句柄只是 API 识别这个 kernel 的标识。
 

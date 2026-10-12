@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="820" viewBox="0 0 1200 820" role="img" aria-labelledby="title desc">
+  <title id="title">Shared memory bank 与 bank 内位置</title>
+  <desc id="desc">在 32 bank、每个 word 为 4 字节的模型中，元素下标每增加 1，bank 编号加 1 并对 32 取模；下标 0、32、64 都映射到 bank 0 的位置 0、1、2，彼此占用不同 word。</desc>
+  <defs>
+    <style>
+      text { font-family: "Microsoft YaHei", "Segoe UI", sans-serif; fill: #18324f; }
+      .title { font-size: 32px; font-weight: 700; }
+      .section { font-size: 24px; font-weight: 700; }
+      .body { font-size: 22px; }
+      .small { font-size: 20px; }
+      .muted { fill: #53677d; }
+      .card { fill: #ffffff; stroke: #cbd8e6; stroke-width: 2; }
+      .cell { fill: #f1f6fb; stroke: #b8c9da; stroke-width: 1.5; }
+      .hit { fill: #dcecff; stroke: #2472b8; stroke-width: 3; }
+      .bank0 { fill: #e8f2ff; stroke: #2472b8; stroke-width: 2.5; }
+      .line { stroke: #b8c9da; stroke-width: 2; }
+    </style>
+  </defs>
+  <rect width="1200" height="820" fill="#fbfcfe"/>
+  <text class="title" x="52" y="56">连续 float 元素怎样分到 32 个 bank</text>
+
+  <rect class="card" x="40" y="82" width="1120" height="220" rx="16"/>
+  <text class="section" x="68" y="120">连续元素：每个 float 占 4B，首元素从 bank 0 开始</text>
+  <text class="body muted" x="68" y="169">A</text>
+  <rect class="hit" x="100" y="133" width="64" height="47" rx="9"/>
+  <text class="body" x="132" y="164" text-anchor="middle">0</text>
+  <text class="body muted" x="176" y="164">, A1, …, A</text>
+  <rect class="cell" x="292" y="133" width="64" height="47" rx="9"/>
+  <text class="body" x="324" y="164" text-anchor="middle">31</text>
+  <text class="body muted" x="368" y="164">→ A</text>
+  <rect class="hit" x="418" y="133" width="64" height="47" rx="9"/>
+  <text class="body" x="450" y="164" text-anchor="middle">32</text>
+  <text class="body muted" x="494" y="164">, A33, …, A</text>
+  <rect class="cell" x="652" y="133" width="64" height="47" rx="9"/>
+  <text class="body" x="684" y="164" text-anchor="middle">63</text>
+  <text class="body muted" x="728" y="164">, A</text>
+  <rect class="hit" x="784" y="133" width="64" height="47" rx="9"/>
+  <text class="body" x="816" y="164" text-anchor="middle">64</text>
+  <line class="line" x1="68" y1="193" x2="1132" y2="193"/>
+  <text class="body" x="68" y="233">每 32 个 float（128B），bank 编号循环一次</text>
+
+  <text class="section" x="52" y="350">按 bank 分组查看存储位置</text>
+  <text class="small muted" x="52" y="381">每列一个 bank；每个格子是一个独立的 4B word</text>
+
+  <text class="small" x="52" y="459">位置 0</text>
+  <text class="small" x="52" y="533">位置 1</text>
+  <text class="small" x="52" y="607">位置 2</text>
+
+  <g text-anchor="middle">
+    <text class="small" x="226" y="415">bank 0</text>
+    <rect class="bank0" x="155" y="428" width="142" height="48" rx="8"/><text class="body" x="226" y="459">A0 · 4B</text>
+    <rect class="bank0" x="155" y="502" width="142" height="48" rx="8"/><text class="body" x="226" y="533">A32 · 4B</text>
+    <rect class="bank0" x="155" y="576" width="142" height="48" rx="8"/><text class="body" x="226" y="607">A64 · 4B</text>
+
+    <text class="small" x="400" y="415">bank 1</text>
+    <rect class="cell" x="329" y="428" width="142" height="48" rx="8"/><text class="body" x="400" y="459">A1 · 4B</text>
+    <rect class="cell" x="329" y="502" width="142" height="48" rx="8"/><text class="body" x="400" y="533">A33 · 4B</text>
+    <rect class="cell" x="329" y="576" width="142" height="48" rx="8"/><text class="body" x="400" y="607">A65 · 4B</text>
+
+    <text class="small" x="574" y="415">bank 2</text>
+    <rect class="cell" x="503" y="428" width="142" height="48" rx="8"/><text class="body" x="574" y="459">A2 · 4B</text>
+    <rect class="cell" x="503" y="502" width="142" height="48" rx="8"/><text class="body" x="574" y="533">A34 · 4B</text>
+    <rect class="cell" x="503" y="576" width="142" height="48" rx="8"/><text class="body" x="574" y="607">A66 · 4B</text>
+
+    <text class="small muted" x="721" y="536">…</text>
+    <text class="small muted" x="721" y="575">bank 3–29</text>
+    <text class="small muted" x="721" y="610">共 27 个 bank</text>
+
+    <text class="small" x="866" y="415">bank 30</text>
+    <rect class="cell" x="795" y="428" width="142" height="48" rx="8"/><text class="body" x="866" y="459">A30 · 4B</text>
+    <rect class="cell" x="795" y="502" width="142" height="48" rx="8"/><text class="body" x="866" y="533">A62 · 4B</text>
+    <rect class="cell" x="795" y="576" width="142" height="48" rx="8"/><text class="body" x="866" y="607">A94 · 4B</text>
+
+    <text class="small" x="1040" y="415">bank 31</text>
+    <rect class="cell" x="969" y="428" width="142" height="48" rx="8"/><text class="body" x="1040" y="459">A31 · 4B</text>
+    <rect class="cell" x="969" y="502" width="142" height="48" rx="8"/><text class="body" x="1040" y="533">A63 · 4B</text>
+    <rect class="cell" x="969" y="576" width="142" height="48" rx="8"/><text class="body" x="1040" y="607">A95 · 4B</text>
+  </g>
+
+  <rect x="40" y="704" width="1120" height="76" rx="14" fill="#eef3f8"/>
+  <text class="body" x="64" y="737">bank 编号回到 0，bank 内位置前进一格</text>
+  <text class="small muted" x="64" y="766">A0/A32/A64 偏移为 0B/128B/256B；仅画前 3 个位置，bank 还有更多位置。逻辑分组示意，非芯片真实物理排布。</text>
+</svg>

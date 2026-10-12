@@ -7,6 +7,10 @@
 
 ## 0. 最后更新
 
+- 2026-10-12（归档访存与布局问答，记录 contiguous/transpose、`__restrict__`、FP16/BF16、`float4` 与更宽 PTX 访存、warp 请求合并、lane 地址公式、Ascend/CUDA 访存层次及 shared bank conflict；第 9 节补记 L1 按 SM 共享、L2 全 GPU 共享、同 SM/跨 SM 的读取例子、缓存命中与请求合并的区别，并保留用户原问题。结论标为 Agent 整理，问题保留为用户疑问；只提出复用现有 copy/transpose 例子的可选对照，未新增源码、GPU 测量或学习进度。讨论记录：[2026-10-12 访存与布局](./roadmap/curriculum/decisions/2026-10-12-memory-access-discussion.md)。未改 PATH/NOW；未 commit/push。）
+
+- 2026-10-12（修复第二章第 7 节 CUDA 编译路径与 PTX/SASS 判读讲解，并调整第 8 节首句承接；新增 host/device 分离、nvcc/host compiler/ptxas、PTX/cubin/fatbin/JIT 关系、第 6 节依赖链的示意 PTX/SASS、静态编译与设备验证边界及 Windows/Linux 检查命令。第三章全章润色寄存器计数与取整、sector 覆盖、bank 映射、转置线程职责、UVA/Unified Memory、Cluster/DSM/TMA、Green Context、EGM 及 CUDA storage-space 生命周期；最后修正 shared/global memory 的架构通用描述。独立 PTX/cubin 命令补 `-lineinfo`，说明 `nvdisasm --print-line-info` 只显示已有映射，并标清 Linux 静态检查与需要设备的两条执行命令。保留原代码、标题、条件和测量空表；将官方链接和 PDF 页码写入 `.codex/course-source-index.json`。核验第三章原有 36 个 fenced blocks 与 41 个标题逐字未变。最终课程站 build 通过：39 章、104 个可读 Markdown 页面、45 个本地资源、1787 个公式、174 个原始源码摘录；最终 `check.cjs --content-only` 通过；第二、三章生成文档的 170 个本地链接/锚点通过定向检查；`git diff --check` 与 source index JSON 解析通过。`editorial-audit.cjs`、`navigation.test.cjs`、`offline-static.test.cjs` 在此前构建后通过，最终两处文本修正未改变其结构或逻辑；全站 `link-audit.cjs` 曾启动后停止，未记为通过。未运行 nvcc、GPU、sanitizer、profiler 或性能测试；PTX/SASS 是教学示意。未修改 PATH/NOW、AGENTS、源码示例、solutions/reference；未 commit/push。）
+
 - 2026-10-12（完成第二章原 8–14 节重排及 8–11 节术语校订：合并 Runtime/Driver 启动链，补 tile 坐标、mask、累加器、cuTile 接口表、Python/C++ 资源边界和 Error Log 保留条数/输出缓冲含义，保留 53 个代码围栏、19 个 source-check、原命令、公式和条件；chapter 2 旧书签及新标题别名已登记。修复后 `npm run build`、`check.cjs --content-only`、`editorial-audit.cjs`、`link-audit.cjs` 通过；`navigation.test.cjs` 与 `offline-static.test.cjs` 在该修复前已通过。未运行 CUDA/GPU，未改 PATH/NOW，未 commit/push。）
 
 - 2026-10-11（精简第二章第 6 节 branch-probe 结果说明：保留原始计时表、统计复算、代码围栏与三份记录链接，合并 warp 分歧机制和优化观察，未改 PATH/NOW、源码或实验数据。）

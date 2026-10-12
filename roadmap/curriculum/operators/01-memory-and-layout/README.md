@@ -160,21 +160,65 @@ for (std::size_t i = vec_n * 4; i < n; ++i) dst[i] = src[i];
 
 ## 4. coalescing：从 lane 地址推导 transaction
 
-CUDA Programming Guide 13.3 的 §2.3.4.1 描述 global memory 的核心模型：一个 warp 的请求会合并为满足这些地址所需的尽可能少的 32-byte memory transactions。对 float32，若 32 个 lane 访问连续 128 bytes，理想需要四个 32B transaction；若相邻 lane 的地址相隔至少 32 bytes，可能需要 32 个 transaction，而有效使用的仍只有 128 bytes，事务利用率只有 12.5%。官方 Best Practices §10.2.1 用 maximize bytes used / bytes transferred 表达同一原则。
+Warp 执行一条 global memory 访存指令时，硬件根据各 lane 的地址，将请求合并为覆盖这些地址所需的尽可能少的 32 B 事务。对 FP32，一条 load 若让 32 个 lane 访问连续 128 bytes，并且首地址按 32B 对齐，理想情况下覆盖四个 32B transaction。若相邻 lane 地址相隔至少 32 bytes，可能覆盖 32 个 transaction；有效数据仍为 128 bytes，事务利用率为 12.5%。官方 Best Practices §10.2.1 用 maximize bytes used / bytes transferred 表达同一原则。这里统计的是单条访存指令的请求覆盖，不是跨指令向量化，也不直接等于 DRAM 实际流量。
 
 ### 4.1 copy 的连续访问
 
-一维 contiguous copy 中，lane l 访问 base + (pid×BLOCK+l)×4。当一个 warp 内的 l=0..31 连续时，它覆盖四个 32B segment；边界 warp 可能只使用其中一部分 word，但 segment 仍可能被取回。所谓合并不是要求 lane 按严格顺序执行，而是要求它们请求落在尽量少的 segment 中；在同一 segment 内做合法 permutation 通常不增加 transaction。
+下面截取该 kernel 的索引与读写代码：
+
+```cpp
+int i = blockIdx.x * blockDim.x + threadIdx.x;
+if (i < n) dst[i] = src[i];
+```
+
+分析读取 `src[i]` 的这条指令时，设一个完整 warp 的 lane 0 负责全局元素 `i0`。该 warp 中 lane `l`（`l=0…31`）读取元素 `i0+l`。令 `base_addr` 为 `src[0]` 的字节地址，则：
+
+$$
+addr(l)=base\_addr+4\times(i_0+l)
+$$
+
+`src[i]` 的指针运算以元素为单位，编译器会按 `sizeof(float)` 缩放索引；乘 4 只用于把元素索引换算成字节地址。完整 warp 一次各读一个 FP32，覆盖连续 128B。若 `base_addr+4×i0` 按 32B 对齐，这些地址正好落在四个 32B segment；若起点只满足 4B 对齐且相对 32B 边界偏移 4B，同样 128B 的访问会跨五个 segment。
+
+例如 `blockDim.x=128` 时，每个 block 含四个 warp。warp 0 的 `i0=blockIdx.x×128`，warp 1 的 `i0=blockIdx.x×128+32`；每个 warp 内 lane 仍是 0 到 31。无效尾部线程不会执行受 `i<n` 保护的 load，因此只统计有效 lane 覆盖的 segment。若把相同地址集合重新分配给不同 lane，segment 覆盖数不变；合并取决于该条指令涉及的地址集合，不要求 lane 按严格先后顺序执行。
+
+本章 Triton 示例中的 `tl.arange` 给出逻辑 tile 索引，并不保证索引与硬件 lane 一一对应。实际 lane 布局由编译器和配置决定，因此这里的 CUDA 标量 copy 只用于手算地址，不能据此推断 Triton 的固定 lane 映射。
 
 ### 4.2 地址重复、请求合并与显式复用
 
-判断“不同 thread 重复读一行”的成本，需要区分三个场景：
+GPU 没有每个 warp 专属的 L1。一个 SM 上的 warp 共用该 SM 的 L1，包括这个 SM 上不同 block 的 warp；不同 SM 各有自己的 L1，而整块 GPU 上的 SM 共用 L2。[CUDA Programming Guide：Caches](https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/writing-cuda-kernels.html#caches)
 
-1. **32 个 thread 读同一个地址**：逻辑上只有一个 word 的有效数据，但 global memory 的最小服务粒度仍受 segment/缓存系统影响；同一 warp 的请求落在同一 32B segment，通常不需要为每个 lane 各发一个 segment。不能进一步保证永远只访问 DRAM 一次，因为 L1/L2 命中、其他 warp 流量和请求合并由硬件与时序决定。
-2. **32 个 thread 读同一行的连续 32 个元素**：这是 128B 连续访问，理想是四个 32B transaction。它们读的是同一行，但不是重复同一地址；每个 lane 使用不同 word。
-3. **32 个 thread 读同一行的同一列**：若它们实际落在同一地址，属于第一个场景；若是不同 row 的同一 column，则地址间距通常是 leading dimension，可能完全不合并。代码里“行相同”或“列相同”不是判断依据，必须写出 lane 到 byte address 的函数。
+例如，warp 0 先读 `A[0]`，warp 1 随后也读 `A[0]`。warp 1 仍会执行自己的读取指令；若这次读取使用的缓存中还留着该数据，就直接从缓存取到，不必再次访问显存。数据被换出后，再从下一级取回。这里讨论已准备好的只读输入；有读写依赖时，仍需正确同步。
 
-重复访问有时可以被 cache 或请求合并隐藏，有时会制造大量无效 transaction；不能仅凭重复访问就断言应该使用 shared。shared staging 是程序显式控制的 block 级复用，cache 是硬件对地址流、容量和替换的结果。只有复用在同一 block 内可证明、工作集和同步成本合适时，搬到 shared 才有明确理由。
+同一 warp 的线程在一条指令中读相同地址，涉及的是这条指令的请求如何合并。不同 warp 先后读同一地址，涉及的是后一次 load 能否命中缓存。两件事发生在不同层次。
+
+下面用连续存放的 `float` 数组 `A` 表示行主序矩阵，每行有 `N` 个元素，`lane` 从 0 到 31。每个 `float` 占 4B，假设数组足够大。
+
+1. **所有线程读同一个数**
+
+   ```cpp
+   float x = A[0];
+   ```
+
+   一个 warp 的 32 个线程都要 `A[0]` 这个数。同一条指令中的这些同地址请求可以一起处理，不必为每个线程各取一份 32B 数据。
+
+2. **所有线程读一排相邻数**
+
+   ```cpp
+   float x = A[lane];
+   ```
+
+   lane 0 到 lane 31 分别读 `A[0]` 到 `A[31]`，共 128B。起始地址按 32B 对齐时，覆盖 4 个 32B 段；若起点比 32B 边界偏移 4B，则覆盖 5 段。这里每个线程读的是不同元素，只是这些元素连续排列。
+
+3. **所有线程分别读各行第一个数**
+
+   ```cpp
+   float x = A[lane * N];  // N = 64
+   ```
+
+   读取的数组下标是 `0、64、128……`，相邻线程读取的位置相隔 256B。这条指令要访问 32 个不同的 32B 段，每段只需要其中 4B，其余 28B 在这次读取中没有用上。
+
+同一个 block 会反复使用同一块数据时，可以先把它放进 shared memory，让 block 内线程一起复用；搬入数据和同步也要花成本。缓存已经能满足复用时，额外搬运未必划算，需结合实际访问和测量判断。
+
 ## 5. 从一份可运行 copy 观察向量化的收益和边界
 
 完整程序在 copy_alignment.cu。它比较标量copy与“对齐时使用float4，否则回退标量”的实现，分别检查起始偏移0和1个float，以及1、3、4、5、257和较大输入。两个实现使用同一grid，标量版本通过grid-stride循环覆盖剩余元素，避免把grid数量变化直接混成向量化收益。

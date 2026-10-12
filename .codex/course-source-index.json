@@ -1,5 +1,40 @@
 {
   "version": 1,
+  "cuda_codegen_and_register_memory_review_2026_10_12": {
+    "date": "2026-10-12",
+    "sources": [
+      {
+        "path": "roadmap/curriculum/gpu/02-cuda-execution-and-scheduling/README.md",
+        "sections": ["7", "7.1", "8 opening sentence"],
+        "local_source": "downloads/cuda-programming-guide.pdf",
+        "pdf_pages": [142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155],
+        "teaching_code": "examples/execution_and_scheduling.cu:dependent_chain_kernel",
+        "teaching_diagram": "PTX and SASS excerpts are explicitly schematic, not captured compiler output."
+      },
+      {
+        "path": "roadmap/curriculum/gpu/03-registers-and-memory-system/README.md",
+        "sections": "All 13 sections, including folded extensions",
+        "local_source": "downloads/cuda-programming-guide.pdf",
+        "pdf_pages": [72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 142, 143, 144, 145, 146, 147, 148],
+        "source_examples": [
+          "examples/transpose_tiled.cu",
+          "examples/cluster_dsm_histogram.cu",
+          "examples/cluster_dsm_ownership_check.py",
+          "examples/tma_multicast_ptx.inc",
+          "examples/cutlass_tma_multicast_core.inc",
+          "examples/green_context_roundtrip.cu"
+        ]
+      }
+    ],
+    "primary_external_sources": [
+      "https://docs.nvidia.com/cuda/cuda-compiler-driver-nvcc/index.html#the-cuda-compilation-trajectory",
+      "https://docs.nvidia.com/cuda/cuda-binary-utilities/index.html",
+      "https://docs.nvidia.com/cuda/parallel-thread-execution/",
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/cpp-language-extensions.html#memory-space-specifiers"
+    ],
+    "preservation": "The third-chapter review preserves the 36 pre-existing fenced blocks and all 41 heading lines; source-check excerpts and original example/solution files are not edited. Chapter 2 only changes sections 7, 7.1 and the opening handoff sentence of section 8.",
+    "validation_boundary": "Final build 2026-10-12: 39 chapters, 104 readable Markdown pages, 45 local assets, 1787 formulas and 174 original-source excerpts. Final content-only check and targeted local-link/anchor review for 170 references across the two chapter docs passed after the -lineinfo clarification. Editorial, navigation and offline-static checks passed on the previous build; final text changes did not change their logic. The pre-edit baseline of 36 chapter-3 fenced blocks and 41 headings is unchanged; source-index JSON parsing and git diff --check passed. Full-site link-audit was stopped and is not claimed as passed. No nvcc, CUDA device, GPU correctness, sanitizer, profiler or performance validation was performed."
+  },
   "execution_chapter_language_review_2026_10_09": {
     "source": "roadmap/curriculum/gpu/02-cuda-execution-and-scheduling/README.md",
     "scope": "All 14 sections: continuous prose review and code-to-explanation checks. Long restrictions replaced with concrete execution, dtype, coordinate, API and resource-lifetime explanations.",

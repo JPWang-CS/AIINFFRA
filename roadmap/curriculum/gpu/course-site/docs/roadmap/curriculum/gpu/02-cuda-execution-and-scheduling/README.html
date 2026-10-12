@@ -1,4 +1,4 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第 2 章：CUDA 执行模型与指令调度 · AIINFFRA 附属文档</title><script src="../../../../../theme.js?v=6ac5733926ef"></script><link rel="stylesheet" href="../../../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../../../styles.css?v=0e70a2d66838"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../../../index.html?chapter=1">返回课程</a></nav><button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换到浅色模式">浅色</button></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · roadmap/curriculum/gpu/02-cuda-execution-and-scheduling/README.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#1-%E7%BA%BF%E7%A8%8B%E7%BC%96%E5%8F%B7%E4%B8%8E-warp-%E5%88%86%E7%BB%84">1. 线程编号与 warp 分组</a></li><li><a href="#2-%E7%BA%BF%E7%A8%8B%E5%9D%97%E9%A9%BB%E7%95%99%E4%B8%8E-warp-%E5%8F%91%E5%B0%84">2. 线程块驻留与 warp 发射</a></li><li><a href="#21-%E5%B7%B2%E5%88%86%E9%85%8D%E8%B5%84%E6%BA%90%E9%A9%BB%E7%95%99%E7%8A%B6%E6%80%81">2.1 已分配资源：驻留状态</a></li><li><a href="#22-%E4%B8%8B%E4%B8%80%E6%9D%A1%E6%8C%87%E4%BB%A4%E5%8F%AF%E6%89%A7%E8%A1%8C%E5%B0%B1%E7%BB%AA%E7%8A%B6%E6%80%81">2.2 下一条指令可执行：就绪状态</a></li><li><a href="#23-%E5%8F%91%E5%87%BA%E6%8C%87%E4%BB%A4issue">2.3 发出指令：Issue</a></li><li><a href="#3-simt-%E4%B8%8E%E5%88%86%E6%94%AF%E6%89%A7%E8%A1%8C">3. SIMT 与分支执行</a></li><li><a href="#31-%E8%B0%93%E8%AF%8D%E6%89%A7%E8%A1%8C%E4%B8%8E%E7%9F%AD%E5%88%86%E6%94%AF">3.1 谓词执行与短分支</a></li><li><a href="#32-%E7%8B%AC%E7%AB%8B%E7%BA%BF%E7%A8%8B%E8%B0%83%E5%BA%A6%E4%B8%8E-warp-%E5%8D%8F%E4%BD%9C">3.2 独立线程调度与 warp 协作</a></li><li><a href="#4-block-%E6%B3%A2%E6%AC%A1%E4%B8%8E%E5%B0%BE%E9%83%A8%E5%88%A9%E7%94%A8%E7%8E%87">4. Block 波次与尾部利用率</a></li><li><a href="#5-%E8%AE%A1%E7%AE%97%E7%AE%A1%E7%BA%BF%E6%99%AE%E9%80%9A-cuda-corefma-%E4%B8%8E-tensor-core">5. 计算管线：普通 CUDA Core、FMA 与 Tensor Core</a></li><li><a href="#51-%E8%BE%93%E5%85%A5%E7%B4%AF%E5%8A%A0%E5%99%A8%E4%B8%8E%E8%BE%93%E5%87%BA%E7%B1%BB%E5%9E%8B">5.1 输入、累加器与输出类型</a></li><li><a href="#52-triton-tldot-%E7%9A%84-inputprecision">5.2 Triton tl.dot 的 inputprecision</a></li><li><a href="#6-%E4%BE%9D%E8%B5%96%E9%93%BE%E5%88%86%E6%94%AF%E4%B8%8E%E6%89%A7%E8%A1%8C%E8%B0%83%E5%BA%A6%E5%AE%9E%E9%AA%8C">6. 依赖链、分支与执行调度实验</a></li><li><a href="#61-%E4%BE%9D%E8%B5%96%E9%93%BE%E4%B8%8E%E5%9B%9B%E6%9D%A1%E7%8B%AC%E7%AB%8B%E7%B4%AF%E5%8A%A0%E9%93%BE">6.1 依赖链与四条独立累加链</a></li><li><a href="#62-%E5%88%86%E6%94%AF%E4%B8%8E%E5%8F%8C%E8%B7%AF%E5%BE%84%E9%80%89%E6%8B%A9">6.2 分支与双路径选择</a></li><li><a href="#7-%E4%BB%8E-cuda-%E6%BA%90%E7%A0%81%E5%88%B0-ptx-%E4%B8%8E-sass">7. 从 CUDA 源码到 PTX 与 SASS</a></li><li><a href="#71-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5%E4%B8%8E%E8%BF%90%E8%A1%8C%E6%97%B6%E9%94%99%E8%AF%AF">7.1 编译、链接与运行时错误</a></li><li><a href="#8-%E4%BB%8E%E7%BC%96%E8%AF%91%E4%BA%A7%E7%89%A9%E5%88%B0-kernel-%E5%90%AF%E5%8A%A8">8. 从编译产物到 kernel 启动</a></li><li><a href="#81-runtime-%E5%88%9D%E5%A7%8B%E5%8C%96lazy-loading-%E4%B8%8E%E9%94%99%E8%AF%AF%E5%AE%9A%E4%BD%8D">8.1 Runtime 初始化、lazy loading 与错误定位</a></li><li><a href="#9-%E4%BB%8E%E7%BA%BF%E7%A8%8B%E5%88%86%E5%B7%A5%E5%88%B0%E6%95%B0%E6%8D%AE%E5%88%86%E5%9D%97">9. 从线程分工到数据分块</a></li><li><a href="#91-%E4%BB%8E%E4%B8%80%E4%B8%AA%E5%85%83%E7%B4%A0%E5%88%B0%E4%B8%80%E5%9D%97%E6%95%B0%E6%8D%AE">9.1 从一个元素到一块数据</a></li><li><a href="#92-%E5%9D%90%E6%A0%87%E6%80%8E%E6%A0%B7%E8%90%BD%E5%88%B0%E5%85%83%E7%B4%A0%E5%92%8C%E5%9C%B0%E5%9D%80">9.2 坐标怎样落到元素和地址</a></li><li><a href="#93-%E9%80%BB%E8%BE%91-tilearray-%E4%B8%8E%E7%A1%AC%E4%BB%B6%E7%BA%BF%E7%A8%8B%E8%B5%84%E6%BA%90">9.3 逻辑 tile、Array 与硬件线程资源</a></li><li><a href="#94-%E5%B0%BE%E5%9D%97%E4%B8%8E%E5%8A%A0%E8%BD%BD%E5%89%8D%E4%BF%9D%E6%8A%A4">9.4 尾块与加载前保护</a></li><li><a href="#95-%E5%88%86%E5%9D%97%E5%A4%A7%E5%B0%8F%E6%95%B0%E6%8D%AE%E5%A4%8D%E7%94%A8%E4%B8%8E-fp32-%E7%B4%AF%E5%8A%A0%E5%99%A8">9.5 分块大小、数据复用与 FP32 累加器</a></li><li><a href="#96-cutile-%E6%8E%A5%E5%8F%A3%E7%BC%96%E8%AF%91%E6%8F%90%E7%A4%BA%E4%B8%8E%E6%80%A7%E8%83%BD%E8%AF%81%E6%8D%AE">9.6 cuTile 接口、编译提示与性能证据</a></li><li><a href="#97-%E9%AB%98%E7%BA%A7-viewshape-%E5%8F%98%E6%8D%A2%E4%B8%8E%E5%8E%9F%E5%AD%90%E6%9B%B4%E6%96%B0">9.7 高级 view、shape 变换与原子更新</a></li><li><a href="#10-python-%E4%B8%8E-c-%E7%9A%84%E8%B0%83%E7%94%A8%E8%BE%B9%E7%95%8C%E5%92%8C%E8%B5%84%E6%BA%90%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F">10. Python 与 C++ 的调用边界和资源生命周期</a></li><li><a href="#101-python-host-%E6%8E%A7%E5%88%B6%E4%B8%8E-device-kernel-%E7%9A%84%E8%BE%B9%E7%95%8C">10.1 Python host 控制与 device kernel 的边界</a></li><li><a href="#102-c-%E6%89%A7%E8%A1%8C%E4%BD%8D%E7%BD%AE%E6%98%BE%E5%AD%98%E7%AE%A1%E7%90%86%E4%B8%8E%E8%AE%BE%E5%A4%87%E9%93%BE%E6%8E%A5">10.2 C++ 执行位置、显存管理与设备链接</a></li><li><a href="#11-%E9%94%99%E8%AF%AF%E5%AE%9A%E4%BD%8D%E4%B8%8E-driver-%E6%8E%A5%E5%8F%A3%E5%85%BC%E5%AE%B9%E6%80%A7">11. 错误定位与 Driver 接口兼容性</a></li><li><a href="#111-error-log%E4%BB%8E%E9%94%99%E8%AF%AF%E7%B1%BB%E5%88%AB%E8%BF%BD%E5%88%B0%E5%85%B7%E4%BD%93%E8%B0%83%E7%94%A8">11.1 Error Log：从错误类别追到具体调用</a></li><li><a href="#112-driver-entry-points%E7%89%88%E6%9C%AC%E6%9F%A5%E8%AF%A2%E4%B8%8E-abi">11.2 Driver Entry Points、版本查询与 ABI</a></li><li><a href="#%E5%8F%82%E8%80%83%E9%98%85%E8%AF%BB">参考阅读</a></li></ol></nav><div class="markdown-body"><h1 id="第-2-章cuda-执行模型与指令调度">第 2 章：CUDA 执行模型与指令调度<a class="heading-anchor" href="#%E7%AC%AC-2-%E7%AB%A0cuda-%E6%89%A7%E8%A1%8C%E6%A8%A1%E5%9E%8B%E4%B8%8E%E6%8C%87%E4%BB%A4%E8%B0%83%E5%BA%A6" aria-label="链接到第 2 章：CUDA 执行模型与指令调度">#</a></h1>
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第 2 章：CUDA 执行模型与指令调度 · AIINFFRA 附属文档</title><script src="../../../../../theme.js?v=3aab643066da"></script><link rel="stylesheet" href="../../../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../../../styles.css?v=deca86f54b40"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../../../index.html?chapter=1">返回课程</a></nav><button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换到浅色模式">浅色</button></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · roadmap/curriculum/gpu/02-cuda-execution-and-scheduling/README.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#1-%E7%BA%BF%E7%A8%8B%E7%BC%96%E5%8F%B7%E4%B8%8E-warp-%E5%88%86%E7%BB%84">1. 线程编号与 warp 分组</a></li><li><a href="#2-%E7%BA%BF%E7%A8%8B%E5%9D%97%E9%A9%BB%E7%95%99%E4%B8%8E-warp-%E5%8F%91%E5%B0%84">2. 线程块驻留与 warp 发射</a></li><li><a href="#21-%E5%B7%B2%E5%88%86%E9%85%8D%E8%B5%84%E6%BA%90%E9%A9%BB%E7%95%99%E7%8A%B6%E6%80%81">2.1 已分配资源：驻留状态</a></li><li><a href="#22-%E4%B8%8B%E4%B8%80%E6%9D%A1%E6%8C%87%E4%BB%A4%E5%8F%AF%E6%89%A7%E8%A1%8C%E5%B0%B1%E7%BB%AA%E7%8A%B6%E6%80%81">2.2 下一条指令可执行：就绪状态</a></li><li><a href="#23-%E5%8F%91%E5%87%BA%E6%8C%87%E4%BB%A4issue">2.3 发出指令：Issue</a></li><li><a href="#3-simt-%E4%B8%8E%E5%88%86%E6%94%AF%E6%89%A7%E8%A1%8C">3. SIMT 与分支执行</a></li><li><a href="#31-%E8%B0%93%E8%AF%8D%E6%89%A7%E8%A1%8C%E4%B8%8E%E7%9F%AD%E5%88%86%E6%94%AF">3.1 谓词执行与短分支</a></li><li><a href="#32-%E7%8B%AC%E7%AB%8B%E7%BA%BF%E7%A8%8B%E8%B0%83%E5%BA%A6%E4%B8%8E-warp-%E5%8D%8F%E4%BD%9C">3.2 独立线程调度与 warp 协作</a></li><li><a href="#4-block-%E6%B3%A2%E6%AC%A1%E4%B8%8E%E5%B0%BE%E9%83%A8%E5%88%A9%E7%94%A8%E7%8E%87">4. Block 波次与尾部利用率</a></li><li><a href="#5-%E8%AE%A1%E7%AE%97%E7%AE%A1%E7%BA%BF%E6%99%AE%E9%80%9A-cuda-corefma-%E4%B8%8E-tensor-core">5. 计算管线：普通 CUDA Core、FMA 与 Tensor Core</a></li><li><a href="#51-%E8%BE%93%E5%85%A5%E7%B4%AF%E5%8A%A0%E5%99%A8%E4%B8%8E%E8%BE%93%E5%87%BA%E7%B1%BB%E5%9E%8B">5.1 输入、累加器与输出类型</a></li><li><a href="#52-triton-tldot-%E7%9A%84-inputprecision">5.2 Triton tl.dot 的 inputprecision</a></li><li><a href="#6-%E4%BE%9D%E8%B5%96%E9%93%BE%E5%88%86%E6%94%AF%E4%B8%8E%E6%89%A7%E8%A1%8C%E8%B0%83%E5%BA%A6%E5%AE%9E%E9%AA%8C">6. 依赖链、分支与执行调度实验</a></li><li><a href="#61-%E4%BE%9D%E8%B5%96%E9%93%BE%E4%B8%8E%E5%9B%9B%E6%9D%A1%E7%8B%AC%E7%AB%8B%E7%B4%AF%E5%8A%A0%E9%93%BE">6.1 依赖链与四条独立累加链</a></li><li><a href="#62-%E5%88%86%E6%94%AF%E4%B8%8E%E5%8F%8C%E8%B7%AF%E5%BE%84%E9%80%89%E6%8B%A9">6.2 分支与双路径选择</a></li><li><a href="#7-%E4%BB%8E-cuda-%E6%BA%90%E7%A0%81%E5%88%B0-ptx-%E4%B8%8E-sass">7. 从 CUDA 源码到 PTX 与 SASS</a></li><li><a href="#71-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5%E4%B8%8E%E8%BF%90%E8%A1%8C%E6%97%B6%E9%94%99%E8%AF%AF">7.1 编译、链接与运行时错误</a></li><li><a href="#8-%E4%BB%8E%E7%BC%96%E8%AF%91%E4%BA%A7%E7%89%A9%E5%88%B0-kernel-%E5%90%AF%E5%8A%A8">8. 从编译产物到 kernel 启动</a></li><li><a href="#81-runtime-%E5%88%9D%E5%A7%8B%E5%8C%96lazy-loading-%E4%B8%8E%E9%94%99%E8%AF%AF%E5%AE%9A%E4%BD%8D">8.1 Runtime 初始化、lazy loading 与错误定位</a></li><li><a href="#9-%E4%BB%8E%E7%BA%BF%E7%A8%8B%E5%88%86%E5%B7%A5%E5%88%B0%E6%95%B0%E6%8D%AE%E5%88%86%E5%9D%97">9. 从线程分工到数据分块</a></li><li><a href="#91-%E4%BB%8E%E4%B8%80%E4%B8%AA%E5%85%83%E7%B4%A0%E5%88%B0%E4%B8%80%E5%9D%97%E6%95%B0%E6%8D%AE">9.1 从一个元素到一块数据</a></li><li><a href="#92-%E5%9D%90%E6%A0%87%E6%80%8E%E6%A0%B7%E8%90%BD%E5%88%B0%E5%85%83%E7%B4%A0%E5%92%8C%E5%9C%B0%E5%9D%80">9.2 坐标怎样落到元素和地址</a></li><li><a href="#93-%E9%80%BB%E8%BE%91-tilearray-%E4%B8%8E%E7%A1%AC%E4%BB%B6%E7%BA%BF%E7%A8%8B%E8%B5%84%E6%BA%90">9.3 逻辑 tile、Array 与硬件线程资源</a></li><li><a href="#94-%E5%B0%BE%E5%9D%97%E4%B8%8E%E5%8A%A0%E8%BD%BD%E5%89%8D%E4%BF%9D%E6%8A%A4">9.4 尾块与加载前保护</a></li><li><a href="#95-%E5%88%86%E5%9D%97%E5%A4%A7%E5%B0%8F%E6%95%B0%E6%8D%AE%E5%A4%8D%E7%94%A8%E4%B8%8E-fp32-%E7%B4%AF%E5%8A%A0%E5%99%A8">9.5 分块大小、数据复用与 FP32 累加器</a></li><li><a href="#96-cutile-%E6%8E%A5%E5%8F%A3%E7%BC%96%E8%AF%91%E6%8F%90%E7%A4%BA%E4%B8%8E%E6%80%A7%E8%83%BD%E8%AF%81%E6%8D%AE">9.6 cuTile 接口、编译提示与性能证据</a></li><li><a href="#97-%E9%AB%98%E7%BA%A7-viewshape-%E5%8F%98%E6%8D%A2%E4%B8%8E%E5%8E%9F%E5%AD%90%E6%9B%B4%E6%96%B0">9.7 高级 view、shape 变换与原子更新</a></li><li><a href="#10-python-%E4%B8%8E-c-%E7%9A%84%E8%B0%83%E7%94%A8%E8%BE%B9%E7%95%8C%E5%92%8C%E8%B5%84%E6%BA%90%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F">10. Python 与 C++ 的调用边界和资源生命周期</a></li><li><a href="#101-python-host-%E6%8E%A7%E5%88%B6%E4%B8%8E-device-kernel-%E7%9A%84%E8%BE%B9%E7%95%8C">10.1 Python host 控制与 device kernel 的边界</a></li><li><a href="#102-c-%E6%89%A7%E8%A1%8C%E4%BD%8D%E7%BD%AE%E6%98%BE%E5%AD%98%E7%AE%A1%E7%90%86%E4%B8%8E%E8%AE%BE%E5%A4%87%E9%93%BE%E6%8E%A5">10.2 C++ 执行位置、显存管理与设备链接</a></li><li><a href="#11-%E9%94%99%E8%AF%AF%E5%AE%9A%E4%BD%8D%E4%B8%8E-driver-%E6%8E%A5%E5%8F%A3%E5%85%BC%E5%AE%B9%E6%80%A7">11. 错误定位与 Driver 接口兼容性</a></li><li><a href="#111-error-log%E4%BB%8E%E9%94%99%E8%AF%AF%E7%B1%BB%E5%88%AB%E8%BF%BD%E5%88%B0%E5%85%B7%E4%BD%93%E8%B0%83%E7%94%A8">11.1 Error Log：从错误类别追到具体调用</a></li><li><a href="#112-driver-entry-points%E7%89%88%E6%9C%AC%E6%9F%A5%E8%AF%A2%E4%B8%8E-abi">11.2 Driver Entry Points、版本查询与 ABI</a></li><li><a href="#%E5%8F%82%E8%80%83%E9%98%85%E8%AF%BB">参考阅读</a></li></ol></nav><div class="markdown-body"><h1 id="第-2-章cuda-执行模型与指令调度">第 2 章：CUDA 执行模型与指令调度<a class="heading-anchor" href="#%E7%AC%AC-2-%E7%AB%A0cuda-%E6%89%A7%E8%A1%8C%E6%A8%A1%E5%9E%8B%E4%B8%8E%E6%8C%87%E4%BB%A4%E8%B0%83%E5%BA%A6" aria-label="链接到第 2 章：CUDA 执行模型与指令调度">#</a></h1>
 <p>CUDA 先按 x、再按 y、最后按 z 的顺序为 block 内线程编号，并按连续 32 个编号组成 warp。这个分组关系可用二维 block 的小例子直接计算。</p>
 <h2 id="1-线程编号与-warp-分组">1. 线程编号与 warp 分组<a class="heading-anchor" href="#1-%E7%BA%BF%E7%A8%8B%E7%BC%96%E5%8F%B7%E4%B8%8E-warp-%E5%88%86%E7%BB%84" aria-label="链接到1. 线程编号与 warp 分组">#</a></h2>
 <p>先看一个二维线程块：<code>dim3 block(4, 2)</code>。这里 <code>x=4</code>、<code>y=2</code>，所以总共有 8 个线程。每个线程有一对坐标 <code>(threadIdx.x, threadIdx.y)</code>：</p>
@@ -760,28 +760,195 @@ acc_{fp32}&amp;\leftarrow\operatorname{fmaf}(a_f,b_f,acc_{fp32}).
 <span class="code-line" data-line="213">    <span class="hljs-keyword">return</span> all_ok ? EXIT_SUCCESS : EXIT_FAILURE;</span>
 <span class="code-line" data-line="214">}</span></code></pre></div>
 </details><h2 id="7-从-cuda-源码到-ptx-与-sass">7. 从 CUDA 源码到 PTX 与 SASS<a class="heading-anchor" href="#7-%E4%BB%8E-cuda-%E6%BA%90%E7%A0%81%E5%88%B0-ptx-%E4%B8%8E-sass" aria-label="链接到7. 从 CUDA 源码到 PTX 与 SASS">#</a></h2>
-<p>代码从源码到设备执行，经过三个表示：</p>
-<ol>
-<li>CUDA C++ 源码写线程索引、数据类型、地址和同步函数。</li>
-<li>PTX（Parallel Thread Execution，并行线程执行）是中间指令表示，可以检查分支、谓词、访存空间和 FMA/MMA 操作。</li>
-<li>SASS 是目标 GPU 的机器指令，用来确认最终使用了哪些加载、计算、同步和矩阵指令。</li>
-</ol>
-<p>命令如下：</p>
-<div class="code-panel"><div class="code-caption"><span>POWERSHELL</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-powershell"><span class="code-line" data-line="1">nvcc <span class="hljs-literal">-O3</span> <span class="hljs-literal">-std</span>=c++<span class="hljs-number">17</span> <span class="hljs-literal">-lineinfo</span> <span class="hljs-literal">--resource-usage</span> `</span>
-<span class="code-line" data-line="2">  examples/execution_and_scheduling.cu <span class="hljs-literal">-o</span> execution_and_scheduling.exe</span>
-<span class="code-line" data-line="3"></span>
-<span class="code-line" data-line="4">nvcc <span class="hljs-literal">-O3</span> <span class="hljs-literal">-std</span>=c++<span class="hljs-number">17</span> <span class="hljs-literal">-ptx</span> <span class="hljs-literal">-arch</span>=sm_XX `</span>
-<span class="code-line" data-line="5">  examples/execution_and_scheduling.cu <span class="hljs-literal">-o</span> execution_and_scheduling.ptx</span>
-<span class="code-line" data-line="6"></span>
-<span class="code-line" data-line="7">nvcc <span class="hljs-literal">-O3</span> <span class="hljs-literal">-std</span>=c++<span class="hljs-number">17</span> <span class="hljs-literal">-cubin</span> <span class="hljs-literal">-arch</span>=sm_XX `</span>
-<span class="code-line" data-line="8">  examples/execution_and_scheduling.cu <span class="hljs-literal">-o</span> execution_and_scheduling.cubin</span>
-<span class="code-line" data-line="9"></span>
-<span class="code-line" data-line="10">cuobjdump <span class="hljs-literal">--dump-ptx</span> execution_and_scheduling.exe &gt; execution_and_scheduling.ptx.txt</span>
-<span class="code-line" data-line="11">cuobjdump <span class="hljs-literal">--dump-sass</span> execution_and_scheduling.exe &gt; execution_and_scheduling.sass.txt</span>
-<span class="code-line" data-line="12">nvdisasm <span class="hljs-literal">--print-code</span> <span class="hljs-literal">--print-line-info</span> execution_and_scheduling.cubin</span></code></pre></div>
-<p>把 <code>sm_XX</code> 换成目标设备的计算能力。编译报告中的 registers、shared、local 分别说明寄存器、共享内存和 local memory 的用量；<code>cuobjdump</code> 或 <code>nvdisasm</code> 展示最终指令。比较配置时，应使用同一台设备对应的编译产物。</p>
-<p>调试先用小输入。启动后检查配置错误，在 stream/device 同步处再检查执行错误。<code>CUDA_LAUNCH_BLOCKING=1</code> 让错误更接近出错调用被报告，<code>compute-sanitizer</code> 检查非法内存访问等问题。这些工具会改变执行条件，正式性能计时应关闭它们。</p>
-<p>Triton 的 PTX/cubin 由运行时编译并保存到缓存。先运行待测 kernel，再从当前版本的缓存中找到与该配置对应的文件；缓存路径和文件组织随版本变化。检查时固定输入精度、形状和容差，确保分析的机器码对应这次实际启动。</p>
+<p>CUDA 源文件包含 CPU 侧控制代码和 GPU kernel。沿第 6 节的单链 FMA 例子看编译过程，可以分清两边的代码如何进入最终程序，以及 PTX、SASS 分别能说明什么。</p>
+<!-- source-check: examples/execution_and_scheduling.cu -->
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-function">__global__ <span class="hljs-type">void</span> <span class="hljs-title">dependent_chain_kernel</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">float</span>* input, <span class="hljs-type">float</span>* output,</span></span></span>
+<span class="code-line" data-line="2"><span class="hljs-function"><span class="hljs-params">                                       <span class="hljs-type">int</span> n, <span class="hljs-type">int</span> steps)</span> </span>{</span>
+<span class="code-line" data-line="3">    <span class="hljs-type">const</span> <span class="hljs-type">int</span> i = blockIdx.x * blockDim.x + threadIdx.x;</span>
+<span class="code-line" data-line="4">    <span class="hljs-keyword">if</span> (i &gt;= n) <span class="hljs-keyword">return</span>;</span>
+<span class="code-line" data-line="5">    <span class="hljs-type">float</span> x = input[i];</span>
+<span class="code-line" data-line="6">    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> step = <span class="hljs-number">0</span>; step &lt; steps; ++step) {</span>
+<span class="code-line" data-line="7">        x = <span class="hljs-built_in">fmaf</span>(x, <span class="hljs-number">1.000001f</span>, <span class="hljs-number">0.00001f</span>);</span>
+<span class="code-line" data-line="8">    }</span>
+<span class="code-line" data-line="9">    output[i] = x;</span>
+<span class="code-line" data-line="10">}</span></code></pre></div>
+<p>下面只展示 host 启动部分。示例假定 <code>device_input</code> 已填入有效输入、<code>device_output</code> 已分配；重点是配置 launch、检查提交状态并等待执行完成：</p>
+<div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-type">const</span> <span class="hljs-type">int</span> n = <span class="hljs-number">1</span> &lt;&lt; <span class="hljs-number">20</span>;</span>
+<span class="code-line" data-line="2"><span class="hljs-type">const</span> <span class="hljs-type">int</span> threads = <span class="hljs-number">256</span>;</span>
+<span class="code-line" data-line="3"><span class="hljs-type">const</span> <span class="hljs-type">int</span> blocks = (n + threads - <span class="hljs-number">1</span>) / threads;</span>
+<span class="code-line" data-line="4">dependent_chain_kernel&lt;&lt;&lt;blocks, threads&gt;&gt;&gt;(</span>
+<span class="code-line" data-line="5">    device_input, device_output, n, <span class="hljs-number">200</span>);</span>
+<span class="code-line" data-line="6">cudaError_t launch_status = <span class="hljs-built_in">cudaGetLastError</span>();</span>
+<span class="code-line" data-line="7"><span class="hljs-keyword">if</span> (launch_status == cudaSuccess) {</span>
+<span class="code-line" data-line="8">    launch_status = <span class="hljs-built_in">cudaDeviceSynchronize</span>();</span>
+<span class="code-line" data-line="9">}</span></code></pre></div>
+<p>这段 host 代码和 CUDA Runtime API 调用在 CPU 上运行；带 <code>__global__</code> 的函数体在 GPU 上运行。三尖括号里的 <code>blocks</code>、<code>threads</code> 设置 grid 和 block，括号里的参数才是传给 kernel 的值。launch 返回后先检查配置错误；同步调用再报告此前 kernel 的执行错误。</p>
+<p>完整程序应在 <code>launch_status</code> 非 <code>cudaSuccess</code> 时报告错误并停止，不读取输出；同步状态也要检查成功后，才能进行结果比较。</p>
+<p><code>nvcc</code> 是编译阶段的驱动，负责解析 <code>.cu</code> 并协调主机与设备编译；CUDA driver 在运行时根据当前 GPU 选择兼容 cubin，或在受支持条件下将 PTX JIT 后加载。普通 <code>gcc</code>/<code>g++</code> 或 <code>cl</code> 不直接识别 <code>&lt;&lt;&lt;...&gt;&gt;&gt;</code>。例如 host 代码中的 <code>dependent_chain_kernel&lt;&lt;&lt;blocks, threads&gt;&gt;&gt;(...)</code> 会先由 <code>nvcc</code> 转换成标准 host C++ 调用包装；<code>nvcc</code> 同时把已编译的设备映像嵌入合成后的 host 代码，再交给 host compiler 编译。</p>
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>编译器处理</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>解析与分离</td>
+<td><code>nvcc</code> 识别 <code>.cu</code> 中的 host/device 区域，并分别预处理。</td>
+</tr>
+<tr>
+<td>device 编译</td>
+<td>NVCC device 前端生成 PTX；<code>ptxas</code> 为目标 <code>sm_XX</code> 生成 cubin；fatbin 收集 cubin，也可包含 PTX 回退。</td>
+</tr>
+<tr>
+<td>host 合成</td>
+<td><code>nvcc</code> 将 CUDA 扩展（包括 kernel launch）改写为标准 C++ host constructs，并把 fatbin 映像嵌入合成代码。</td>
+</tr>
+<tr>
+<td>host 编译与链接</td>
+<td><code>gcc</code>/<code>g++</code> 或 <code>cl</code> 编译带嵌入设备映像的 host 代码生成 object；链接时加入 CUDA Runtime，生成 <code>.exe</code> 或 Linux 可执行文件。</td>
+</tr>
+<tr>
+<td>装载与执行</td>
+<td>CUDA driver 为当前 GPU 选择兼容 cubin；没有合适 cubin 时，只有 fatbin 含受支持的 PTX 且 driver 能处理，才会执行 PTX JIT。</td>
+</tr>
+</tbody></table>
+<p>分离编译时，host object 与 relocatable device code 可先分别生成，再由设备链接阶段解析跨编译单元的 device 调用。</p>
+<p>常见后缀标识不同产物：<code>.cpp</code> 通常是主机 C++ 源码；<code>.cu</code> 可同时写 host 代码和 kernel；<code>.ptx</code> 是虚拟指令集文本；<code>.cubin</code> 是目标 GPU 的设备二进制；<code>.fatbin</code> 可装多个 cubin 和/或 PTX；<code>.o</code> 是编译得到的目标文件，可能只含主机代码，也可能含可重定位设备代码；<code>.exe</code> 是 Windows 可执行程序。后缀不能说明 fatbin 是否包含 PTX 回退，需用工具检查。</p>
+<p>PTX（Parallel Thread Execution）是面向虚拟 ISA（指令集架构，Instruction Set Architecture）的中间表示，使用虚拟寄存器。<code>ptxas</code> 按目标架构分配物理寄存器、选择指令并安排控制流；SASS 是目标 GPU 机器指令的可读反汇编，GPU 实际执行 cubin 中编码的机器指令。源代码一行可能被合并、展开或消除，一条 PTX 也可能变成多条 SASS。PTX 虚拟寄存器编号和 <code>.reg</code> 声明数都不能直接当作每线程物理寄存器数。</p>
+<p>以下 PTX 和 SASS 是教学示意，不是某次真实反汇编。寄存器编号仅用于说明数据角色，地址构造和参数初始化有意省略；实际指令顺序、分支布局和修饰符会随编译器、Toolkit、编译选项和目标 GPU 改变。</p>
+<p>真实 <code>.ptx</code> 文件顶部还包含 <code>.version</code>、<code>.target</code> 和 <code>.address_size</code>，分别声明 PTX 版本、虚拟或目标架构，以及地址宽度；以下只摘出 kernel 主体。</p>
+<p>语法上，<code>.visible .entry</code> 声明 kernel 入口，<code>.param</code> 声明入口参数，<code>.reg</code> 声明虚拟寄存器；<code>%p&lt;2&gt;</code> 这类范围声明会编号为 <code>%p0</code>、<code>%p1</code>，<code>%r&lt;5&gt;</code> 则编号为 <code>%r0</code> 到 <code>%r4</code>。<code>.b32</code>、<code>.b64</code> 表示位宽，<code>.f32</code> 表示 32 位浮点，<code>.u32</code>/<code>.s32</code> 分别表示无符号/有符号 32 位整数；<code>%p</code> 是 predicate（谓词）寄存器。<code>r</code>、<code>rd</code>、<code>f</code> 是寄存器名的常见约定，具体类型由声明与指令后缀决定。</p>
+<div class="code-panel"><div class="code-caption"><span>PTX</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-ptx"><span class="code-line" data-line="1">// 教学示意：虚拟寄存器和指令序列会随实际编译改变。</span>
+<span class="code-line" data-line="2">.visible .entry dependent_chain(</span>
+<span class="code-line" data-line="3">    .param .u64 input,</span>
+<span class="code-line" data-line="4">    .param .u64 output,</span>
+<span class="code-line" data-line="5">    .param .s32 n,</span>
+<span class="code-line" data-line="6">    .param .s32 steps</span>
+<span class="code-line" data-line="7">)</span>
+<span class="code-line" data-line="8">{</span>
+<span class="code-line" data-line="9">.reg .pred %p&lt;2&gt;;</span>
+<span class="code-line" data-line="10">.reg .b32 %r&lt;5&gt;;</span>
+<span class="code-line" data-line="11">.reg .b64 %rd&lt;5&gt;;</span>
+<span class="code-line" data-line="12">.reg .f32 %f&lt;3&gt;;</span>
+<span class="code-line" data-line="13">ld.param.u64 %rd0, [input];</span>
+<span class="code-line" data-line="14">ld.param.u64 %rd1, [output];</span>
+<span class="code-line" data-line="15">cvta.to.global.u64 %rd0, %rd0;</span>
+<span class="code-line" data-line="16">cvta.to.global.u64 %rd1, %rd1;</span>
+<span class="code-line" data-line="17">ld.param.s32 %r3, [n];</span>
+<span class="code-line" data-line="18">ld.param.s32 %r4, [steps];</span>
+<span class="code-line" data-line="19">mov.u32 %r0, %ctaid.x;</span>
+<span class="code-line" data-line="20">mov.u32 %r1, %ntid.x;</span>
+<span class="code-line" data-line="21">mov.u32 %r2, %tid.x;</span>
+<span class="code-line" data-line="22">mad.lo.u32 %r0, %r0, %r1, %r2;</span>
+<span class="code-line" data-line="23">setp.ge.s32 %p0, %r0, %r3;</span>
+<span class="code-line" data-line="24">@%p0 bra DONE;</span>
+<span class="code-line" data-line="25">mul.wide.s32 %rd2, %r0, 4;</span>
+<span class="code-line" data-line="26">add.s64 %rd3, %rd0, %rd2;</span>
+<span class="code-line" data-line="27">ld.global.f32 %f0, [%rd3];</span>
+<span class="code-line" data-line="28">mov.f32 %f1, 0f3F800008;</span>
+<span class="code-line" data-line="29">mov.f32 %f2, 0f3727C5AC;</span>
+<span class="code-line" data-line="30">mov.s32 %r2, 0;</span>
+<span class="code-line" data-line="31">LOOP:</span>
+<span class="code-line" data-line="32">setp.ge.s32 %p1, %r2, %r4;</span>
+<span class="code-line" data-line="33">@%p1 bra STORE;</span>
+<span class="code-line" data-line="34">fma.rn.f32 %f0, %f0, %f1, %f2;</span>
+<span class="code-line" data-line="35">add.s32 %r2, %r2, 1;</span>
+<span class="code-line" data-line="36">bra LOOP;</span>
+<span class="code-line" data-line="37">STORE:</span>
+<span class="code-line" data-line="38">add.s64 %rd4, %rd1, %rd2;</span>
+<span class="code-line" data-line="39">st.global.f32 [%rd4], %f0;</span>
+<span class="code-line" data-line="40">DONE:</span>
+<span class="code-line" data-line="41">ret;</span>
+<span class="code-line" data-line="42">}</span></code></pre></div>
+<p><code>%tid.x</code>、<code>%ctaid.x</code>、<code>%ntid.x</code> 是线程、block 和 block 尺寸的特殊寄存器；<code>mov</code> 将它们读入普通虚拟寄存器，<code>mad.lo</code> 计算线性索引。<code>setp</code> 设置 predicate，<code>@%p0 bra</code> 在索引越界时跳过读写。<code>mul.wide</code> 把 <code>float</code> 元素索引变成 64 位字节偏移；<code>%rd2</code> 始终保存偏移，<code>%rd3</code>、<code>%rd4</code> 分别保存输入和输出地址。<code>ld.global</code>/<code>st.global</code> 标出 global 地址空间。循环 predicate 在 <code>step &gt;= steps</code> 时退出；<code>fma.rn.f32</code> 执行 FP32 融合乘加并按最近偶数舍入，下一轮继续使用 <code>%f0</code>，保留单链依赖。PTX 的 <code>0f</code> 前缀表示后续 8 个十六进制数按 IEEE 754 FP32 位型解释：<code>0f3F800008</code> 对应 <code>1.000001f</code>，<code>0f3727C5AC</code> 对应 <code>0.00001f</code>。</p>
+<p>SASS 使用目标 GPU 的物理寄存器和指令编码。表中地址构造、常量初始化及进入循环前的判断有意省略；64 位输入、输出地址分别占 <code>R6:R7</code>、<code>R8:R9</code> 寄存器对，访存指令以寄存器对的起始寄存器作为地址操作数。循环片段采用 post-test 形式，进入前必须检查 <code>steps &gt; 0</code>；本节主示例传入 200。若 <code>steps=0</code>，应跳过循环并直接存储输入值，不能执行一次 FMA。</p>
+<table>
+<thead>
+<tr>
+<th>指令示意</th>
+<th>数据角色与作用</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>S2R R3, SR_TID.X</code></td>
+<td>读取 <code>threadIdx.x</code>；后续索引计算省略，线性索引放在 <code>R4</code>，元素数 <code>n</code> 放在 <code>R5</code></td>
+</tr>
+<tr>
+<td><code>ISETP.GE.AND P0, PT, R4, R5, PT</code>；<code>@P0 BRA DONE</code></td>
+<td>比较 <code>i &gt;= n</code>；越界线程跳过读写</td>
+</tr>
+<tr>
+<td><code>LDG.E R0, [R6]</code></td>
+<td>从输入地址寄存器对读取 <code>x</code> 到 <code>R0</code></td>
+</tr>
+<tr>
+<td><code>ISETP.GT.AND P2, PT, R11, RZ, PT</code>；<code>@!P2 BRA STORE</code></td>
+<td>循环入口前检查 <code>steps &gt; 0</code>；零步时直接写回 <code>x</code></td>
+</tr>
+<tr>
+<td><code>FFMA R0, R0, R1, R2</code></td>
+<td>令 <code>R1</code> 为 scale、<code>R2</code> 为 bias，执行 <code>x = x * scale + bias</code></td>
+</tr>
+<tr>
+<td><code>IADD3 R10, R10, 0x1, RZ</code></td>
+<td>将循环计数器 <code>R10</code> 加一；<code>R11</code> 保存 <code>steps</code></td>
+</tr>
+<tr>
+<td><code>ISETP.LT.AND P1, PT, R10, R11, PT</code>；<code>@P1 BRA LOOP</code></td>
+<td>post-test 回边：<code>step &lt; steps</code> 时再执行一轮；否则落到 store</td>
+</tr>
+<tr>
+<td><code>STG.E [R8], R0</code></td>
+<td>将结果写入输出地址寄存器对</td>
+</tr>
+</tbody></table>
+<p><code>PT</code> 和 <code>RZ</code> 分别是 predicate 真值与零寄存器。真实反汇编可能重排地址计算、合并操作，或把边界处理改成谓词化访存；应从目标代码确认分支结构和 FMA 是否仍沿同一累加值形成依赖链。表中的寄存器编号是自洽的教学角色分配，不对应某次实际分配。</p>
+<p><code>.reg .f32</code> 等 PTX 声明使用的是虚拟寄存器；实际每线程物理寄存器数应读 <code>ptxas</code> 报告或 <code>cuobjdump --dump-resource-usage</code>。<code>local</code> 访问也不自动等于 spill：动态寻址的局部数组可能使用 local memory，spill 是寄存器分配不足时的另一种来源。应结合 spill/local 字节报告、SASS 中的 local load/store，以及对应源码对象一起判断。</p>
+<p>静态编译与反汇编不需要 GPU，但需要完整 CUDA Toolkit 和可用 host compiler。实际启动、数值正确性、Compute Sanitizer 和性能测量需要兼容设备与驱动。<code>-O3</code> 主要设置 host 编译器的优化级别；device 端优化由 CUDA 编译流程及目标架构相关选项决定，不能把 <code>-O3</code> 单独视作 GPU 优化或性能证据。<code>-lineinfo</code> 加入源码行映射，通常保留优化，但源码行与机器指令不是一对一关系。<code>-G</code> 生成设备调试代码，会改变优化和资源用量，不能用它的计时代表正式构建。</p>
+<p>先用 <code>nvcc --list-gpu-code</code> 查看当前 Toolkit 支持生成的 <code>sm_XX</code>。命令中的 <code>XX</code> 要替换成目标计算能力的主版本和次版本拼接值：例如 CC 8.6 对应 <code>86</code>，CC 8.9 对应 <code>89</code>。这两个只是示例，实际值要按设备和当前 Toolkit 确认。编译产物检查时固定 Toolkit、host compiler、优化级别和目标架构，并让可执行文件、单独生成的 PTX 与 cubin 使用同一个目标，避免比较到不同架构的代码：</p>
+<div class="code-panel"><div class="code-caption"><span>POWERSHELL</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-powershell"><span class="code-line" data-line="1"><span class="hljs-comment"># 示例为 CC 8.6；按目标设备改成实际支持的 sm_XX。</span></span>
+<span class="code-line" data-line="2">nvcc <span class="hljs-literal">--list-gpu-code</span></span>
+<span class="code-line" data-line="3"><span class="hljs-variable">$arch</span> = <span class="hljs-string">&quot;sm_86&quot;</span></span>
+<span class="code-line" data-line="4">nvcc <span class="hljs-literal">-O3</span> <span class="hljs-literal">-std</span>=c++<span class="hljs-number">17</span> <span class="hljs-literal">-lineinfo</span> <span class="hljs-literal">--resource-usage</span> <span class="hljs-literal">-arch</span>=<span class="hljs-variable">$arch</span> `</span>
+<span class="code-line" data-line="5">  examples/execution_and_scheduling.cu <span class="hljs-literal">-o</span> execution_check.exe</span>
+<span class="code-line" data-line="6">nvcc <span class="hljs-literal">-O3</span> <span class="hljs-literal">-std</span>=c++<span class="hljs-number">17</span> <span class="hljs-literal">-lineinfo</span> <span class="hljs-literal">-ptx</span> <span class="hljs-literal">-arch</span>=<span class="hljs-variable">$arch</span> `</span>
+<span class="code-line" data-line="7">  examples/execution_and_scheduling.cu <span class="hljs-literal">-o</span> execution_check.ptx</span>
+<span class="code-line" data-line="8">nvcc <span class="hljs-literal">-O3</span> <span class="hljs-literal">-std</span>=c++<span class="hljs-number">17</span> <span class="hljs-literal">-lineinfo</span> <span class="hljs-literal">-cubin</span> <span class="hljs-literal">-arch</span>=<span class="hljs-variable">$arch</span> `</span>
+<span class="code-line" data-line="9">  examples/execution_and_scheduling.cu <span class="hljs-literal">-o</span> execution_check.cubin</span>
+<span class="code-line" data-line="10">cuobjdump <span class="hljs-literal">--dump-ptx</span> execution_check.exe &gt; execution_check.ptx.txt</span>
+<span class="code-line" data-line="11">cuobjdump <span class="hljs-literal">--dump-sass</span> execution_check.exe &gt; execution_check.sass.txt</span>
+<span class="code-line" data-line="12">cuobjdump <span class="hljs-literal">--dump-resource-usage</span> execution_check.exe</span>
+<span class="code-line" data-line="13">nvdisasm <span class="hljs-literal">--print-code</span> <span class="hljs-literal">--print-line-info</span> execution_check.cubin</span></code></pre></div>
+<p>Linux 上可使用相同选项：</p>
+<div class="code-panel"><div class="code-caption"><span>BASH</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-bash"><span class="code-line" data-line="1"><span class="hljs-comment"># 示例为 CC 8.6；按目标设备改成实际支持的 sm_XX。</span></span>
+<span class="code-line" data-line="2">nvcc --list-gpu-code</span>
+<span class="code-line" data-line="3"><span class="hljs-built_in">arch</span>=sm_86</span>
+<span class="code-line" data-line="4">nvcc -O3 -std=c++17 -lineinfo --resource-usage -<span class="hljs-built_in">arch</span>=<span class="hljs-string">&quot;<span class="hljs-variable">$arch</span>&quot;</span> \</span>
+<span class="code-line" data-line="5">  examples/execution_and_scheduling.cu -o execution_check</span>
+<span class="code-line" data-line="6">nvcc -O3 -std=c++17 -lineinfo -<span class="hljs-built_in">ptx</span> -<span class="hljs-built_in">arch</span>=<span class="hljs-string">&quot;<span class="hljs-variable">$arch</span>&quot;</span> \</span>
+<span class="code-line" data-line="7">  examples/execution_and_scheduling.cu -o execution_check.ptx</span>
+<span class="code-line" data-line="8">nvcc -O3 -std=c++17 -lineinfo -cubin -<span class="hljs-built_in">arch</span>=<span class="hljs-string">&quot;<span class="hljs-variable">$arch</span>&quot;</span> \</span>
+<span class="code-line" data-line="9">  examples/execution_and_scheduling.cu -o execution_check.cubin</span>
+<span class="code-line" data-line="10">cuobjdump --dump-ptx execution_check &gt; execution_check.ptx.txt</span>
+<span class="code-line" data-line="11">cuobjdump --dump-sass execution_check &gt; execution_check.sass.txt</span>
+<span class="code-line" data-line="12">cuobjdump --dump-resource-usage execution_check</span>
+<span class="code-line" data-line="13">nvdisasm --print-code --print-line-info execution_check.cubin</span>
+<span class="code-line" data-line="14">ldd ./execution_check</span>
+<span class="code-line" data-line="15">readelf -d ./execution_check</span>
+<span class="code-line" data-line="16">./execution_check 257 20 5</span>
+<span class="code-line" data-line="17">compute-sanitizer --tool memcheck --error-exitcode=1 ./execution_check 257 20 5</span></code></pre></div>
+<p>上面的编译、反汇编、<code>ldd</code> 与 <code>readelf</code> 检查可在没有 GPU 的主机上完成；最后两条会启动 kernel 并运行 sanitizer，需要兼容设备与驱动。</p>
+<p>需要同时嵌入指定架构 cubin 与可供兼容设备 JIT 的 PTX 时，可构建 fatbin：</p>
+<div class="code-panel"><div class="code-caption"><span>BASH</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-bash"><span class="code-line" data-line="1">nvcc -O3 -std=c++17 -lineinfo \</span>
+<span class="code-line" data-line="2">  -gencode <span class="hljs-string">&#x27;arch=compute_86,code=[sm_86,compute_86]&#x27;</span> \</span>
+<span class="code-line" data-line="3">  examples/execution_and_scheduling.cu -o execution_fallback</span>
+<span class="code-line" data-line="4">cuobjdump --list-elf execution_fallback</span>
+<span class="code-line" data-line="5">cuobjdump --list-ptx execution_fallback</span></code></pre></div>
+<p>上例以 CC 8.6 展示成对填写的目标值；按实际设备与 Toolkit 支持结果，同时替换 <code>compute_86</code> 和 <code>sm_86</code> 中的版本号。<code>compute_XX</code> 是虚拟计算能力和 PTX 目标，<code>sm_XX</code> 是实际 GPU 的 cubin 目标。PTX 回退只有在 fatbin 确实包含该 PTX，且目标驱动支持时才可用。PowerShell 可用相同的 <code>-gencode</code> 选项，并将输出名改为 <code>.exe</code>。</p>
+<p>检查依赖链时，在 PTX 中定位循环回边与 <code>fma.rn.f32</code>，在 SASS 中查找 <code>FFMA</code>、循环计数和分支；若编译器展开循环或合并指令，应以真实控制流及读写同一累加寄存器的依赖为准。检查路径选择时沿 predicate 设置和条件 <code>BRA</code> 追踪两条路径；若变成谓词执行或选择指令，就记录实际形式，不从 C++ 函数名推断。检查 local/spill 时对照 <code>ptxas</code> 的 spill bytes/local bytes、SASS 中 local load/store 与源码里的动态索引对象。<code>--resource-usage</code>、<code>cuobjdump</code>、<code>nvdisasm</code> 用于查看资源和代码；<code>ldd</code>、<code>readelf -d</code> 检查 Linux host 动态库。主机崩溃时可运行 <code>gdb --args ./execution_check 257 20 5</code>，再用 <code>run</code> 和 <code>bt</code> 查看调用栈。<code>CUDA_LAUNCH_BLOCKING=1</code> 和 Compute Sanitizer 可帮助定位设备执行错误，但会改变执行条件，正式计时应关闭。</p>
+<p>Triton 的 PTX/cubin 通常由运行时编译并写入缓存。先运行目标 kernel，再按当前 Triton 版本、设备、dtype、shape 和编译配置定位对应缓存产物；缓存布局会随版本变化。将缓存中的 PTX/cubin 与这次实际 launch 的输入配置对应起来，再检查指令和资源，避免把其他配置的文件当作本次结果。</p>
+<p>编译阶段可对照 <a href="https://docs.nvidia.com/cuda/cuda-compiler-driver-nvcc/index.html#the-cuda-compilation-trajectory">NVCC compilation trajectory</a>；fatbin、cubin 与反汇编工具见 <a href="https://docs.nvidia.com/cuda/cuda-binary-utilities/index.html">CUDA Binary Utilities</a>；PTX 的指令、特殊寄存器和修饰符见 <a href="https://docs.nvidia.com/cuda/parallel-thread-execution/">PTX ISA</a>。</p>
 <h3 id="71-编译链接与运行时错误">7.1 编译、链接与运行时错误<a class="heading-anchor" href="#71-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5%E4%B8%8E%E8%BF%90%E8%A1%8C%E6%97%B6%E9%94%99%E8%AF%AF" aria-label="链接到7.1 编译、链接与运行时错误">#</a></h3>
 <p>一个 CUDA 程序经过源代码编译、链接、程序装载和设备执行。错误发生在哪个阶段，决定下一步检查什么。</p>
 <table>
@@ -828,7 +995,7 @@ acc_{fp32}&amp;\leftarrow\operatorname{fmaf}(a_f,b_f,acc_{fp32}).
 <p><code>ldd</code> 检查主机动态库实际从哪里加载，<code>readelf -d</code> 检查可执行文件的动态链接信息。主机代码崩溃时，用 <code>gdb --args ./execution_check 257 20 5</code> 启动，执行 run、bt 查看调用栈。设备访存报错则用小输入和 Compute Sanitizer 查 kernel 地址。两类工具分别定位主机调用和设备访问。</p>
 <p>缩小问题时，只保留一个失败形状、一个实现和固定输入；记录完整命令、首个错误及对应源码位置。修复后重新进行数值比较和边界测试，再恢复异步执行与性能计时。</p>
 <h2 id="8-从编译产物到-kernel-启动">8. 从编译产物到 kernel 启动<a class="heading-anchor" href="#8-%E4%BB%8E%E7%BC%96%E8%AF%91%E4%BA%A7%E7%89%A9%E5%88%B0-kernel-%E5%90%AF%E5%8A%A8" aria-label="链接到8. 从编译产物到 kernel 启动">#</a></h2>
-<p>第 7 节已经说明 CUDA 源码如何落成 PTX 与 SASS。这里先把 Runtime API 和 Driver API 放回一次实际启动：它们都是 CPU 侧控制 GPU 的函数接口；前者包装常规启动步骤，后者让程序显式操作每个步骤。</p>
+<p>程序装载设备代码后，CPU 侧通过 Runtime API 或 Driver API 建立启动所需的设备上下文、代码模块和 kernel 句柄，再把 launch 请求提交到 stream。两套 API 都控制 GPU；Runtime 封装常见步骤，Driver API 则让程序显式管理这些对象。</p>
 <p>以向量加法 <code>vector_add</code> 为例，主机先选择一张 GPU，再取得使用这张 GPU 的运行环境。这个环境叫 context（上下文），保存该设备的显存分配、已装载代码和执行资源；它不是线程 block 或 SM。接着，程序把设备代码装载成 module（代码包），再用编译代码中的函数名字查找 <code>vector_add</code>。编译代码中用于查找函数或变量的名字称为符号，Driver 找到后返回 <code>CUfunction</code> 句柄；句柄只是 API 识别这个 kernel 的标识。</p>
 <p>主机随后准备参数，把启动请求排进 stream（执行队列）。GPU 按 stream 中的顺序执行，主机在同步或读回结果时等待完成。CUDA C++ 的 <code>kernel&lt;&lt;&lt;grid, block, shared_bytes, stream&gt;&gt;&gt;(args)</code> 启动语法由编译器生成主机侧调用，Runtime 负责传参和代码装载等步骤；Driver API 则由程序显式调用选设备、取得 context、装载 module、查找函数和启动 kernel 的接口。</p>
 <p>一个 CPU 线程调用 Driver API 时，使用的是它当前选中的 current context；另一个 CPU 线程可以选中自己的 context。Runtime 通常共享设备的 primary context（主上下文）：<code>cuDevicePrimaryCtxRetain</code> 取得使用权，<code>cuCtxSetCurrent</code> 将它设为当前环境，最后用对应的 release 归还使用权。本例在同一 context 中分配显存、取得函数和启动 kernel，保持资源的所属关系一致；自行创建的 context 则在使用结束后调用对应的 destroy 操作。</p>
