@@ -7,6 +7,8 @@
 
 | 文件 | 功能 | LeetGPU 原始代码 | 验收 |
 |------|------|------|------|
+| [`transpose_v2.py`](./transpose_v2.py) | Triton Matrix Transpose V2，32×32 tile | 本地对话快照；[单元卡](../../notes/triton/transpose-v2-2026-10-13.md)，平台原始代码状态未知 | `WIP`：Python 语法静态检查通过；LeetGPU / GPU 未验证 |
+| [`transpose_v1.py`](./transpose_v1.py) | Triton Matrix Transpose V1 | 本地对话初版；[单元卡与优化思路](../../notes/triton/transpose-v1-2026-10-13.md)，不是平台原始通过版本 | `WIP`：Python 语法检查通过；LeetGPU / GPU 未验证 |
 | [`vector_add.py`](./vector_add.py) | Triton Vector Add | **原始 LeetGPU `solve` 尚未单独归档**；当前文件是本地验证/benchmark wrapper | `GPU_VALIDATED`：LeetGPU 通过；AutoDL RTX 3090，Triton 840.1 GB/s，`torch.add` 843.0 GB/s |
 | [`matmul_leetgpu.py`](./matmul_leetgpu.py) | Triton tiled GEMM：LeetGPU 最终原始 `solve`/kernel 归档 | `LEETGPU_PASS`：LeetGPU #02，Triton，2026-08-28；SuccessPublicTrace | A100-80GB，24.54 ms，55.3th percentile |
 | [`matmul_leetgpu_wip.py`](./matmul_leetgpu_wip.py) | Triton tiled GEMM：历史平台代码快照 | 历史 `WIP`：默认 TF32 精度失败案例，保留用于复盘 | 4×4 case 最大绝对误差 `0.1275177001953125`；IEEE 版本后平台通过 |

@@ -1,0 +1,28 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Triton Matrix Transpose V1 单元卡 · AIINFFRA 附属文档</title><script src="../../../theme.js?v=3aab643066da"></script><link rel="stylesheet" href="../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../styles.css?v=deca86f54b40"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../index.html?chapter=1">返回课程</a></nav><button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换到浅色模式">浅色</button></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · notes/triton/transpose-v1-2026-10-13.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#api-%E4%BF%AE%E6%AD%A3%E8%AE%B0%E5%BD%95">API 修正记录</a></li><li><a href="#v2-%E4%BC%98%E5%8C%96%E6%80%9D%E8%B7%AF%E4%BB%85%E5%BB%BA%E8%AE%AE">V2 优化思路（仅建议）</a></li></ol></nav><div class="markdown-body"><h1 id="triton-matrix-transpose-v1-单元卡">Triton Matrix Transpose V1 单元卡<a class="heading-anchor" href="#triton-matrix-transpose-v1-%E5%8D%95%E5%85%83%E5%8D%A1" aria-label="链接到Triton Matrix Transpose V1 单元卡">#</a></h1>
+<ul>
+<li>来源：用户 2026-10-13 对话中的初版；本地快照为 <a href="../../solutions/triton/transpose_v1.py">transpose_v1.py</a>。Agent 只做两处 API 修正，未把这份代码标成平台原始通过版本。</li>
+<li>题目：<a href="https://leetgpu.com/challenges/matrix-transpose">LeetGPU Matrix Transpose</a></li>
+<li>适用范围：仅支持 contiguous <code>input[rows, cols]</code>，输出为独立存储、相同 dtype 的 contiguous <code>output[cols, rows]</code>。内核保留四个 stride 形参及调用，但当前地址公式没有使用它们。</li>
+<li>状态：<code>WIP</code>。Python 语法静态检查通过；尚未运行 Triton JIT、LeetGPU、GPU 正确性或性能测试。</li>
+<li>LeetGPU：未验证。</li>
+<li>服务器：未运行。</li>
+<li>下一步：将 <code>1×1</code>、<code>3×5</code>、<code>32×32</code>、<code>37×65</code> 作为建议的小 case 检查，确认平台题面合同后再决定是否提交。这里不代表平台已经验证矩形输入。</li>
+</ul>
+<p>源码保留 <code>solve</code> 和 kernel，供题目编辑器调用；没有服务器测试或计时入口。Python 语法检查不会执行这些函数，也不会触发 Triton JIT。</p>
+<p>V2 已保存为本地对话快照：<a href="transpose-v2-2026-10-13.html">Triton Matrix Transpose V2 单元卡</a>。该链接只表示代码已归档，不表示平台或服务器验证通过。</p>
+<h2 id="api-修正记录">API 修正记录<a class="heading-anchor" href="#api-%E4%BF%AE%E6%AD%A3%E8%AE%B0%E5%BD%95" aria-label="链接到API 修正记录">#</a></h2>
+<p>以下两行保留为未运行的原始错误调用示例：</p>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1">a = tl.load(<span class="hljs-built_in">input</span> + offsetA, other=<span class="hljs-number">0.0</span>)</span>
+<span class="code-line" data-line="2">tl.store(output + offsetB)</span></code></pre></div>
+<p>本地 V1 只将无 mask 的 <code>tl.load</code> 改为不带 <code>other</code>，并给 <code>tl.store</code> 补上待写入值 <code>a</code>。没有进行其他代码整理或优化。</p>
+<h2 id="v2-优化思路仅建议">V2 优化思路（仅建议）<a class="heading-anchor" href="#v2-%E4%BC%98%E5%8C%96%E6%80%9D%E8%B7%AF%E4%BB%85%E5%BB%BA%E8%AE%AE" aria-label="链接到V2 优化思路（仅建议）">#</a></h2>
+<p>V1 每个 program 对应一个矩阵元素，<code>grid=(rows, cols)</code>，所以 37×65 会启动 2405 个 program。可以从 32×32 tile 开始讨论 V2：<code>grid=(triton.cdiv(rows, 32), triton.cdiv(cols, 32))</code>，37×65 对应 6 个 program。这只是 program 数量对比，不代表速度倍数。</p>
+<p>二维 tile 需要分别处理输入和输出边界，并设计读写布局。不能把两个 <code>tl.arange(0, 1)</code> 直接改成 <code>tl.arange(0, 32)</code>：若输入沿列方向读 <code>A[r, c+k]</code>，输入偏移随 <code>k</code> 增加 1；转置输出是 <code>B[c+k, r]</code>，其连续地址步进为 <code>rows</code> 个元素。需要重新安排 tile 内的值与写出顺序，使读写两侧都获得合适的连续访问。</p>
+<p>下一次实现可以先写下面的坐标与 mask 骨架，不急着填写完整读写：</p>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1">r = tl.program_id(<span class="hljs-number">0</span>) * BLOCK_R + tl.arange(<span class="hljs-number">0</span>, BLOCK_R)</span>
+<span class="code-line" data-line="2">c = tl.program_id(<span class="hljs-number">1</span>) * BLOCK_C + tl.arange(<span class="hljs-number">0</span>, BLOCK_C)</span>
+<span class="code-line" data-line="3">valid = (r[:, <span class="hljs-literal">None</span>] &lt; rows) &amp; (c[<span class="hljs-literal">None</span>, :] &lt; cols)</span></code></pre></div>
+<p><code>r</code> 是这一块覆盖的行号，<code>c</code> 是列号；广播后 <code>valid</code> 的形状是 <code>[BLOCK_R, BLOCK_C]</code>。从 <code>BLOCK_R=BLOCK_C=32</code> 开始，先确认每个逻辑元素 <code>A[r,c]</code> 写到 <code>B[c,r]</code>，再讨论实际线程的读写排列。32×32 的逻辑 tile 不等于 1024 个硬件线程。</p>
+<p>后续应结合实际连续读写布局、编译器生成指令、寄存器和 shared memory 资源，再选择 tile 或 <code>num_warps</code>。CUDA 的 <code>tile[32][33]</code> 是特定 shared-memory bank 映射下的做法，不等价于 Triton tile 简单加 33。当前没有测量 lane 分配、DRAM 饱和程度或速度数字。</p>
+<p>性能对照要完成同样的实际搬运：使用预分配的输出，与 <code>output.copy_(input.T)</code> 比较，不能只计创建 <code>input.T</code> 视图的时间。平台验证通过后，按同一 GPU、shape、dtype 和计时范围记录 ms 与有效 GB/s；读取和写入合计的有效数据量为 <code>2 * rows * cols * input.element_size()</code>。</p>
+</div></main><script src="../../../reader.js"></script></body></html>

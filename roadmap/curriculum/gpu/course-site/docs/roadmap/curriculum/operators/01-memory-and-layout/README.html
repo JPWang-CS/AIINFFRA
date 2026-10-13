@@ -149,6 +149,78 @@ N \times E\ \text{(read)} + N \times E\ \text{(write)} = 2NE.</annotation></sema
 <span class="code-line" data-line="11"> 4  9 14</span></code></pre></div>
 <p>A[1,4]在线性位置9，B[4,1]在线性位置4×3+1=13。真实转置把值从输入位置9写到输出位置13；view只改变解释方式，不完成这次实际搬运。</p>
 <p>对naive kernel，如果lane沿输入列连续，每条加载可访问相邻元素。但同样的lane直接写B[col*M+row]时，输出位置相隔M个元素。<strong>输入合并，不保证输出也合并。</strong> 这正是共享内存转置要解决的问题，而不是为了“所有global访问都先搬到shared”。</p>
+<p>下面的 Triton kernel 将一个逻辑 program 映射到一个输入行列坐标。指针偏移以元素为单位；<code>A[r,c]</code> 的值写到 <code>B[c,r]</code>。grid 与输入元素一一对应，因此边界恰好覆盖完整矩阵，不需要 mask。<code>tl.arange(0, 1)</code> 生成长度为 1 的逻辑索引值，不代表硬件恰好使用一个 thread。四个 stride 参数保留在接口中，但地址计算未使用它们，因此实现只支持连续布局。</p>
+<!-- source-check: solutions/triton/transpose_v1.py -->
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1"><span class="hljs-keyword">import</span> torch</span>
+<span class="code-line" data-line="2"><span class="hljs-keyword">import</span> triton</span>
+<span class="code-line" data-line="3"><span class="hljs-keyword">import</span> triton.language <span class="hljs-keyword">as</span> tl</span>
+<span class="code-line" data-line="4"></span>
+<span class="code-line" data-line="5"></span>
+<span class="code-line" data-line="6"><span class="hljs-meta">@triton.jit</span></span>
+<span class="code-line" data-line="7"><span class="hljs-keyword">def</span> <span class="hljs-title function_">matrix_transpose_kernel</span>(<span class="hljs-params"><span class="hljs-built_in">input</span>, output, rows, cols, stride_ir, stride_ic, stride_or, stride_oc</span>):</span>
+<span class="code-line" data-line="8">    <span class="hljs-comment"># offset</span></span>
+<span class="code-line" data-line="9">    offsetA = tl.program_id(<span class="hljs-number">0</span>) * cols + tl.program_id(<span class="hljs-number">1</span>) + tl.arange(<span class="hljs-number">0</span>, <span class="hljs-number">1</span>)</span>
+<span class="code-line" data-line="10">    offsetB = tl.program_id(<span class="hljs-number">1</span>) * rows + tl.program_id(<span class="hljs-number">0</span>) + tl.arange(<span class="hljs-number">0</span>, <span class="hljs-number">1</span>)</span>
+<span class="code-line" data-line="11">    <span class="hljs-comment"># mask</span></span>
+<span class="code-line" data-line="12">    <span class="hljs-comment"># maskA = offsetA &lt; (rows * cols)</span></span>
+<span class="code-line" data-line="13">    <span class="hljs-comment"># maskB = offsetB &lt; (rows * cols)</span></span>
+<span class="code-line" data-line="14">    <span class="hljs-comment"># load</span></span>
+<span class="code-line" data-line="15">    a = tl.load(<span class="hljs-built_in">input</span> + offsetA)</span>
+<span class="code-line" data-line="16">    <span class="hljs-comment"># store</span></span>
+<span class="code-line" data-line="17">    tl.store(output + offsetB, a)</span>
+<span class="code-line" data-line="18"></span>
+<span class="code-line" data-line="19"></span>
+<span class="code-line" data-line="20"></span>
+<span class="code-line" data-line="21"><span class="hljs-comment"># input, output are tensors on the GPU</span></span>
+<span class="code-line" data-line="22"><span class="hljs-keyword">def</span> <span class="hljs-title function_">solve</span>(<span class="hljs-params"><span class="hljs-built_in">input</span>: torch.Tensor, output: torch.Tensor, rows: <span class="hljs-built_in">int</span>, cols: <span class="hljs-built_in">int</span></span>):</span>
+<span class="code-line" data-line="23">    stride_ir, stride_ic = cols, <span class="hljs-number">1</span></span>
+<span class="code-line" data-line="24">    stride_or, stride_oc = rows, <span class="hljs-number">1</span></span>
+<span class="code-line" data-line="25"></span>
+<span class="code-line" data-line="26">    grid = (rows, cols)</span>
+<span class="code-line" data-line="27">    matrix_transpose_kernel[grid](</span>
+<span class="code-line" data-line="28">        <span class="hljs-built_in">input</span>, output, rows, cols, stride_ir, stride_ic, stride_or, stride_oc</span>
+<span class="code-line" data-line="29">    )</span></code></pre></div>
+<p>V2 将一个 program 覆盖到 32×32 输入 tile，其中 <code>BR = block_size[0]</code>、<code>BC = block_size[1]</code>。<code>offsetA</code> 生成输入坐标，<code>maskA</code> 校验这些坐标，<code>a</code> 按该坐标从输入读取，三者形状为 <code>[BR, BC]</code>；<code>offsetB</code> 生成转置后的输出坐标，<code>b = tl.trans(a)</code> 将值按转置坐标排列，<code>maskB</code> 校验输出坐标，三者形状为 <code>[BC, BR]</code>。输出坐标、数据和 mask 必须相互对应；两个维度恰好同为 32，不代表两侧元素位置相同。下面代码来自用户本地对话快照；题目入口见 <a href="https://leetgpu.com/challenges/matrix-transpose">Matrix Transpose</a>。</p>
+<!-- source-check: solutions/triton/transpose_v2.py -->
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1"><span class="hljs-keyword">import</span> torch</span>
+<span class="code-line" data-line="2"><span class="hljs-keyword">import</span> triton</span>
+<span class="code-line" data-line="3"><span class="hljs-keyword">import</span> triton.language <span class="hljs-keyword">as</span> tl</span>
+<span class="code-line" data-line="4"></span>
+<span class="code-line" data-line="5"></span>
+<span class="code-line" data-line="6"><span class="hljs-meta">@triton.jit</span></span>
+<span class="code-line" data-line="7"><span class="hljs-keyword">def</span> <span class="hljs-title function_">matrix_transpose_kernel</span>(<span class="hljs-params"><span class="hljs-built_in">input</span>, output, rows, cols, stride_ir, stride_ic, stride_or, stride_oc, block_size: tl.constexpr</span>):</span>
+<span class="code-line" data-line="8">    <span class="hljs-comment"># offset</span></span>
+<span class="code-line" data-line="9">    offset_ax = tl.program_id(<span class="hljs-number">0</span>) * block_size[<span class="hljs-number">0</span>] + tl.arange(<span class="hljs-number">0</span>, block_size[<span class="hljs-number">0</span>])</span>
+<span class="code-line" data-line="10">    offset_ay = tl.program_id(<span class="hljs-number">1</span>) * block_size[<span class="hljs-number">1</span>] + tl.arange(<span class="hljs-number">0</span>, block_size[<span class="hljs-number">1</span>])</span>
+<span class="code-line" data-line="11">    offset_bx = tl.program_id(<span class="hljs-number">1</span>) * block_size[<span class="hljs-number">1</span>] + tl.arange(<span class="hljs-number">0</span>, block_size[<span class="hljs-number">1</span>])</span>
+<span class="code-line" data-line="12">    offset_by = tl.program_id(<span class="hljs-number">0</span>) * block_size[<span class="hljs-number">0</span>] + tl.arange(<span class="hljs-number">0</span>, block_size[<span class="hljs-number">0</span>])</span>
+<span class="code-line" data-line="13">    offsetA = offset_ax[:, <span class="hljs-literal">None</span>] * cols + offset_ay[<span class="hljs-literal">None</span>, :]</span>
+<span class="code-line" data-line="14">    offsetB = offset_bx[:, <span class="hljs-literal">None</span>] * rows + offset_by[<span class="hljs-literal">None</span>, :]</span>
+<span class="code-line" data-line="15">    <span class="hljs-comment"># mask</span></span>
+<span class="code-line" data-line="16">    maskA = (offset_ax[:, <span class="hljs-literal">None</span>] &lt; rows) &amp; (offset_ay[<span class="hljs-literal">None</span>, :] &lt; cols)</span>
+<span class="code-line" data-line="17">    maskB = (offset_bx[:, <span class="hljs-literal">None</span>] &lt; cols) &amp; (offset_by[<span class="hljs-literal">None</span>, :] &lt; rows)</span>
+<span class="code-line" data-line="18">    <span class="hljs-comment"># load</span></span>
+<span class="code-line" data-line="19"></span>
+<span class="code-line" data-line="20">    <span class="hljs-comment"># a = tl.load(input + offsetA, other = 0.0)</span></span>
+<span class="code-line" data-line="21">    a = tl.load(<span class="hljs-built_in">input</span> + offsetA, mask = maskA, other = <span class="hljs-number">0.0</span>)</span>
+<span class="code-line" data-line="22">    <span class="hljs-comment"># trans</span></span>
+<span class="code-line" data-line="23">    b = tl.trans(a)</span>
+<span class="code-line" data-line="24">    <span class="hljs-comment"># store</span></span>
+<span class="code-line" data-line="25">    tl.store(output + offsetB, b, mask = maskB)</span>
+<span class="code-line" data-line="26"></span>
+<span class="code-line" data-line="27"></span>
+<span class="code-line" data-line="28"></span>
+<span class="code-line" data-line="29"><span class="hljs-comment"># input, output are tensors on the GPU</span></span>
+<span class="code-line" data-line="30"><span class="hljs-keyword">def</span> <span class="hljs-title function_">solve</span>(<span class="hljs-params"><span class="hljs-built_in">input</span>: torch.Tensor, output: torch.Tensor, rows: <span class="hljs-built_in">int</span>, cols: <span class="hljs-built_in">int</span></span>):</span>
+<span class="code-line" data-line="31">    stride_ir, stride_ic = cols, <span class="hljs-number">1</span></span>
+<span class="code-line" data-line="32">    stride_or, stride_oc = rows, <span class="hljs-number">1</span></span>
+<span class="code-line" data-line="33">    <span class="hljs-comment"># block级搬运</span></span>
+<span class="code-line" data-line="34">    block_size = (<span class="hljs-number">32</span>, <span class="hljs-number">32</span>)</span>
+<span class="code-line" data-line="35">    <span class="hljs-comment"># grid = (rows, cols)</span></span>
+<span class="code-line" data-line="36">    grid = ((rows + block_size[<span class="hljs-number">0</span>] - <span class="hljs-number">1</span>) // block_size[<span class="hljs-number">0</span>], (cols + block_size[<span class="hljs-number">1</span>] - <span class="hljs-number">1</span>) // block_size[<span class="hljs-number">1</span>])</span>
+<span class="code-line" data-line="37">    matrix_transpose_kernel[grid](</span>
+<span class="code-line" data-line="38">        <span class="hljs-built_in">input</span>, output, rows, cols, stride_ir, stride_ic, stride_or, stride_oc, block_size</span>
+<span class="code-line" data-line="39">    )</span></code></pre></div>
 <h3 id="62-shared-tile-分开输入阶段与输出阶段">6.2 shared tile 分开输入阶段与输出阶段<a class="heading-anchor" href="#62-shared-tile-%E5%88%86%E5%BC%80%E8%BE%93%E5%85%A5%E9%98%B6%E6%AE%B5%E4%B8%8E%E8%BE%93%E5%87%BA%E9%98%B6%E6%AE%B5" aria-label="链接到6.2 shared tile 分开输入阶段与输出阶段">#</a></h3>
 <p>共享 tile 转置把输入阶段和输出阶段分成两个地址合同。输入阶段让 <code>threadIdx.x</code> 沿输入列变化，输出阶段让它沿输出列变化：</p>
 <div class="code-panel"><div class="code-caption"><span>CPP</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-cpp"><span class="code-line" data-line="1"><span class="hljs-type">const</span> <span class="hljs-type">int</span> in_row = blockIdx.y * <span class="hljs-number">32</span> + threadIdx.y;</span>

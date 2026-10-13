@@ -278,6 +278,86 @@ A[1,4]在线性位置9，B[4,1]在线性位置4×3+1=13。真实转置把值从�
 
 对naive kernel，如果lane沿输入列连续，每条加载可访问相邻元素。但同样的lane直接写B[col*M+row]时，输出位置相隔M个元素。**输入合并，不保证输出也合并。** 这正是共享内存转置要解决的问题，而不是为了“所有global访问都先搬到shared”。
 
+下面的 Triton kernel 将一个逻辑 program 映射到一个输入行列坐标。指针偏移以元素为单位；`A[r,c]` 的值写到 `B[c,r]`。grid 与输入元素一一对应，因此边界恰好覆盖完整矩阵，不需要 mask。`tl.arange(0, 1)` 生成长度为 1 的逻辑索引值，不代表硬件恰好使用一个 thread。四个 stride 参数保留在接口中，但地址计算未使用它们，因此实现只支持连续布局。
+
+<!-- source-check: solutions/triton/transpose_v1.py -->
+~~~python
+import torch
+import triton
+import triton.language as tl
+
+
+@triton.jit
+def matrix_transpose_kernel(input, output, rows, cols, stride_ir, stride_ic, stride_or, stride_oc):
+    # offset
+    offsetA = tl.program_id(0) * cols + tl.program_id(1) + tl.arange(0, 1)
+    offsetB = tl.program_id(1) * rows + tl.program_id(0) + tl.arange(0, 1)
+    # mask
+    # maskA = offsetA < (rows * cols)
+    # maskB = offsetB < (rows * cols)
+    # load
+    a = tl.load(input + offsetA)
+    # store
+    tl.store(output + offsetB, a)
+
+
+
+# input, output are tensors on the GPU
+def solve(input: torch.Tensor, output: torch.Tensor, rows: int, cols: int):
+    stride_ir, stride_ic = cols, 1
+    stride_or, stride_oc = rows, 1
+
+    grid = (rows, cols)
+    matrix_transpose_kernel[grid](
+        input, output, rows, cols, stride_ir, stride_ic, stride_or, stride_oc
+    )
+~~~
+
+V2 将一个 program 覆盖到 32×32 输入 tile，其中 `BR = block_size[0]`、`BC = block_size[1]`。`offsetA` 生成输入坐标，`maskA` 校验这些坐标，`a` 按该坐标从输入读取，三者形状为 `[BR, BC]`；`offsetB` 生成转置后的输出坐标，`b = tl.trans(a)` 将值按转置坐标排列，`maskB` 校验输出坐标，三者形状为 `[BC, BR]`。输出坐标、数据和 mask 必须相互对应；两个维度恰好同为 32，不代表两侧元素位置相同。下面代码来自用户本地对话快照；题目入口见 [Matrix Transpose](https://leetgpu.com/challenges/matrix-transpose)。
+
+<!-- source-check: solutions/triton/transpose_v2.py -->
+~~~python
+import torch
+import triton
+import triton.language as tl
+
+
+@triton.jit
+def matrix_transpose_kernel(input, output, rows, cols, stride_ir, stride_ic, stride_or, stride_oc, block_size: tl.constexpr):
+    # offset
+    offset_ax = tl.program_id(0) * block_size[0] + tl.arange(0, block_size[0])
+    offset_ay = tl.program_id(1) * block_size[1] + tl.arange(0, block_size[1])
+    offset_bx = tl.program_id(1) * block_size[1] + tl.arange(0, block_size[1])
+    offset_by = tl.program_id(0) * block_size[0] + tl.arange(0, block_size[0])
+    offsetA = offset_ax[:, None] * cols + offset_ay[None, :]
+    offsetB = offset_bx[:, None] * rows + offset_by[None, :]
+    # mask
+    maskA = (offset_ax[:, None] < rows) & (offset_ay[None, :] < cols)
+    maskB = (offset_bx[:, None] < cols) & (offset_by[None, :] < rows)
+    # load
+
+    # a = tl.load(input + offsetA, other = 0.0)
+    a = tl.load(input + offsetA, mask = maskA, other = 0.0)
+    # trans
+    b = tl.trans(a)
+    # store
+    tl.store(output + offsetB, b, mask = maskB)
+
+
+
+# input, output are tensors on the GPU
+def solve(input: torch.Tensor, output: torch.Tensor, rows: int, cols: int):
+    stride_ir, stride_ic = cols, 1
+    stride_or, stride_oc = rows, 1
+    # block级搬运
+    block_size = (32, 32)
+    # grid = (rows, cols)
+    grid = ((rows + block_size[0] - 1) // block_size[0], (cols + block_size[1] - 1) // block_size[1])
+    matrix_transpose_kernel[grid](
+        input, output, rows, cols, stride_ir, stride_ic, stride_or, stride_oc, block_size
+    )
+~~~
+
 ### 6.2 shared tile 分开输入阶段与输出阶段
 
 共享 tile 转置把输入阶段和输出阶段分成两个地址合同。输入阶段让 `threadIdx.x` 沿输入列变化，输出阶段让它沿输出列变化：
