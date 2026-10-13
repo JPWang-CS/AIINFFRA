@@ -1,14 +1,15 @@
 # Triton 实现
 
-> 位置：这里保存用户的可执行版本和明确标记的 `WIP` 快照；当前单元的题目、代码快照和验收入口见 [Lesson 08](../../lessons/08-triton-fused-softmax.md)。
+> 位置：这里保存用户的可执行版本和明确标记的 `WIP` 快照；当前转置单元的题目、平台代码和验收入口见 [Matrix Transpose 单元卡](../../notes/triton/transpose-v2-2026-10-13.md)。
 > 计划入口：[roadmap/ai-infra-curriculum.md](../../roadmap/ai-infra-curriculum.md) M2
 
 ## 当前进度
 
 | 文件 | 功能 | LeetGPU 原始代码 | 验收 |
 |------|------|------|------|
-| [`transpose_v2.py`](./transpose_v2.py) | Triton Matrix Transpose V2，32×32 tile | 本地对话快照；[单元卡](../../notes/triton/transpose-v2-2026-10-13.md)，平台原始代码状态未知 | `WIP`：Python 语法静态检查通过；LeetGPU / GPU 未验证 |
-| [`transpose_v1.py`](./transpose_v1.py) | Triton Matrix Transpose V1 | 本地对话初版；[单元卡与优化思路](../../notes/triton/transpose-v1-2026-10-13.md)，不是平台原始通过版本 | `WIP`：Python 语法检查通过；LeetGPU / GPU 未验证 |
+| [`transpose_v2_leetgpu.py`](./transpose_v2_leetgpu.py) | Triton Matrix Transpose V2，32×32 tile；LeetGPU 原始通过代码 | `LEETGPU_PASS`：2026-10-13，SuccessPublicTrace | 0.33 ms，50.5th percentile；服务器待测 |
+| [`transpose_v2.py`](./transpose_v2.py) | Triton Matrix Transpose V2，32×32 tile历史快照 | 历史本地对话快照；[单元卡](../../notes/triton/transpose-v2-2026-10-13.md) | 历史 `WIP` 快照，未独立验证 |
+| [`transpose_v1.py`](./transpose_v1.py) | Triton Matrix Transpose V1历史快照 | 历史本地对话初版；[单元卡与优化思路](../../notes/triton/transpose-v1-2026-10-13.md) | 历史 `WIP` 快照，未独立验证 |
 | [`vector_add.py`](./vector_add.py) | Triton Vector Add | **原始 LeetGPU `solve` 尚未单独归档**；当前文件是本地验证/benchmark wrapper | `GPU_VALIDATED`：LeetGPU 通过；AutoDL RTX 3090，Triton 840.1 GB/s，`torch.add` 843.0 GB/s |
 | [`matmul_leetgpu.py`](./matmul_leetgpu.py) | Triton tiled GEMM：LeetGPU 最终原始 `solve`/kernel 归档 | `LEETGPU_PASS`：LeetGPU #02，Triton，2026-08-28；SuccessPublicTrace | A100-80GB，24.54 ms，55.3th percentile |
 | [`matmul_leetgpu_wip.py`](./matmul_leetgpu_wip.py) | Triton tiled GEMM：历史平台代码快照 | 历史 `WIP`：默认 TF32 精度失败案例，保留用于复盘 | 4×4 case 最大绝对误差 `0.1275177001953125`；IEEE 版本后平台通过 |

@@ -21,6 +21,7 @@
 
 | 日期 | 主题 | 对应 PATH |
 |------|------|----------|
+| [2026-10-13-triton-transpose-leetgpu](2026-10-13-triton-transpose-leetgpu.md) | Triton Matrix Transpose V2 LeetGPU 通过归档；服务器验证待做 | Triton Matrix Transpose V2 |
 | [2026-08-30-triton-matmul-nsys](2026-08-30-triton-matmul-nsys.md) | Triton MatMul Nsight Systems P0-lite：s3/s2 资源与性能因果实验 | B1 |
 | [2026-08-28-triton-matmul-leetgpu](2026-08-28-triton-matmul-leetgpu.md) | Triton MatMul LeetGPU 通过归档 + RTX 3090 服务器验证复盘 | B1 |
 | [2026-09-01-triton-softmax-leetgpu](2026-09-01-triton-softmax-leetgpu.md) | Triton Softmax LeetGPU 原始代码归档与通过结果复盘；服务器 baseline 待做 | B2 |

@@ -7,6 +7,8 @@
 
 ## 0. 最后更新
 
+- 2026-10-13（归档用户本次 LeetGPU 通过的 Triton Matrix Transpose V2 32×32 tile 原始代码至 `solutions/triton/transpose_v2_leetgpu.py`，原始结果保存至 `notes/triton/logs/2026-10-13-transpose-v2-leetgpu.txt`。`SuccessPublicTrace` 为 2026/10/13 23:21:59，耗时 `0.33 ms`，`50.5th` percentile；状态由 `WIP` 升为 `LEETGPU_PASS`。同步更新转置 V2 单元卡、算子课程 §6.1、Triton README、PATH、NOW 和周报索引；服务器正确性与真实性能仍待测。GPU 基础阅读断点、既有 branch-probe 实验状态、历史算子成绩和 MLA 论文线保持不变；未实现新的 server runner。）
+
 - 2026-10-13（保存用户对话中的 Triton Matrix Transpose V2 32×32 tile 代码到 `solutions/triton/transpose_v2.py`，新增单元卡并在 §6.1 原 V1 代码后加入同步的 V2 教程代码；V1 单元卡仅追加 V2 回看链接。实现保留用户的 tile、寻址、mask、`num_warps` 默认值和接口参数，未做计算改写。Python 语法静态检查通过；LeetGPU、Triton JIT、GPU 正确性与性能未验证。用户要求提交并推送本次转置归档。）
 
 - 2026-10-13（保存用户对话中的 Triton Matrix Transpose V1 到 `solutions/triton/transpose_v1.py`，并在课程 §6.1 内嵌同步代码。只修正两处 API：无 mask 的 `tl.load` 移除 `other=0.0`，`tl.store` 补入值 `a`。新增私人单元卡及 Triton README 的 `WIP` 行；尚未运行 Triton JIT、LeetGPU 或 GPU 正确性/性能验证，不表示平台原始代码已通过。未改 PATH/NOW，不改学习状态；未 commit/push。）

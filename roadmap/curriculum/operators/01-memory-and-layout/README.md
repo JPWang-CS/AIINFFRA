@@ -313,9 +313,9 @@ def solve(input: torch.Tensor, output: torch.Tensor, rows: int, cols: int):
     )
 ~~~
 
-V2 将一个 program 覆盖到 32×32 输入 tile，其中 `BR = block_size[0]`、`BC = block_size[1]`。`offsetA` 生成输入坐标，`maskA` 校验这些坐标，`a` 按该坐标从输入读取，三者形状为 `[BR, BC]`；`offsetB` 生成转置后的输出坐标，`b = tl.trans(a)` 将值按转置坐标排列，`maskB` 校验输出坐标，三者形状为 `[BC, BR]`。输出坐标、数据和 mask 必须相互对应；两个维度恰好同为 32，不代表两侧元素位置相同。下面代码来自用户本地对话快照；题目入口见 [Matrix Transpose](https://leetgpu.com/challenges/matrix-transpose)。
+V2 将一个 program 覆盖到 32×32 输入 tile，其中 `BR = block_size[0]`、`BC = block_size[1]`。`offsetA` 生成输入坐标，`maskA` 校验这些坐标，`a` 按该坐标从输入读取，三者形状为 `[BR, BC]`；`offsetB` 生成转置后的输出坐标，`b = tl.trans(a)` 将值按转置坐标排列，`maskB` 校验输出坐标，三者形状为 `[BC, BR]`。输出坐标、数据和 mask 必须相互对应；两个维度恰好同为 32，不代表两侧元素位置相同。下面代码是本次 LeetGPU 通过后的原始平台归档；题目入口见 [Matrix Transpose](https://leetgpu.com/challenges/matrix-transpose)，历史本地快照保留在 `solutions/triton/transpose_v2.py`。
 
-<!-- source-check: solutions/triton/transpose_v2.py -->
+<!-- source-check: solutions/triton/transpose_v2_leetgpu.py -->
 ~~~python
 import torch
 import triton
@@ -323,40 +323,50 @@ import triton.language as tl
 
 
 @triton.jit
-def matrix_transpose_kernel(input, output, rows, cols, stride_ir, stride_ic, stride_or, stride_oc, block_size: tl.constexpr):
-    # offset
+def matrix_transpose_kernel(
+    input, output, rows, cols,
+    stride_ir, stride_ic, stride_or, stride_oc,
+    block_size: tl.constexpr,
+):
+    # 当前输入块覆盖的行、列
     offset_ax = tl.program_id(0) * block_size[0] + tl.arange(0, block_size[0])
     offset_ay = tl.program_id(1) * block_size[1] + tl.arange(0, block_size[1])
-    offset_bx = tl.program_id(1) * block_size[1] + tl.arange(0, block_size[1])
-    offset_by = tl.program_id(0) * block_size[0] + tl.arange(0, block_size[0])
+
+    # 转置后，输入列变成输出行，输入行变成输出列
+    offset_bx = offset_ay
+    offset_by = offset_ax
+
     offsetA = offset_ax[:, None] * cols + offset_ay[None, :]
     offsetB = offset_bx[:, None] * rows + offset_by[None, :]
-    # mask
+
     maskA = (offset_ax[:, None] < rows) & (offset_ay[None, :] < cols)
     maskB = (offset_bx[:, None] < cols) & (offset_by[None, :] < rows)
-    # load
 
-    # a = tl.load(input + offsetA, other = 0.0)
-    a = tl.load(input + offsetA, mask = maskA, other = 0.0)
-    # trans
+    a = tl.load(input + offsetA, mask=maskA, other=0.0)
     b = tl.trans(a)
-    # store
-    tl.store(output + offsetB, b, mask = maskB)
+    tl.store(output + offsetB, b, mask=maskB)
 
 
-
-# input, output are tensors on the GPU
-def solve(input: torch.Tensor, output: torch.Tensor, rows: int, cols: int):
-    stride_ir, stride_ic = cols, 1
-    stride_or, stride_oc = rows, 1
-    # block级搬运
+def solve(
+    input: torch.Tensor,
+    output: torch.Tensor,
+    rows: int,
+    cols: int,
+):
     block_size = (32, 32)
-    # grid = (rows, cols)
-    grid = ((rows + block_size[0] - 1) // block_size[0], (cols + block_size[1] - 1) // block_size[1])
+    grid = (
+        triton.cdiv(rows, block_size[0]),
+        triton.cdiv(cols, block_size[1]),
+    )
+
     matrix_transpose_kernel[grid](
-        input, output, rows, cols, stride_ir, stride_ic, stride_or, stride_oc, block_size
+        input, output, rows, cols,
+        cols, 1, rows, 1,
+        block_size,
     )
 ~~~
+
+本次平台归档结果：`LEETGPU_PASS`，`SuccessPublicTrace` 为 2026/10/13 23:21:59，耗时 `0.33 ms`，`50.5th` percentile。原始结果见 [LeetGPU 日志](../../../../notes/triton/logs/2026-10-13-transpose-v2-leetgpu.txt)。该结果没有提供 GPU 型号、shape、dtype、重复次数或有效带宽；服务器真实性能仍待测。
 
 ### 6.2 shared tile 分开输入阶段与输出阶段
 
@@ -388,7 +398,7 @@ if (out_row < N && out_col < M) {
 
 无padding与有padding版本使用相同线程布局，可以较清楚地观察bank布局的影响。naive版本与tiled版本还同时改变了线程组织和shared staging，二者的整体时间差不能全部归因于padding。后续优化可以研究32×8线程块协作处理32×32 tile、每线程搬多个元素，但要分别分析寄存器、循环和同步变化，不能一次改完再猜原因。
 
-**实践绑定：transpose 的题面与形状。** 平台入口是 [Matrix Transpose](https://leetgpu.com/challenges/matrix-transpose)；平台 `solve/kernel` 的参数、矩形限制和容差以题面为准。本章至少用 `1×1`、`3×5`、`32×32`、`37×65` 检查地址与尾块：其中 `3×5` 直接对应上面的 `A[1,4]→B[4,1]`，`37×65` 检查两个轴的独立 mask。共享 tile 的 CUDA 程序只作为服务器实验实现，不能当作平台原始提交。
+**实践绑定：transpose 的题面与形状。** 平台入口是 [Matrix Transpose](https://leetgpu.com/challenges/matrix-transpose)；平台 `solve/kernel` 的参数、矩形限制和容差以题面为准。平台 V2 已通过，源码与成绩见第 6.1 节；原始结果见 [LeetGPU 日志](../../../../notes/triton/logs/2026-10-13-transpose-v2-leetgpu.txt)。服务器验证至少用 `1×1`、`3×5`、`32×32`、`37×65` 检查地址与尾块：其中 `3×5` 直接对应上面的 `A[1,4]→B[4,1]`，`37×65` 检查两个轴的独立 mask。共享 tile 的 CUDA 程序只作为服务器实验实现，服务器 V2 结果待测。
 
 ## 7. 从转置推广到 gather、scatter、embedding 和数据打包
 
@@ -512,9 +522,13 @@ Vector Add每元素需要两个输入读取和一个输出写入，FP32算法流
 
 通过后原样保存平台版本，另行保留服务器的主机代码与benchmark包装。基础case至少覆盖1×1、3×5、32×32和37×65；若平台题面限制方阵，平台按题面验证，矩形能力在服务器独立测试，不能伪称平台也验证过。
 
+V2 已通过，源码与成绩见第 6.1 节；原始结果见 [LeetGPU 日志](../../../../notes/triton/logs/2026-10-13-transpose-v2-leetgpu.txt)。
+
 已有Vector Add和MatMul无需重新作为入门题提交。它们在本章承担源码复盘和访存比较的作用。
 
 ## 服务器：真实性能
+
+Triton V2 尚需服务器测试与计时入口；下列 CUDA 程序用于对照，不是该 V2 的运行入口。
 
 从仓库根目录执行：
 

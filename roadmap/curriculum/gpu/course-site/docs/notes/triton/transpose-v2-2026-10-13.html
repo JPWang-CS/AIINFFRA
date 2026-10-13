@@ -1,46 +1,34 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Triton Matrix Transpose V2 单元卡 · AIINFFRA 附属文档</title><script src="../../../theme.js?v=3aab643066da"></script><link rel="stylesheet" href="../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../styles.css?v=deca86f54b40"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../index.html?chapter=1">返回课程</a></nav><button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换到浅色模式">浅色</button></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · notes/triton/transpose-v2-2026-10-13.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E8%BE%93%E5%85%A5%E8%BE%93%E5%87%BA%E5%90%88%E5%90%8C">输入输出合同</a></li><li><a href="#tile-%E5%9D%90%E6%A0%87%E4%B8%8E-mask">Tile 坐标与 mask</a></li><li><a href="#%E5%BD%93%E5%89%8D%E6%80%A7%E8%83%BD%E8%AF%81%E6%8D%AE%E8%BE%B9%E7%95%8C">当前性能证据边界</a></li></ol></nav><div class="markdown-body"><h1 id="triton-matrix-transpose-v2-单元卡">Triton Matrix Transpose V2 单元卡<a class="heading-anchor" href="#triton-matrix-transpose-v2-%E5%8D%95%E5%85%83%E5%8D%A1" aria-label="链接到Triton Matrix Transpose V2 单元卡">#</a></h1>
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Triton Matrix Transpose V2 单元卡 · AIINFFRA 附属文档</title><script src="../../../theme.js?v=6ac5733926ef"></script><link rel="stylesheet" href="../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../styles.css?v=0e70a2d66838"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../index.html?chapter=1">返回课程</a></nav><button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换到浅色模式">浅色</button></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · notes/triton/transpose-v2-2026-10-13.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E8%BE%93%E5%85%A5%E8%BE%93%E5%87%BA%E5%90%88%E5%90%8C">输入输出合同</a></li><li><a href="#tile-%E5%9D%90%E6%A0%87%E4%B8%8E-mask">Tile 坐标与 mask</a></li><li><a href="#%E5%BD%93%E5%89%8D%E6%80%A7%E8%83%BD%E8%AF%81%E6%8D%AE%E8%BE%B9%E7%95%8C">当前性能证据边界</a></li></ol></nav><div class="markdown-body"><h1 id="triton-matrix-transpose-v2-单元卡">Triton Matrix Transpose V2 单元卡<a class="heading-anchor" href="#triton-matrix-transpose-v2-%E5%8D%95%E5%85%83%E5%8D%A1" aria-label="链接到Triton Matrix Transpose V2 单元卡">#</a></h1>
 <ul>
 <li>题目：<a href="https://leetgpu.com/challenges/matrix-transpose">LeetGPU Matrix Transpose</a></li>
-<li>代码：<a href="../../solutions/triton/transpose_v2.py">本地对话快照 <code>transpose_v2.py</code></a>，与平台编辑器代码的同步状态未知。</li>
-<li>状态：<code>WIP</code>；Python 语法静态检查通过。Triton JIT、LeetGPU 和 GPU 验证尚未运行。</li>
-<li>下一步：由用户在 LeetGPU 和服务器实际运行后补充结果；需要服务器测试时再按需补测试包装。</li>
+<li>平台归档代码：<a href="../../solutions/triton/transpose_v2_leetgpu.py">transpose_v2_leetgpu.py</a></li>
+<li>历史本地快照：<a href="../../solutions/triton/transpose_v2.py">transpose_v2.py</a></li>
+<li>原始平台结果：<a href="logs/2026-10-13-transpose-v2-leetgpu.txt">2026-10-13-transpose-v2-leetgpu.txt</a></li>
+<li>状态：<code>LEETGPU_PASS</code>。平台 <code>SuccessPublicTrace</code> 时间为 2026/10/13 23:21:59，耗时 <code>0.33 ms</code>，<code>50.5th</code> percentile。归档代码对应本会话贴给用户运行的版本，成绩取自用户回传的页面结果。</li>
+<li>服务器真实性能：待测；本次没有 GPU 型号、shape、dtype、重复次数或服务器结果，因此不填写有效带宽。</li>
+<li>下一步：先补服务器测试与计时入口，再在真实 GPU 上验证 V2 的正确性与性能，记录固定测试合同、耗时和有效带宽；完成前不推进到 <code>GPU_VALIDATED</code>。</li>
 </ul>
 <table>
 <thead>
 <tr>
-<th>项目</th>
+<th>验收项</th>
 <th>正确性</th>
 <th align="right">耗时（ms）</th>
+<th align="right">percentile</th>
 <th align="right">有效带宽（GB/s）</th>
 </tr>
 </thead>
 <tbody><tr>
-<td>LeetGPU</td>
-<td></td>
-<td align="right"></td>
-<td align="right"></td>
+<td>LeetGPU V2 平台归档</td>
+<td>通过</td>
+<td align="right">0.33</td>
+<td align="right">50.5th</td>
+<td align="right">未提供</td>
 </tr>
 <tr>
-<td>服务器正确性</td>
-<td></td>
+<td>服务器 V2</td>
+<td>待测</td>
 <td align="right"></td>
-<td align="right"></td>
-</tr>
-<tr>
-<td>V1 转置</td>
-<td></td>
-<td align="right"></td>
-<td align="right"></td>
-</tr>
-<tr>
-<td>V2 转置</td>
-<td></td>
-<td align="right"></td>
-<td align="right"></td>
-</tr>
-<tr>
-<td>预分配输出的 PyTorch copy 基线</td>
-<td></td>
 <td align="right"></td>
 <td align="right"></td>
 </tr>
@@ -48,9 +36,9 @@
 <h2 id="输入输出合同">输入输出合同<a class="heading-anchor" href="#%E8%BE%93%E5%85%A5%E8%BE%93%E5%87%BA%E5%90%88%E5%90%8C" aria-label="链接到输入输出合同">#</a></h2>
 <p>实现面向 contiguous <code>[rows, cols]</code> 输入和独立存储的 <code>[cols, rows]</code> 输出，dtype 相同。<code>stride_ir</code>、<code>stride_ic</code>、<code>stride_or</code>、<code>stride_oc</code> 被传入 kernel，但当前地址表达式未使用它们，因此不支持一般非连续输入或输出。</p>
 <h2 id="tile-坐标与-mask">Tile 坐标与 mask<a class="heading-anchor" href="#tile-%E5%9D%90%E6%A0%87%E4%B8%8E-mask" aria-label="链接到Tile 坐标与 mask">#</a></h2>
-<p><code>maskA</code>、<code>offsetA</code> 和 <code>a</code> 的逻辑形状为 <code>[BR, BC]</code>；<code>maskB</code>、<code>offsetB</code> 和 <code>b</code> 的逻辑形状为 <code>[BC, BR]</code>。<code>tl.trans(a)</code> 交换值的逻辑坐标，输出 mask 也必须按转置后的坐标对应。即使 tile 是方形、两个形状看起来相同，元素位置仍然不同。</p>
-<p>可用 <code>1×1</code>、<code>3×5</code>、<code>32×32</code>、<code>37×65</code> 和 <code>65×37</code> 检查边界与坐标关系；这些是建议的本地/平台检查形状，不代表题面支持矩形形状，也不代表已经通过。</p>
+<p>一个 program 覆盖输入的 32×32 tile，其中 <code>BR</code> 表示 tile 行数、<code>BC</code> 表示 tile 列数，本版两者均为 32。<code>offsetA</code>、<code>maskA</code> 和 <code>a</code> 的逻辑形状为 <code>[BR, BC]</code>；<code>offsetB</code>、<code>maskB</code> 和 <code>b</code> 的逻辑形状为 <code>[BC, BR]</code>。<code>tl.trans(a)</code> 交换值的逻辑坐标，输出坐标和输出 mask 也按转置后的维度生成。即使 tile 是方形、两个形状看起来相同，元素位置仍然不同。</p>
+<p>平台结果只证明本次题面运行通过。服务器验证时可用 <code>1×1</code>、<code>3×5</code>、<code>32×32</code>、<code>37×65</code> 和 <code>65×37</code> 检查边界与坐标关系；这些形状是否属于平台题面，以题面为准。</p>
 <h2 id="当前性能证据边界">当前性能证据边界<a class="heading-anchor" href="#%E5%BD%93%E5%89%8D%E6%80%A7%E8%83%BD%E8%AF%81%E6%8D%AE%E8%BE%B9%E7%95%8C" aria-label="链接到当前性能证据边界">#</a></h2>
-<p><code>tl.trans</code> 表示逻辑坐标变换。具体线程交换代价取决于前后布局转换；目前没有编译结果或 profiler 数据，不能据此填写活跃线程数、shared-memory 用量或速度结论。</p>
-<p>物化转置的有效读写字节数为 <code>2 * rows * cols * element_size</code>。基线应预先分配输出，并计量 <code>output.copy_(input.T)</code> 完成的实际写入；只创建 <code>input.T</code> view 不构成同等工作量。结果表在真实运行后填写。</p>
+<p><code>tl.trans</code> 表示逻辑坐标变换。具体线程交换代价取决于前后布局转换；当前没有服务器编译结果或 profiler 数据，不能填写活跃线程数、shared-memory 用量、有效带宽或优化结论。</p>
+<p>物化转置的有效读写字节数为 <code>2 * rows * cols * element_size</code>。服务器基线应预先分配输出，并计量 <code>output.copy_(input.T)</code> 完成的实际写入；只创建 <code>input.T</code> view 不构成同等工作量。服务器记录在真实运行后填写。</p>
 </div></main><script src="../../../reader.js"></script></body></html>

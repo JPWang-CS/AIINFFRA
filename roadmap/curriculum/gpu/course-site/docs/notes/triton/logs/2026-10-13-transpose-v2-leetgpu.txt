@@ -1,0 +1,7 @@
+Submission loaded into the editor.
+**Performance Distribution**124 submissions
+[yiqiao](https://avatars.githubusercontent.com/u/51111907?v=4)
+0.24ms34.69ms
+**SuccessPublicTrace**2026/10/13 23:21:59
+**0.33 ms**
+**50.5th** percentile
