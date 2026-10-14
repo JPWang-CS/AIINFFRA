@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="480" viewBox="0 0 960 480" role="img" aria-labelledby="title desc">
+  <title id="title">3×5 矩阵转置到 5×3</title>
+  <desc id="desc">显示 A 的 15 个线性编号元素转置到 B；值 9 从 A[1,4] 的线性位置 9 移到 B[4,1] 的线性位置 13。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#c75b16"/>
+    </marker>
+    <style>
+      text { font-family: Inter, "Segoe UI", Arial, sans-serif; fill: #172b4d; }
+      .title { font-size: 25px; font-weight: 700; }
+      .subtitle { font-size: 14px; fill: #42526e; }
+      .matrix { font-size: 20px; font-weight: 700; }
+      .shape { font-size: 14px; fill: #42526e; }
+      .axis { font-size: 13px; fill: #5e6c84; }
+      .value { font-size: 17px; font-weight: 600; text-anchor: middle; dominant-baseline: central; }
+      .cell { fill: #eaf2fb; stroke: #7895b8; stroke-width: 1.4; }
+      .highlight { fill: #ffe0b2; stroke: #c75b16; stroke-width: 2.8; }
+      .arrow { fill: none; stroke: #c75b16; stroke-width: 3; marker-end: url(#arrow); }
+      .label-box { fill: #fffdf8; stroke: #e4b78c; stroke-width: 1.2; }
+      .label { font-size: 15px; font-weight: 700; text-anchor: middle; }
+      .legend { font-size: 13px; fill: #42526e; }
+      @media (prefers-color-scheme: dark) {
+        .canvas { fill: #101827; }
+        text { fill: #e6edf7; }
+        .subtitle, .shape, .axis, .legend { fill: #b7c5d8; }
+        .cell { fill: #23364d; stroke: #7693b5; }
+        .highlight { fill: #754214; stroke: #ffad66; }
+        .arrow { stroke: #ffad66; }
+        .label-box { fill: #172435; stroke: #bd7b42; }
+        .label { fill: #ffe0b2; }
+      }
+    </style>
+  </defs>
+  <rect class="canvas" width="960" height="480" rx="18" fill="#f7f9fc"/>
+  <text class="title" x="42" y="44">连续行主序转置：坐标交换，元素值不变</text>
+  <text class="subtitle" x="42" y="70">线性位置按各自矩阵的行宽计算；行列索引从 0 开始</text>
+
+  <text class="matrix" x="50" y="108">输入 A</text>
+  <text class="shape" x="122" y="108">shape = [3, 5]</text>
+  <text class="matrix" x="645" y="108">输出 B</text>
+  <text class="shape" x="717" y="108">shape = [5, 3]</text>
+
+  <text class="axis" x="50" y="132">row ↓</text>
+  <text class="axis" x="132" y="132">column →</text>
+  <text class="axis" x="645" y="132">row ↓</text>
+  <text class="axis" x="727" y="132">column →</text>
+
+  <g aria-label="矩阵 A，3 行 5 列">
+    <g transform="translate(50 146)">
+      <rect class="cell" x="0" y="0" width="52" height="52"/><text class="value" x="26" y="26">0</text>
+      <rect class="cell" x="52" y="0" width="52" height="52"/><text class="value" x="78" y="26">1</text>
+      <rect class="cell" x="104" y="0" width="52" height="52"/><text class="value" x="130" y="26">2</text>
+      <rect class="cell" x="156" y="0" width="52" height="52"/><text class="value" x="182" y="26">3</text>
+      <rect class="cell" x="208" y="0" width="52" height="52"/><text class="value" x="234" y="26">4</text>
+      <rect class="cell" x="0" y="52" width="52" height="52"/><text class="value" x="26" y="78">5</text>
+      <rect class="cell" x="52" y="52" width="52" height="52"/><text class="value" x="78" y="78">6</text>
+      <rect class="cell" x="104" y="52" width="52" height="52"/><text class="value" x="130" y="78">7</text>
+      <rect class="cell" x="156" y="52" width="52" height="52"/><text class="value" x="182" y="78">8</text>
+      <rect class="highlight" x="208" y="52" width="52" height="52"/><text class="value" x="234" y="78">9</text>
+      <rect class="cell" x="0" y="104" width="52" height="52"/><text class="value" x="26" y="130">10</text>
+      <rect class="cell" x="52" y="104" width="52" height="52"/><text class="value" x="78" y="130">11</text>
+      <rect class="cell" x="104" y="104" width="52" height="52"/><text class="value" x="130" y="130">12</text>
+      <rect class="cell" x="156" y="104" width="52" height="52"/><text class="value" x="182" y="130">13</text>
+      <rect class="cell" x="208" y="104" width="52" height="52"/><text class="value" x="234" y="130">14</text>
+      <text class="axis" x="-18" y="29">0</text><text class="axis" x="-18" y="81">1</text><text class="axis" x="-18" y="133">2</text>
+      <text class="axis" x="22" y="178">0</text><text class="axis" x="74" y="178">1</text><text class="axis" x="126" y="178">2</text><text class="axis" x="178" y="178">3</text><text class="axis" x="230" y="178">4</text>
+    </g>
+  </g>
+
+  <path class="arrow" d="M310 224 C410 224 500 440 740 440 L740 406"/>
+  <rect class="label-box" x="378" y="274" width="206" height="60" rx="10"/>
+  <text class="label" x="481" y="298">A[1,4] = 9 → B[4,1] = 9</text>
+  <text class="legend" x="481" y="320" text-anchor="middle">输入位置 9 → 输出位置 13</text>
+
+  <g aria-label="矩阵 B，5 行 3 列">
+    <g transform="translate(645 146)">
+      <rect class="cell" x="0" y="0" width="52" height="52"/><text class="value" x="26" y="26">0</text>
+      <rect class="cell" x="52" y="0" width="52" height="52"/><text class="value" x="78" y="26">5</text>
+      <rect class="cell" x="104" y="0" width="52" height="52"/><text class="value" x="130" y="26">10</text>
+      <rect class="cell" x="0" y="52" width="52" height="52"/><text class="value" x="26" y="78">1</text>
+      <rect class="cell" x="52" y="52" width="52" height="52"/><text class="value" x="78" y="78">6</text>
+      <rect class="cell" x="104" y="52" width="52" height="52"/><text class="value" x="130" y="78">11</text>
+      <rect class="cell" x="0" y="104" width="52" height="52"/><text class="value" x="26" y="130">2</text>
+      <rect class="cell" x="52" y="104" width="52" height="52"/><text class="value" x="78" y="130">7</text>
+      <rect class="cell" x="104" y="104" width="52" height="52"/><text class="value" x="130" y="130">12</text>
+      <rect class="cell" x="0" y="156" width="52" height="52"/><text class="value" x="26" y="182">3</text>
+      <rect class="cell" x="52" y="156" width="52" height="52"/><text class="value" x="78" y="182">8</text>
+      <rect class="cell" x="104" y="156" width="52" height="52"/><text class="value" x="130" y="182">13</text>
+      <rect class="cell" x="0" y="208" width="52" height="52"/><text class="value" x="26" y="234">4</text>
+      <rect class="highlight" x="52" y="208" width="52" height="52"/><text class="value" x="78" y="234">9</text>
+      <rect class="cell" x="104" y="208" width="52" height="52"/><text class="value" x="130" y="234">14</text>
+      <text class="axis" x="-18" y="29">0</text><text class="axis" x="-18" y="81">1</text><text class="axis" x="-18" y="133">2</text><text class="axis" x="-18" y="185">3</text><text class="axis" x="-18" y="237">4</text>
+      <text class="axis" x="22" y="282">0</text><text class="axis" x="74" y="282">1</text><text class="axis" x="126" y="282">2</text>
+    </g>
+  </g>
+  <text class="legend" x="50" y="466">橙色单元标出同一个值；矩阵其余单元用蓝色区分。</text>
+</svg>

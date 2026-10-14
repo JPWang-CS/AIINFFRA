@@ -1,4 +1,4 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Triton Matrix Transpose V2 单元卡 · AIINFFRA 附属文档</title><script src="../../../theme.js?v=6ac5733926ef"></script><link rel="stylesheet" href="../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../styles.css?v=0e70a2d66838"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../index.html?chapter=1">返回课程</a></nav><button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换到浅色模式">浅色</button></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · notes/triton/transpose-v2-2026-10-13.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E8%BE%93%E5%85%A5%E8%BE%93%E5%87%BA%E5%90%88%E5%90%8C">输入输出合同</a></li><li><a href="#tile-%E5%9D%90%E6%A0%87%E4%B8%8E-mask">Tile 坐标与 mask</a></li><li><a href="#%E5%BD%93%E5%89%8D%E6%80%A7%E8%83%BD%E8%AF%81%E6%8D%AE%E8%BE%B9%E7%95%8C">当前性能证据边界</a></li></ol></nav><div class="markdown-body"><h1 id="triton-matrix-transpose-v2-单元卡">Triton Matrix Transpose V2 单元卡<a class="heading-anchor" href="#triton-matrix-transpose-v2-%E5%8D%95%E5%85%83%E5%8D%A1" aria-label="链接到Triton Matrix Transpose V2 单元卡">#</a></h1>
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Triton Matrix Transpose V2 单元卡 · AIINFFRA 附属文档</title><script src="../../../theme.js?v=3aab643066da"></script><link rel="stylesheet" href="../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../styles.css?v=deca86f54b40"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../index.html?chapter=1">返回课程</a></nav><button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换到浅色模式">浅色</button></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · notes/triton/transpose-v2-2026-10-13.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E6%9C%8D%E5%8A%A1%E5%99%A8%E8%BF%90%E8%A1%8C">服务器运行</a></li><li><a href="#%E8%BE%93%E5%85%A5%E8%BE%93%E5%87%BA%E5%90%88%E5%90%8C">输入输出合同</a></li><li><a href="#tile-%E5%9D%90%E6%A0%87%E4%B8%8E-mask">Tile 坐标与 mask</a></li><li><a href="#%E5%BD%93%E5%89%8D%E6%80%A7%E8%83%BD%E8%AF%81%E6%8D%AE%E8%BE%B9%E7%95%8C">当前性能证据边界</a></li></ol></nav><div class="markdown-body"><h1 id="triton-matrix-transpose-v2-单元卡">Triton Matrix Transpose V2 单元卡<a class="heading-anchor" href="#triton-matrix-transpose-v2-%E5%8D%95%E5%85%83%E5%8D%A1" aria-label="链接到Triton Matrix Transpose V2 单元卡">#</a></h1>
 <ul>
 <li>题目：<a href="https://leetgpu.com/challenges/matrix-transpose">LeetGPU Matrix Transpose</a></li>
 <li>平台归档代码：<a href="../../solutions/triton/transpose_v2_leetgpu.py">transpose_v2_leetgpu.py</a></li>
@@ -6,7 +6,8 @@
 <li>原始平台结果：<a href="logs/2026-10-13-transpose-v2-leetgpu.txt">2026-10-13-transpose-v2-leetgpu.txt</a></li>
 <li>状态：<code>LEETGPU_PASS</code>。平台 <code>SuccessPublicTrace</code> 时间为 2026/10/13 23:21:59，耗时 <code>0.33 ms</code>，<code>50.5th</code> percentile。归档代码对应本会话贴给用户运行的版本，成绩取自用户回传的页面结果。</li>
 <li>服务器真实性能：待测；本次没有 GPU 型号、shape、dtype、重复次数或服务器结果，因此不填写有效带宽。</li>
-<li>下一步：先补服务器测试与计时入口，再在真实 GPU 上验证 V2 的正确性与性能，记录固定测试合同、耗时和有效带宽；完成前不推进到 <code>GPU_VALIDATED</code>。</li>
+<li>服务器入口：<a href="../../solutions/triton/transpose_bench.py">transpose_bench.py</a>，调用平台通过版 <code>solve</code>，不复制 kernel。</li>
+<li>下一步：在真实 GPU 上运行服务器脚本，记录 GPU、shape、dtype、正确性、耗时和有效带宽；完成前不推进到 <code>GPU_VALIDATED</code>。</li>
 </ul>
 <table>
 <thead>
@@ -33,6 +34,11 @@
 <td align="right"></td>
 </tr>
 </tbody></table>
+<h2 id="服务器运行">服务器运行<a class="heading-anchor" href="#%E6%9C%8D%E5%8A%A1%E5%99%A8%E8%BF%90%E8%A1%8C" aria-label="链接到服务器运行">#</a></h2>
+<p>从仓库根目录、已安装 CUDA 版 PyTorch 和 Triton 的环境执行：</p>
+<div class="code-panel"><div class="code-caption"><span>BASH</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-bash"><span class="code-line" data-line="1">python solutions/triton/transpose_bench.py --rows 37 --cols 65 --correctness-only</span>
+<span class="code-line" data-line="2">python solutions/triton/transpose_bench.py --rows 4096 --cols 4096 --warmup 20 --repeats 100</span></code></pre></div>
+<p>正确性覆盖 <code>1×1</code>、<code>3×5</code>、<code>32×32</code>、<code>37×65</code>、<code>65×37</code>，并检查指定的测试尺寸。性能比较 V2 和预分配输出的 PyTorch 物化转置，报告 CUDA event 区间均值和有效带宽；本机尚未执行设备验证。</p>
 <h2 id="输入输出合同">输入输出合同<a class="heading-anchor" href="#%E8%BE%93%E5%85%A5%E8%BE%93%E5%87%BA%E5%90%88%E5%90%8C" aria-label="链接到输入输出合同">#</a></h2>
 <p>实现面向 contiguous <code>[rows, cols]</code> 输入和独立存储的 <code>[cols, rows]</code> 输出，dtype 相同。<code>stride_ir</code>、<code>stride_ic</code>、<code>stride_or</code>、<code>stride_oc</code> 被传入 kernel，但当前地址表达式未使用它们，因此不支持一般非连续输入或输出。</p>
 <h2 id="tile-坐标与-mask">Tile 坐标与 mask<a class="heading-anchor" href="#tile-%E5%9D%90%E6%A0%87%E4%B8%8E-mask" aria-label="链接到Tile 坐标与 mask">#</a></h2>

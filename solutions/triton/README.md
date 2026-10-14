@@ -7,6 +7,7 @@
 
 | 文件 | 功能 | LeetGPU 原始代码 | 验收 |
 |------|------|------|------|
+| [`transpose_bench.py`](./transpose_bench.py) | 转置 V2 服务器正确性与 CUDA event 计时入口；调用原始平台通过版 | 复用 `transpose_v2_leetgpu.py`，不包含另一份 kernel | 服务器待测；支持 `--correctness-only` 和可配置尺寸 |
 | [`transpose_v2_leetgpu.py`](./transpose_v2_leetgpu.py) | Triton Matrix Transpose V2，32×32 tile；LeetGPU 原始通过代码 | `LEETGPU_PASS`：2026-10-13，SuccessPublicTrace | 0.33 ms，50.5th percentile；服务器待测 |
 | [`transpose_v2.py`](./transpose_v2.py) | Triton Matrix Transpose V2，32×32 tile历史快照 | 历史本地对话快照；[单元卡](../../notes/triton/transpose-v2-2026-10-13.md) | 历史 `WIP` 快照，未独立验证 |
 | [`transpose_v1.py`](./transpose_v1.py) | Triton Matrix Transpose V1历史快照 | 历史本地对话初版；[单元卡与优化思路](../../notes/triton/transpose-v1-2026-10-13.md) | 历史 `WIP` 快照，未独立验证 |
@@ -17,6 +18,17 @@
 | [`fused_softmax.py`](./fused_softmax.py) | Triton Softmax：LeetGPU #5 原始通过版 | `LEETGPU_PASS`：用户通过代码已归档；SuccessPublicTrace | 2026-09-01 00:37:33，0.29 ms，47.0th percentile；下一步 RTX 3090 二维 row-wise baseline |
 | `flash_attention.py` | Triton Flash Attention | GPU主课基础后进入；对比PyTorch/官方强基线、显存、速度和profiler；FA2阅读完成但实现待做 |
 | `gqa.py` / `fused_mlp.py` | 模型结构组件 | 正确性 + autotune |
+
+### Matrix Transpose V2 服务器运行
+
+在已安装 CUDA 版 PyTorch 和 Triton 的服务器环境中，从仓库根目录执行：
+
+```bash
+python solutions/triton/transpose_bench.py --rows 37 --cols 65 --correctness-only
+python solutions/triton/transpose_bench.py --rows 4096 --cols 4096 --warmup 20 --repeats 100
+```
+
+第一条检查五组边界尺寸；第二条还会检查指定的大矩阵，再比较 V2 和预分配输出上的 `output.copy_(input.T)`。脚本打印 GPU、版本、shape、stride、dtype、计时条件、平均 ms 和有效 GB/s。该脚本的本地静态检查不代表服务器验证通过。
 
 ### MatMul LeetGPU 入口
 

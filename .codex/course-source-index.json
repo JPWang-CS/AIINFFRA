@@ -1,5 +1,68 @@
 {
   "version": 1,
+  "transpose_server_entry_2026_10_14": {
+    "script": "solutions/triton/transpose_bench.py",
+    "kernel": "solutions/triton/transpose_v2_leetgpu.py",
+    "tutorial": "roadmap/curriculum/operators/01-memory-and-layout/README.md",
+    "scope": "Standalone correctness and CUDA-event benchmark wrapper; imports the archived solve without changing or duplicating its kernel. Tutorial commands are visible at the start of the server section and full source is embedded below.",
+    "validation_boundary": "Python syntax, direct/module CLI help, invalid arguments and forced missing-dependency exits passed. Site build checked the full embedded source; content-only and offline-static checks passed. No device execution, Triton JIT, sanitizer or performance result. Existing LEETGPU_PASS remains separate from server validation."
+  },
+  "operator_transpose_gather_review_2026_10_14": {
+    "date": "2026-10-14",
+    "tutorial": "roadmap/curriculum/operators/01-memory-and-layout/README.md",
+    "figure": "roadmap/curriculum/operators/01-memory-and-layout/figures/transpose-element-map.svg",
+    "sources": [
+      {
+        "path": "downloads/cuda-programming-guide.pdf",
+        "pdf_pages": [72, 73, 74],
+        "scope": "32-byte global-memory request coverage and contiguous FP32 lane accesses; sector coverage is not equated with DRAM transaction count."
+      },
+      {
+        "path": "downloads/cuda-programming-guide.pdf",
+        "pdf_pages": [81, 82, 83],
+        "scope": "Shared-memory staging, block synchronization, bank mapping and padding. The local transpose_tiled.cu controls the source-level [y][x] store and [x][y] read direction; CUDA Programming Guide PDF page 82 Figure 17 uses a different orientation and is not copied as code."
+      },
+      {
+        "path": "roadmap/curriculum/gpu/03-registers-and-memory-system/examples/transpose_tiled.cu",
+        "scope": "Exact CUDA tile declaration, masked input, barrier, transposed block coordinates, shared index exchange, and launch geometry embedded with source-check."
+      },
+      {
+        "path": "downloads/大模型推理实践.pdf",
+        "pdf_pages": [3],
+        "scope": "Arithmetic intensity as FLOPs per byte; used to distinguish transpose address and data-movement cost, large-working-set bandwidth estimates, and small-matrix launch/scheduling cost."
+      },
+      {
+        "path": "downloads/大模型推理实践.pdf",
+        "pdf_pages": [49, 50, 51],
+        "scope": "KV reads, reuse and memory hierarchy; only general indexed-transfer implications are used."
+      },
+      {
+        "path": "downloads/DeepSeek_V41_Tech_Report.pdf",
+        "pdf_pages": [8, 9, 10, 11],
+        "scope": "CSA2 and hierarchical indexing (PDF 10 Figure 4): an earlier indexer layer selects a shared candidate pool from the full positions, later indexer layers score within that pool and select their own KV items. Ordinary TopK limits final attention reads but does not necessarily reduce indexer scoring candidates; shared KV capacity, reused selection work and selected item bytes are tracked separately."
+      },
+      {
+        "path": "solutions/triton/transpose_v1.py",
+        "scope": "Original V1 solve/kernel excerpt; source-check retained."
+      },
+      {
+        "path": "solutions/triton/transpose_v2_leetgpu.py",
+        "scope": "Original platform-passing V2 solve/kernel excerpt; source-check retained."
+      },
+      {
+        "path": "solutions/triton/vector_add.py",
+        "scope": "Original Vector Add kernel excerpt and recorded RTX 3090 comparison conditions; source-check retained inside a details block."
+      }
+    ],
+    "primary_external_sources": [
+      "https://developer.nvidia.com/blog/efficient-matrix-transpose-cuda-cc/",
+      "https://triton-lang.org/main/python-api/generated/triton.language.trans.html"
+    ],
+    "reported_measurement": "LeetGPU result: 0.33 ms, 50.5th percentile, timestamp 2026-10-13 23:21:59 from the archived platform trace; device, shape, dtype, repeat count and effective bandwidth are not reported. Not a server measurement.",
+    "preservation": "Before editing, recorded headings/source-check markers and hashes for sections 1-5. Existing V1, V2 and Vector Add source excerpts are retained; source files and PDFs are unchanged. Legacy chapter 7 anchors are redirected to the corresponding revised sections.",
+    "server_example": "README includes a folded Linux here-document importing solutions.triton.transpose_v2_leetgpu.solve, checking five FP32 shapes, then timing V2 and a preallocated PyTorch materialization path with CUDA events and effective bytes. The example is teaching/test wrapper code, not a saved runner.",
+    "validation_boundary": "The embedded server example was syntax-checked with Python AST only; it was not imported or run. SVG render, course-site build and static/editorial/navigation/offline checks validate assets and reader output only. No CUDA/Triton compilation, LeetGPU run, GPU correctness, sanitizer, profiler or benchmark was performed."
+  },
   "cuda_codegen_and_register_memory_review_2026_10_12": {
     "date": "2026-10-12",
     "sources": [
