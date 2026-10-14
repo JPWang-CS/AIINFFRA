@@ -7,6 +7,8 @@
 
 ## 0. 最后更新
 
+- 2026-10-14（发布 GPU 与论文课程提交 `f63a9e379f198b76f96b224f7e1ce1dfb1c30042` 后，完成私有 GPU sandbox 安装验收。权威任务收据 `runs/20261014T095214Z-251763/exit.txt` 记录退出码 0；新 venv 安装 PyTorch 2.7.1+cu128、Triton 3.3.1 和 NumPy 1.26.4，`pip check` 无破损依赖，CUDA 可见且检测到 8 个设备。Python 3.12.3、driver 570.172.08、nvcc 12.8.61、gcc/g++ 13.3.0 的安装前后输出逐项一致；未改系统工具。PyTorch 预编译列表无原生 `sm_89`，含同主版本 `sm_86` 兼容路径；未验证 Triton JIT、tensor kernel 或课程实验。最初目录选址产生 3 个误建目录，专用 cleanup 成功并确认目录消失；launcher 首次因权限返回 126，之后改用 Bash 启动。主 Agent复核安装收据并接手最小远端验收。初次 dry-run 使用过账号缓存；限定目录后缓存全部写入工作根，已有缓存未清理。overlay 跨容器持久性未确认。环境细节见 `notes/cuda/server-environment-2026-10-14.md`；独立环境 pins 见 `scripts/requirements-gpu-cu128.txt`。PATH/NOW 学习状态未升级。）
+
 - 2026-10-14（完成论文与算法阅读器整合：18个GPU课程章节、41篇论文（ID 20–60）按八类接入；六篇基础章排在首位，新增14篇机制教程、配套图和语义检查。旧论文ID/URL保留，固定旧锚点基线来自提交`10383c57ccc62cc1c081398d1651ef851d7c4470`；历史未发布registry键不作为旧发布锚点。最终build为59章、128个可读Markdown页面、112个本地资源、2796个公式及181个原始源码摘录。正文、编辑、导航、paper-reader、离线、主题和链接审计通过；链接审计优化为每个HTML解析后只缓存轻量元数据并关闭JSDOM窗口，最终核查129个HTML、5769个本地href/src、4397个fragment及1155个文档目录链接。14张PNG按各自SVG内在尺寸重渲染。Edge以`file://`打开第41章，浅色/暗色截图和计算背景已核验。NumPy与既有`.venv`中的PyTorch CPU检查通过；没有GPU或性能验证。主Agent只读复核49个保护文件SHA256未变，未改PATH/NOW、PDF或学习状态。详细收据见`papers/topics/examples/validation-2026-10-14.txt`，来源索引见`.codex/course-source-index.json`，讨论记录见`roadmap/curriculum/decisions/2026-10-14-papers-rebuild.md`。）
 
 - 2026-10-14（审读并整改“GPU 与 CUDA”五章全文：理顺程序、执行、存储、同步和性能分析的连接，补具体线程与缓冲区追踪，删重复免责和术语堆叠，增加 8 组深浅色图例。原始实现、历史测量及 PATH/NOW 保留；108 个保护文件哈希未变，手算和纯 CPU 检查通过。网页构建、正文、导航、离线及定向链接检查通过；五章 283 个旧锚点和 285 个本地引用保持有效，最终图与实际页面已查看。审读记录见 `.codex/gpu-cuda-reader-review-2026-10-14.md`，复算检查为 `.codex/check-gpu-reading-cases.cjs`。未运行 GPU 或性能实验。）
