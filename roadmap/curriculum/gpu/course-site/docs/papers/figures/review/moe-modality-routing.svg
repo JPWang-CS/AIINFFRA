@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520" role="img" aria-labelledby="title desc">
+  <title id="title">V4.1 按模态维护专家选择 bias</title>
+  <desc id="desc">文本和图像 token 分别加各自的专家选择 bias 后做 Top-K；选中专家的混合权重仍来自原始 router scores，训练后按模态负载独立更新 bias。</desc>
+  <defs><marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#334155"/></marker></defs><rect width="1200" height="520" fill="#f8fafc"/><text x="48" y="52" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="27" font-weight="700" fill="#0f172a">模态 bias 改变专家选择，原始 score 仍决定混合权重</text>
+  <g font-family="Segoe UI,Microsoft YaHei,sans-serif" text-anchor="middle">
+    <rect x="55" y="130" width="155" height="70" rx="12" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/><text x="132" y="172" font-size="19" fill="#1e3a8a">文本 token</text>
+    <rect x="55" y="280" width="155" height="70" rx="12" fill="#fef3c7" stroke="#d97706" stroke-width="2"/><text x="132" y="322" font-size="19" fill="#78350f">图像 token</text>
+    <rect x="285" y="110" width="180" height="90" rx="12" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/><text x="375" y="148" font-size="18" fill="#4c1d95">score + b_text</text><text x="375" y="178" font-size="15" fill="#4c1d95">Top-K 选择</text>
+    <rect x="285" y="270" width="180" height="90" rx="12" fill="#ffedd5" stroke="#ea580c" stroke-width="2"/><text x="375" y="308" font-size="18" fill="#7c2d12">score + b_image</text><text x="375" y="338" font-size="15" fill="#7c2d12">Top-K 选择</text>
+    <rect x="545" y="180" width="210" height="120" rx="14" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/><text x="650" y="223" font-size="19" fill="#14532d">专家计算</text><text x="650" y="254" font-size="15" fill="#14532d">使用原始 score 权重</text><text x="650" y="280" font-size="15" fill="#14532d">聚合所选 expert 输出</text>
+    <rect x="835" y="125" width="300" height="100" rx="14" fill="#fce7f3" stroke="#db2777" stroke-width="2"/><text x="985" y="165" font-size="18" fill="#831843">文本负载统计 → 更新 b_text</text><text x="985" y="196" font-size="15" fill="#831843">训练步后独立更新</text>
+    <rect x="835" y="280" width="300" height="100" rx="14" fill="#fce7f3" stroke="#db2777" stroke-width="2"/><text x="985" y="320" font-size="18" fill="#831843">图像负载统计 → 更新 b_image</text><text x="985" y="351" font-size="15" fill="#831843">训练步后独立更新</text>
+  </g>
+  <g fill="none" stroke="#334155" stroke-width="3" marker-end="url(#arr)"><path d="M210 165H280"/><path d="M210 315H280"/><path d="M465 155H500V220H540"/><path d="M465 315H500V260H540"/><path d="M755 220H800V175H830"/><path d="M755 260H800V330H830"/><path d="M985 125V85H375V105"/><path d="M985 380V420H375V365"/></g>
+  <text x="48" y="480" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="16" fill="#475569">选择 bias 与输出 gate 分工不同；两种模态不共用一份聚合负载统计。</text>
+</svg>

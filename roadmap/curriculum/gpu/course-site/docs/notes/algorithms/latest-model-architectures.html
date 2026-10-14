@@ -1,4 +1,4 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>最新模型与结构：从基础设施视角读懂大模型架构 · AIINFFRA 附属文档</title><script src="../../../theme.js?v=3aab643066da"></script><link rel="stylesheet" href="../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../styles.css?v=deca86f54b40"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../index.html?chapter=1">返回课程</a></nav><button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换到浅色模式">浅色</button></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · notes/algorithms/latest-model-architectures.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E7%9B%AE%E5%BD%95">目录</a></li><li><a href="#1-%E4%B8%BA%E4%BB%80%E4%B9%88-infra-%E5%B7%A5%E7%A8%8B%E5%B8%88%E8%A6%81%E5%AD%A6%E6%A8%A1%E5%9E%8B%E7%BB%93%E6%9E%84">1. 为什么 Infra 工程师要学模型结构</a></li><li><a href="#2-transformer-block-%E9%AA%A8%E6%9E%B6">2. Transformer block 骨架</a></li><li><a href="#3-%E7%BB%84%E4%BB%B6%E6%8B%86%E8%A7%A3">3. 组件拆解</a></li><li><a href="#31-token-embedding-%E4%B8%8E-lmhead">3.1 Token Embedding 与 lmhead</a></li><li><a href="#32-normlayernorm-vs-rmsnorm">3.2 Norm：LayerNorm vs RMSNorm</a></li><li><a href="#33-%E4%BD%8D%E7%BD%AE%E7%BC%96%E7%A0%81%E4%BB%8E%E7%BB%9D%E5%AF%B9%E4%BD%8D%E7%BD%AE%E5%88%B0-rope">3.3 位置编码：从绝对位置到 RoPE</a></li><li><a href="#34-attention-%E5%AE%B6%E6%97%8F">3.4 Attention 家族</a></li><li><a href="#35-ffn-%E4%B8%8E-swiglu">3.5 FFN 与 SwiGLU</a></li><li><a href="#36-moe">3.6 MoE</a></li><li><a href="#37-ssm--mamba">3.7 SSM / Mamba</a></li><li><a href="#38-%E7%8E%B0%E4%BB%A3%E6%A8%A1%E5%9E%8B%E5%B8%B8%E8%A7%81%E6%96%B0%E9%9B%B6%E4%BB%B6">3.8 现代模型常见“新零件”</a></li><li><a href="#4-attention-%E5%AE%B6%E6%97%8F">4. Attention 家族</a></li><li><a href="#41-%E5%BD%A2%E7%8A%B6%E5%AF%B9%E7%85%A7">4.1 形状对照</a></li><li><a href="#42-kv-cache-%E8%AE%A1%E7%AE%97%E5%85%AC%E5%BC%8F">4.2 KV cache 计算公式</a></li><li><a href="#43-%E4%B8%BA%E4%BB%80%E4%B9%88-gqamla-%E5%AF%B9-decode-%E9%87%8D%E8%A6%81">4.3 为什么 GQA/MLA 对 Decode 重要</a></li><li><a href="#5-ffn-%E4%B8%8E-moe">5. FFN 与 MoE</a></li><li><a href="#51-%E5%8F%82%E6%95%B0%E5%8D%A0%E6%AF%94">5.1 参数占比</a></li><li><a href="#52-moe-%E7%9A%84%E6%8E%A8%E7%90%86%E8%B4%A6%E6%9C%AC">5.2 MoE 的推理账本</a></li><li><a href="#53-%E8%B7%AF%E7%94%B1%E5%85%AC%E5%BC%8F">5.3 路由公式</a></li><li><a href="#6-ssm--mamba-%E4%B8%8E%E6%B7%B7%E5%90%88%E6%9E%B6%E6%9E%84">6. SSM / Mamba 与混合架构</a></li><li><a href="#61-%E7%8A%B6%E6%80%81%E6%96%B9%E7%A8%8B">6.1 状态方程</a></li><li><a href="#62-mamba-%E7%9A%84%E5%85%B3%E9%94%AE%E7%82%B9">6.2 Mamba 的关键点</a></li><li><a href="#63-infra-%E5%BD%B1%E5%93%8D">6.3 Infra 影响</a></li><li><a href="#7-%E7%8E%B0%E4%BB%A3%E6%A8%A1%E5%9E%8B%E5%B8%B8%E8%A7%81%E6%96%B0%E9%9B%B6%E4%BB%B6%E7%9A%84%E5%AE%9E%E7%8E%B0%E5%BD%B1%E5%93%8D">7. 现代模型常见“新零件”的实现影响</a></li><li><a href="#8-kv-cache-%E6%B7%B1%E6%8C%96">8. KV cache 深挖</a></li><li><a href="#81-%E4%B8%BA%E4%BB%80%E4%B9%88-kv-cache-%E6%98%AF%E7%93%B6%E9%A2%88">8.1 为什么 KV cache 是瓶颈</a></li><li><a href="#82-pagedattention-%E4%B8%8E-block-table">8.2 PagedAttention 与 block table</a></li><li><a href="#83-kv-cache-%E4%BC%98%E5%8C%96%E6%96%B9%E5%90%91">8.3 KV cache 优化方向</a></li><li><a href="#9-%E6%A8%A1%E5%9E%8B%E5%AE%B6%E6%97%8F%E5%9C%B0%E5%9B%BE">9. 模型家族地图</a></li><li><a href="#10-%E7%94%A8-huggingface-config-%E8%A7%A3%E7%A0%81%E6%A8%A1%E5%9E%8B">10. 用 HuggingFace config 解码模型</a></li><li><a href="#11-%E6%98%BE%E5%AD%98%E4%B8%8E-flops-%E6%89%8B%E7%AE%97">11. 显存与 FLOPs 手算</a></li><li><a href="#111-%E6%8E%A8%E7%90%86%E6%98%BE%E5%AD%98%E4%B8%89%E9%83%A8%E5%88%86">11.1 推理显存三部分</a></li><li><a href="#112-decode-%E5%8D%95-token-%E8%AF%BB%E5%8F%96%E9%87%8F">11.2 Decode 单 token 读取量</a></li><li><a href="#113-prefill-flops-%E4%BC%B0%E7%AE%97">11.3 Prefill FLOPs 估算</a></li><li><a href="#12-%E5%AF%B9%E6%8E%A8%E7%90%86%E7%B3%BB%E7%BB%9F%E7%9A%84%E4%BA%94%E4%B8%AA%E5%BD%B1%E5%93%8D">12. 对推理系统的五个影响</a></li><li><a href="#121-kv-cache-%E5%86%B3%E5%AE%9A%E5%B9%B6%E5%8F%91%E4%B8%8A%E9%99%90">12.1 KV cache 决定并发上限</a></li><li><a href="#122-moe-%E5%86%B3%E5%AE%9A%E6%9D%83%E9%87%8D%E6%98%BE%E5%AD%98%E5%92%8C%E9%80%9A%E4%BF%A1">12.2 MoE 决定权重显存和通信</a></li><li><a href="#123-attention-%E5%8F%98%E4%BD%93%E5%86%B3%E5%AE%9A-decode-%E5%B8%A6%E5%AE%BD">12.3 Attention 变体决定 Decode 带宽</a></li><li><a href="#124-%E9%95%BF%E5%BA%8F%E5%88%97%E7%BB%93%E6%9E%84%E5%86%B3%E5%AE%9A%E6%98%AF%E5%90%A6%E8%83%BD%E7%BA%BF%E6%80%A7%E6%89%A9%E5%B1%95">12.4 长序列结构决定是否能线性扩展</a></li><li><a href="#125-%E4%BD%8D%E7%BD%AE%E7%BC%96%E7%A0%81%E5%92%8C%E5%BD%92%E4%B8%80%E5%8C%96%E5%86%B3%E5%AE%9A%E7%AE%97%E5%AD%90%E5%BD%A2%E7%8A%B6">12.5 位置编码和归一化决定算子形状</a></li><li><a href="#13-%E6%80%8E%E4%B9%88%E5%AD%A6%E4%BB%8E-config-%E5%88%B0-benchmark">13. 怎么学：从 config 到 benchmark</a></li><li><a href="#14-%E9%9D%A2%E8%AF%95%E9%AB%98%E9%A2%91%E9%A2%98%E5%BA%93">14. 面试高频题库</a></li><li><a href="#141-gqa-%E4%B8%BA%E4%BB%80%E4%B9%88%E6%AF%94-mha-%E7%9C%81%E6%98%BE%E5%AD%98">14.1 GQA 为什么比 MHA 省显存？</a></li><li><a href="#142-mla-%E5%92%8C-gqa-%E7%9A%84%E5%8C%BA%E5%88%AB">14.2 MLA 和 GQA 的区别？</a></li><li><a href="#143-moe-%E4%B8%BA%E4%BB%80%E4%B9%88%E6%8E%A8%E7%90%86%E9%9A%BE">14.3 MoE 为什么推理难？</a></li><li><a href="#144-mamba-%E8%83%BD%E6%9B%BF%E4%BB%A3-attention-%E5%90%97">14.4 Mamba 能替代 Attention 吗？</a></li><li><a href="#145-rope-%E4%B8%BA%E4%BB%80%E4%B9%88%E8%83%BD%E5%A4%96%E6%8E%A8">14.5 RoPE 为什么能外推？</a></li><li><a href="#146-%E4%B8%BA%E4%BB%80%E4%B9%88-decode-%E6%98%AF-memory-bound">14.6 为什么 Decode 是 memory-bound？</a></li><li><a href="#147-%E4%B8%BA%E4%BB%80%E4%B9%88-moe-%E6%9D%83%E9%87%8D%E9%87%8F%E5%8C%96%E6%AF%94-dense-%E6%9B%B4%E6%95%8F%E6%84%9F">14.7 为什么 MoE 权重量化比 Dense 更敏感？</a></li><li><a href="#148-%E9%95%BF%E4%B8%8A%E4%B8%8B%E6%96%87%E4%B8%BA%E4%BB%80%E4%B9%88%E9%9A%BE">14.8 长上下文为什么难？</a></li><li><a href="#15-%E5%8F%82%E8%80%83%E4%B8%8E%E9%85%8D%E5%A5%97%E6%9D%90%E6%96%99">15. 参考与配套材料</a></li><li><a href="#16-2026-%E6%96%B0%E6%9E%B6%E6%9E%84%E6%B7%B7%E5%90%88%E6%B3%A8%E6%84%8F%E5%8A%9B%E4%B8%8E%E7%A8%80%E7%96%8F%E6%B3%A8%E6%84%8F%E5%8A%9B">16. 2026 新架构：混合注意力与稀疏注意力</a></li><li><a href="#qwen35gdn-%E7%BA%BF%E6%80%A7%E6%B3%A8%E6%84%8F%E5%8A%9B%E6%B7%B7%E5%90%88%E7%9C%81-kv--%E8%BF%91%E7%BA%BF%E6%80%A7%E9%95%BF%E5%BA%8F%E5%88%97">Qwen3.5：GDN 线性注意力混合（省 KV + 近线性长序列）</a></li><li><a href="#deepseek-v32mla--dsa%E5%8E%8B-kv--%E5%8F%AA%E7%AE%97-top-k">DeepSeek-V3.2：MLA + DSA（压 KV + 只算 top-k）</a></li><li><a href="#glm-5dsa-%E6%9E%B6%E6%9E%84%E5%A4%8D%E7%94%A8">GLM-5：DSA 架构复用</a></li><li><a href="#deepseek-v4csa--hcamla-%E9%AA%A8%E6%9E%B6--%E5%8E%8B%E7%BC%A9%E7%A8%80%E7%96%8F">DeepSeek-V4：CSA + HCA（MLA 骨架 + 压缩稀疏）</a></li><li><a href="#%E6%B3%A8%E6%84%8F%E5%8A%9B%E5%AE%9E%E7%8E%B0%E4%BE%A7%E5%90%8C%E6%AD%A5%E6%9B%B4%E6%96%B0">注意力实现侧同步更新</a></li></ol></nav><div class="markdown-body"><h1 id="最新模型与结构从基础设施视角读懂大模型架构">最新模型与结构：从基础设施视角读懂大模型架构<a class="heading-anchor" href="#%E6%9C%80%E6%96%B0%E6%A8%A1%E5%9E%8B%E4%B8%8E%E7%BB%93%E6%9E%84%E4%BB%8E%E5%9F%BA%E7%A1%80%E8%AE%BE%E6%96%BD%E8%A7%86%E8%A7%92%E8%AF%BB%E6%87%82%E5%A4%A7%E6%A8%A1%E5%9E%8B%E6%9E%B6%E6%9E%84" aria-label="链接到最新模型与结构：从基础设施视角读懂大模型架构">#</a></h1>
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>最新模型与结构：从基础设施视角读懂大模型架构 · AIINFFRA 附属文档</title><script src="../../../theme.js?v=3aab643066da"></script><link rel="stylesheet" href="../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../styles.css?v=deca86f54b40"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../index.html?chapter=1">返回课程</a></nav><button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换到浅色模式">浅色</button></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · notes/algorithms/latest-model-architectures.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E7%9B%AE%E5%BD%95">目录</a></li><li><a href="#1-%E4%B8%BA%E4%BB%80%E4%B9%88-infra-%E5%B7%A5%E7%A8%8B%E5%B8%88%E8%A6%81%E5%AD%A6%E6%A8%A1%E5%9E%8B%E7%BB%93%E6%9E%84">1. 为什么 Infra 工程师要学模型结构</a></li><li><a href="#2-transformer-block-%E9%AA%A8%E6%9E%B6">2. Transformer block 骨架</a></li><li><a href="#3-%E7%BB%84%E4%BB%B6%E6%8B%86%E8%A7%A3">3. 组件拆解</a></li><li><a href="#31-token-embedding-%E4%B8%8E-lmhead">3.1 Token Embedding 与 lmhead</a></li><li><a href="#32-normlayernorm-vs-rmsnorm">3.2 Norm：LayerNorm vs RMSNorm</a></li><li><a href="#33-%E4%BD%8D%E7%BD%AE%E7%BC%96%E7%A0%81%E4%BB%8E%E7%BB%9D%E5%AF%B9%E4%BD%8D%E7%BD%AE%E5%88%B0-rope">3.3 位置编码：从绝对位置到 RoPE</a></li><li><a href="#34-attention-%E5%AE%B6%E6%97%8F">3.4 Attention 家族</a></li><li><a href="#35-ffn-%E4%B8%8E-swiglu">3.5 FFN 与 SwiGLU</a></li><li><a href="#36-moe">3.6 MoE</a></li><li><a href="#37-ssm--mamba">3.7 SSM / Mamba</a></li><li><a href="#38-%E7%8E%B0%E4%BB%A3%E6%A8%A1%E5%9E%8B%E5%B8%B8%E8%A7%81%E6%96%B0%E9%9B%B6%E4%BB%B6">3.8 现代模型常见“新零件”</a></li><li><a href="#4-attention-%E5%AE%B6%E6%97%8F">4. Attention 家族</a></li><li><a href="#41-%E5%BD%A2%E7%8A%B6%E5%AF%B9%E7%85%A7">4.1 形状对照</a></li><li><a href="#42-kv-cache-%E8%AE%A1%E7%AE%97%E5%85%AC%E5%BC%8F">4.2 KV cache 计算公式</a></li><li><a href="#43-%E4%B8%BA%E4%BB%80%E4%B9%88-gqamla-%E5%AF%B9-decode-%E9%87%8D%E8%A6%81">4.3 为什么 GQA/MLA 对 Decode 重要</a></li><li><a href="#5-ffn-%E4%B8%8E-moe">5. FFN 与 MoE</a></li><li><a href="#51-%E5%8F%82%E6%95%B0%E5%8D%A0%E6%AF%94">5.1 参数占比</a></li><li><a href="#52-moe-%E7%9A%84%E6%8E%A8%E7%90%86%E8%B4%A6%E6%9C%AC">5.2 MoE 的推理账本</a></li><li><a href="#53-%E8%B7%AF%E7%94%B1%E5%85%AC%E5%BC%8F">5.3 路由公式</a></li><li><a href="#6-ssm--mamba-%E4%B8%8E%E6%B7%B7%E5%90%88%E6%9E%B6%E6%9E%84">6. SSM / Mamba 与混合架构</a></li><li><a href="#61-%E8%BF%9E%E7%BB%AD%E7%8A%B6%E6%80%81%E6%96%B9%E7%A8%8B%E4%B8%8E%E7%A6%BB%E6%95%A3%E6%9B%B4%E6%96%B0">6.1 连续状态方程与离散更新</a></li><li><a href="#62-mamba-%E7%9A%84%E8%BE%93%E5%85%A5%E9%80%89%E6%8B%A9%E4%B8%8E%E7%A6%BB%E6%95%A3%E7%8A%B6%E6%80%81%E6%9B%B4%E6%96%B0">6.2 Mamba 的输入选择与离散状态更新</a></li><li><a href="#63-infra-%E5%BD%B1%E5%93%8D">6.3 Infra 影响</a></li><li><a href="#7-%E7%8E%B0%E4%BB%A3%E6%A8%A1%E5%9E%8B%E5%B8%B8%E8%A7%81%E6%96%B0%E9%9B%B6%E4%BB%B6%E7%9A%84%E5%AE%9E%E7%8E%B0%E5%BD%B1%E5%93%8D">7. 现代模型常见“新零件”的实现影响</a></li><li><a href="#8-kv-cache-%E6%B7%B1%E6%8C%96">8. KV cache 深挖</a></li><li><a href="#81-%E4%BD%95%E6%97%B6-kv-cache-%E4%BC%9A%E6%88%90%E4%B8%BA%E7%93%B6%E9%A2%88">8.1 何时 KV cache 会成为瓶颈</a></li><li><a href="#82-pagedattention-%E4%B8%8E-block-table">8.2 PagedAttention 与 block table</a></li><li><a href="#83-kv-cache-%E4%BC%98%E5%8C%96%E6%96%B9%E5%90%91">8.3 KV cache 优化方向</a></li><li><a href="#9-%E6%A8%A1%E5%9E%8B%E5%AE%B6%E6%97%8F%E5%9C%B0%E5%9B%BE">9. 模型家族地图</a></li><li><a href="#10-%E7%94%A8-huggingface-config-%E8%A7%A3%E7%A0%81%E6%A8%A1%E5%9E%8B">10. 用 HuggingFace config 解码模型</a></li><li><a href="#11-%E6%98%BE%E5%AD%98%E4%B8%8E-flops-%E6%89%8B%E7%AE%97">11. 显存与 FLOPs 手算</a></li><li><a href="#111-%E6%8E%A8%E7%90%86%E6%98%BE%E5%AD%98%E4%B8%89%E9%83%A8%E5%88%86">11.1 推理显存三部分</a></li><li><a href="#112-decode-%E5%8D%95-token-%E8%AF%BB%E5%8F%96%E9%87%8F">11.2 Decode 单 token 读取量</a></li><li><a href="#113-prefill-flops-%E4%BC%B0%E7%AE%97">11.3 Prefill FLOPs 估算</a></li><li><a href="#12-%E5%AF%B9%E6%8E%A8%E7%90%86%E7%B3%BB%E7%BB%9F%E7%9A%84%E4%BA%94%E4%B8%AA%E5%BD%B1%E5%93%8D">12. 对推理系统的五个影响</a></li><li><a href="#121-kv-cache-%E5%86%B3%E5%AE%9A%E5%B9%B6%E5%8F%91%E4%B8%8A%E9%99%90">12.1 KV cache 决定并发上限</a></li><li><a href="#122-moe-%E5%86%B3%E5%AE%9A%E6%9D%83%E9%87%8D%E6%98%BE%E5%AD%98%E5%92%8C%E9%80%9A%E4%BF%A1">12.2 MoE 决定权重显存和通信</a></li><li><a href="#123-attention-%E5%8F%98%E4%BD%93%E5%86%B3%E5%AE%9A-decode-%E5%B8%A6%E5%AE%BD">12.3 Attention 变体决定 Decode 带宽</a></li><li><a href="#124-%E9%95%BF%E5%BA%8F%E5%88%97%E7%BB%93%E6%9E%84%E5%86%B3%E5%AE%9A%E6%98%AF%E5%90%A6%E8%83%BD%E7%BA%BF%E6%80%A7%E6%89%A9%E5%B1%95">12.4 长序列结构决定是否能线性扩展</a></li><li><a href="#125-%E4%BD%8D%E7%BD%AE%E7%BC%96%E7%A0%81%E5%92%8C%E5%BD%92%E4%B8%80%E5%8C%96%E5%86%B3%E5%AE%9A%E7%AE%97%E5%AD%90%E5%BD%A2%E7%8A%B6">12.5 位置编码和归一化决定算子形状</a></li><li><a href="#13-%E6%80%8E%E4%B9%88%E5%AD%A6%E4%BB%8E-config-%E5%88%B0-benchmark">13. 怎么学：从 config 到 benchmark</a></li><li><a href="#14-%E9%9D%A2%E8%AF%95%E9%AB%98%E9%A2%91%E9%A2%98%E5%BA%93">14. 面试高频题库</a></li><li><a href="#141-gqa-%E4%B8%BA%E4%BB%80%E4%B9%88%E6%AF%94-mha-%E7%9C%81%E6%98%BE%E5%AD%98">14.1 GQA 为什么比 MHA 省显存？</a></li><li><a href="#142-mla-%E5%92%8C-gqa-%E7%9A%84%E5%8C%BA%E5%88%AB">14.2 MLA 和 GQA 的区别？</a></li><li><a href="#143-moe-%E4%B8%BA%E4%BB%80%E4%B9%88%E6%8E%A8%E7%90%86%E9%9A%BE">14.3 MoE 为什么推理难？</a></li><li><a href="#144-mamba-%E8%83%BD%E6%9B%BF%E4%BB%A3-attention-%E5%90%97">14.4 Mamba 能替代 Attention 吗？</a></li><li><a href="#145-rope-%E4%B8%BA%E4%BB%80%E4%B9%88%E8%83%BD%E5%A4%96%E6%8E%A8">14.5 RoPE 为什么能外推？</a></li><li><a href="#146-decode-%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E5%8F%97%E5%B8%A6%E5%AE%BD%E9%99%90%E5%88%B6">14.6 Decode 什么时候受带宽限制？</a></li><li><a href="#147-%E4%B8%BA%E4%BB%80%E4%B9%88-moe-%E6%9D%83%E9%87%8D%E9%87%8F%E5%8C%96%E6%AF%94-dense-%E6%9B%B4%E6%95%8F%E6%84%9F">14.7 为什么 MoE 权重量化比 Dense 更敏感？</a></li><li><a href="#148-%E9%95%BF%E4%B8%8A%E4%B8%8B%E6%96%87%E4%B8%BA%E4%BB%80%E4%B9%88%E9%9A%BE">14.8 长上下文为什么难？</a></li><li><a href="#15-%E5%8F%82%E8%80%83%E4%B8%8E%E9%85%8D%E5%A5%97%E6%9D%90%E6%96%99">15. 参考与配套材料</a></li><li><a href="#16-%E4%BB%A3%E8%A1%A8%E6%80%A7%E6%B7%B7%E5%90%88%E6%B3%A8%E6%84%8F%E5%8A%9B%E4%B8%8E%E7%A8%80%E7%96%8F%E6%B3%A8%E6%84%8F%E5%8A%9B%E8%AE%BE%E8%AE%A1">16. 代表性混合注意力与稀疏注意力设计</a></li><li><a href="#qwen35gdn-%E7%BA%BF%E6%80%A7%E6%B3%A8%E6%84%8F%E5%8A%9B%E6%B7%B7%E5%90%88%E7%9C%81-kv--%E8%BF%91%E7%BA%BF%E6%80%A7%E9%95%BF%E5%BA%8F%E5%88%97">Qwen3.5：GDN 线性注意力混合（省 KV + 近线性长序列）</a></li><li><a href="#deepseek-v32mla--dsa%E5%8E%8B-kv--%E5%8F%AA%E7%AE%97-top-k">DeepSeek-V3.2：MLA + DSA（压 KV + 只算 top-k）</a></li><li><a href="#deepseek-v4csa--hcamla-%E9%AA%A8%E6%9E%B6--%E5%8E%8B%E7%BC%A9%E7%A8%80%E7%96%8F">DeepSeek-V4：CSA + HCA（MLA 骨架 + 压缩稀疏）</a></li><li><a href="#%E6%B3%A8%E6%84%8F%E5%8A%9B%E5%AE%9E%E7%8E%B0%E4%BE%A7%E5%90%8C%E6%AD%A5%E6%9B%B4%E6%96%B0">注意力实现侧同步更新</a></li><li><a href="#deepseek-v41-flasharxiv2609199692026">DeepSeek-V4.1-Flash（arXiv:2609.19969，2026）</a></li></ol></nav><div class="markdown-body"><h1 id="最新模型与结构从基础设施视角读懂大模型架构">最新模型与结构：从基础设施视角读懂大模型架构<a class="heading-anchor" href="#%E6%9C%80%E6%96%B0%E6%A8%A1%E5%9E%8B%E4%B8%8E%E7%BB%93%E6%9E%84%E4%BB%8E%E5%9F%BA%E7%A1%80%E8%AE%BE%E6%96%BD%E8%A7%86%E8%A7%92%E8%AF%BB%E6%87%82%E5%A4%A7%E6%A8%A1%E5%9E%8B%E6%9E%B6%E6%9E%84" aria-label="链接到最新模型与结构：从基础设施视角读懂大模型架构">#</a></h1>
 <blockquote><p>目标：不是背模型名字，而是能对着 HuggingFace config 读懂一个模型的 attention、norm、位置编码、FFN/MoE、KV cache 和推理代价。
 定位：理论线“模型架构”主笔记，配套 <a href="../../../index.html?chapter=32">MoE 推理挑战</a>、<a href="../../../index.html?chapter=25">MLA</a>、<a href="../../../index.html?chapter=22">Flash Attention 机制</a>。
 状态：生成稿，需要逐节消化后才能算进度。</p>
@@ -27,24 +27,18 @@
 <p>面试和日常优化里，真正被反复追问的不是“这个模型叫 XX”，而是“这个结构会带来什么计算、显存、带宽代价”。</p>
 <p>举例：</p>
 <ul>
-<li>GQA 和 MLA 为什么流行？因为 Decode 阶段是 memory-bound，KV cache 越小，每 token 的 HBM 搬运越少。</li>
+<li>GQA 和 MLA 为什么影响 Decode？当 KV 读取位于关键路径时，缓存字节数会影响访存时间与容量；权重流量、batch、算术强度和 kernel 也会共同决定结果。</li>
 <li>MoE 为什么难服务？因为激活参数少，但全部 expert 权重仍占显存；跨卡路由还会引入 AllToAll 通信。</li>
-<li>Mamba 为什么被讨论？因为 Attention 是 O(seq²)，SSM 是线性扫描，长序列时访存模式完全不同。</li>
+<li>Mamba 为什么被讨论？它用输入选择的状态递推把扫描成本降为随序列长度线性增长；Attention、SSM、线性注意力有不同的状态和访问语义，混合模型也会保留部分 Attention 层。</li>
 <li>为什么量化总是围绕 FFN 和 KV cache？因为权重读取和 KV cache 是 Decode 阶段最大的带宽来源。</li>
 </ul>
 <p>所以这一篇不按“模型发布会”写，而是按“组件 + 模型家族 + 对推理系统的影响”写。</p>
 <hr>
 <h2 id="2-transformer-block-骨架">2. Transformer block 骨架<a class="heading-anchor" href="#2-transformer-block-%E9%AA%A8%E6%9E%B6" aria-label="链接到2. Transformer block 骨架">#</a></h2>
-<p>绝大多数 LLM 还是 Decoder-only Transformer。一个典型 block 可以画成：</p>
-<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">输入 x</span>
-<span class="code-line" data-line="2">  -&gt; RMSNorm / LayerNorm</span>
-<span class="code-line" data-line="3">  -&gt; Attention（Q/K/V；推理时维护 KV cache）</span>
-<span class="code-line" data-line="4">  -&gt; residual: x = x + attn_out</span>
-<span class="code-line" data-line="5">  -&gt; RMSNorm / LayerNorm</span>
-<span class="code-line" data-line="6">  -&gt; FFN 或 MoE（常见 SwiGLU）</span>
-<span class="code-line" data-line="7">  -&gt; residual: x = x + ffn_out</span></code></pre></div>
+<p>绝大多数 LLM 还是 Decoder-only Transformer。典型 pre-norm block 中，Attention 与 FFN/MoE 子层依次读取、更新同一条 hidden-state 流，各自有 residual 汇合：</p>
+<p><img src="../../papers/figures/review/transformer-block-residual.svg" alt="典型 pre-norm Transformer block 的 Attention、FFN 与 residual 汇合"></p>
 <p>整体模型通常由几十到上百个这样的 block 堆叠而成，前面有 token embedding，最后有 lm_head。</p>
-<p>从 Infra 角度，这个 block 产生三类核心成本：</p>
+<p>从 Infra 角度，这个 block 产生三类核心成本；瓶颈由实际形状和运行条件决定：</p>
 <table>
 <thead>
 <tr>
@@ -55,21 +49,21 @@
 </thead>
 <tbody><tr>
 <td>激活计算</td>
-<td>Attention 的 QK^T / PV，FFN 的矩阵乘</td>
-<td>Prefill 时 compute-bound</td>
+<td>Attention 的 QKᵀ/PV、FFN 矩阵乘</td>
+<td>比较 FLOPs/byte 与硬件平衡点；长 prefill 常有较高算术强度</td>
 </tr>
 <tr>
-<td>权重读取</td>
-<td>每层 FFN / attention 的权重</td>
-<td>Decode 时 memory-bound</td>
+<td>权重与 KV 读取</td>
+<td>FFN/attention 权重、历史 KV</td>
+<td>受 batch、上下文、复用、并行切分和互联影响</td>
 </tr>
 <tr>
-<td>KV cache</td>
-<td>每层、每 token、每 head 存 K/V</td>
-<td>长上下文或并发高时显存爆炸</td>
+<td>KV 容量</td>
+<td>每层缓存 K/V、latent 或递归状态</td>
+<td>受层型、序列长度、并发和存储 dtype 影响</td>
 </tr>
 </tbody></table>
-<p>记牢这个模型，后面所有组件都是往这几个位置“换零件”。</p>
+<p>“Prefill 算力受限、Decode 带宽受限”适合作为待验证的起点。短输入、小 batch、跨卡通信、权重读取或 kernel launch 都可能改变瓶颈；判断时固定 batch、prompt/output 长度、并行策略与计时范围，再用 Roofline 和 profiler 数据核对。</p>
 <hr>
 <h2 id="3-组件拆解">3. 组件拆解<a class="heading-anchor" href="#3-%E7%BB%84%E4%BB%B6%E6%8B%86%E8%A7%A3" aria-label="链接到3. 组件拆解">#</a></h2>
 <h3 id="31-token-embedding-与-lmhead">3.1 Token Embedding 与 lm_head<a class="heading-anchor" href="#31-token-embedding-%E4%B8%8E-lmhead" aria-label="链接到3.1 Token Embedding 与 lmhead">#</a></h3>
@@ -87,16 +81,15 @@
 <p>LayerNorm 会减去均值再除以方差；RMSNorm 只做缩放，不做减均值。</p>
 <div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">LayerNorm: y = (x - mean) / sqrt(var + eps) * gamma + beta</span>
 <span class="code-line" data-line="2">RMSNorm:   y = x / sqrt(mean(x^2) + eps) * gamma</span></code></pre></div>
-<p>为什么主流模型都爱 RMSNorm：</p>
+<p>RMSNorm 省去均值中心化，只需归约平方均值并缩放。模型是否使用它是架构和训练选择，效果通过训练稳定性及任务评测判断。</p>
 <ul>
 <li>少一次 mean 计算，reduce 更简单。</li>
 <li>经验上训练稳定性够用。</li>
-<li>算子侧是典型的 row-wise reduce，和 Softmax 的 memory-bound 特征很像。</li>
-<li>RMSNorm 少存/少算一个统计量，对长序列训练的数值开销略低。</li>
+<li>算子侧对每行计算均方根并缩放，具体瓶颈取决于行宽、batch、融合方式和设备。</li>
 </ul>
 <p>Infra 影响：</p>
 <ul>
-<li>Norm 是 memory-bound，优化点是少读几遍 HBM、用 warp reduce、和 residual 融合。</li>
+<li>Norm 常由输入读取与行规约组成；可考察减少往返、规约映射和与 residual 的融合。</li>
 <li>手写 kernel 时，LayerNorm 需要算 mean 和 var；RMSNorm 只算 mean(x²)，代码更短。</li>
 </ul>
 <h3 id="33-位置编码从绝对位置到-rope">3.3 位置编码：从绝对位置到 RoPE<a class="heading-anchor" href="#33-%E4%BD%8D%E7%BD%AE%E7%BC%96%E7%A0%81%E4%BB%8E%E7%BB%9D%E5%AF%B9%E4%BD%8D%E7%BD%AE%E5%88%B0-rope" aria-label="链接到3.3 位置编码：从绝对位置到 RoPE">#</a></h3>
@@ -158,42 +151,47 @@
 <tbody><tr>
 <td>MHA</td>
 <td>每个 query head 一组 K/V</td>
-<td>最大</td>
+<td>基准取决于 H 个 KV heads</td>
 <td>早期 GPT、BERT</td>
 </tr>
 <tr>
 <td>MQA</td>
 <td>所有 query head 共享一组 K/V</td>
-<td>最小，但质量略降</td>
+<td>KV heads 最少；质量取决于训练与适配</td>
 <td>PaLM 等</td>
 </tr>
 <tr>
 <td>GQA</td>
-<td>若干 query head 共享一组 K/V</td>
-<td>折中</td>
+<td>一组 K/V 供多个 query heads 使用</td>
+<td>介于 MHA 与 MQA，取决于组数</td>
 <td>LLaMA 2/3、Qwen、Mistral</td>
 </tr>
 <tr>
 <td>MLA</td>
-<td>把 K/V 压成低秩 latent</td>
-<td>比 GQA 更省</td>
+<td>多个 head 共享低秩 KV latent，另有位置相关分支</td>
+<td>取决于 latent/RoPE 宽度、dtype 和布局</td>
 <td>DeepSeek-V2/V3</td>
 </tr>
 </tbody></table>
+<p><img src="../../papers/figures/review/attention-head-sharing.svg" alt="MHA、MQA 与 GQA 的 Query-head 到 KV-head 共享关系"></p>
 <p>KV cache 大小估算：</p>
 <div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">KV_bytes = 2 * num_kv_heads * head_dim * seq_len * num_layers * dtype_bytes</span></code></pre></div>
-<p>举例：LLaMA-70B 类模型，GQA 的 KV head 比 MHA 少很多，长上下文下能省几十 GB。</p>
+<p>缓存示例应固定 head dimension、层数、上下文长度、并发和 dtype，再按 head 数核算；模型名本身不足以确定字节数。</p>
 <p>对推理的意义：</p>
 <ul>
 <li>Decode 是逐 token 生成，每个 token 都要读已生成的 KV。</li>
 <li>KV cache 越小，单卡能服务的并发越高，PagedAttention 的 block 管理也越轻松。</li>
-<li>MLA 的 low-rank 设计很好，但解码时还需要做投影展开，属于“省显存、换一点计算”。</li>
+<li>MLA 的朴素参考路径会逐历史位置恢复完整 K/V；高效 Decode 可把内容 Key 投影吸收到 Query 侧，把 Value 投影吸收到输出侧，并保留独立 RoPE 分支。额外计算和速度收益应按具体权重形状、kernel 与硬件核算。</li>
 </ul>
+<p>GQA/MLA 改变 KV 的共享方式或缓存表示。FlashAttention 是 IO-aware 的计算算法与 kernel 实现，可配合不同 attention 结构；它与 MHA→MQA→GQA 的变化属于不同维度，不能排成一条结构演进链。</p>
 <h3 id="35-ffn-与-swiglu">3.5 FFN 与 SwiGLU<a class="heading-anchor" href="#35-ffn-%E4%B8%8E-swiglu" aria-label="链接到3.5 FFN 与 SwiGLU">#</a></h3>
 <p>标准 FFN：</p>
 <div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">FFN(x) = act(x @ W_up) @ W_down</span></code></pre></div>
 <p>SwiGLU 是当前最常用的门控变体：</p>
-<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">SwiGLU(x) = (x @ W_gate) * silu(x @ W_up) @ W_down</span></code></pre></div>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">gate = x @ W_gate</span>
+<span class="code-line" data-line="2">up = x @ W_up</span>
+<span class="code-line" data-line="3">SwiGLU(x) = (silu(gate) ⊙ up) @ W_down</span></code></pre></div>
+<p>这里 <code>gate</code> 经 SiLU 后与 <code>up</code> 做逐元素乘法；有些实现交换投影变量名，按实际乘法式辨认两支。</p>
 <p>为什么 FFN 重要：</p>
 <ul>
 <li>FFN 通常占模型参数的一半以上。</li>
@@ -207,19 +205,19 @@
 <p>MoE 的 Infra 关键点：</p>
 <ul>
 <li>激活计算少：每个 token 只走 top-k 个 expert。</li>
-<li>显存不小：所有 expert 权重都要加载到显存。</li>
+<li>权重容量：完整 expert 集合要有存储位置；全 GPU 常驻时占用设备显存，容量不足也可 offload，代价是路由后的传输与预取。</li>
 <li>路由不均衡：有些 expert 忙、有些闲，需要 auxiliary loss 或调度手段。</li>
 <li>跨卡推理：expert 放在不同 GPU 上时，token 要 AllToAll 到对应卡。</li>
 </ul>
 <p>详细内容见 <a href="../../../index.html?chapter=32">MoE 推理挑战</a>。</p>
 <h3 id="37-ssm--mamba">3.7 SSM / Mamba<a class="heading-anchor" href="#37-ssm--mamba" aria-label="链接到3.7 SSM / Mamba">#</a></h3>
-<p>状态空间模型把序列更新写成：</p>
-<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">h_t = A h_{t-1} + B x_t</span>
-<span class="code-line" data-line="2">y_t = C h_t</span></code></pre></div>
+<p>连续状态空间模型可以写成：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">h&#x27;(t) = A h(t) + B x(t)</span>
+<span class="code-line" data-line="2">y(t) = C h(t)</span></code></pre></div>
 <p>优势：</p>
 <ul>
-<li>推理复杂度与序列长度近似线性，不像 Attention 是 O(seq²)。</li>
-<li>显存不随上下文二次增长。</li>
+<li>固定状态维度时，扫描工作量随序列长度线性增长；完整 self-attention 的 prefill 交互量则随可见 token 对增加。</li>
+<li>这一层的推理状态不保存逐 token KV；若模型混合了 attention 层，那些层仍有自己的 KV cache。</li>
 </ul>
 <p>代价：</p>
 <ul>
@@ -307,8 +305,8 @@
 <tr>
 <td>MLA</td>
 <td><code>[H, d]</code></td>
-<td>latent <code>d_c</code></td>
-<td><code>2 * d_c + 少量投影</code></td>
+<td>latent <code>d_c</code> 与 RoPE <code>d_r</code></td>
+<td><code>d_c + d_r</code> 元素/每层每 token</td>
 </tr>
 </tbody></table>
 <h3 id="42-kv-cache-计算公式">4.2 KV cache 计算公式<a class="heading-anchor" href="#42-kv-cache-%E8%AE%A1%E7%AE%97%E5%85%AC%E5%BC%8F" aria-label="链接到4.2 KV cache 计算公式">#</a></h3>
@@ -338,18 +336,18 @@
 <td><code>2*1*128*4096*32*2 = 64 MiB</code></td>
 </tr>
 <tr>
-<td>MLA(latent=512)</td>
-<td>1 latent</td>
-<td>约 <code>2*512*4096*32*2 = 256 MiB</code>（未含展开投影）</td>
+<td>MLA(latent=512, RoPE=64)</td>
+<td>1 latent + 1 RoPE 向量</td>
+<td><code>(512+64)*4096*32*2 = 144 MiB</code></td>
 </tr>
 </tbody></table>
-<blockquote><p>这里的 MLA 例子只是示意，实际 DeepSeek 还有额外缓存和投影参数，不要直接拿这个数当论文值。</p>
+<blockquote><p>该教学算例把每个元素按 2 bytes 计，不含页表、scale 与运行时对齐等开销；实际配置应从 latent/RoPE 宽度和缓存 dtype 逐项核算。</p>
 </blockquote><h3 id="43-为什么-gqamla-对-decode-重要">4.3 为什么 GQA/MLA 对 Decode 重要<a class="heading-anchor" href="#43-%E4%B8%BA%E4%BB%80%E4%B9%88-gqamla-%E5%AF%B9-decode-%E9%87%8D%E8%A6%81" aria-label="链接到4.3 为什么 GQA/MLA 对 Decode 重要">#</a></h3>
 <p>Decode 每生成一个 token：</p>
 <ul>
 <li>只需要新 token 的 Q。</li>
 <li>需要读取全部历史 K/V。</li>
-<li>因此 KV 越小，每 token HBM 读取越少，吞吐越高。</li>
+<li>因此更紧凑的 KV 表示会减少对应的缓存流量；端到端吞吐仍受权重读取、batch、投影和 kernel 效率影响。</li>
 </ul>
 <p>这也是“KV cache 是并发上限”的原因。</p>
 <hr>
@@ -398,23 +396,33 @@
 <span class="code-line" data-line="4">output = sum_i probs[topk_i] * expert_i(x)</span></code></pre></div>
 <hr>
 <h2 id="6-ssm--mamba-与混合架构">6. SSM / Mamba 与混合架构<a class="heading-anchor" href="#6-ssm--mamba-%E4%B8%8E%E6%B7%B7%E5%90%88%E6%9E%B6%E6%9E%84" aria-label="链接到6. SSM / Mamba 与混合架构">#</a></h2>
-<h3 id="61-状态方程">6.1 状态方程<a class="heading-anchor" href="#61-%E7%8A%B6%E6%80%81%E6%96%B9%E7%A8%8B" aria-label="链接到6.1 状态方程">#</a></h3>
-<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">h_t = A h_{t-1} + B x_t</span>
-<span class="code-line" data-line="2">y_t = C h_t</span></code></pre></div>
+<p><span id="61-状态方程" aria-hidden="true"></span></p>
+<h3 id="61-连续状态方程与离散更新">6.1 连续状态方程与离散更新<a class="heading-anchor" href="#61-%E8%BF%9E%E7%BB%AD%E7%8A%B6%E6%80%81%E6%96%B9%E7%A8%8B%E4%B8%8E%E7%A6%BB%E6%95%A3%E6%9B%B4%E6%96%B0" aria-label="链接到6.1 连续状态方程与离散更新">#</a></h3>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">h&#x27;(t) = A h(t) + B x(t)</span>
+<span class="code-line" data-line="2">y(t) = C h(t)</span></code></pre></div>
 <ul>
-<li><code>A</code> 是状态转移矩阵，<code>B</code> 是输入投影，<code>C</code> 是输出投影。</li>
-<li>推理时每个 token 只更新 hidden state，不保存完整 KV cache。</li>
-<li>长序列复杂度线性，但状态容量有限。</li>
+<li><code>A</code> 决定连续系统的状态转移，<code>B</code> 把输入写入状态，<code>C</code> 从状态读出结果。离散化后另有 <code>dA</code>、<code>dB</code> 等 token-step 系数。</li>
+<li>长度为 N 的序列被压入固定形状的状态；状态大小不随 N 增长，计算仍随状态维度增加。</li>
 </ul>
-<h3 id="62-mamba-的关键点">6.2 Mamba 的关键点<a class="heading-anchor" href="#62-mamba-%E7%9A%84%E5%85%B3%E9%94%AE%E7%82%B9" aria-label="链接到6.2 Mamba 的关键点">#</a></h3>
-<ul>
-<li>S4 是线性时不变系统；Mamba 的关键是 selective scan，让 <code>A/B/C</code> 依赖输入。</li>
-<li>Mamba-2 把状态方程和 attention 的关系讲得更清楚，提出结构化状态空间对偶。</li>
-<li>混合架构（如 Jamba）交替使用 Attention 和 SSM，兼顾长距离和表达能力。</li>
-</ul>
+<p><span id="62-mamba-的关键点" aria-hidden="true"></span></p>
+<h3 id="62-mamba-的输入选择与离散状态更新">6.2 Mamba 的输入选择与离散状态更新<a class="heading-anchor" href="#62-mamba-%E7%9A%84%E8%BE%93%E5%85%A5%E9%80%89%E6%8B%A9%E4%B8%8E%E7%A6%BB%E6%95%A3%E7%8A%B6%E6%80%81%E6%9B%B4%E6%96%B0" aria-label="链接到6.2 Mamba 的输入选择与离散状态更新">#</a></h3>
+<p>在作者的 <code>mamba_ssm/modules/mamba_simple.py</code> 中，<code>x_proj</code> 把输入特征投影后拆成 <code>dt</code> 的低秩表示、<code>B</code> 与 <code>C</code>；独立学习参数 <code>A_log</code> 则构造 <code>A = -exp(A_log)</code>。可以把实现主线写成：</p>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1">dt_low_rank, B, C = split(x_proj(u), [dt_rank, d_state, d_state])</span>
+<span class="code-line" data-line="2">delta = softplus(dt_proj(dt_low_rank) + dt_bias)</span>
+<span class="code-line" data-line="3">A = -exp(A_log)</span>
+<span class="code-line" data-line="4">dA = exp(delta * A)</span>
+<span class="code-line" data-line="5">dB = delta * B</span></code></pre></div>
+<p>输入产生 token-dependent <code>Δ_t/B_t/C_t</code>，而连续系统的 <code>A</code> 保持为学习参数。代码块只摘录分支关系和主要运算，未复制作者内核实现。</p>
+<p>简化离散关系为：</p>
+<div class="equation"><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi mathvariant="normal">Δ</mi><mi>t</mi></msub><mo>=</mo><mi mathvariant="normal">softplus</mi><mo>⁡</mo><mo stretchy="false">(</mo><msub><mi>W</mi><mi mathvariant="normal">Δ</mi></msub><msub><mi>u</mi><mi>t</mi></msub><mo>+</mo><msub><mi>b</mi><mi mathvariant="normal">Δ</mi></msub><mo stretchy="false">)</mo><mo separator="true">,</mo><mspace width="1em"/><mi>d</mi><msub><mi>A</mi><mi>t</mi></msub><mo>=</mo><mi>exp</mi><mo>⁡</mo><mo stretchy="false">(</mo><msub><mi mathvariant="normal">Δ</mi><mi>t</mi></msub><mi>A</mi><mo stretchy="false">)</mo><mo separator="true">,</mo><mspace width="1em"/><mi>d</mi><msub><mi>B</mi><mi>t</mi></msub><mo>≈</mo><msub><mi mathvariant="normal">Δ</mi><mi>t</mi></msub><msub><mi>B</mi><mi>t</mi></msub><mo separator="true">,</mo><mspace width="1em"/><msub><mi>h</mi><mi>t</mi></msub><mo>=</mo><mi>d</mi><msub><mi>A</mi><mi>t</mi></msub><mo>⊙</mo><msub><mi>h</mi><mrow><mi>t</mi><mo>−</mo><mn>1</mn></mrow></msub><mo>+</mo><mi>d</mi><msub><mi>B</mi><mi>t</mi></msub><mo>⊙</mo><msub><mi>u</mi><mi>t</mi></msub><mo separator="true">,</mo><mspace width="1em"/><msub><mi>y</mi><mi>t</mi></msub><mo>=</mo><msub><mi>C</mi><mi>t</mi></msub><msub><mi>h</mi><mi>t</mi></msub><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">\Delta_t=\operatorname{softplus}(W_\Delta u_t+b_\Delta),\quad
+dA_t=\exp(\Delta_t A),\quad dB_t\approx\Delta_t B_t,\quad
+h_t=dA_t\odot h_{t-1}+dB_t\odot u_t,\quad y_t=C_t h_t.</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="katex-base"><span class="katex-strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord">Δ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mop"><span class="mord mathrm">softplus</span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.1389em;">W</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mtight">Δ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal">u</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord mathnormal">b</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mtight">Δ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">)</span><span class="mpunct">,</span><span class="mspace" style="margin-right:1em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">d</span><span class="mord"><span class="mord mathnormal">A</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mop">exp</span><span class="mopen">(</span><span class="mord"><span class="mord">Δ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord mathnormal">A</span><span class="mclose">)</span><span class="mpunct">,</span><span class="mspace" style="margin-right:1em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">d</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0502em;">B</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.0502em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord"><span class="mord">Δ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0502em;">B</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.0502em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:1em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">h</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.8444em;vertical-align:-0.15em;"></span><span class="mord mathnormal">d</span><span class="mord"><span class="mord mathnormal">A</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⊙</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.9028em;vertical-align:-0.2083em;"></span><span class="mord"><span class="mord mathnormal">h</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">t</span><span class="mbin mtight">−</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2083em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.8444em;vertical-align:-0.15em;"></span><span class="mord mathnormal">d</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0502em;">B</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.0502em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⊙</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord"><span class="mord mathnormal">u</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:1em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0359em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="katex-base"><span class="katex-strut" style="height:0.8444em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0715em;">C</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.0715em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal">h</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="katex-sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord">.</span></span></span></span></span></div>
+<p><code>u_t</code> 表示输入投影及局部卷积后的特征。<code>dA_t</code> 是离散状态更新系数，与参数 <code>A</code> 分属连续系统和 token 更新两层。作者的 fused selective-scan 路径会实现并融合这些运算；此处的式子用于解释参数依赖关系。来源：<a href="https://github.com/state-spaces/mamba/blob/main/mamba_ssm/modules/mamba_simple.py">官方 Mamba 实现</a>。</p>
+<p><img src="../../papers/figures/review/mamba-discretization.svg" alt="Mamba 中输入相关 Δ、B、C 与学习参数 A 的离散化路径"></p>
+<p>Mamba-2 的结构化状态空间对偶给出 SSM 与 attention-like 计算之间的数学联系；这不等于 SSM 都是线性 Attention。混合模型里模块分工与信息保留由训练形成，不能仅凭层数比例预测质量。</p>
 <h3 id="63-infra-影响">6.3 Infra 影响<a class="heading-anchor" href="#63-infra-%E5%BD%B1%E5%93%8D" aria-label="链接到6.3 Infra 影响">#</a></h3>
 <ul>
-<li>SSM 在长序列下省显存和带宽，但 kernel 不是普通 GEMM，需要专门 scan 实现。</li>
+<li>SSM 将逐 token 历史缓存替换为递归状态；状态更新、序列 scan 与完整 Attention 的成本仍取决于状态维度、chunking 和硬件，kernel 常需 scan 专用实现。</li>
 <li>现有 serving 框架对 SSM 的支持比 Attention 少，需要看具体后端。</li>
 <li>面试不要只说“线性复杂度”，要能讲状态容量和 kernel 复杂度。</li>
 </ul>
@@ -432,11 +440,12 @@
 </ul>
 <hr>
 <h2 id="8-kv-cache-深挖">8. KV cache 深挖<a class="heading-anchor" href="#8-kv-cache-%E6%B7%B1%E6%8C%96" aria-label="链接到8. KV cache 深挖">#</a></h2>
-<h3 id="81-为什么-kv-cache-是瓶颈">8.1 为什么 KV cache 是瓶颈<a class="heading-anchor" href="#81-%E4%B8%BA%E4%BB%80%E4%B9%88-kv-cache-%E6%98%AF%E7%93%B6%E9%A2%88" aria-label="链接到8.1 为什么 KV cache 是瓶颈">#</a></h3>
+<p><span id="81-为什么-kv-cache-是瓶颈" aria-hidden="true"></span></p>
+<h3 id="81-何时-kv-cache-会成为瓶颈">8.1 何时 KV cache 会成为瓶颈<a class="heading-anchor" href="#81-%E4%BD%95%E6%97%B6-kv-cache-%E4%BC%9A%E6%88%90%E4%B8%BA%E7%93%B6%E9%A2%88" aria-label="链接到8.1 何时 KV cache 会成为瓶颈">#</a></h3>
 <ul>
-<li>Prefill 阶段一次算完所有 token，适合并行、compute-bound。</li>
-<li>Decode 阶段逐 token 生成，每次都要把全部历史 K/V 读一遍，memory-bound。</li>
-<li>KV cache 决定单卡并发、长上下文能力和 prefix cache 的收益。</li>
+<li>Prefill 对长输入通常有较高算术强度；短输入、小 batch、权重读取或跨卡通信可改变主导瓶颈。</li>
+<li>Decode 每步读取可见历史 KV；当这部分流量进入关键路径时，KV dtype、head 数/latent 宽度和读取布局会影响时间及并发容量。</li>
+<li>KV 容量影响可容纳并发数；实际延迟还会随 batch、序列长度、调度和 kernel 改变。</li>
 </ul>
 <h3 id="82-pagedattention-与-block-table">8.2 PagedAttention 与 block table<a class="heading-anchor" href="#82-pagedattention-%E4%B8%8E-block-table" aria-label="链接到8.2 PagedAttention 与 block table">#</a></h3>
 <ul>
@@ -628,7 +637,7 @@
 <h2 id="12-对推理系统的五个影响">12. 对推理系统的五个影响<a class="heading-anchor" href="#12-%E5%AF%B9%E6%8E%A8%E7%90%86%E7%B3%BB%E7%BB%9F%E7%9A%84%E4%BA%94%E4%B8%AA%E5%BD%B1%E5%93%8D" aria-label="链接到12. 对推理系统的五个影响">#</a></h2>
 <h3 id="121-kv-cache-决定并发上限">12.1 KV cache 决定并发上限<a class="heading-anchor" href="#121-kv-cache-%E5%86%B3%E5%AE%9A%E5%B9%B6%E5%8F%91%E4%B8%8A%E9%99%90" aria-label="链接到12.1 KV cache 决定并发上限">#</a></h3>
 <div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">单请求 KV = 每层 KV head 数 * head_dim * seq_len * 2 * layer 数 * dtype_bytes</span></code></pre></div>
-<p>GQA/MLA 能显著提高单卡并发，也因此影响 PagedAttention、prefix cache、PD 分离的收益。</p>
+<p>GQA/MLA 可降低每 token KV 容量，影响并发上限、PagedAttention 分配和 prefix cache 容量；实际 TTFT/TPOT 还取决于调度与关键路径。</p>
 <h3 id="122-moe-决定权重显存和通信">12.2 MoE 决定权重显存和通信<a class="heading-anchor" href="#122-moe-%E5%86%B3%E5%AE%9A%E6%9D%83%E9%87%8D%E6%98%BE%E5%AD%98%E5%92%8C%E9%80%9A%E4%BF%A1" aria-label="链接到12.2 MoE 决定权重显存和通信">#</a></h3>
 <p>MoE 模型“总参数大，激活参数小”。服务时：</p>
 <ul>
@@ -637,11 +646,11 @@
 <li>量化 MoE 时，router 精度要保，expert 可以更激进。</li>
 </ul>
 <h3 id="123-attention-变体决定-decode-带宽">12.3 Attention 变体决定 Decode 带宽<a class="heading-anchor" href="#123-attention-%E5%8F%98%E4%BD%93%E5%86%B3%E5%AE%9A-decode-%E5%B8%A6%E5%AE%BD" aria-label="链接到12.3 Attention 变体决定 Decode 带宽">#</a></h3>
-<p>Decode 阶段每个 token 主要瓶颈是：</p>
-<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">读 KV cache + 读权重 &gt; 计算量</span></code></pre></div>
-<p>所以 MHA -&gt; GQA -&gt; MLA 的演进本质是“减少每 token 必须读的 KV 字节数”。</p>
+<p>小 batch、长历史时，Decode 可能受权重与 KV 读取限制；固定配置下可先比较：</p>
+<div class="code-panel"><div class="code-caption"><span>TEXT</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-text"><span class="code-line" data-line="1">算术强度 = FLOPs / 实际读写字节数</span></code></pre></div>
+<p>GQA 与 MLA 以不同机制改变 KV 表示；FlashAttention 改变分块计算和中间状态驻留。几种方法可以组合，比较时固定 batch、序列形状、精度与硬件。</p>
 <h3 id="124-长序列结构决定是否能线性扩展">12.4 长序列结构决定是否能线性扩展<a class="heading-anchor" href="#124-%E9%95%BF%E5%BA%8F%E5%88%97%E7%BB%93%E6%9E%84%E5%86%B3%E5%AE%9A%E6%98%AF%E5%90%A6%E8%83%BD%E7%BA%BF%E6%80%A7%E6%89%A9%E5%B1%95" aria-label="链接到12.4 长序列结构决定是否能线性扩展">#</a></h3>
-<p>标准 Attention 的 prefill 计算和 KV 显存都随 seq² 增长。要支持百万级上下文，需要：</p>
+<p>标准全局 Attention 的 prefill 成对交互量随序列长度平方增长，常规 KV cache 容量则随缓存 token 数线性增长。百万级上下文需要分别控制计算、容量和搬运：</p>
 <ul>
 <li>Flash Attention / Ring Attention</li>
 <li>分块 prefill / chunked prefill</li>
@@ -665,19 +674,20 @@
 <h3 id="141-gqa-为什么比-mha-省显存">14.1 GQA 为什么比 MHA 省显存？<a class="heading-anchor" href="#141-gqa-%E4%B8%BA%E4%BB%80%E4%B9%88%E6%AF%94-mha-%E7%9C%81%E6%98%BE%E5%AD%98" aria-label="链接到14.1 GQA 为什么比 MHA 省显存？">#</a></h3>
 <p>“KV cache 按 KV head 数增长。GQA 让多个 query head 共享一组 K/V，所以 KV cache 大致从 H 降到 H/G，Decode 阶段每 token 读取的 KV 字节也按比例减少。”</p>
 <h3 id="142-mla-和-gqa-的区别">14.2 MLA 和 GQA 的区别？<a class="heading-anchor" href="#142-mla-%E5%92%8C-gqa-%E7%9A%84%E5%8C%BA%E5%88%AB" aria-label="链接到14.2 MLA 和 GQA 的区别？">#</a></h3>
-<p>“GQA 仍按 token 存 K/V，只是减少 head 数；MLA 把 K/V 压到低维 latent，再在计算时投影回来。省的是 KV cache 存储，代价是多一次低秩投影。”</p>
+<p>“GQA 仍按 token 存完整 K/V，只是减少 KV head 数；MLA 缓存共享 latent 与独立位置分支，Decode 可把内容 Key 投影吸收到 Query、Value 投影吸收到输出侧，避免逐历史位置展开完整 K/V。”</p>
 <h3 id="143-moe-为什么推理难">14.3 MoE 为什么推理难？<a class="heading-anchor" href="#143-moe-%E4%B8%BA%E4%BB%80%E4%B9%88%E6%8E%A8%E7%90%86%E9%9A%BE" aria-label="链接到14.3 MoE 为什么推理难？">#</a></h3>
-<p>“MoE 激活参数少、计算省，但全部 expert 权重都要在显存里；token 路由到不同 expert 后，跨卡场景要 AllToAll，且负载不均衡会拖慢整体。”</p>
+<p>&quot;MoE 的单 token 只计算被选专家；完整专家权重需要有存储位置，全 GPU 常驻会占设备显存，offload 会加入传输路径。跨卡路由还要统计 dispatch/combine 和负载尾部。&quot;</p>
 <h3 id="144-mamba-能替代-attention-吗">14.4 Mamba 能替代 Attention 吗？<a class="heading-anchor" href="#144-mamba-%E8%83%BD%E6%9B%BF%E4%BB%A3-attention-%E5%90%97" aria-label="链接到14.4 Mamba 能替代 Attention 吗？">#</a></h3>
 <p>“在长序列和低内存上有优势，但状态容量有限，不能简单认为所有场景都赢；当前更多是 Attention + SSM 混合。”</p>
 <h3 id="145-rope-为什么能外推">14.5 RoPE 为什么能外推？<a class="heading-anchor" href="#145-rope-%E4%B8%BA%E4%BB%80%E4%B9%88%E8%83%BD%E5%A4%96%E6%8E%A8" aria-label="链接到14.5 RoPE 为什么能外推？">#</a></h3>
 <p>“RoPE 把位置信息编码成旋转角度，相对位置差可以写成旋转矩阵差；直接外推会掉精度，所以要配合插值、NTK 或 YaRN。”</p>
-<h3 id="146-为什么-decode-是-memory-bound">14.6 为什么 Decode 是 memory-bound？<a class="heading-anchor" href="#146-%E4%B8%BA%E4%BB%80%E4%B9%88-decode-%E6%98%AF-memory-bound" aria-label="链接到14.6 为什么 Decode 是 memory-bound？">#</a></h3>
-<p>“Decode 每次只算一个新 token，但必须读全部权重和全部历史 KV；计算量小，HBM 读取量大。”</p>
+<p><span id="146-为什么-decode-是-memory-bound" aria-hidden="true"></span></p>
+<h3 id="146-decode-什么时候受带宽限制">14.6 Decode 什么时候受带宽限制？<a class="heading-anchor" href="#146-decode-%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E5%8F%97%E5%B8%A6%E5%AE%BD%E9%99%90%E5%88%B6" aria-label="链接到14.6 Decode 什么时候受带宽限制？">#</a></h3>
+<p>“单 token、小 batch、长历史时，权重与 KV 读取可能主导关键路径。增大 batch 会摊薄权重读取并增加并发 KV 工作；用固定 shape 的 FLOPs/byte 和 profiler 判断。”</p>
 <h3 id="147-为什么-moe-权重量化比-dense-更敏感">14.7 为什么 MoE 权重量化比 Dense 更敏感？<a class="heading-anchor" href="#147-%E4%B8%BA%E4%BB%80%E4%B9%88-moe-%E6%9D%83%E9%87%8D%E9%87%8F%E5%8C%96%E6%AF%94-dense-%E6%9B%B4%E6%95%8F%E6%84%9F" aria-label="链接到14.7 为什么 MoE 权重量化比 Dense 更敏感？">#</a></h3>
 <p>“router 决定 token 去哪个 expert，router 错了整个输出就偏了；expert 内部可以更激进量化，router 需要保精度。”</p>
 <h3 id="148-长上下文为什么难">14.8 长上下文为什么难？<a class="heading-anchor" href="#148-%E9%95%BF%E4%B8%8A%E4%B8%8B%E6%96%87%E4%B8%BA%E4%BB%80%E4%B9%88%E9%9A%BE" aria-label="链接到14.8 长上下文为什么难？">#</a></h3>
-<p>“Attention 显存和计算随 seq²，KV cache 也随 seq 线性增长；需要 Flash Attention、Ring Attention、chunked prefill、KV 优化一起配合。”</p>
+<p>&quot;全局 Attention 的 prefill 成对交互量随 seq²，逐 token KV 容量随 seq 线性增长。FlashAttention 改分块执行，PagedAttention 改分配布局，稀疏或状态递推改变历史访问/表示；按瓶颈选择方法。&quot;</p>
 <hr>
 <h2 id="15-参考与配套材料">15. 参考与配套材料<a class="heading-anchor" href="#15-%E5%8F%82%E8%80%83%E4%B8%8E%E9%85%8D%E5%A5%97%E6%9D%90%E6%96%99" aria-label="链接到15. 参考与配套材料">#</a></h2>
 <ul>
@@ -689,47 +699,47 @@
 <li>AIInfraGuide 的 Transformer 与 GPU 章节，见 <a href="../../roadmap/ai-infra-curriculum.html">roadmap/ai-infra-curriculum.md</a></li>
 </ul>
 <hr>
-<h2 id="16-2026-新架构混合注意力与稀疏注意力">16. 2026 新架构：混合注意力与稀疏注意力<a class="heading-anchor" href="#16-2026-%E6%96%B0%E6%9E%B6%E6%9E%84%E6%B7%B7%E5%90%88%E6%B3%A8%E6%84%8F%E5%8A%9B%E4%B8%8E%E7%A8%80%E7%96%8F%E6%B3%A8%E6%84%8F%E5%8A%9B" aria-label="链接到16. 2026 新架构：混合注意力与稀疏注意力">#</a></h2>
-<p>2026 年四个可学的生产案例，目标都是同一个：<strong>让长上下文变便宜</strong>。</p>
+<p><span id="16-2026-新架构混合注意力与稀疏注意力" aria-hidden="true"></span></p>
+<h2 id="16-代表性混合注意力与稀疏注意力设计">16. 代表性混合注意力与稀疏注意力设计<a class="heading-anchor" href="#16-%E4%BB%A3%E8%A1%A8%E6%80%A7%E6%B7%B7%E5%90%88%E6%B3%A8%E6%84%8F%E5%8A%9B%E4%B8%8E%E7%A8%80%E7%96%8F%E6%B3%A8%E6%84%8F%E5%8A%9B%E8%AE%BE%E8%AE%A1" aria-label="链接到16. 代表性混合注意力与稀疏注意力设计">#</a></h2>
+<p>本节按论文年份与对应配置记录结构变化。以下方法面向不同环节，不能合并成一条统一的 Attention 代际路线。</p>
 <h3 id="qwen35gdn-线性注意力混合省-kv--近线性长序列">Qwen3.5：GDN 线性注意力混合（省 KV + 近线性长序列）<a class="heading-anchor" href="#qwen35gdn-%E7%BA%BF%E6%80%A7%E6%B3%A8%E6%84%8F%E5%8A%9B%E6%B7%B7%E5%90%88%E7%9C%81-kv--%E8%BF%91%E7%BA%BF%E6%80%A7%E9%95%BF%E5%BA%8F%E5%88%97" aria-label="链接到Qwen3.5：GDN 线性注意力混合（省 KV + 近线性长序列）">#</a></h3>
 <ul>
 <li>60 层 = 15 组 ×（3 GDN + 1 full attention）；512+1 experts、每 token 激活 10 个；397B 总参 / 17B 激活</li>
-<li>GDN 层没有传统 KV cache，只有固定大小的 recurrent state + conv state；full attention 层保留精确召回</li>
+<li>每个 GDN 层维护 recurrent state 与卷积状态；full-attention 层维护自己的 KV。hidden state 按层序传递，3:1 层比描述配置，不单独保证召回质量</li>
+<li><img src="../../papers/figures/review/gdn-hybrid-layer-flow.svg" alt="Qwen3.5 的 GDN 与 full-attention 层序"></li>
 <li>推理影响：长上下文成本接近线性，但 recurrent state 对 prefill 批量不友好（需要 chunked / parallel scan）</li>
 <li>详细：<a href="../../../index.html?chapter=27">GDN（Qwen3.5）</a></li>
 </ul>
 <h3 id="deepseek-v32mla--dsa压-kv--只算-top-k">DeepSeek-V3.2：MLA + DSA（压 KV + 只算 top-k）<a class="heading-anchor" href="#deepseek-v32mla--dsa%E5%8E%8B-kv--%E5%8F%AA%E7%AE%97-top-k" aria-label="链接到DeepSeek-V3.2：MLA + DSA（压 KV + 只算 top-k）">#</a></h3>
 <ul>
-<li>~685B 总参 / 37B 激活；MLA 压缩 KV 存储，DSA 用 indexer 只选 K=2048 个 key 做完整 attention</li>
-<li>复杂度 O(L²) → O(L·K)；推理栈（vLLM / TRT-LLM / SGLang / TileRT）都有 sparse MLA / fp8_ds_mla / MTP-3 支持</li>
-<li>详细：<a href="../../../index.html?chapter=26">DSA</a></li>
-</ul>
-<h3 id="glm-5dsa-架构复用">GLM-5：DSA 架构复用<a class="heading-anchor" href="#glm-5dsa-%E6%9E%B6%E6%9E%84%E5%A4%8D%E7%94%A8" aria-label="链接到GLM-5：DSA 架构复用">#</a></h3>
-<ul>
-<li>78 层、256 experts、8 active、激活约 44B；代码层面复用 DeepSeek 的 DSA 实现</li>
-<li>说明稀疏注意力已成为&quot;标准件&quot;，模型之间互相复用实现</li>
+<li>官方 <code>config_671B_v3.2.json</code> 用于核对模型结构；激活参数口径与总参数计数应按各自报告来源读取。MLA 压缩缓存表示，DSA indexer 对可见历史选位置供主 Attention gather</li>
+<li>indexer 仍处理可见历史，选中后主 Attention 只 gather 所选位置；主分支的选中规模不代表全路径复杂度，部署支持按具体框架版本和模型配置确认</li>
 <li>详细：<a href="../../../index.html?chapter=26">DSA</a></li>
 </ul>
 <h3 id="deepseek-v4csa--hcamla-骨架--压缩稀疏">DeepSeek-V4：CSA + HCA（MLA 骨架 + 压缩稀疏）<a class="heading-anchor" href="#deepseek-v4csa--hcamla-%E9%AA%A8%E6%9E%B6--%E5%8E%8B%E7%BC%A9%E7%A8%80%E7%96%8F" aria-label="链接到DeepSeek-V4：CSA + HCA（MLA 骨架 + 压缩稀疏）">#</a></h3>
 <ul>
-<li>发布线：2026-04-24 预览开源（V4-Pro ~1.6T 总参 / ~49B 激活；V4-Flash 284B / ~13B 激活；原生 1M 上下文）；2026-07-31 V4-Flash 正式；2026-08-13 V4-Pro-0813 正式（架构不变，后训练大幅提升）</li>
+<li>V4 技术报告（arXiv:2606.19348，2026）：Pro 1.6T / 49B 激活，Flash 284B / 13B 激活，报告支持 1M 上下文；此处数字采用论文报告口径。</li>
 <li>注意力 = <strong>CSA + HCA 混合</strong>，保留 MLA 低秩 latent 骨架：<ul>
 <li><strong>CSA（压缩稀疏注意力）</strong>：每 m=4 个 token 用重叠窗口（2m）+ joint softmax 压成 1 个 compressed entry；Lightning Indexer 打分选 top-k（Pro k=1024 / Flash k=512）；核心 attention 是 shared-KV 多 query，所有 head 共用同一组压缩 KV</li>
-<li><strong>HCA（压缩稠密注意力）</strong>：m&#39;=128、无 indexer、无 overlap，对全部压缩 entry 做 dense attention，兜底召回</li>
+<li><strong>HCA（压缩稠密注意力）</strong>：m&#39;=128、无 indexer，对全部 HCA compressed entries 做 dense attention；每个 entry 仍是压缩表示，不保证精确恢复原 token 细节</li>
 <li>每层另留最近 128 个未压缩 token 的滑窗分支（<code>sliding_window=128</code>）</li>
 </ul>
 </li>
-<li>层排布：V4-Pro 61 层 + MTP，前 2 层纯 HCA，之后 CSA/HCA 交替（<code>compress_ratios=[128,128,4,128,4,...,4,0]</code>）；V4-Flash 同模式 43 层</li>
-<li>1M 上下文账（对比 V3.2）：V4-Pro prefill FLOPs ≈ 27%、KV cache ≈ 10%；V4-Flash ≈ 10% / 7%；对比 BF16 GQA-8 基线 KV 仅约 2%</li>
+<li>层排布：V4-Pro 61 层 + MTP，前 2 层 HCA、之后 CSA/HCA 交替；V4-Flash 43 层，报告配置前 2 层为纯 SWA，其余采用 CSA/HCA 混合。具体层型以 checkpoint config 为准。</li>
+<li>1M 上下文账（V4 报告 Figure 1）：相对 V3.2，Pro 单 token FLOPs 约 27%、KV cache 约 10%；Flash 约 10% / 7%。这是论文长上下文比较口径，不代表所有 shape 的服务延迟。</li>
 <li>同代配套：partial RoPE（只旋最后 64 维）、attention sink（每 head 可学习 logit）、grouped output projection（组内 bottleneck 1024）、mHC 流形约束超连接（4 条残差流 + 双随机 B 矩阵）、Muon 优化器（替代 AdamW 大矩阵部分）、MoE 权重 MXFP4（E2M1）QAT + 非专家 FP8 + KV 混合精度</li>
-<li>推理侧：MegaMoE 波次调度（1.5–1.73×，已进 DeepGEMM）、TileLang/DeepGEMM 替代手写 CUDA/cuBLAS、磁盘 KV + SWA 三档策略</li>
+<li>推理侧：报告介绍 MegaMoE2 专家波次调度、TileLang 融合 kernel、batch-invariant kernel 与磁盘 KV / SWA 存储取舍；速度数字和实现边界见 <a href="../../../index.html?chapter=31">DeepSeek-V4 专题</a></li>
 <li>注意：V4 config 与 V3.2 不兼容（无 <code>kv_lora_rank</code>，改用 <code>compress_ratios</code>），不要把 V3.2 手算公式直接套 V4</li>
 <li>详细：<a href="../../../index.html?chapter=31">DeepSeek-V4（CSA + HCA）</a> · 对照基准：<a href="../../../index.html?chapter=26">DeepSeek-V3.2 / DSA</a></li>
 </ul>
 <h3 id="注意力实现侧同步更新">注意力实现侧同步更新<a class="heading-anchor" href="#%E6%B3%A8%E6%84%8F%E5%8A%9B%E5%AE%9E%E7%8E%B0%E4%BE%A7%E5%90%8C%E6%AD%A5%E6%9B%B4%E6%96%B0" aria-label="链接到注意力实现侧同步更新">#</a></h3>
 <ul>
-<li>FA4 + FlexAttention：可编程注意力（score_mod + block 稀疏），Blackwell 上默认后端推进中 → <a href="../../../index.html?chapter=28">fa4-flexattention.md</a></li>
-<li>SageAttention3：Q/K 量化到 FP4（microscaling），带宽降 4x → <a href="../../../index.html?chapter=29">attention-2026-sage3-kascade.md</a></li>
-<li>Kascade：anchor layer 算 exact top-k、跨层复用索引，免训练 → <a href="../../../index.html?chapter=29">attention-2026-sage3-kascade.md</a></li>
+<li>FlashAttention-4（arXiv:2603.05451，2026-03-05）与 FlexAttention：FA4 是面向特定硬件的注意力 kernel/backend；FlexAttention 表达 score 与 mask 规则。它们改变计算实现，不改变 GQA 的 head-sharing 定义 → <a href="../../../index.html?chapter=28">FA4 + FlexAttention</a></li>
+<li>SageAttention3（arXiv:2505.11594，2025）：用 NVFP4 微缩放执行低精度注意力矩阵乘，并处理中间概率块的缩放与精度；4-bit payload 不等于总 HBM 字节或时间缩为四分之一 → <a href="../../../index.html?chapter=29">SageAttention3 与 Kascade</a></li>
+<li>Kascade（arXiv:2512.16391，2025；<a href="https://github.com/microsoft/kascade">作者仓库</a>）：anchor 层产生 top-k 位置，后续层复用该索引映射以省重选开销；稀疏 mask 仍改变各层的实际访问集合 → <a href="../../../index.html?chapter=29">SageAttention3 与 Kascade</a></li>
 </ul>
+<h3 id="deepseek-v41-flasharxiv2609199692026">DeepSeek-V4.1-Flash（arXiv:2609.19969，2026）<a class="heading-anchor" href="#deepseek-v41-flasharxiv2609199692026" aria-label="链接到DeepSeek-V4.1-Flash（arXiv:2609.19969，2026）">#</a></h3>
+<p>V4.1 把图文输入编码、跨层 global KV、逐层 SWA、稀疏选择、条件记忆和 speculative draft 放进一套模型与服务设计。CED 的 encoder 输出为 decoder 每层独立投影 global KV；decoder 的局部 SWA KV 仍由各层 hidden state 生成，缺失时用 bounded replay 近似恢复。CSA2 再分别控制 global KV 来源和 Top-K 索引是否共享。</p>
+<p><img src="../../papers/figures/review/v41-token-flow.svg" alt="DeepSeek-V4.1-Flash 的图文输入、CED、CSA2、SWA 与 DSpark 数据流"></p>
+<p>同一报告还讨论 Single-Pass mHC、Engram、DSpark、FP4 main KV、训练共享状态和异步后训练。这些机制分别改变 residual mixing、条件记忆、候选验证、缓存表示与训练数据流，细节见 <a href="https://arxiv.org/abs/2609.19969">V4.1 技术报告</a> 和 <a href="https://api-docs.deepseek.com/news/news260910/">DeepSeek API 2026-09-10 更新</a>。</p>
 </div></main><script src="../../../reader.js"></script></body></html>

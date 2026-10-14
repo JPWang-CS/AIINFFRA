@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="500" viewBox="0 0 1200 500" role="img" aria-labelledby="title desc">
+  <title id="title">MHA、MQA、GQA 的 KV head 共享结构</title>
+  <desc id="desc">三栏分别展示 MHA 每个 query head 对应独立 KV head，MQA 所有 query head 共享一个 KV head，GQA 每组 query head 共享一个 KV head。</desc>
+  <defs><marker id="arr" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0 0L9 4.5L0 9Z" fill="#475569"/></marker></defs><rect width="1200" height="500" fill="#f8fafc"/>
+  <text x="48" y="50" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="27" font-weight="700" fill="#0f172a">改变 KV head 共享关系，进而改变每 token 缓存量</text>
+  <g font-family="Segoe UI,Microsoft YaHei,sans-serif">
+    <rect x="40" y="82" width="350" height="360" rx="16" fill="#fff" stroke="#cbd5e1"/><text x="215" y="120" text-anchor="middle" font-size="23" font-weight="700" fill="#0f172a">MHA</text>
+    <rect x="425" y="82" width="350" height="360" rx="16" fill="#fff" stroke="#cbd5e1"/><text x="600" y="120" text-anchor="middle" font-size="23" font-weight="700" fill="#0f172a">MQA</text>
+    <rect x="810" y="82" width="350" height="360" rx="16" fill="#fff" stroke="#cbd5e1"/><text x="985" y="120" text-anchor="middle" font-size="23" font-weight="700" fill="#0f172a">GQA</text>
+  </g>
+  <g font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="16" text-anchor="middle">
+    <g fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"><rect x="68" y="160" width="62" height="42" rx="8"/><rect x="68" y="220" width="62" height="42" rx="8"/><rect x="68" y="280" width="62" height="42" rx="8"/><rect x="68" y="340" width="62" height="42" rx="8"/></g>
+    <g fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"><rect x="270" y="160" width="62" height="42" rx="8"/><rect x="270" y="220" width="62" height="42" rx="8"/><rect x="270" y="280" width="62" height="42" rx="8"/><rect x="270" y="340" width="62" height="42" rx="8"/></g>
+    <g fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"><rect x="453" y="160" width="62" height="42" rx="8"/><rect x="453" y="220" width="62" height="42" rx="8"/><rect x="453" y="280" width="62" height="42" rx="8"/><rect x="453" y="340" width="62" height="42" rx="8"/></g><rect x="657" y="238" width="62" height="62" rx="10" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/>
+    <g fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"><rect x="838" y="160" width="62" height="42" rx="8"/><rect x="838" y="220" width="62" height="42" rx="8"/><rect x="838" y="280" width="62" height="42" rx="8"/><rect x="838" y="340" width="62" height="42" rx="8"/></g><g fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"><rect x="1042" y="183" width="62" height="54" rx="10"/><rect x="1042" y="303" width="62" height="54" rx="10"/></g>
+    <text x="99" y="187" fill="#1e3a8a">Q₀</text><text x="99" y="247" fill="#1e3a8a">Q₁</text><text x="99" y="307" fill="#1e3a8a">Q₂</text><text x="99" y="367" fill="#1e3a8a">Q₃</text>
+    <text x="301" y="187" fill="#14532d">KV₀</text><text x="301" y="247" fill="#14532d">KV₁</text><text x="301" y="307" fill="#14532d">KV₂</text><text x="301" y="367" fill="#14532d">KV₃</text>
+    <text x="484" y="187" fill="#1e3a8a">Q₀</text><text x="484" y="247" fill="#1e3a8a">Q₁</text><text x="484" y="307" fill="#1e3a8a">Q₂</text><text x="484" y="367" fill="#1e3a8a">Q₃</text><text x="688" y="274" fill="#14532d">共享 KV</text>
+    <text x="869" y="187" fill="#1e3a8a">Q₀</text><text x="869" y="247" fill="#1e3a8a">Q₁</text><text x="869" y="307" fill="#1e3a8a">Q₂</text><text x="869" y="367" fill="#1e3a8a">Q₃</text><text x="1073" y="215" fill="#14532d">KV₀</text><text x="1073" y="335" fill="#14532d">KV₁</text>
+    <text x="215" y="418" fill="#475569">H 个 Q heads → H 个 KV heads</text><text x="600" y="418" fill="#475569">H 个 Q heads → 1 个 KV head</text><text x="985" y="408" fill="#475569">G 组 KV；每组 H/G 个 Q heads</text><text x="985" y="430" font-size="14" fill="#64748b">示例 G=2</text>
+  </g>
+  <g fill="none" stroke="#475569" stroke-width="2">
+    <path d="M132 181H264" marker-end="url(#arr)"/><path d="M132 241H264" marker-end="url(#arr)"/><path d="M132 301H264" marker-end="url(#arr)"/><path d="M132 361H264" marker-end="url(#arr)"/>
+    <path d="M515 181H595" marker-end="url(#arr)"/><path d="M515 241H595" marker-end="url(#arr)"/><path d="M515 301H595" marker-end="url(#arr)"/><path d="M515 361H595" marker-end="url(#arr)"/><path d="M595 181V361"/><path d="M595 269H648" marker-end="url(#arr)"/>
+    <path d="M900 181H982" marker-end="url(#arr)"/><path d="M900 241H982" marker-end="url(#arr)"/><path d="M982 181V241"/><path d="M982 211H1036" marker-end="url(#arr)"/>
+    <path d="M900 301H982" marker-end="url(#arr)"/><path d="M900 361H982" marker-end="url(#arr)"/><path d="M982 301V361"/><path d="M982 331H1036" marker-end="url(#arr)"/>
+  </g>
+</svg>

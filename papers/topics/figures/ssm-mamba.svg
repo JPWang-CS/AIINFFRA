@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="480" viewBox="0 0 1120 480" role="img" aria-labelledby="title desc">
+  <title id="title">Mamba 的输入选择、状态递推与并行扫描</title>
+  <desc id="desc">输入生成步长和读写参数，离散化状态更新，再通过仿射变换的结合运算并行扫描；推理时只保留固定大小的状态。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#475569"/></marker>
+    <style>
+      text{font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#172033}
+      .box{rx:14;stroke-width:2}.small{font-size:16px}.label{font-size:18px;font-weight:600}.title{font-size:24px;font-weight:700}
+      .line{stroke:#475569;stroke-width:2.5;fill:none;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="1120" height="480" fill="#f8fafc"/>
+  <text x="40" y="44" class="title">输入选择如何改变状态更新</text>
+  <rect x="40" y="92" width="160" height="78" class="box" fill="#dbeafe" stroke="#3b82f6"/>
+  <text x="120" y="124" text-anchor="middle" class="label">当前输入</text><text x="120" y="150" text-anchor="middle" class="small">xₜ [B,D]</text>
+  <path d="M200 131 H258" class="line"/>
+  <rect x="270" y="74" width="220" height="116" class="box" fill="#ede9fe" stroke="#8b5cf6"/>
+  <text x="380" y="107" text-anchor="middle" class="label">选择参数</text><text x="380" y="137" text-anchor="middle" class="small">Δₜ · Bₜ · Cₜ</text><text x="380" y="163" text-anchor="middle" class="small">步长、写入、读出</text>
+  <path d="M490 132 H550" class="line"/>
+  <rect x="562" y="74" width="228" height="116" class="box" fill="#dcfce7" stroke="#22c55e"/>
+  <text x="676" y="107" text-anchor="middle" class="label">离散化与更新</text><text x="676" y="137" text-anchor="middle" class="small">hₜ = Āₜ hₜ₋₁ + B̄ₜ xₜ</text><text x="676" y="163" text-anchor="middle" class="small">yₜ = Cₜ hₜ + D_skip xₜ</text>
+  <path d="M790 132 H850" class="line"/>
+  <rect x="862" y="92" width="218" height="78" class="box" fill="#ffedd5" stroke="#f97316"/>
+  <text x="971" y="124" text-anchor="middle" class="label">输出 yₜ</text><text x="971" y="150" text-anchor="middle" class="small">并传递 hₜ</text>
+  <text x="676" y="218" text-anchor="middle" class="small">hₜ 作为固定大小状态传给下一 token</text>
+  <path d="M120 170 V290 H300" class="line"/>
+  <text x="40" y="280" class="label">训练时的并行路径</text>
+  <rect x="310" y="256" width="180" height="82" class="box" fill="#fff7ed" stroke="#f97316"/>
+  <text x="400" y="289" text-anchor="middle" class="label">(a₁,b₁)</text><text x="400" y="316" text-anchor="middle" class="small">h ↦ a₁h+b₁</text>
+  <path d="M490 297 H550" class="line"/>
+  <rect x="562" y="256" width="180" height="82" class="box" fill="#fff7ed" stroke="#f97316"/>
+  <text x="652" y="289" text-anchor="middle" class="label">(a₂,b₂)</text><text x="652" y="316" text-anchor="middle" class="small">h ↦ a₂h+b₂</text>
+  <path d="M742 297 H802" class="line"/>
+  <rect x="814" y="256" width="266" height="82" class="box" fill="#fee2e2" stroke="#ef4444"/>
+  <text x="947" y="289" text-anchor="middle" class="label">结合并行前缀 scan</text><text x="947" y="316" text-anchor="middle" class="small">(a₂a₁, a₂b₁+b₂)</text>
+  <rect x="40" y="378" width="1040" height="58" rx="12" fill="#e2e8f0"/>
+  <text x="560" y="414" text-anchor="middle" class="small">推理缓存：递归状态固定大小　｜　全注意力缓存：每个历史 token 保留独立 K/V</text>
+</svg>

@@ -1,47 +1,49 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{标题} · AIINFFRA 附属文档</title><script src="../../theme.js?v=3aab643066da"></script><link rel="stylesheet" href="../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../styles.css?v=deca86f54b40"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../index.html?chapter=1">返回课程</a></nav><button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换到浅色模式">浅色</button></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · papers/template.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#title-%E8%AE%BA%E6%96%87%E6%A0%87%E9%A2%98-authors-%E4%BD%9C%E8%80%85-year-2026-venue-arxiv--mlsys--osdi---priority-p0--p1--p2-status------tags-attention-inference-cuda">title: &quot;论文标题&quot;
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>主题标题 · AIINFFRA 附属文档</title><script src="../../theme.js?v=3aab643066da"></script><link rel="stylesheet" href="../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../styles.css?v=deca86f54b40"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../index.html?chapter=1">返回课程</a></nav><button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换到浅色模式">浅色</button></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · papers/template.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#title-%E4%B8%BB%E9%A2%98%E6%88%96%E8%AE%BA%E6%96%87%E6%A0%87%E9%A2%98-authors-%E4%BD%9C%E8%80%85-year-2026-venue-arxiv--mlsys--neurips---theme-%E5%85%AB%E4%B8%BB%E9%A2%98%E4%B9%8B%E4%B8%80-sources---paper-%E8%AE%BA%E6%96%87%E9%93%BE%E6%8E%A5%E6%88%96%E6%96%87%E4%BB%B6---code-%E4%BD%9C%E8%80%85%E4%BB%93%E5%BA%93%E5%85%A5%E5%8F%A3">title: &quot;主题或论文标题&quot;
 authors: &quot;作者&quot;
 year: 2026
-venue: &quot;arxiv / MLSys / OSDI / ...&quot;
-priority: &quot;P0 / P1 / P2&quot;
-status: &quot;⏳ / 📖 / ✅&quot;
-tags: [&quot;attention&quot;, &quot;inference&quot;, &quot;cuda&quot;]</a></li><li><a href="#%E8%A7%A3%E5%86%B3%E4%BA%86%E4%BB%80%E4%B9%88%E9%97%AE%E9%A2%98">解决了什么问题</a></li><li><a href="#%E6%80%8E%E4%B9%88%E8%A7%A3%E5%86%B3%E7%9A%84">怎么解决的</a></li><li><a href="#%E5%85%B3%E9%94%AE%E6%95%B0%E6%8D%AE">关键数据</a></li><li><a href="#%E4%B8%8E%E6%88%91%E4%BD%95%E5%B9%B2">与我何干</a></li></ol></nav><div class="markdown-body"><hr>
-<h2 id="title-论文标题-authors-作者-year-2026-venue-arxiv--mlsys--osdi---priority-p0--p1--p2-status------tags-attention-inference-cuda">title: &quot;论文标题&quot;
+venue: &quot;arXiv / MLSys / NeurIPS / ...&quot;
+theme: &quot;八主题之一&quot;
+sources:
+  paper: &quot;论文链接或文件&quot;
+  code: &quot;作者仓库入口&quot;</a></li><li><a href="#%E9%80%9F%E8%AF%BB%E5%8D%A1%E5%8F%AF%E9%80%89">速读卡（可选）</a></li><li><a href="#%E9%97%AE%E9%A2%98%E5%81%87%E8%AE%BE%E4%B8%8E%E7%AC%A6%E5%8F%B7">问题、假设与符号</a></li><li><a href="#%E6%A0%B8%E5%BF%83%E6%8E%A8%E5%AF%BC%E4%B8%8E%E7%AE%97%E6%B3%95%E6%AD%A5%E9%AA%A4">核心推导与算法步骤</a></li><li><a href="#%E4%BB%A3%E7%A0%81%E6%98%A0%E5%B0%84">代码映射</a></li><li><a href="#%E5%AE%9E%E9%AA%8C%E8%B4%A8%E9%87%8F%E4%B8%8E%E5%B1%80%E9%99%90">实验、质量与局限</a></li><li><a href="#%E5%8E%9F%E8%AE%BA%E6%96%87%E4%B8%8E%E4%BD%9C%E8%80%85%E5%AE%9E%E7%8E%B0">原论文与作者实现</a></li></ol></nav><div class="markdown-body"><hr>
+<h2 id="title-主题或论文标题-authors-作者-year-2026-venue-arxiv--mlsys--neurips---theme-八主题之一-sources---paper-论文链接或文件---code-作者仓库入口">title: &quot;主题或论文标题&quot;
 authors: &quot;作者&quot;
 year: 2026
-venue: &quot;arxiv / MLSys / OSDI / ...&quot;
-priority: &quot;P0 / P1 / P2&quot;
-status: &quot;⏳ / 📖 / ✅&quot;
-tags: [&quot;attention&quot;, &quot;inference&quot;, &quot;cuda&quot;]<a class="heading-anchor" href="#title-%E8%AE%BA%E6%96%87%E6%A0%87%E9%A2%98-authors-%E4%BD%9C%E8%80%85-year-2026-venue-arxiv--mlsys--osdi---priority-p0--p1--p2-status------tags-attention-inference-cuda" aria-label="链接到title: &quot;论文标题&quot;
+venue: &quot;arXiv / MLSys / NeurIPS / ...&quot;
+theme: &quot;八主题之一&quot;
+sources:
+  paper: &quot;论文链接或文件&quot;
+  code: &quot;作者仓库入口&quot;<a class="heading-anchor" href="#title-%E4%B8%BB%E9%A2%98%E6%88%96%E8%AE%BA%E6%96%87%E6%A0%87%E9%A2%98-authors-%E4%BD%9C%E8%80%85-year-2026-venue-arxiv--mlsys--neurips---theme-%E5%85%AB%E4%B8%BB%E9%A2%98%E4%B9%8B%E4%B8%80-sources---paper-%E8%AE%BA%E6%96%87%E9%93%BE%E6%8E%A5%E6%88%96%E6%96%87%E4%BB%B6---code-%E4%BD%9C%E8%80%85%E4%BB%93%E5%BA%93%E5%85%A5%E5%8F%A3" aria-label="链接到title: &quot;主题或论文标题&quot;
 authors: &quot;作者&quot;
 year: 2026
-venue: &quot;arxiv / MLSys / OSDI / ...&quot;
-priority: &quot;P0 / P1 / P2&quot;
-status: &quot;⏳ / 📖 / ✅&quot;
-tags: [&quot;attention&quot;, &quot;inference&quot;, &quot;cuda&quot;]">#</a></h2>
-<h1 id="标题">{标题}<a class="heading-anchor" href="#%E6%A0%87%E9%A2%98" aria-label="链接到{标题}">#</a></h1>
-<h2 id="解决了什么问题">解决了什么问题<a class="heading-anchor" href="#%E8%A7%A3%E5%86%B3%E4%BA%86%E4%BB%80%E4%B9%88%E9%97%AE%E9%A2%98" aria-label="链接到解决了什么问题">#</a></h2>
-<p>（1-2 句话）</p>
-<h2 id="怎么解决的">怎么解决的<a class="heading-anchor" href="#%E6%80%8E%E4%B9%88%E8%A7%A3%E5%86%B3%E7%9A%84" aria-label="链接到怎么解决的">#</a></h2>
+venue: &quot;arXiv / MLSys / NeurIPS / ...&quot;
+theme: &quot;八主题之一&quot;
+sources:
+  paper: &quot;论文链接或文件&quot;
+  code: &quot;作者仓库入口&quot;">#</a></h2>
+<h1 id="主题标题">主题标题<a class="heading-anchor" href="#%E4%B8%BB%E9%A2%98%E6%A0%87%E9%A2%98" aria-label="链接到主题标题">#</a></h1>
+<h2 id="速读卡可选">速读卡（可选）<a class="heading-anchor" href="#%E9%80%9F%E8%AF%BB%E5%8D%A1%E5%8F%AF%E9%80%89" aria-label="链接到速读卡（可选）">#</a></h2>
 <ul>
-<li>要点 1</li>
-<li>要点 2</li>
-<li>要点 3</li>
+<li>研究问题与前代限制：</li>
+<li>核心贡献：</li>
+<li>最关键的公式或设计：</li>
+<li>为什么值得进入正式教程：</li>
 </ul>
-<h2 id="关键数据">关键数据<a class="heading-anchor" href="#%E5%85%B3%E9%94%AE%E6%95%B0%E6%8D%AE" aria-label="链接到关键数据">#</a></h2>
-<table>
-<thead>
-<tr>
-<th>指标</th>
-<th>数值</th>
-<th>对比 baseline</th>
-</tr>
-</thead>
-<tbody><tr>
-<td></td>
-<td></td>
-<td></td>
-</tr>
-</tbody></table>
-<h2 id="与我何干">与我何干<a class="heading-anchor" href="#%E4%B8%8E%E6%88%91%E4%BD%95%E5%B9%B2" aria-label="链接到与我何干">#</a></h2>
-<p>（一句话启发）</p>
+<p>速读卡用于筛选与回顾，不代替下方的机制讲解。</p>
+<h2 id="问题假设与符号">问题、假设与符号<a class="heading-anchor" href="#%E9%97%AE%E9%A2%98%E5%81%87%E8%AE%BE%E4%B8%8E%E7%AC%A6%E5%8F%B7" aria-label="链接到问题、假设与符号">#</a></h2>
+<p>说明计算对象、输入输出、符号和张量形状；写清模型或算法依赖的条件。</p>
+<h2 id="核心推导与算法步骤">核心推导与算法步骤<a class="heading-anchor" href="#%E6%A0%B8%E5%BF%83%E6%8E%A8%E5%AF%BC%E4%B8%8E%E7%AE%97%E6%B3%95%E6%AD%A5%E9%AA%A4" aria-label="链接到核心推导与算法步骤">#</a></h2>
+<p>展示关键公式的来由、维度和相邻步骤间的数据关系。图解放在对应推导或代码附近，标明它解释的对象与计算方向。选一组小输入手算，检查数值如何经过算法。</p>
+<h2 id="代码映射">代码映射<a class="heading-anchor" href="#%E4%BB%A3%E7%A0%81%E6%98%A0%E5%B0%84" aria-label="链接到代码映射">#</a></h2>
+<p>在本页直接展示足以解释核心公式的代码片段，并按变量说明其形状、数据来源和运算顺序。列出作者仓库入口及对应模块/函数标识符，解释作者实现如何落实公式；代码阅读深度按主题需要确定，不复制无关代码。</p>
+<div class="code-panel"><div class="code-caption"><span>PYTHON</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-python"><span class="code-line" data-line="1"><span class="hljs-comment"># 解释性代码：将变量、shape 和关键步骤对应到上面的推导。</span></span></code></pre></div>
+<h2 id="实验质量与局限">实验、质量与局限<a class="heading-anchor" href="#%E5%AE%9E%E9%AA%8C%E8%B4%A8%E9%87%8F%E4%B8%8E%E5%B1%80%E9%99%90" aria-label="链接到实验、质量与局限">#</a></h2>
+<p>讨论与主题有关的质量和成本指标；若引用 benchmark，记录其任务、数据、baseline、硬件与测量口径。说明结论成立的条件、限制和可能失败的情况。</p>
+<h2 id="原论文与作者实现">原论文与作者实现<a class="heading-anchor" href="#%E5%8E%9F%E8%AE%BA%E6%96%87%E4%B8%8E%E4%BD%9C%E8%80%85%E5%AE%9E%E7%8E%B0" aria-label="链接到原论文与作者实现">#</a></h2>
+<ul>
+<li>原论文及版本：</li>
+<li>作者仓库入口：</li>
+<li>关键模块、函数或 kernel 标识符：</li>
+<li>相关后续工作：</li>
+</ul>
 </div></main><script src="../../reader.js"></script></body></html>

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="500" viewBox="0 0 1080 500" role="img" aria-labelledby="t d">
+<title id="t">文档编码与查询编码分别进入检索打分</title><desc id="d">文档经过编码写入向量索引；查询单独编码，与索引中的文档向量计算相似度并取top-k。问题和证据拼成上下文后，回答位置通过因果注意力读取此前的查询与文档K/V。</desc>
+<defs><marker id="a" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#475569"/></marker><style>text{font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#172033}.b{stroke-width:2;rx:14}.x{fill:none;stroke:#475569;stroke-width:2.5;marker-end:url(#a)}.line{fill:none;stroke:#475569;stroke-width:2.5}.h{font-size:20px;font-weight:700}.s{font-size:16px}</style></defs>
+<rect width="1080" height="500" fill="#f8fafc"/><text x="40" y="42" class="h">文档与查询分别编码，查询向量只参与检索打分</text>
+<rect x="40" y="90" width="165" height="72" class="b" fill="#dbeafe" stroke="#3b82f6"/><text x="122" y="121" text-anchor="middle" class="h">文档片段</text><text x="122" y="147" text-anchor="middle" class="s">d₁ … dₙ</text>
+<path d="M205 126H253" class="x"/><rect x="265" y="90" width="180" height="72" class="b" fill="#e2e8f0" stroke="#64748b"/><text x="355" y="121" text-anchor="middle" class="h">文档编码</text><text x="355" y="147" text-anchor="middle" class="s">E ∈ ℝⁿˣᵈ</text>
+<path d="M445 126H493" class="x"/><rect x="505" y="90" width="180" height="72" class="b" fill="#ede9fe" stroke="#8b5cf6"/><text x="595" y="121" text-anchor="middle" class="h">向量索引</text><text x="595" y="147" text-anchor="middle" class="s">存文档向量</text>
+<rect x="40" y="230" width="165" height="72" class="b" fill="#ddd6fe" stroke="#8b5cf6"/><text x="122" y="261" text-anchor="middle" class="h">查询 q</text><text x="122" y="287" text-anchor="middle" class="s">原始问题</text>
+<path d="M205 266H253" class="x"/><rect x="265" y="230" width="180" height="72" class="b" fill="#ede9fe" stroke="#8b5cf6"/><text x="355" y="261" text-anchor="middle" class="h">查询编码</text><text x="355" y="287" text-anchor="middle" class="s">e_q ∈ ℝᵈ</text>
+<path d="M445 266H493" class="x"/><rect x="505" y="220" width="180" height="92" class="b" fill="#ffedd5" stroke="#f97316"/><text x="595" y="255" text-anchor="middle" class="h">相似度 + top-k</text><text x="595" y="283" text-anchor="middle" class="s">e_q 与索引向量打分</text>
+<path d="M595 162V208" class="x"/><path d="M685 266H728" class="x"/>
+<rect x="740" y="230" width="170" height="72" class="b" fill="#dcfce7" stroke="#22c55e"/><text x="825" y="261" text-anchor="middle" class="h">证据片段</text><text x="825" y="287" text-anchor="middle" class="s">受上下文预算约束</text>
+<path d="M825 302V350" class="x"/><path d="M122 302V390H523" class="x"/>
+<rect x="535" y="362" width="300" height="74" class="b" fill="#fef3c7" stroke="#d97706"/><text x="685" y="392" text-anchor="middle" class="h">[问题; 检索证据]</text><text x="685" y="418" text-anchor="middle" class="s">回答位置读取此前的查询与文档 K/V</text>
+<path d="M835 399H853" class="x"/><rect x="865" y="362" width="170" height="74" class="b" fill="#fee2e2" stroke="#ef4444"/><text x="950" y="392" text-anchor="middle" class="h">生成回答</text><text x="950" y="418" text-anchor="middle" class="s">因果逐 token 输出</text>
+<text x="540" y="475" text-anchor="middle" class="s">检索索引保存外部记忆；召回错误会传到后续生成</text>
+</svg>

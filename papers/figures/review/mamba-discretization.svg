@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="490" viewBox="0 0 1200 490" role="img" aria-labelledby="title desc">
+  <title id="title">Mamba 的选择性参数生成与离散状态更新</title>
+  <desc id="desc">输入特征经投影产生 dt、B、C；独立学习参数 A_log 转为 A。softplus 后的 delta 与 A 生成 dA，并与 delta、B 形成 dB，更新状态并由 C 读出。</desc>
+  <defs><marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#334155"/></marker></defs><rect width="1200" height="490" fill="#f8fafc"/>
+  <text x="48" y="52" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="27" font-weight="700" fill="#0f172a">输入选择 Δ/B/C；学习参数 A 经 Δ 离散成 dA</text>
+  <g font-family="Segoe UI,Microsoft YaHei,sans-serif" text-anchor="middle">
+    <rect x="45" y="195" width="150" height="80" rx="14" fill="#e2e8f0" stroke="#64748b" stroke-width="2"/><text x="120" y="230" font-size="19" fill="#0f172a">特征 uₜ</text><text x="120" y="257" font-size="15" fill="#475569">投影/局部卷积后</text>
+    <rect x="255" y="175" width="180" height="120" rx="14" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/><text x="345" y="220" font-size="20" fill="#0f172a">x_proj(uₜ)</text><text x="345" y="255" font-size="17" fill="#1e3a8a">拆分 Δ低秩、Bₜ、Cₜ</text>
+    <rect x="495" y="100" width="175" height="80" rx="14" fill="#fef3c7" stroke="#d97706" stroke-width="2"/><text x="582" y="135" font-size="19" fill="#0f172a">softplus + 投影</text><text x="582" y="160" font-size="17" fill="#78350f">Δₜ</text>
+    <rect x="495" y="315" width="175" height="112" rx="14" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/><text x="582" y="347" font-size="16" fill="#0f172a">学习参数</text><text x="582" y="375" font-size="14" fill="#4c1d95">A_log</text><text x="582" y="400" font-size="14" fill="#4c1d95">A = −exp(</text><text x="582" y="419" font-size="14" fill="#4c1d95">A_log)</text>
+    <rect x="730" y="175" width="180" height="120" rx="14" fill="#ffedd5" stroke="#ea580c" stroke-width="2"/><text x="820" y="216" font-size="20" fill="#0f172a">离散化</text><text x="820" y="249" font-size="17" fill="#7c2d12">dAₜ = exp(Δₜ A)</text><text x="820" y="275" font-size="17" fill="#7c2d12">dBₜ ≈ Δₜ Bₜ</text>
+    <rect x="970" y="175" width="180" height="120" rx="14" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/><text x="1060" y="216" font-size="19" fill="#0f172a">状态递推</text><text x="1060" y="249" font-size="17" fill="#14532d">hₜ = dAₜ hₜ₋₁ + dBₜuₜ</text><text x="1060" y="275" font-size="17" fill="#14532d">yₜ = Cₜ hₜ</text>
+  </g>
+  <g fill="none" stroke="#334155" stroke-width="3" marker-end="url(#arr)"><path d="M195 235H250"/><path d="M435 210H465V140H490"/><path d="M435 260H700V245H725"/><path d="M670 140H700V210H725"/><path d="M670 370H700V265H725"/><path d="M910 235H965"/></g>
+  <text x="45" y="455" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="16" fill="#475569">A 是学习参数；dAₜ 才是含输入相关 Δₜ 的离散更新系数。此图省略 selective scan 内核与状态维度索引。</text>
+</svg>

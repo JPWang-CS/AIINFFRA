@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520" role="img" aria-labelledby="title desc">
+  <title id="title">Online softmax 的两个分块状态如何合并</title>
+  <desc id="desc">两个分块分别持有最大值 m、归一化分母 l 与未归一化输出分子 U；统一最大值后分别乘指数修正因子，再相加并最终除以 l。</desc>
+  <defs><marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#334155"/></marker></defs><rect width="1200" height="520" fill="#f8fafc"/><text x="48" y="52" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="27" font-weight="700" fill="#0f172a">两个分块先统一最大值，再合并分母与输出分子</text>
+  <g font-family="Segoe UI,Microsoft YaHei,sans-serif" text-anchor="middle">
+    <rect x="55" y="145" width="220" height="120" rx="14" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/><text x="165" y="185" font-size="20" fill="#0f172a">块 A 状态</text><text x="165" y="220" font-size="17" fill="#1e3a8a">mₐ, lₐ, Uₐ</text><text x="165" y="247" font-size="14" fill="#1e3a8a">Uₐ = Σ exp(s−mₐ)v</text>
+    <rect x="55" y="315" width="220" height="120" rx="14" fill="#fef3c7" stroke="#d97706" stroke-width="2"/><text x="165" y="355" font-size="20" fill="#0f172a">块 B 状态</text><text x="165" y="390" font-size="17" fill="#78350f">mᵦ, lᵦ, Uᵦ</text><text x="165" y="417" font-size="14" fill="#78350f">Uᵦ = Σ exp(s−mᵦ)v</text>
+    <rect x="360" y="220" width="220" height="125" rx="14" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/><text x="470" y="262" font-size="20" fill="#0f172a">共同基准</text><text x="470" y="300" font-size="18" fill="#4c1d95">m = max(mₐ,mᵦ)</text><text x="470" y="328" font-size="15" fill="#4c1d95">αₐ=eᵐᵃ⁻ᵐ, αᵦ=eᵐᵦ⁻ᵐ</text>
+    <rect x="665" y="145" width="220" height="120" rx="14" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/><text x="775" y="190" font-size="20" fill="#0f172a">合并分母</text><text x="775" y="230" font-size="18" fill="#14532d">l = αₐlₐ + αᵦlᵦ</text>
+    <rect x="665" y="315" width="220" height="120" rx="14" fill="#ffedd5" stroke="#ea580c" stroke-width="2"/><text x="775" y="360" font-size="20" fill="#0f172a">合并分子</text><text x="775" y="402" font-size="17" fill="#7c2d12">U = αₐUₐ + αᵦUᵦ</text>
+    <rect x="975" y="220" width="170" height="125" rx="14" fill="#fce7f3" stroke="#db2777" stroke-width="2"/><text x="1060" y="265" font-size="20" fill="#0f172a">最终输出</text><text x="1060" y="308" font-size="21" fill="#831843">O = U/l</text>
+  </g>
+  <g fill="none" stroke="#334155" stroke-width="3" marker-end="url(#arr)"><path d="M275 205H325V250H355"/><path d="M275 375H325V315H355"/><path d="M580 250H625V205H660"/><path d="M580 315H625V375H660"/><path d="M885 205H930V250H970"/><path d="M885 375H930V315H970"/></g>
+  <text x="48" y="485" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="16" fill="#475569">归一化只在所有分块合并后做；每个修正因子要同时作用于对应块的 l 与 U。</text>
+</svg>

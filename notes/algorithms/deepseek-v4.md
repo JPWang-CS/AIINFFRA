@@ -1,20 +1,14 @@
-# DeepSeek-V4：CSA + HCA（主线 A 增量笔记）
+<span id="deepseek-v4-csa-hca-主线-a-增量笔记" aria-hidden="true"></span>
 
-> 挂靠：主线 A（DeepSeek-V3.2 → V4，第 2 步注意力之后做增量）
-> 状态：待随主线 A 第 3 步消化；本页内容按公开 V4 技术文档、模型卡和固定实现核对，不把二手解读当作官方配置
-> 先决条件：先消化 [FA1 机制](flash-attention-mechanism.md)、[MLA](mla-deepseek.md)、[DSA](dsa-sparse-attention.md)——这篇是"V3.2 打底 + V4 增量"，不是从零科普。
+# DeepSeek-V4：CSA + HCA 混合注意力
+
+> DeepSeek-V4 的公开结构与版本数字按官方技术报告、模型卡和配置来源区分；本篇解释 CSA/HCA、mHC、Muon 与精度路径。
 
 ## 0. 这篇笔记回答什么问题
 
-之前主线一直在 V3.2，被问到"没有 ds 不是有 V4 吗"——V4 确实存在，而且已经开源。这篇把 V4 讲清楚，同时说清一个学习判断：
+V4 的长上下文路径先改变历史表示，再决定哪些压缩条目参与注意力。CSA 对压缩条目做 learned sparse selection；HCA 对更强压缩后的条目做 dense attention。模型还配置局部 SWA、mHC residual mixing、Muon 与分层量化，分别影响局部信息、残差流、优化器状态和数值精度。
 
-**为什么主线不直接切到 V4？**
-
-1. V3.2 是完整的开源基线：config 字段齐全、手算工作纸已建。V4 虽已有官方模型卡、API 与 checkpoint/实现资料，但不同发布线的配置和推理后端仍需按版本核对，不能把某个 recipe 当成全系列稳定接口。
-2. V4 的省账要用 V3.2 当分母：官方说"1M 上下文下 V4-Pro 的 prefill FLOPs ≈ V3.2 的 27%、KV ≈ 10%"。不先算懂 V3.2，这个 27%/10% 就没有意义。
-3. V4 不是全新架构，是 V3.2 的下一代：它保留了 MLA 的低秩 latent 骨架，把 DSA 的"选 token"升级成"先压缩、再稀疏"。顺序应该是 FA2 → MLA → DSA → 再看 V4 怎么改。
-
-所以安排：主线 A 第 1、2 步照旧走 V3.2，第 3 步做 **V4 增量**（CSA/HCA → mHC/Muon → FP4 精度）。这篇就是第 3 步的笔记。
+![DeepSeek-V4 中 CSA 稀疏选择、HCA 压缩稠密注意力与局部窗口](../../papers/figures/review/deepseek-v4-csa-hca.svg)
 
 ## 1. 发布线（先分清版本，别把三个日期混成一条新闻）
 
@@ -31,17 +25,17 @@
 
 ## 2. V3.2 还差什么，V4 补了什么
 
-V3.2 已经有两层省法：
+V3.2 已经沿两条不同路径降低成本：
 
 - MLA：KV 不按 head 存，压成低维 latent，KV cache 从几百 GB 降到个位数 GB。
-- DSA：KV 虽然省了，但 attention 计算仍要跟所有历史 token 比一遍；DSA 用 indexer 只选 top-k（K=2048）个 key 做完整 attention，把 O(L²) 降到 O(L·K)。
+- DSA：indexer 为可见历史条目打分，主 Attention 再对 top-k（V3.2 配置 K=2048）位置做完整 attention。主 Attention 的交互规模随选中条目数变化；全路径还包含 indexer 扫描、Top-K 与 gather。
 
-但到 1M 上下文，V3.2 还有两个问题：
+在百万 token 场景，V3.2 仍需处理两类成本：
 
 1. **粒度还是 token**：DSA 的 top-k 在原始 token 上做，1M 个历史 token 光做索引、维护 indexer 的 KV 也不便宜；而且每个请求的 KV 即使 MLA 压缩后也还是线性涨。
 2. **稀疏选错就丢信息**：top-k 是近似，万一选漏了关键内容，没有兜底。
 
-V4 的思路一句话：**先把 token 压缩成"压缩条目"，再在压缩条目上做稠密和稀疏两层注意力**。存得比 MLA 更少，算得比 DSA 更少，同时用稠密层兜底召回。
+V4 的思路是先将多个 token 映射为压缩条目，再分别用 sparse CSA 和 dense HCA 处理这些压缩表示。压缩降低条目数，Top-K 限制 CSA 访问集合；两条路径都在压缩表示上计算，HCA 不构成无损的原 token 回看。
 
 官方给的账（1M 上下文，对比 V3.2）：
 
@@ -51,9 +45,11 @@ V4-Flash： prefill FLOPs ≈ V3.2 的 10%    KV cache ≈ V3.2 的 7%
 V4-Pro vs BF16 GQA-8 基线：KV ≈ 2%
 ```
 
-注意这是"同上下文、同任务"下的相对数，不是 V4 比 V3.2 快 4 倍的意思——V4 参数量更大，单 token 成本反而更低，这是"规模变大但成本不线性变贵"的关键证据。
+这些是报告在 1M 上下文设定下相对 V3.2 的 FLOPs 与 KV cache 口径，不等于端到端延迟或吞吐倍数；V4 与 V3.2 的参数量和激活配置也不同。
 
 ## 3. CSA：压缩稀疏注意力（核心零件）
+
+![CSA 先压缩 token，再由 indexer 选择 entries 进入主 Attention](../../papers/figures/review/deepseek-v4-csa-hca.svg)
 
 ### 3.1 一个 CSA 层干两件事：压缩 + 稀疏选择
 
@@ -62,7 +58,7 @@ V4-Pro vs BF16 GQA-8 基线：KV ≈ 2%
 **阶段一：压缩（Compress）**
 
 - 粒度 m=4：每 4 个连续 token 压成 1 个 compressed entry。
-- 窗口 2m：压缩不是 4 个独立一组，而是取长度 2m=8 的窗口、前后重叠（overlapped），窗口内做 joint softmax 加权求和。
+- 窗口 2m：压缩不是 4 个 token 硬分一组，而是以长度 2m=8 的相邻窗口形成重叠压缩条目，并在窗口内做 joint-softmax 加权求和。
 - 形状变化：`[seq, d_model] → [seq/4, d_model]`（近似看；实际带 overlap，条目数略多）。
 
 为什么重叠？单个 4-token 硬切会丢失边界上下文；重叠窗口让每个压缩条目都看到邻居信息，压缩质量更高。
@@ -75,12 +71,12 @@ V4-Pro vs BF16 GQA-8 基线：KV ≈ 2%
 
 ### 3.2 为什么这样省（形状账）
 
-1M 上下文，先压成约 250K 个压缩条目（÷4），再只对 top-k=1024 个做注意力：
+1M 上下文，压缩后约 250K 个条目，再由 indexer 对可见条目评分并选择 top-k=1024。选中集合限制的是主 Attention 的读取规模；indexer 全历史评分及其自身的数据流仍属于总成本：
 
 ```text
 DSA（V3.2）：  对 1M 个原始 token 选 top-k，KV 条目 1M 级别
 CSA（V4）：    对 250K 个压缩条目选 top-k=1024，KV 条目降到 250K 级别
-注意力计算：  queries × (k + 滑窗) 而不是 queries × 全历史
+主 Attention：queries × (k + 滑窗)；全路径另含压缩与 indexer 扫描
 ```
 
 省的是两笔：KV cache 存储（条目少 4 倍 + 低精度，见第 9 节）和 prefill 的 QK^T/PV 计算（只对选中的条目算）。
@@ -98,27 +94,23 @@ HCA = Compressed Dense Attention（官方叫法里 HCA 的"稠密"指对压缩�
 
 - 粒度 m'=128：每 128 个 token 压 1 个条目（比 CSA 粗得多）。
 - 没有 indexer、没有 overlap：对**所有**压缩条目做 dense attention，不选。
-- 作用：保证"每段历史至少被整体看过一次"。CSA 负责省、HCA 负责召回下限——即使 indexer 选漏了某段细节，HCA 也能拿到那段的整体信息。
+- 作用：对全部 HCA compressed entries 计算 dense attention，提供比稀疏选取更广的压缩上下文路径。每个 entry 仍是多个 token 的压缩表示，HCA 不会逐 token 重建未压缩历史，也不提供无损召回保证。
 
 这和之前见过的两个思想同源：
 
 - DSA 的 anchor 层：少数层做 exact，其余层复用索引。
 - Kascade：anchor 层算 exact top-k，跨层复用。
 
-V4 的差别是"HCA 全层都有"：前 2 层纯 HCA，之后 CSA/HCA 交替（详见第 5 节），每一层都有稠密分支，而不是只在 anchor 层。
+V4-Pro 配置前 2 层为 HCA，之后按 `compress_ratios` 交错 CSA/HCA；层型和具体条目数以对应 checkpoint 为准。
 
 ## 5. 层排布与滑窗（config 里怎么读）
 
 - 每层保留最近 128 个**未压缩 token** 的滑窗分支（`sliding_window=128`）：当前位置附近用原始 token 精确注意力，细节不依赖压缩。
 - V4-Pro：61 层 + MTP；前 2 层纯 HCA，之后 CSA/HCA 交替，最后一层不压缩。
-- V4-Flash：43 层，同一种排布模式。
+- V4-Flash：43 层；报告配置的前两层为纯 SWA，其余层按 CSA/HCA 交错。
 - 官方把每层压缩粒度写成 `compress_ratios` 数组（V4-Pro 形如 `[128, 128, 4, 128, 4, ..., 4, 0]`）：128=HCA 层、4=CSA 层、0=不压缩层。
 
-学习时怎么读这个数组：不要背，先看懂三点——
-
-1. 开头 2 个 128：输入附近信息密度最高，先用稠密把上下文"灌"进去。
-2. 中间 4/128 交替：CSA 层省算力，HCA 层保召回，交替避免信息只走一条稀疏路。
-3. 末尾 0：最后一层对原始 token 注意力，输出前把精度补回来。
+阅读这个数组时，128 表示该层的 HCA 压缩率，4 表示 CSA 压缩率，0 表示不压缩；层型顺序来自配置，功能效果还需结合对应层实现与训练目标理解。
 
 ## 6. 三个注意力细节（在 config 里能看到的新字段）
 
@@ -215,37 +207,55 @@ V4-Flash： 43 层，hidden 4096，256 experts / 6 active，峰值 LR 2.7e-4
 
 这条对学习的意义：V4-Pro-0813 架构没变、benchmark 大涨，说明**后训练已经是能力增量的大头**。学模型不能只看架构，还要看数据/训练配方。
 
-## 11. 推理系统侧：V4 的工程闭环
+<span id="11-推理系统侧v4的工程闭环" aria-hidden="true"></span>
 
-V4 是"架构省 + 工程省"一起上的，只学注意力不学工程会漏一半：
+## 11. 推理系统侧：V4 的工程机制
 
-- **MegaMoE**：细粒度专家波次调度，通信与计算重叠。通用推理加速 1.5–1.73×，RL/agent 场景 1.96×；已在 DeepGEMM 开源，NVIDIA + 昇腾双平台验证。
-- **TileLang DSL + DeepGEMM**：TileLang 替代手写 CUDA，DeepGEMM 替代 cuBLAS；Host Codegen 把 kernel 调用开销压到 <1μs；Z3 SMT 辅助验证；kernel 设计追求 batch-invariant + 确定性（同输入同输出，不依赖 batch 形状）。
-- **磁盘 KV cache**：压缩 KV 落盘，前缀命中直接跳过 prefill——1M 上下文的前缀复用是磁盘 KV 的典型场景。
-- **SWA KV 三档策略**：Full / Periodic / Zero——滑动窗口的 KV 是全部保留、周期性保留、还是全丢，三档换显存。
+### 11.1 Expert Parallelism 的波次流水
 
-和主线 C（推理系统）的挂接：vLLM sparse MLA、PD 分离、PagedAttention 学完，再用 MegaMoE/TileLang/磁盘 KV 对照"V4 怎么把省下的资源变成吞吐"。
+V4 把每个 MoE 层拆成 Dispatch All-to-All、Linear-1 GEMM、SwiGLU 与 FP8 cast、Linear-2 GEMM、Combine All-to-All。MoE 负载较碎时，等所有专家完成一次完整 dispatch 才开始计算会留下设备空档。报告的 MegaMoE2 将专家分成 waves：某 wave 的通信完成后就启动计算，同时传输下一 wave 的 token，并回传已完成 wave 的结果。
 
-## 12. 数字账（记住这组数）
+![V4 专家并行的 wave 调度与通信计算重叠](../../papers/figures/review/deepseek-v4-ep-overlap.svg)
+
+报告在 NVIDIA GPU 与 Huawei Ascend NPU 上验证了这套 fine-grained EP，对强非融合 baseline 报告通用推理 1.50–1.73×、RL rollout 与高速度 agent 服务最高 1.96×。这些数字属于报告指定工作负载与比较配置；开源的 CUDA MegaMoE2 属于 DeepGEMM 项目。
+
+### 11.2 TileLang、Host Codegen 与整数分析
+
+报告使用 TileLang 将大部分细粒度 Torch ATen 运算融合为 kernel，保留在同一 DSL 内从快速原型迭代到性能优化的路径。这说明 TileLang 在该项目替换了大部分 ATen 运算，并没有声称所有手写 CUDA kernel 都被替换。
+
+Host Codegen 把 kernel 与轻量 host launcher 一起生成，将运行时 shape/stride contract 检查和参数整理从 Python 路径移到生成代码。报告测得 CPU 侧 validation overhead 从每次调用的数十到数百微秒降至不足 1 微秒；该数据指调用校验开销，不是 device kernel latency。
+
+TileLang 将索引表达式转换为 Z3 的 QF_NIA 做编译期整数分析，支持 layout inference、memory hazard 与边界分析等 pass；报告称在合理资源限制下相关编译开销为数秒。Z3 在这里分析整数表达式，不代表已经形式化证明 kernel 的数值输出正确。
+
+### 11.3 Batch-invariant kernel 与矩阵库选择
+
+V4 将 batch invariance 和确定性作为训练、后训练与推理的一致性目标。报告指出，标准 cuBLAS 与常见 split-K 实现不能直接保证所需的 batch invariance；因此在这一目标下使用 DeepGEMM，并设计兼顾满 wave 与尾部 wave 的 attention kernel。这里描述的是 V4 指定的 batch-invariant 路径，不是对所有 GEMM 都以 DeepGEMM 替代 cuBLAS 的结论。
+
+### 11.4 磁盘 KV 与 SWA 存储策略
+
+V4 将已压缩的 CSA/HCA KV 写入 disk cache；prefix 命中时读回完整压缩块，未完成的尾块仍需重算。SWA KV 另有三种 on-disk 方案：Full 缓存全部 SWA KV；Periodic Checkpointing 每隔 p 个 token 保存最近窗口状态，命中后只重算 checkpoint 到前缀尾部；Zero SWA Caching 不存 SWA KV，利用各层窗口依赖重算最近 $n_{win}L$ 个 token。三者交换磁盘写读量与命中时的重算量，需结合请求复用模式选择。
+
+<span id="12-数字账记住这组数" aria-hidden="true"></span>
+
+## 12. 架构配置与成本对比
 
 | 指标 | V3.2 | V4-Pro | V4-Flash |
 |---|---|---|---|
-| 总参数 | ~685B（口径见 V3.2 工作纸） | ~1.6T | 285B（官方模型卡） |
+| 总参数 | 671B（V4 报告 Table 1） | 1.6T | 284B（V4 报告 Table 1） |
 | 激活参数 | 37B | ~49B | ~13B |
 | 层数 | ~61 | 61 + MTP | 43 |
 | 注意力 | MLA + DSA | CSA + HCA（MLA 骨架） | 同左 |
 | KV 粒度 | token（top-k 2048） | compressed entry（top-k 1024） | compressed entry（top-k 512） |
 | 1M ctx KV cache | 基准 100% | ~10% | ~7% |
 | 1M ctx prefill FLOPs | 基准 100% | ~27% | ~10% |
-| vs BF16 GQA8 KV | — | ~2% | ~2% |
 
-读法：**参数量大了，但单位 token 的存和算都小了**。面试讲 V4 先给这组数，再讲 CSA/HCA 怎么实现。
+表中模型参数量来自 V4 报告 Table 1；1M 上下文下的单 token FLOPs 与 KV cache 比例来自报告 Figure 1/摘要。它们是长上下文指定口径，不直接等同于服务延迟、吞吐或所有 shape 的成本。
 
 ## 13. 与 V3.2 的关系 & 学习挂载点
 
-- **不要把 V3.2 的手算公式直接套到 V4**：V4 没有 `kv_lora_rank`，改用 `compress_ratios`；`q_lora_rank=1024`、`head_dim=512`、`qk_rope_head_dim=64` 和 V3.2 的 512+64 是两套口径。等主线走到这一步，重开一张 V4 手算工作纸。
-- 主线 A 挂载顺序：第 1 步 V3.2 手算 → 第 2 步注意力（FA2 → MLA → DSA）→ **第 3 步本篇（V4 增量）** → 第 4 步 MoE（对照 MegaMoE）→ 第 5 步 MTP → 第 6 步 serving（对照磁盘 KV/TileLang）→ 枝干 A1（训练侧，Muon 已提前见过）。
-- 主线 B（Qwen3.5 GDN）和 V4 的对比点留到第 3 步：GDN 用 recurrent state 换线性长上下文，V4 用压缩+稀疏换线性长上下文，两者对 serving 的影响不同（state 管理 vs top-k 索引）。
+V3.2 的 `kv_lora_rank` 表示 MLA latent 的宽度；V4 用 `compress_ratios` 表示 CSA/HCA 的序列压缩率，二者不是可互换的 cache 参数。V4-Pro 与 V4-Flash 的 attention/head/config 也不同，手算时按各自 checkpoint 的层型、压缩率、RoPE 与 cache dtype 核对。
+
+两代的主要差别可沿三个量看：V3.2 在 latent entry 上稀疏选择；V4 先改变 entry 粒度，再按 CSA 或 HCA 处理；两代都保留各自模型定义的局部窗口和 MoE 计算路径。GDN 则用递归状态替换部分逐 token KV 表示，状态更新规则与 CSA/HCA 不同。
 
 ## 14. 验证入口（等学到这里再深挖）
 
@@ -257,11 +267,4 @@ V4 是"架构省 + 工程省"一起上的，只学注意力不学工程会漏一
 
 ## 15. 参考
 
-- 心智观察所：掀开 DeepSeek-V4 的技术账本（news.ifeng.com/c/8sibRo38L6M）
-- 腾讯云 deePhub：DeepSeek-V4 深度解读（百万上下文工程细节）
-- Sebastian Raschka：CSA and HCA（llm-architecture-gallery）
-- idlemachines：DeepSeek V4 from the inside
-- 21 经济：V4-Pro 正式版发布细节
-- LMSYS：SGLang Day 0
-
-主要一手来源：[DeepSeek V4 模型卡](https://fe-static.deepseek.com/chat/transparency/deepseek-V4-model-card-EN.pdf) · [DeepSeek API 更新记录](https://api-docs.deepseek.com/updates/) · [DeepSeek-V4-Flash serving recipe](https://github.com/vllm-project/recipes/blob/main/models/deepseek-ai/DeepSeek-V4-Flash.yaml)。
+主要结构与训练配置：[DeepSeek-V4 原论文](https://arxiv.org/abs/2606.19348) · [官方模型卡](https://fe-static.deepseek.com/chat/transparency/deepseek-V4-model-card-EN.pdf) · [DeepSeek API 更新记录](https://api-docs.deepseek.com/updates/) · [作者 V4 仓库与技术报告](https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro/tree/main) · [DeepGEMM 作者实现](https://github.com/deepseek-ai/DeepGEMM)。

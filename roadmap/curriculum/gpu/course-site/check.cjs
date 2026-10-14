@@ -1,8 +1,16 @@
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert/strict');
+const {JSDOM} = require('jsdom');
 const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
-const expectedChapters = 39;
+const {papers,categoryOrder} = require('./paper-catalog.cjs');
+const expectedChapters = 18 + papers.length;
+assert.equal(papers.length,41,'Paper IDs 20–60 must remain a continuous 41-entry range');
+assert.deepEqual(papers.map(p=>p.id),Array.from({length:41},(_,i)=>20+i));
+assert.deepEqual(categoryOrder,[
+  '模型基础与完整结构','注意力、序列建模与长上下文','MoE 与条件计算','训练、优化与后训练',
+  '生成、推理与检索算法','量化与模型压缩','多模态与生成模型','高效计算与系统论文',
+]);
 const quantChapter = html.match(/<article\b[^>]*id="chapter-13"[\s\S]*?<\/article>/)?.[0];
 assert(quantChapter,'Quantization chapter missing');
 assert(quantChapter.includes('id="chapter-13-section-10">4. 校准、缩放搜索与误差补偿'));
@@ -70,6 +78,23 @@ assert.equal(new Set(ids).size, ids.length, 'Duplicate HTML ids');
 const script = html.match(/<script id="course-search-data" type="application\/json">([\s\S]*?)<\/script>/);
 const searchData = JSON.parse(script[1]);
 assert.equal(searchData.length, expectedChapters);
+const paperScript = html.match(/<script id="paper-content-data" type="application\/json">([\s\S]*?)<\/script>/);
+const paperPayload = JSON.parse(paperScript[1]);
+assert.equal(Object.keys(paperPayload).length,papers.length);
+for(const paper of papers.filter(p=>p.id>=41&&p.id<=60)){
+  const body=paperPayload[String(paper.id)];
+  assert(body&&body.includes('<pre'),`New topic ${paper.id} needs inline algorithm code`);
+  assert(body.includes('class="katex"'),`New topic ${paper.id} needs rendered equations`);
+  assert(body.includes('<img '),`New topic ${paper.id} needs its mechanism figure`);
+}
+const renderedCategories=[...new JSDOM(html).window.document.querySelectorAll('.paper-category')];
+assert.deepEqual(renderedCategories.map(node=>node.querySelector(':scope > summary').textContent),categoryOrder,'Paper categories must use the explicit eight-theme order');
+for(const category of renderedCategories){
+  const ids=[...category.querySelectorAll(':scope > .nav-chapter')].map(node=>Number(node.dataset.navChapter));
+  const name=category.querySelector(':scope > summary').textContent;
+  const expected=papers.filter(p=>p.category===name).sort((a,b)=>a.order-b.order).map(p=>p.id);
+  assert.deepEqual(ids,expected,`Paper order mismatch in ${name}`);
+}
 const decode = text => text.replace(/<[^>]*>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&#x27;/g, "'").replace(/&amp;/g, '&');
 const codeBlocks = [...html.matchAll(/<code class="hljs language-cpp">([\s\S]*?)<\/code>/g)].map(match => decode(match[1]).trim());
 const originalExample = fs.readFileSync(path.resolve(__dirname, '../01-gpu-hardware-map-and-generations/examples/vector_add_walkthrough.cu'), 'utf8').replace(/\r\n/g, '\n').trim();

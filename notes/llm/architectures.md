@@ -9,20 +9,19 @@
 
 绝大多数 LLM 是 Decoder-only Transformer：
 
-```text
-输入 token -> embedding
-  -> [ RMSNorm -> Attention -> residual ] x N 层
-  -> [ RMSNorm -> FFN/MoE -> residual ] x N 层
-  -> final norm -> lm_head
-```
+![典型 pre-norm Transformer block 的 Attention、FFN 与 residual 汇合](../../papers/figures/review/transformer-block-residual.svg)
+
+图中每个 block 内，Attention 子层和 FFN/MoE 子层按顺序处理同一条 hidden-state 流，各自有 residual 汇合。模型通常重复整个 block，而不是先堆完 N 层 Attention 再单独堆 N 层 FFN。并行 residual、不同归一化位置或混合层型要按模型代码核对。
 
 从 Infra 角度，成本主要来自三处：
 
 | 成本 | 来源 | 典型瓶颈 |
 |------|------|---------|
-| 计算 | QK^T、PV、FFN | Prefill 时 compute-bound |
-| 权重读取 | FFN/attention 权重 | Decode 时 memory-bound |
-| KV cache | 每层每 token 的 K/V | 长上下文或高并发时显存爆炸 |
+| 计算 | QKᵀ、PV、FFN | 取决于 shape、batch、精度和硬件算术强度 |
+| 权重与 KV 读取 | attention/FFN 权重、历史 KV | 取决于并发、序列长度、批处理和数据复用 |
+| KV 容量 | 每层保存的 K/V 或压缩状态 | 随上下文和并发增长，具体公式由架构与 dtype 决定 |
+
+“Prefill 算力受限、Decode 带宽受限”是常见工作区间的概括。实际归属要比较该 kernel 的 FLOPs/byte 与设备 Roofline 平衡点；短输入、小 batch、跨卡通信、权重读取或 kernel launch 都可能改变瓶颈。
 
 ---
 
@@ -41,7 +40,7 @@ LayerNorm: y = (x - mean) / sqrt(var + eps) * gamma + beta
 RMSNorm:   y = x / sqrt(mean(x^2) + eps) * gamma
 ```
 
-主流模型用 RMSNorm：少算 mean，reduce 更简单，数值够用。
+RMSNorm 省去均值中心化，只需归约平方均值并缩放；模型是否采用它是架构与训练选择，数值表现需看训练稳定性和任务评测。
 
 ### 2.3 位置编码
 
@@ -67,26 +66,36 @@ out = weight @ V
 | MHA | 每个 Q head 一组 | 最大 | GPT-2、BERT |
 | MQA | 共享 1 组 | 最小 | PaLM |
 | GQA | 分 G 组共享 | 折中 | LLaMA、Qwen、Mistral |
-| MLA | 低秩 latent | 最省 | DeepSeek |
+| MLA | 共享低秩 KV latent，并单独存位置相关分支 | 取决于 latent/RoPE 维度、head 数、存储精度与布局 | DeepSeek-V2/V3 |
+
+![MHA、MQA 与 GQA 的 Query-head 到 KV-head 共享关系](../../papers/figures/review/attention-head-sharing.svg)
+
+MHA、MQA、GQA 的 KV 元素数按 `2 × H_kv × d_h` 计算；MLA 则分别统计 latent 与位置向量。缓存字节数要结合 dtype 和每层具体宽度计算，Decode 延迟还取决于投影吸收、kernel 与硬件。
 
 ### 2.5 FFN 与 MoE
 
 ```text
-标准 FFN: y = act(x W_up) W_down
-SwiGLU:  y = (x W_gate) * silu(x W_up) W_down
-MoE:     y = sum router_i * expert_i(x)
+标准 FFN: y = φ(x W_up) W_down
+SwiGLU:  y = (silu(x W_gate) ⊙ (x W_up)) W_down
+MoE:     y = Σ_i gate_i(x) · expert_i(x)
 ```
 
-MoE 激活参数少，但全部 expert 权重都要占显存；跨卡推理有 AllToAll。
+SwiGLU 中 `gate` 分支经 SiLU 后与 `up` 分支逐元素相乘，再投影回 hidden 维。不同代码库可能交换 `gate/up` 命名，判断时看公式和实际乘法顺序。
+
+MoE 每个 token 只计算被路由到的专家，但完整模型仍要保存所有专家参数。若全 GPU 常驻，所有权重占用设备显存；容量不足时也可以把冷专家 offload 到主机或存储，代价是路由后的传输、预取与等待。跨卡 Expert Parallelism 会发生 token dispatch/combine 通信。
 
 ### 2.6 SSM / Mamba
 
 ```text
-h_t = A h_{t-1} + B x_t
-y_t = C h_t
+连续系统：  h'(t) = A h(t) + B x(t),  y(t) = C h(t)
+离散更新：  h_t = dA_t h_{t-1} + dB_t x_t,  y_t = C_t h_t
 ```
 
-长序列线性复杂度，但状态容量有限；常见做法是 Attention + SSM 混合。
+Mamba 的输入投影产生随 token 变化的 Δ、B、C；A 来自学习参数 A_log，经 `A = -exp(A_log)` 参数化。离散化后 `dA_t = exp(Δ_t A)`，所以 dA 随输入相关的 Δ 变化；`dB_t` 则由 Δ 与 B_t 构造。应把学习参数 A 与离散系数 dA 分开记。
+
+![Mamba 中输入相关 Δ、B、C 与学习参数 A 的离散化路径](../../papers/figures/review/mamba-discretization.svg)
+
+长序列扫描的时间复杂度随 N 线性增长，但状态大小、通道宽度与 scan 的并行化仍影响成本。SSM 是状态递推模型，不是线性注意力的总称；线性注意力、门控递推和状态空间模型可能有相似的 scan 形式，但状态定义与更新算子不同。
 
 ---
 

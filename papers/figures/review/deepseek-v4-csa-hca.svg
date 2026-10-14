@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1300" height="560" viewBox="0 0 1300 560" role="img" aria-labelledby="title desc">
+  <title id="title">DeepSeek-V4 混合 CSA 与 HCA 的压缩注意力路径</title>
+  <desc id="desc">CSA 将局部 token 组压成 entries，再由 indexer 选择 Top-K 进入 sparse attention；HCA 按更大压缩率形成 entries，并对这些 compressed entries 做 dense attention。两者都是压缩表示。</desc>
+  <defs><marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#334155"/></marker></defs><rect width="1300" height="560" fill="#f8fafc"/><text x="48" y="52" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="27" font-weight="700" fill="#0f172a">CSA 与 HCA 都处理压缩条目，选择方式不同</text>
+  <g font-family="Segoe UI,Microsoft YaHei,sans-serif" text-anchor="middle">
+    <rect x="40" y="88" width="1220" height="200" rx="16" fill="#fff" stroke="#cbd5e1"/><text x="75" y="125" text-anchor="start" font-size="21" font-weight="700" fill="#0f172a">CSA · 压缩后再稀疏选择</text>
+    <rect x="55" y="165" width="155" height="72" rx="12" fill="#dbeafe" stroke="#2563eb"/><text x="132" y="207" font-size="17" fill="#1e3a8a">原始 token</text>
+    <rect x="285" y="165" width="175" height="72" rx="12" fill="#ede9fe" stroke="#7c3aed"/><text x="372" y="198" font-size="17" fill="#4c1d95">compress m</text><text x="372" y="222" font-size="14" fill="#4c1d95">生成 entry</text>
+    <rect x="535" y="165" width="175" height="72" rx="12" fill="#fef3c7" stroke="#d97706"/><text x="622" y="198" font-size="17" fill="#78350f">Indexer score</text><text x="622" y="222" font-size="14" fill="#78350f">可见 entries</text>
+    <rect x="785" y="165" width="155" height="72" rx="12" fill="#ffedd5" stroke="#ea580c"/><text x="862" y="207" font-size="17" fill="#7c2d12">Top-K</text>
+    <rect x="1015" y="165" width="200" height="72" rx="12" fill="#dcfce7" stroke="#16a34a"/><text x="1115" y="198" font-size="17" fill="#14532d">Sparse attention</text><text x="1115" y="222" font-size="14" fill="#14532d">selected entries</text>
+    <rect x="40" y="318" width="1220" height="170" rx="16" fill="#fff" stroke="#cbd5e1"/><text x="75" y="355" text-anchor="start" font-size="21" font-weight="700" fill="#0f172a">HCA · 更强压缩后对压缩条目稠密注意力</text>
+    <rect x="55" y="390" width="155" height="62" rx="12" fill="#dbeafe" stroke="#2563eb"/><text x="132" y="428" font-size="17" fill="#1e3a8a">原始 token</text>
+    <rect x="285" y="390" width="175" height="62" rx="12" fill="#ede9fe" stroke="#7c3aed"/><text x="372" y="416" font-size="17" fill="#4c1d95">compress m′</text><text x="372" y="440" font-size="14" fill="#4c1d95">m′ > m</text>
+    <rect x="535" y="390" width="210" height="62" rx="12" fill="#fef3c7" stroke="#d97706"/><text x="640" y="428" font-size="17" fill="#78350f">compressed entries</text>
+    <rect x="825" y="390" width="250" height="62" rx="12" fill="#dcfce7" stroke="#16a34a"/><text x="950" y="428" font-size="17" fill="#14532d">Dense over compressed set</text>
+    <text x="950" y="475" font-size="14" fill="#475569">全量压缩条目；每项仍是压缩表示</text>
+  </g>
+  <g fill="none" stroke="#334155" stroke-width="2.5" marker-end="url(#arr)"><path d="M210 201H280"/><path d="M460 201H530"/><path d="M710 201H780"/><path d="M940 201H1010"/><path d="M210 421H280"/><path d="M460 421H530"/><path d="M745 421H820"/></g>
+  <text x="48" y="530" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="16" fill="#475569">两条路径提供不同粒度的压缩信号；压缩和稀疏选择都不构成无损逐 token recall 保证。</text>
+</svg>

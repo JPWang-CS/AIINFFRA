@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="500" viewBox="0 0 1200 500" role="img" aria-labelledby="title desc">
+  <title id="title">FlexAttention 规则与 FlashAttention 后端的关系</title>
+  <desc id="desc">score_mod 与 block mask 描述注意力规则，编译后交由 Triton 或 FA4 backend 生成 tiled attention kernel；FA4 面向其支持的 Hopper/Blackwell 执行路径。</desc>
+  <defs><marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#334155"/></marker></defs><rect width="1200" height="500" fill="#f8fafc"/><text x="48" y="52" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="27" font-weight="700" fill="#0f172a">注意力规则与高性能 backend 是两个层次</text>
+  <g font-family="Segoe UI,Microsoft YaHei,sans-serif" text-anchor="middle">
+    <rect x="45" y="155" width="190" height="110" rx="14" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/><text x="140" y="197" font-size="19" fill="#0f172a">score_mod</text><text x="140" y="230" font-size="15" fill="#1e3a8a">分数变换规则</text>
+    <rect x="45" y="310" width="190" height="90" rx="14" fill="#fef3c7" stroke="#d97706" stroke-width="2"/><text x="140" y="347" font-size="18" fill="#0f172a">BlockMask</text><text x="140" y="376" font-size="15" fill="#78350f">可访问 tile</text>
+    <rect x="330" y="215" width="205" height="110" rx="14" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/><text x="432" y="257" font-size="19" fill="#0f172a">FlexAttention</text><text x="432" y="291" font-size="16" fill="#4c1d95">规则 + 编译入口</text>
+    <rect x="625" y="120" width="205" height="100" rx="14" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/><text x="727" y="161" font-size="19" fill="#0f172a">Triton backend</text><text x="727" y="192" font-size="15" fill="#14532d">对应版本/设备</text>
+    <rect x="625" y="295" width="205" height="100" rx="14" fill="#ffedd5" stroke="#ea580c" stroke-width="2"/><text x="727" y="336" font-size="19" fill="#0f172a">FA4 backend</text><text x="727" y="367" font-size="15" fill="#7c2d12">Hopper / Blackwell path</text>
+    <rect x="930" y="205" width="220" height="125" rx="14" fill="#fce7f3" stroke="#db2777" stroke-width="2"/><text x="1040" y="248" font-size="19" fill="#0f172a">Tiled attention</text><text x="1040" y="280" font-size="16" fill="#831843">Q/K/V + online state</text><text x="1040" y="308" font-size="15" fill="#831843">backend-specific schedule</text>
+  </g>
+  <g fill="none" stroke="#334155" stroke-width="3" marker-end="url(#arr)"><path d="M235 210H325"/><path d="M235 355H280V305H325"/><path d="M535 250H575V170H620"/><path d="M535 280H575V345H620"/><path d="M830 170H875V240H925"/><path d="M830 345H875V295H925"/></g>
+  <text x="48" y="455" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="16" fill="#475569">FA4 改算法与 kernel pipeline；它不是与 GQA/MLA 并列的 KV-head 架构类型。</text>
+</svg>

@@ -361,6 +361,8 @@ absorbed： (W_UQᵀ W_UK c_Q) · c_KV_j
 
 ### 5.3 Value 侧吸收
 
+![朴素 K/V 展开与 W_QK、W_OV 权重吸收路径](../../papers/figures/review/mla-absorbed-paths.svg)
+
 令 attention 权重为 p_tji。原始 Value 输出：
 
 $$
@@ -463,6 +465,8 @@ R_tᵀ R_j 位于 W_UQᵀ 和 W_UK 之间
 因此不能预先定义一个与位置无关的固定矩阵 $W_{QK,i}=W_{UQ,i}^{\mathsf{T}}W_{UK,i}$。如果不吸收，就要重新处理历史 Key，损失 Decode 效率。
 
 ### 6.2 Decoupled RoPE
+
+![MLA 内容 latent 与 RoPE key 的独立分支](../../papers/figures/review/mla-rope-branch.svg)
 
 MLA 把 Query/Key 拆成两个子空间：
 

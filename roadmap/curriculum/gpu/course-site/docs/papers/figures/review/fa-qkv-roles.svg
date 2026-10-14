@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc">
+  <title id="title">FlashAttention tile 循环中的 Q、K、V 分工</title>
+  <desc id="desc">一个 query tile 由 CTA 处理并保持在线 softmax 状态；循环中加载不同 K/V tile 计算 score、更新 m/l/U，最终归一化写出 O。K/V 是否跨 CTA 复用取决于排布与资源。</desc>
+  <defs><marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#334155"/></marker></defs><rect width="1200" height="560" fill="#f8fafc"/><text x="48" y="52" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="27" font-weight="700" fill="#0f172a">一个 Q tile 驻留，K/V tile 流过在线累加器</text>
+  <g font-family="Segoe UI,Microsoft YaHei,sans-serif" text-anchor="middle">
+    <rect x="55" y="170" width="170" height="90" rx="14" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/><text x="140" y="205" font-size="20" fill="#0f172a">Q tile</text><text x="140" y="235" font-size="16" fill="#1e3a8a">CTA 负责的行块</text>
+    <rect x="300" y="100" width="180" height="75" rx="12" fill="#fef3c7" stroke="#d97706" stroke-width="2"/><text x="390" y="145" font-size="18" fill="#78350f">K tile j</text>
+    <rect x="300" y="225" width="180" height="75" rx="12" fill="#ffedd5" stroke="#ea580c" stroke-width="2"/><text x="390" y="270" font-size="18" fill="#7c2d12">V tile j</text>
+    <rect x="565" y="145" width="205" height="115" rx="14" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/><text x="667" y="188" font-size="19" fill="#0f172a">片上 tile 运算</text><text x="667" y="220" font-size="16" fill="#4c1d95">S=QKᵀ → P=exp(S−m)</text><text x="667" y="244" font-size="14" fill="#4c1d95">更新 l 与 U=P·V</text>
+    <rect x="850" y="145" width="165" height="115" rx="14" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/><text x="932" y="188" font-size="19" fill="#0f172a">在线状态</text><text x="932" y="220" font-size="17" fill="#14532d">m, l, U</text><text x="932" y="244" font-size="14" fill="#14532d">每行一组</text>
+    <rect x="1045" y="170" width="115" height="90" rx="14" fill="#fce7f3" stroke="#db2777" stroke-width="2"/><text x="1102" y="205" font-size="18" fill="#831843">O=U/l</text><text x="1102" y="234" font-size="15" fill="#831843">store</text>
+    <rect x="55" y="370" width="170" height="90" rx="14" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/><text x="140" y="405" font-size="18" fill="#1e3a8a">下一个 Q tile</text><text x="140" y="435" font-size="14" fill="#1e3a8a">另一个 CTA</text>
+    <rect x="300" y="365" width="180" height="105" rx="14" fill="#f1f5f9" stroke="#64748b" stroke-width="2"/><text x="390" y="405" font-size="18" fill="#334155">下一对 K/V tile</text><text x="390" y="437" font-size="15" fill="#475569">沿序列继续迭代</text>
+  </g>
+  <g fill="none" stroke="#334155" stroke-width="3" marker-end="url(#arr)"><path d="M225 215H560"/><path d="M480 138H520V180H560"/><path d="M480 263H520V225H560"/><path d="M770 202H845"/><path d="M1015 202H1040"/><path d="M480 418H520V300H600"/></g>
+  <text x="48" y="510" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="16" fill="#475569">CTA 间 Q 行块可并行；K/V 的复用与重载次数由 tile 排布、片上容量和调度决定。</text>
+</svg>

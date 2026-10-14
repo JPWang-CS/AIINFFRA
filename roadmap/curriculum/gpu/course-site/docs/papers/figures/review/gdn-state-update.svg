@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="500" viewBox="0 0 1200 500" role="img" aria-labelledby="title desc">
+  <title id="title">Gated DeltaNet 单 token 状态更新</title>
+  <desc id="desc">旧状态先乘遗忘门，再用衰减状态预测 value，预测误差沿 key 外积写回，query 从新状态读出。</desc>
+  <defs><marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#334155"/></marker></defs>
+  <rect width="1200" height="500" fill="#f8fafc"/>
+  <text x="48" y="56" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="27" font-weight="700" fill="#0f172a">一个 token 怎样改写 GDN 的记忆</text>
+  <g font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="19" text-anchor="middle">
+    <rect x="55" y="170" width="170" height="100" rx="14" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/><text x="140" y="210" fill="#0f172a">旧状态</text><text x="140" y="242" fill="#1e3a8a">Sₜ₋₁ [dᵥ,dₖ]</text>
+    <rect x="280" y="170" width="175" height="100" rx="14" fill="#e0e7ff" stroke="#4f46e5" stroke-width="2"/><text x="367" y="210" fill="#0f172a">门控衰减</text><text x="367" y="242" fill="#312e81">αₜ Sₜ₋₁</text>
+    <rect x="515" y="80" width="180" height="95" rx="14" fill="#fef3c7" stroke="#d97706" stroke-width="2"/><text x="605" y="118" fill="#0f172a">当前 Key</text><text x="605" y="148" fill="#78350f">kₜ [dₖ]</text>
+    <rect x="515" y="245" width="180" height="95" rx="14" fill="#ffedd5" stroke="#ea580c" stroke-width="2"/><text x="605" y="283" fill="#0f172a">预测误差</text><text x="605" y="313" fill="#7c2d12">eₜ = vₜ − S_decay kₜ</text>
+    <rect x="755" y="170" width="180" height="100" rx="14" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/><text x="845" y="210" fill="#0f172a">外积写回</text><text x="845" y="242" font-size="15" fill="#14532d">Sₜ = S_decay + βₜ eₜkₜᵀ</text>
+    <rect x="1000" y="170" width="150" height="100" rx="14" fill="#fce7f3" stroke="#db2777" stroke-width="2"/><text x="1075" y="210" fill="#0f172a">新状态读出</text><text x="1075" y="242" fill="#831843">oₜ = Sₜ qₜ</text>
+    <rect x="485" y="385" width="170" height="70" rx="14" fill="#fee2e2" stroke="#dc2626" stroke-width="2"/><text x="570" y="428" fill="#7f1d1d">Value vₜ [dᵥ]</text>
+    <rect x="800" y="385" width="170" height="70" rx="14" fill="#fce7f3" stroke="#db2777" stroke-width="2"/><text x="885" y="417" font-size="17" fill="#831843">Query qₜ [dₖ]</text><text x="885" y="441" font-size="14" fill="#831843">仅用于读出</text>
+  </g>
+  <g fill="none" stroke="#334155" stroke-width="3" marker-end="url(#arr)">
+    <path d="M225 220H275"/><path d="M455 220H485V292H510"/><path d="M605 175V240"/><path d="M570 385V345"/><path d="M695 292H720V360H845V275"/><path d="M455 220H730V195H750"/><path d="M695 125H720V160H845V165"/><path d="M970 420H1075V275"/><path d="M935 220H995"/>
+  </g>
+  <text x="48" y="478" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="16" fill="#475569">S_decay 与误差均使用衰减后的状态；固定维度下每步仍随 dᵥ·dₖ 增长。</text>
+</svg>

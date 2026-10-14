@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="700" viewBox="0 0 1400 700" role="img" aria-labelledby="title desc">
+  <title id="title">MLA Decode 的展开参考路径与权重吸收路径</title>
+  <desc id="desc">朴素路径由当前 query 与逐 token 投影得到的内容 K 产生分数，softmax 后用 V 加权并投影输出。吸收路径将 key projection 合进 query 得到 a，独立的 latent cache C 进入 score=a·C；概率 p 与 C 两路进入 z 加权和，随后经每头 W_UV 与一次 W_O 输出。</desc>
+  <defs><marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#334155"/></marker></defs><rect width="1400" height="700" fill="#f8fafc"/><text x="48" y="48" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="27" font-weight="700" fill="#0f172a">MLA Decode：重排矩阵乘法，缓存仍是独立 latent 序列</text>
+  <g font-family="Segoe UI,Microsoft YaHei,sans-serif" text-anchor="middle">
+    <rect x="35" y="75" width="1330" height="275" rx="16" fill="#fff" stroke="#cbd5e1"/><text x="65" y="112" text-anchor="start" font-size="21" font-weight="700" fill="#0f172a">Naive reference：每个历史位置投影完整 K/V</text>
+    <rect x="60" y="145" width="135" height="62" rx="10" fill="#dbeafe" stroke="#2563eb"/><text x="127" y="183" font-size="16" fill="#1e3a8a">cKV [T,d_c]</text>
+    <rect x="240" y="145" width="175" height="62" rx="10" fill="#ede9fe" stroke="#7c3aed"/><text x="327" y="183" font-size="16" fill="#4c1d95">W_UK / W_UV</text>
+    <rect x="460" y="125" width="145" height="62" rx="10" fill="#fef3c7" stroke="#d97706"/><text x="532" y="163" font-size="16" fill="#78350f">K_c [T,H,d_h]</text>
+    <rect x="460" y="205" width="145" height="62" rx="10" fill="#ffedd5" stroke="#ea580c"/><text x="532" y="243" font-size="16" fill="#7c2d12">V_c [T,H,d_v]</text>
+    <rect x="60" y="250" width="135" height="62" rx="10" fill="#dbeafe" stroke="#2563eb"/><text x="127" y="288" font-size="16" fill="#1e3a8a">q_c</text>
+    <rect x="240" y="250" width="175" height="62" rx="10" fill="#ede9fe" stroke="#7c3aed"/><text x="327" y="288" font-size="16" fill="#4c1d95">W_UQ → q_c</text>
+    <rect x="660" y="180" width="160" height="70" rx="11" fill="#dcfce7" stroke="#16a34a"/><text x="740" y="209" font-size="16" fill="#14532d">score + softmax</text><text x="740" y="235" font-size="14" fill="#14532d">p[t]</text>
+    <rect x="875" y="180" width="180" height="70" rx="11" fill="#fce7f3" stroke="#db2777"/><text x="965" y="209" font-size="16" fill="#831843">Σₜ p[t] V_c[t]</text><text x="965" y="235" font-size="14" fill="#831843">per-head output</text>
+    <rect x="1110" y="180" width="190" height="70" rx="11" fill="#e2e8f0" stroke="#64748b"/><text x="1205" y="209" font-size="16" fill="#334155">W_O → output</text><text x="1205" y="235" font-size="14" fill="#334155">recombine heads</text>
+
+    <rect x="35" y="380" width="1330" height="275" rx="16" fill="#fff" stroke="#cbd5e1"/><text x="65" y="417" text-anchor="start" font-size="21" font-weight="700" fill="#0f172a">Absorbed：key 投影进 query，value 投影进输出</text>
+    <rect x="60" y="455" width="135" height="62" rx="10" fill="#dbeafe" stroke="#2563eb"/><text x="127" y="493" font-size="16" fill="#1e3a8a">cQ</text>
+    <rect x="240" y="455" width="190" height="62" rx="10" fill="#ede9fe" stroke="#7c3aed"/><text x="335" y="493" font-size="15" fill="#4c1d95">W_QK = W_UQᵀW_UK</text>
+    <rect x="470" y="455" width="135" height="62" rx="10" fill="#dbeafe" stroke="#2563eb"/><text x="537" y="493" font-size="16" fill="#1e3a8a">a = cQ W_QK</text>
+    <rect x="60" y="555" width="190" height="62" rx="10" fill="#fef3c7" stroke="#d97706"/><text x="155" y="593" font-size="16" fill="#78350f">latent cache C [T,d_c]</text>
+    <rect x="690" y="480" width="160" height="72" rx="11" fill="#dcfce7" stroke="#16a34a"/><text x="770" y="511" font-size="16" fill="#14532d">score = a · Cᵀ</text><text x="770" y="537" font-size="14" fill="#14532d">+ RoPE score</text>
+    <rect x="905" y="480" width="145" height="72" rx="11" fill="#fef3c7" stroke="#d97706"/><text x="977" y="523" font-size="17" fill="#78350f">softmax p</text>
+    <rect x="690" y="570" width="160" height="62" rx="11" fill="#ffedd5" stroke="#ea580c"/><text x="770" y="608" font-size="16" fill="#7c2d12">z = Σₜ p[t] C[t]</text>
+    <rect x="905" y="570" width="145" height="62" rx="11" fill="#fce7f3" stroke="#db2777"/><text x="977" y="596" font-size="14" fill="#831843">W_UV z</text><text x="977" y="617" font-size="12" fill="#831843">逐 head 投影</text>
+    <rect x="1100" y="570" width="205" height="62" rx="11" fill="#e2e8f0" stroke="#64748b"/><text x="1202" y="596" font-size="15" fill="#334155">W_O → output</text><text x="1202" y="617" font-size="13" fill="#334155">recombine heads</text>
+  </g>
+  <g fill="none" stroke="#334155" stroke-width="2.5" marker-end="url(#arr)">
+    <path d="M195 176H235"/><path d="M415 176H450"/><path d="M415 176H440V236H450"/><path d="M195 281H235"/><path d="M415 281H620V215H655"/><path d="M605 156H630V195H655"/><path d="M605 236H645V300H965V255"/><path d="M820 215H870"/><path d="M1055 215H1105"/>
+    <path d="M195 486H235"/><path d="M430 486H465"/><path d="M605 486H685"/><path d="M250 586H650V516H685"/><path d="M250 586H650V601H685"/><path d="M850 516H905"/><path d="M978 552V560H770V570"/><path d="M850 601H900"/><path d="M1050 601H1095"/>
+  </g>
+  <text x="48" y="685" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="16" fill="#475569">RoPE score 使用单独的 qR/kR cache；矩阵结合改变投影顺序，不交换运算次序，也不把 cKV 变成当前 query。</text>
+</svg>

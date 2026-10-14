@@ -1,10 +1,10 @@
 # DeepSeek-V4.1-Flash：从缓存压缩到训练与推理协同
 
-本文按 DeepSeek-AI 技术报告 v1（2026-09-17）和固定版本作者推理参考阅读；报告中的参数、缓存 payload、评测和部署策略必须分别标注口径，不能把最小实现、论文公式和线上服务默认值混成一项事实。
+本文以 DeepSeek-AI 技术报告 v1（2026-09-17）和固定版本作者推理参考为依据。报告配置、作者最小实现与评测分别标明来源；代码只用于解释其覆盖的数据流，不代表完整生产服务。
 
 长任务经常重复这样的过程：读上下文、生成一段内容、调用工具，再把工具结果追加进上下文。模型需要解决的不只是“这一轮 Attention 能不能更快”，还包括新输入要经过多少层、历史状态有几份、下次命中缓存时能恢复哪些状态，以及这些状态通过哪条链路搬回来。
 
-DeepSeek-V4.1-Flash 把这些问题放在一起设计。读它时可以始终追踪四个对象：**当前 hidden state、持久 global KV、每层局部 SWA KV、用于选择 global KV 的索引**。它们不是同一份数据，也不共享完全相同的生命周期。
+DeepSeek-V4.1-Flash 把多模态输入、因果编码器—解码器、跨层稀疏注意力、MoE、条件记忆、量化缓存、训练状态管理和异步后训练放进同一模型设计。阅读时先沿 token 从图文输入追到输出，再分别核算 global KV、逐层 SWA、索引和训练/服务状态的生命周期。
 
 ## 1. 先分清三种“模型大小”
 
@@ -19,6 +19,12 @@ DeepSeek-V4.1-Flash 把这些问题放在一起设计。读它时可以始终追
 把 552B 和 196B 相加可以得到这两类参数的算术总量，但完整部署账本还要核对是否包括视觉编码器、投影器、草稿模块、精度元数据和副本。激活参数适合帮助估算一条路径的矩阵工作量；权重驻留、跨请求专家覆盖和通信不能仅由它决定。
 
 本文代码使用 NumPy，检查小规模数学关系和数据依赖。它们不是作者 kernel，也不复现完整模型质量或吞吐。
+
+![V4.1 图文 token、CED、CSA2、SWA、Engram 与 DSpark 的数据流](../../../papers/figures/review/v41-token-flow.svg)
+
+图中 H₂₀ 是 20 层因果 encoder 的输出；它为 decoder 每层提供各自的 global KV 投影输入。decoder 仍执行 20 层计算，Query 读取选择出的 global KV，同时把本层产生的 SWA KV 纳入当前注意力。局部 SWA 丢失时的 bounded replay 只重算最近窗口，并按截断上下文近似恢复。
+
+报告还给出模态专属路由 bias：文本 token 和图像 token 分别用自己的 expert bias 参与专家选择，训练步后按对应模态的负载更新 bias；所选专家的混合权重仍用原始 router scores。校正 bias 改变选择集合，原始分数决定所选分支的权重。
 
 <span id="chapter-39-section-28" aria-hidden="true"></span>
 
@@ -238,7 +244,11 @@ $$
 
 $C_l$ 是压缩器使用的 KV 表示，$Z_l$ 是压缩权重相关量。这里先理解数据依赖，不把 C_l 当作已经完成所有压缩、量化和布局转换的物理缓存。不同层的投影权重可以不同；来自同一个 encoder 输出，不等于每层 KV 自动相同。
 
+在解码时，每个 $C_l$ 仍有自己的层权重 $W_l^{KV}$；共享的是输入张量 $H_{L/2}$，不是所有 decoder 层共用同一组投影后的 KV。SWA 分支另取本层 $H_l$ 计算，并在需要时进行 bounded replay。
+
 这样，长 prompt 的主要 global 状态在 encoder 结束后就能准备。可是 decoder 各层的局部 SWA KV 仍依赖各自 hidden state。要开始生成，第一个 decode step 必须取得这些局部状态，因此还需要末尾窗口重放。
+
+CED 不会让 decoder 的 20 层在推理时消失。它改变的是长前缀的 global-KV 生成依赖：每层 global KV 从 encoder 末端独立投影；当前未缓存 suffix 和生成 token 仍按 decoder 层计算，层内 SWA KV 也仍需生成或从窗口重放得到。
 
 用 token-layer 数做一个粗略代理，窗口为 W：
 
@@ -266,6 +276,8 @@ CSA2（Compressed Sparse Attention 2）沿序列和层两个方向减少重复�
 
 > [!IMPORTANT]
 > Reuse 不是重用整层输出。当前层仍有自己的 Query、局部 KV 和 Attention 计算；节省的是指定缓存和索引步骤。
+
+![CSA2 Full、Reindex 与 Reuse 的缓存和索引来源](../../../papers/figures/review/v41-csa2-modes.svg)
 
 共享索引减少评分工作，共享 KV 减少存储；这两种收益不能混成同一个比例。跨层共享还改变训练时的梯度来源，后文会回到这个问题。
 
@@ -295,6 +307,8 @@ $$
 $$
 
 报告配置 B=8、最多 P=2048，所以候选最多 16384 个位置，而最终每层选 512 个条目。**16384 是搜索域大小，512 才是最终稀疏选择预算。** 短上下文或末尾不足一块时，候选数量自然更少；必须排除未来位置和 padding。
+
+![V4.1 CSA2 从块候选池到逐层 Top-K 的两级筛选](../../../papers/figures/review/v41-hierarchical-candidate-pool.svg)
 
 下面用已算好的两组分数演示选择阶段。评分器本身依赖训练参数，不在这个小例子里伪造：
 
@@ -387,6 +401,8 @@ def cache_budget_example():
 
 main KV 的格式借鉴 NVFP4 的块尺度，但省略第二层 global scale；indexer 使用另一种格式，SWA 则保留 FP8。main KV 读取后反量化再进入 Attention，因此 **缓存是 FP4，不代表 Attention 使用原生 FP4 矩阵指令**。
 
+![低位宽 payload 与分组 scale 的存储、读取关系](../../../papers/figures/review/quantization-scale-granularity.svg)
+
 ### 5.1 为什么省略一层 scale 要看实际值域
 
 RMSNorm 后若各通道权重绝对值不超过约 1，512 维向量的 L2 范数约不超过 √512。RoPE 是正交旋转，保持 L2 范数，所以任一旋转后坐标的绝对值也不超过该范数，约为 22.6。报告所选块尺度与 E2M1 的最大幅值乘积为 448×6=2688，有足够的范围。
@@ -400,6 +416,8 @@ main KV 在 RoPE 后量化。不能把量化移动到 RoPE 前然后仅用“旋
 MoE 的专家选择依赖当前 hidden state；Engram 的查表地址只依赖输入 token 序列。因此，不等主干网络算出当前层 hidden，就可以发起 embedding 预取。
 
 Engram 保留 tokenizer compression、多头哈希、上下文感知门控和多分支整合，V4.1 移除了短因果卷积。两处模块共 196B 参数，位于从零计数的第 1、14 层；每处包含 2/3/4-gram，各阶 8 个哈希头，每阶总 embedding 维度 2048。表和相关 key/value 投影使用 FP8。
+
+![Engram 的 token 压缩、多头哈希、FP8 查表与上下文门控](../../../papers/figures/review/v41-engram-flow.svg)
 
 ### 从 tokenizer 状态到门控记忆
 
@@ -523,6 +541,8 @@ $$
 
 DSpark 使用三个 Transformer block，滑动窗口为 128。报告配置的一次 drafter 前向为五个草稿位置产生基础 logits，再通过轻量 Markov head 建模草稿 token 之间的依赖。它不是“用五个互不相关的 argmax 同时替代五次自回归生成”。固定 HF Minimal 实现把目标模型选定层的 hidden states 拼接后投影成 draft 输入；在 `block_size=k` 个位置中用 noise token 初始化，首位替换为当前输入 token。draft block 输出 hidden `[B,k,D]` 与基础 logits `[B,k,V]`。
 
+![DSpark 的多位置草稿、调度、目标验证与 prefix commit](../../../papers/figures/review/speculative-accept-reject.svg)
+
 最后一层的 Markov head 把当前位置 token ID 映射到 rank-r embedding，再投影成词表 bias `[B,V]`；每个位置把该 bias 加到基础 logits 后采样下一候选 token，供下一个位置的 Markov head 使用：
 
 $$
@@ -608,6 +628,8 @@ $$
 X_{l+1}=B_lX_l+C_lF_l(A_lX_l),
 \qquad (A_l,B_l,C_l)=\mathcal H(X_l).
 $$
+
+![Single-Pass mHC 用上一 residual update 的 A 系数计算当前子层输入](../../../papers/figures/review/v41-single-pass-mhc.svg)
 
 $A_l$ 的系数预测使用 $X_l$ 的全 hidden 维统计量，必须等相关 hidden-dimension tiles 的归约完成；这里的归约是为了产生一个 `[1,n]` pre mix，不表示输入混合本身还保留 stream 输出轴。
 
@@ -1087,4 +1109,4 @@ python roadmap/curriculum/papers/examples/v41_checks.py
 
 ## 参考阅读
 
-[DeepSeek-V4.1-Flash 技术报告](https://arxiv.org/abs/2609.19969) · [DeepSeek-V4.1-Flash 官方模型仓库](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/tree/main) · [固定版本作者推理参考](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/tree/dba1be0a40aa45a94ad051997016db3960a90277/inference) · [固定版本编码与评测文件](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/tree/dba1be0a40aa45a94ad051997016db3960a90277) · [DeepGEMM Mega mHC API](https://github.com/deepseek-ai/DeepGEMM/blob/78b69000794d0937b47ae3387eff7663410264d1/csrc/apis/mega_mhc.hpp) · [SM100 kernel](https://github.com/deepseek-ai/DeepGEMM/blob/78b69000794d0937b47ae3387eff7663410264d1/deep_gemm/include/deep_gemm/impls/sm100_mega_mhc.cuh) · [API test](https://github.com/deepseek-ai/DeepGEMM/blob/78b69000794d0937b47ae3387eff7663410264d1/tests/test_mega_mhc.py)。
+[DeepSeek-V4.1-Flash 技术报告](https://arxiv.org/abs/2609.19969) · [DeepSeek API 2026-09-10 更新](https://api-docs.deepseek.com/news/news260910/) · [DeepSeek-V4.1-Flash 官方模型仓库](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/tree/main) · [固定版本作者推理参考](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/tree/dba1be0a40aa45a94ad051997016db3960a90277/inference) · [固定版本编码与评测文件](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/tree/dba1be0a40aa45a94ad051997016db3960a90277) · [DeepGEMM Mega mHC API](https://github.com/deepseek-ai/DeepGEMM/blob/78b69000794d0937b47ae3387eff7663410264d1/csrc/apis/mega_mhc.hpp) · [SM100 kernel](https://github.com/deepseek-ai/DeepGEMM/blob/78b69000794d0937b47ae3387eff7663410264d1/deep_gemm/include/deep_gemm/impls/sm100_mega_mhc.cuh) · [API test](https://github.com/deepseek-ai/DeepGEMM/blob/78b69000794d0937b47ae3387eff7663410264d1/tests/test_mega_mhc.py)。

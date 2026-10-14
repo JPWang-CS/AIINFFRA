@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="540" viewBox="0 0 1200 540" role="img" aria-labelledby="title desc">
+  <title id="title">Adam 的一阶二阶状态与 AdamW 解耦衰减</title>
+  <desc id="desc">梯度更新一阶矩 m 与未中心化二阶矩 v；偏差修正后产生自适应梯度更新。AdamW 的 weight decay 单独作用于参数，不累积进入 m/v。</desc>
+  <defs><marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#334155"/></marker></defs><rect width="1200" height="540" fill="#f8fafc"/><text x="48" y="52" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="27" font-weight="700" fill="#0f172a">Adam 保存两份梯度统计；AdamW 将 weight decay 单独应用</text>
+  <g font-family="Segoe UI,Microsoft YaHei,sans-serif" text-anchor="middle">
+    <rect x="45" y="210" width="145" height="78" rx="13" fill="#e2e8f0" stroke="#64748b" stroke-width="2"/><text x="117" y="255" font-size="20" fill="#0f172a">gₜ</text>
+    <rect x="45" y="355" width="145" height="72" rx="13" fill="#fce7f3" stroke="#db2777" stroke-width="2"/><text x="117" y="399" font-size="19" fill="#831843">参数 θₜ</text>
+    <rect x="270" y="115" width="200" height="90" rx="13" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/><text x="370" y="153" font-size="18" fill="#0f172a">一阶矩</text><text x="370" y="183" font-size="17" fill="#1e3a8a">mₜ=β₁mₜ₋₁+(1−β₁)gₜ</text>
+    <rect x="270" y="305" width="200" height="90" rx="13" fill="#fef3c7" stroke="#d97706" stroke-width="2"/><text x="370" y="343" font-size="18" fill="#0f172a">二阶矩</text><text x="370" y="373" font-size="17" fill="#78350f">vₜ=β₂vₜ₋₁+(1−β₂)gₜ²</text>
+    <rect x="545" y="205" width="195" height="90" rx="13" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/><text x="642" y="243" font-size="18" fill="#0f172a">偏差修正</text><text x="642" y="273" font-size="17" fill="#4c1d95">m̂ₜ, v̂ₜ</text>
+    <rect x="810" y="145" width="180" height="95" rx="13" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/><text x="900" y="185" font-size="18" fill="#0f172a">Adam update</text><text x="900" y="217" font-size="17" fill="#14532d">η m̂/(√v̂+ε)</text>
+    <rect x="810" y="315" width="180" height="95" rx="13" fill="#ffedd5" stroke="#ea580c" stroke-width="2"/><text x="900" y="355" font-size="18" fill="#0f172a">decay branch</text><text x="900" y="387" font-size="16" fill="#7c2d12">−ηλθₜ</text>
+    <rect x="1040" y="220" width="120" height="78" rx="13" fill="#fce7f3" stroke="#db2777" stroke-width="2"/><text x="1100" y="255" font-size="18" fill="#831843">θₜ₊₁</text><text x="1100" y="279" font-size="14" fill="#831843">AdamW 合并</text>
+  </g>
+  <g fill="none" stroke="#334155" stroke-width="3" marker-end="url(#arr)"><path d="M190 230H235V160H265"/><path d="M190 268H235V350H265"/><path d="M470 160H505V230H540"/><path d="M470 350H505V270H540"/><path d="M740 230H805"/><path d="M190 390H225V430H760V362H805"/><path d="M990 193H1020V245H1035"/><path d="M990 363H1020V275H1035"/></g>
+  <text x="48" y="475" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="16" fill="#475569">θₜ₊₁ = θₜ − η m̂ₜ/(√v̂ₜ+ε) − ηλθₜ；decay 直接取当前参数 θₜ。</text><text x="48" y="505" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="16" fill="#475569">vₜ 是 raw second moment，不是中心方差；AdamW 的 decay 不进入 mₜ/vₜ。</text>
+</svg>

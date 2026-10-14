@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "source": "paper-content-data DOM IDs from roadmap/curriculum/gpu/course-site/index.html at sourceCommit",
+  "sourceCommit": "10383c57ccc62cc1c081398d1651ef851d7c4470",
+  "rangeEncoding": "Each pair is inclusive [firstSectionId,lastSectionId].",
+  "chapters": {
+    "20": [[0, 13]],
+    "21": [[0, 9]],
+    "22": [[0, 10]],
+    "23": [[0, 30]],
+    "24": [[0, 19]],
+    "25": [[0, 39]],
+    "26": [[0, 6]],
+    "27": [[0, 6]],
+    "28": [[0, 5]],
+    "29": [[0, 8]],
+    "30": [[0, 12]],
+    "31": [[0, 21]],
+    "32": [[0, 8]],
+    "33": [[0, 12]],
+    "34": [[0, 11]],
+    "35": [[0, 11]],
+    "36": [[0, 33]],
+    "37": [[0, 10]],
+    "38": [[0, 36]],
+    "39": [[0, 29]],
+    "40": [[0, 18], [20, 21]]
+  }
+}

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="460" viewBox="0 0 1200 460" role="img" aria-labelledby="title desc">
+  <title id="title">Qwen3.5 配置中的 GDN 与 full-attention 层序</title>
+  <desc id="desc">示意连续四层中三层 GDN、一层 full attention。hidden state 逐层传递；各 GDN 层有自己的递归状态，各 full-attention 层访问其配置定义的 KV。</desc>
+  <defs><marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#334155"/></marker></defs><rect width="1200" height="460" fill="#f8fafc"/>
+  <text x="48" y="54" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="27" font-weight="700" fill="#0f172a">层型按配置交错，hidden state 顺序经过每一层</text>
+  <g font-family="Segoe UI,Microsoft YaHei,sans-serif" text-anchor="middle">
+    <rect x="55" y="145" width="115" height="65" rx="12" fill="#e2e8f0" stroke="#64748b" stroke-width="2"/><text x="112" y="185" font-size="19" fill="#0f172a">hₗ</text>
+    <rect x="220" y="120" width="175" height="110" rx="14" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/><text x="307" y="165" font-size="20" fill="#0f172a">GDN 层</text><text x="307" y="197" font-size="16" fill="#1e3a8a">递归状态 S₁</text>
+    <rect x="445" y="120" width="175" height="110" rx="14" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/><text x="532" y="165" font-size="20" fill="#0f172a">GDN 层</text><text x="532" y="197" font-size="16" fill="#1e3a8a">递归状态 S₂</text>
+    <rect x="670" y="120" width="175" height="110" rx="14" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/><text x="757" y="165" font-size="20" fill="#0f172a">GDN 层</text><text x="757" y="197" font-size="16" fill="#1e3a8a">递归状态 S₃</text>
+    <rect x="895" y="120" width="210" height="110" rx="14" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/><text x="1000" y="165" font-size="20" fill="#0f172a">Full Attention</text><text x="1000" y="197" font-size="16" fill="#14532d">读取本层可见 KV</text>
+    <text x="307" y="272" font-size="15" fill="#475569">层内 state 更新</text><text x="532" y="272" font-size="15" fill="#475569">层内 state 更新</text><text x="757" y="272" font-size="15" fill="#475569">层内 state 更新</text><text x="1000" y="272" font-size="15" fill="#475569">层内 KV 生命周期</text>
+    <rect x="1125" y="145" width="55" height="65" rx="12" fill="#e2e8f0" stroke="#64748b" stroke-width="2"/><text x="1152" y="185" font-size="19" fill="#0f172a">h′</text>
+  </g>
+  <g fill="none" stroke="#334155" stroke-width="3" marker-end="url(#arr)"><path d="M170 177H215"/><path d="M395 177H440"/><path d="M620 177H665"/><path d="M845 177H890"/><path d="M1105 177H1120"/></g>
+  <rect x="55" y="330" width="1090" height="78" rx="12" fill="#fff7ed" stroke="#fb923c" stroke-width="1.5"/><text x="80" y="363" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="18" fill="#7c2d12">公开配置的层型比例是架构事实；每类层承担何种长程信息功能由训练形成，不能由 3:1 比例直接推出召回质量。</text><text x="80" y="390" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="16" fill="#7c2d12">此图仅展开一个四层配置片段，不代表四层的 attention 输出或参数相同。</text>
+</svg>

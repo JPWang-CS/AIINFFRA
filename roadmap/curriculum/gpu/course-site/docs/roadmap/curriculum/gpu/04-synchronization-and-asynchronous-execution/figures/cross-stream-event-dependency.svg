@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="430" viewBox="0 0 1040 430" role="img" aria-labelledby="title desc">
+<title id="title">跨 stream event 依赖</title>
+<desc id="desc">stream A 先执行 produce，再记录 produced event。stream B 等待该 event 后执行 consume。</desc>
+<style>
+@media (prefers-color-scheme: dark) {
+  svg > rect { fill: #111827; }
+  svg text { fill: #edf2f7; }
+  svg text[fill="#526b82"] { fill: #b7c5d4; }
+  svg rect[fill="#d9eafb"] { fill: #183b5a; stroke: #76a8d2; }
+  svg rect[fill="#d8f0e7"] { fill: #173d36; stroke: #75b59f; }
+  svg rect[fill="#fce9c9"] { fill: #49391e; stroke: #d4aa62; }
+  svg path { stroke: #a8bacb; }
+  svg path[stroke="#438873"] { stroke: #75b59f; }
+}
+</style>
+<rect width="1040" height="430" rx="12" fill="#f8fafc"/>
+<g font-family="Segoe UI, Microsoft YaHei, sans-serif" fill="#16324f">
+<text x="32" y="42" font-size="24" font-weight="700">用 event 把生产完成传给另一条 stream</text>
+<text x="32" y="72" font-size="15" fill="#526b82">依赖关系示意 · record(produced, stream_a) → wait(stream_b, produced)</text>
+<text x="38" y="153" font-size="18" font-weight="700">stream A</text>
+<text x="38" y="278" font-size="18" font-weight="700">stream B</text>
+<rect x="190" y="112" width="190" height="70" rx="9" fill="#d9eafb" stroke="#3977a8" stroke-width="2"/>
+<text x="285" y="143" font-size="17" text-anchor="middle">produce(buffer)</text><text x="285" y="165" font-size="13" text-anchor="middle" fill="#526b82">写入数据</text>
+<rect x="500" y="112" width="190" height="70" rx="9" fill="#d8f0e7" stroke="#438873" stroke-width="2"/>
+<text x="595" y="143" font-size="17" text-anchor="middle">record produced</text><text x="595" y="165" font-size="13" text-anchor="middle" fill="#526b82">生产完成标记</text>
+<rect x="500" y="238" width="190" height="70" rx="9" fill="#d8f0e7" stroke="#438873" stroke-width="2"/>
+<text x="595" y="269" font-size="17" text-anchor="middle">wait produced</text><text x="595" y="291" font-size="13" text-anchor="middle" fill="#526b82">B 等 A 的 event</text>
+<rect x="810" y="238" width="190" height="70" rx="9" fill="#fce9c9" stroke="#b0802c" stroke-width="2"/>
+<text x="905" y="269" font-size="17" text-anchor="middle">consume(buffer)</text><text x="905" y="291" font-size="13" text-anchor="middle" fill="#526b82">读取已生产数据</text>
+<g fill="none" stroke="#45677f" stroke-width="2.2">
+<path d="M380 147h110m-10-8 10 8-10 8"/>
+<path d="M690 273h110m-10-8 10 8-10 8"/>
+<path d="M595 182v48m-8-10 8 10 8-10" stroke="#438873" stroke-dasharray="6 5"/>
+</g>
+<text x="32" y="370" font-size="15" fill="#526b82">event 保证 B 不早于 A 的 produce 完成；consume 后若 buffer 将被覆盖，还需另一个完成依赖保护复用。</text>
+</g>
+</svg>

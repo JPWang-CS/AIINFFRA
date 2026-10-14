@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520" role="img" aria-labelledby="title desc">
+  <title id="title">推理工作负载的瓶颈按 shape 与 batch 判断</title>
+  <desc id="desc">Prefill 和 Decode 都要用 FLOPs/byte、batch 与上下文形状定位瓶颈；batch 变化会改变权重复用和 KV 工作量，跨卡通信也可能成为关键路径。</desc>
+  <defs><marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#334155"/></marker></defs><rect width="1200" height="520" fill="#f8fafc"/><text x="48" y="52" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="27" font-weight="700" fill="#0f172a">先固定工作负载，再判断 compute / bandwidth / communication</text>
+  <g font-family="Segoe UI,Microsoft YaHei,sans-serif" text-anchor="middle">
+    <rect x="45" y="155" width="200" height="108" rx="14" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/><text x="145" y="197" font-size="19" fill="#0f172a">Prefill</text><text x="145" y="230" font-size="15" fill="#1e3a8a">B × S × H</text>
+    <rect x="45" y="300" width="200" height="108" rx="14" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/><text x="145" y="342" font-size="19" fill="#0f172a">Decode</text><text x="145" y="375" font-size="15" fill="#14532d">B × (T,H)</text>
+    <rect x="350" y="220" width="250" height="125" rx="14" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/><text x="475" y="265" font-size="19" fill="#0f172a">算术强度</text><text x="475" y="302" font-size="18" fill="#4c1d95">FLOPs / Bytes</text><text x="475" y="328" font-size="14" fill="#4c1d95">固定 dtype / kernel</text>
+    <rect x="705" y="120" width="200" height="95" rx="14" fill="#fef3c7" stroke="#d97706" stroke-width="2"/><text x="805" y="158" font-size="18" fill="#0f172a">compute roof</text><text x="805" y="188" font-size="15" fill="#78350f">峰值 FLOPs</text>
+    <rect x="705" y="235" width="200" height="95" rx="14" fill="#ffedd5" stroke="#ea580c" stroke-width="2"/><text x="805" y="273" font-size="18" fill="#0f172a">bandwidth roof</text><text x="805" y="303" font-size="15" fill="#7c2d12">HBM / cache</text>
+    <rect x="705" y="350" width="200" height="95" rx="14" fill="#fce7f3" stroke="#db2777" stroke-width="2"/><text x="805" y="388" font-size="18" fill="#0f172a">communication</text><text x="805" y="418" font-size="15" fill="#831843">collective / link</text>
+    <rect x="1000" y="210" width="155" height="125" rx="14" fill="#e2e8f0" stroke="#64748b" stroke-width="2"/><text x="1077" y="251" font-size="18" fill="#0f172a">Profiler</text><text x="1077" y="284" font-size="15" fill="#334155">计数器 + trace</text><text x="1077" y="311" font-size="14" fill="#334155">同口径时间</text>
+  </g>
+  <g fill="none" stroke="#334155" stroke-width="3" marker-end="url(#arr)"><path d="M245 208H345"/><path d="M245 354H315V314H345"/><path d="M600 270H650V168H700"/><path d="M600 282H700"/><path d="M600 300H650V398H700"/><path d="M905 167H950V235H995"/><path d="M905 282H995"/><path d="M905 397H950V310H995"/></g>
+  <text x="48" y="485" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="16" fill="#475569">改变 batch、prompt/output length、并行策略或精度后，Roofline 位置与关键路径都可能改变。</text>
+</svg>

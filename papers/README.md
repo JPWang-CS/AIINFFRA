@@ -1,82 +1,12 @@
-# 论文索引
+# 论文资料与阅读入口
 
-> 工作流：[process.md](./process.md) | 笔记模板：[template.md](./template.md) | [2026 观察池](watchlist-2026.md)
-> 抓取脚本：`python scripts/research_watch.py --topic distributed --days 14 --write-inbox`（从仓库根目录运行）
+论文与算法的教学正文集中在[统一阅读器](../roadmap/curriculum/gpu/course-site/index.html?chapter=41)，按八个主题连续展开模型原理、推导、关键代码、数值例子、图解、研究结论和适用边界。既有 PDF、论文源笔记、作者实现位置与历史材料继续保留，作为正文的来源。
 
-## 阅读规则
+速读卡可以概括问题、贡献和阅读判断；正式教程按照机制需要展开，不设固定页数。每个技术主题在阅读器内讲清核心原理与实现映射，避免在 `papers/` 与 `notes/algorithms/` 重复维护两份同样的机制正文。学习状态仍以 `PATH.md` 为准。
 
-- 每篇笔记 ≤ 一页：核心思想 + 关键设计 + 一句话启发
-- 每周扫 arxiv cs.DC/cs.LG，仅存档不深入
-- 每月一个主题，主题相关论文精读，其余存档
-- 优先级：P0 = 必须精读，P1 = 主题相关时深读，P2 = 存档备用
+- [论文阅读与资料维护流程](process.md)
+- [论文主题教程模板](template.md)
+- [2026 观察池](watchlist-2026.md)：可选的候选收集与追踪表
+- 可选抓取命令（从仓库根目录运行）：`python scripts/research_watch.py --topic distributed --days 14 --write-inbox`
 
-## 📌 和 notes/algorithms/ 的边界（硬规矩）
-
-> **单位是"一篇论文" → 这里；单位是"一个技术/概念" → [notes/algorithms/](../notes/algorithms/)。**
-
-有标志性论文的技术（AWQ、GQA、ZeRO）两边各一份：这里写"论文讲了什么"（精读，带 arxiv），algorithms 那边写"机制 + 怎么实现"并互链。判断：**"读论文" ≠ "会实现"**。非论文技术（online softmax 等）只进 algorithms。
-
----
-
-## Attention & Kernels
-
-| 论文 | 年份 | 优先级 | 状态 | 笔记 |
-|------|------|--------|------|------|
-| Flash Attention: Fast and Memory-Efficient Exact Attention with IO-Awareness | 2022 | P0 | ✅ | [笔记](./attention/flash-attention.md) |
-| Flash Attention 2: Faster Attention with Better Parallelism and Work Partitioning | 2023 | P0 | ✅ | [笔记](../notes/algorithms/flash-attention-2.md) |
-| GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints | 2023 | P0 | ✅ | [笔记](./attention/gqa.md) |
-| Ring Attention with Blockwise Transformers for Near-Infinite Context | 2023 | P1 | ⏳ | |
-
-## Inference
-
-| 论文 | 年份 | 优先级 | 状态 | 笔记 |
-|------|------|--------|------|------|
-| Efficient Memory Management for Large Language Model Serving with PagedAttention | 2023 | P0 | ✅ | [笔记](./inference/paged-attention.md) |
-| SGLang: Efficient Execution of Structured Language Model Programs | 2024 | P1 | ⏳ | |
-| AWQ: Activation-aware Weight Quantization for On-Device LLM Compression and Acceleration | 2023 | P1 | ⏳ | |
-| GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers | 2023 | P1 | ⏳ | |
-| FP8 Formats for Deep Learning | 2023 | P1 | ⏳ | |
-| Speculative Decoding (Leviathan et al.) | 2023 | P1 | ⏳ | |
-
-## Training
-
-| 论文 | 年份 | 优先级 | 状态 | 笔记 |
-|------|------|--------|------|------|
-| ZeRO: Memory Optimizations Toward Training Trillion Parameter Models | 2020 | P0 | ✅ | [笔记](./training/zero-paper.md) |
-| Megatron-LM: Training Multi-Billion Parameter Language Models Using Model Parallelism | 2019 | P0 | ⏳ | |
-| Efficient Large-Scale Language Model Training on GPU Clusters Using Megatron-LM | 2021 | P1 | ⏳ | |
-| PyTorch FSDP: Experiences on Scaling Fully Sharded Data Parallel | 2023 | P1 | ⏳ | |
-| GSPMD: General and Scalable Parallelization for ML Computation Graphs | 2021 | P1 | ⏳ | |
-| MegaScale: Scaling Large Language Model Training to More Than 10,000 GPUs | 2024 | P0 | ⏳ | |
-
-## Communication / Multi-node
-
-| 论文 | 年份 | 优先级 | 状态 | 挂载 |
-|------|------|--------|------|------|
-| Collective Communication for Distributed LLM Systems | 2026 | P1 | ⏳ | D1–D5 taxonomy |
-| NCCL EP | 2026 | P1 | ⏳ | D5 MoE communication |
-| CommBench | 2026 | P2 | ⏳ | D1 后选题库 |
-| ByteScale | 2025 | P1 | ⏳ | D4 context/dynamic mesh |
-
-## Compiler
-
-| 论文 | 年份 | 优先级 | 状态 | 笔记 |
-|------|------|--------|------|------|
-| Triton: An Intermediate Language and Compiler for Tiled Neural Network Computations | 2019 | P0 | ✅ | [笔记](./compiler/triton-paper.md) |
-| MLIR: Scaling Compiler Infrastructure for Domain Specific Computation | 2021 | P1 | ⏳ | |
-| TorchDynamo / TorchInductor (PyTorch 2.0 blog) | 2023 | P1 | ⏳ | |
-| TVM: An Automated End-to-End Optimizing Compiler for Deep Learning | 2018 | P2 | ⏳ | |
-
-## Agents
-
-| 论文 | 年份 | 优先级 | 状态 | 笔记 |
-|------|------|--------|------|------|
-| ReAct: Synergizing Reasoning and Acting in Language Models | 2022 | P0 | ⏳ | |
-| SWE-Agent: Agent-Computer Interfaces Enable Automated Software Engineering | 2024 | P0 | ⏳ | |
-| Toolformer: Language Models Can Teach Themselves to Use Tools | 2023 | P1 | ⏳ | |
-| MemGPT: Towards LLMs as Operating Systems | 2023 | P1 | ⏳ | |
-| Generative Agents: Interactive Simulacra of Human Behavior | 2023 | P2 | ⏳ | |
-
----
-
-状态说明：⏳ 待读 / 📖 在读 / ✅ 已精读 / 📦 存档
+原有 attention、inference、training、compiler 等目录中的论文笔记继续作为来源材料，由阅读器按主题引用和解释。观察池与抓取脚本只用于发现候选，不更新 PATH/NOW，也不自动安排阅读任务。

@@ -311,6 +311,8 @@ $$
 
 ## 4. Tiled Forward 的执行过程
 
+![FA2 的 Q tile 驻留、K/V tile 循环与在线状态](../../papers/figures/review/fa-qkv-roles.svg)
+
 定义：
 
 $$

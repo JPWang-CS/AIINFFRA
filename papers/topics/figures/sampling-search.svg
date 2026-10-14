@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="460" viewBox="0 0 1080 460" role="img" aria-labelledby="t d">
+<title id="t">局部采样与序列级搜索优化不同对象</title><desc id="d">温度和top-k/top-p修改单步token分布；beam search、self-consistency与verifier是不同的序列候选决策方法，评估其质量和预算。</desc>
+<defs><marker id="a" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#475569"/></marker><style>text{font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#172033}.b{stroke-width:2;rx:14}.x{fill:none;stroke:#475569;stroke-width:2.5;marker-end:url(#a)}.h{font-size:20px;font-weight:700}.s{font-size:16px}</style></defs>
+<rect width="1080" height="460" fill="#f8fafc"/><text x="40" y="42" class="h">分布变换与序列级搜索优化不同对象</text>
+<rect x="50" y="95" width="220" height="82" class="b" fill="#dbeafe" stroke="#3b82f6"/><text x="160" y="128" text-anchor="middle" class="h">logits z</text><text x="160" y="154" text-anchor="middle" class="s">下一 token 分数</text><path d="M270 136H338" class="x"/>
+<rect x="350" y="95" width="250" height="82" class="b" fill="#ede9fe" stroke="#8b5cf6"/><text x="475" y="128" text-anchor="middle" class="h">温度 + Top-k/p</text><text x="475" y="154" text-anchor="middle" class="s">修改并重归一化分布</text><path d="M600 136H668" class="x"/>
+<rect x="680" y="95" width="330" height="82" class="b" fill="#dcfce7" stroke="#22c55e"/><text x="845" y="128" text-anchor="middle" class="h">抽一个 token</text><text x="845" y="154" text-anchor="middle" class="s">继续自回归生成</text>
+<path d="M160 177V222H205" class="x"/><text x="50" y="218" class="h">序列级方法</text>
+<rect x="220" y="222" width="230" height="90" class="b" fill="#ffedd5" stroke="#f97316"/><text x="335" y="258" text-anchor="middle" class="h">Beam search</text><text x="335" y="285" text-anchor="middle" class="s">保留累计高分路径</text>
+<rect x="500" y="222" width="230" height="90" class="b" fill="#fee2e2" stroke="#ef4444"/><text x="615" y="258" text-anchor="middle" class="h">Self-consistency</text><text x="615" y="285" text-anchor="middle" class="s">采样多路并聚合答案</text>
+<rect x="780" y="222" width="230" height="90" class="b" fill="#fef3c7" stroke="#d97706"/><text x="895" y="258" text-anchor="middle" class="h">Verifier / reranker</text><text x="895" y="285" text-anchor="middle" class="s">额外评分后选择候选</text>
+<rect x="280" y="362" width="520" height="58" class="b" fill="#e2e8f0" stroke="#64748b"/><text x="540" y="397" text-anchor="middle" class="s">这些是并列决策策略；质量、候选预算和评分偏差分开评价</text>
+</svg>

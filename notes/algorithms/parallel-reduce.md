@@ -25,6 +25,8 @@ Step 3:   sum0-3 + sum4-7                  stride = 4
 
 每一步 stride 翻倍，参与合并的线程数减半。对长度为 2 的幂且已完成边界填充的输入，经过 `log₂(N)` 轮后只剩一个线程，得到块内结果；一般长度需要显式处理尾部，不能直接套用这张图。
 
+![线程局部累加、warp 归约与 block partial 合并](../../papers/figures/review/parallel-reduce.svg)
+
 **关键点**：
 1. **Shared memory** — 块内线程通过 shared memory 共享中间结果
 2. **`__syncthreads()`** — 每轮后必须同步，防止快线程覆盖慢线程还没读的数据

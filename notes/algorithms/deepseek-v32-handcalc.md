@@ -89,9 +89,13 @@ score = softmax(Q · Kᵀ / √d)
 
 ### 2.4 DeepSeek 怎么用：MLA → DSA → V4
 
-**MLA（V2/V3/V3.2）**：不存完整的 K/V，而是先压成低维 latent（`kv_lora_rank=512`）和位置分支（`qk_rope_head_dim=64`），attention 时按实现重建需要的表示。缓存里的有效 payload 可按 576 个数做教学估算，但实际 dtype、scale 和布局要以 checkpoint/inference kernel 为准；这不是把任意 MLA 都简化成“只存一条向量”。
+**MLA（V2/V3/V3.2）**：不存完整的 K/V，而是先压成低维 latent（`kv_lora_rank=512`）和位置分支（`qk_rope_head_dim=64`），attention 时按实现重建需要的表示。缓存里的有效 payload 可按 576 个数做教学估算，但实际 dtype、scale 和布局要以 checkpoint/inference kernel 为准；不同模型的 latent/cache contract 逐项核对。
 
-**DSA（V3.2）**：KV 虽然压小了，但 attention 还是要把当前 token 跟全部历史比一遍。DSA 用 indexer 先粗筛，只对 top-k（K=2048）个位置做完整 attention——这是"算得少"的省法。注意：KV cache 本身依然要存（存 MLA 压缩版，才能随时取任何历史位置），省的是 attention 的计算量。
+![MLA 的权重吸收路径](../../papers/figures/review/mla-absorbed-paths.svg) · ![内容与 RoPE 分支](../../papers/figures/review/mla-rope-branch.svg)
+
+**DSA（V3.2）**：indexer 为可见历史产生位置分数，主 Attention 对选中位置 gather latent/KV entry 并重新计算权重；indexer 扫描成本与选中后的 Attention 成本分开核算。KV cache 按模型的 MLA contract 单独计数，Top-K 不会自动删除未选条目。
+
+![DSA 的索引评分、位置选择与主 Attention gather](../../papers/figures/review/dsa-index-gather.svg)
 
 **V4（CSA/HCA）**：压缩条目和稀疏选择改变了历史表示与访问粒度。具体压缩比、层排布和 cache payload 不能直接从 V3.2 的 `512+64` 套出，应以对应 V4 技术文档和 checkpoint 为准（详见 [deepseek-v4.md](deepseek-v4.md)）。
 

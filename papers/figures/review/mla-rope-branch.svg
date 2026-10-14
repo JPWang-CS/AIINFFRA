@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="560" viewBox="0 0 1280 560" role="img" aria-labelledby="title desc">
+  <title id="title">MLA 的 cQ、cKV 与 decoupled RoPE 分支</title>
+  <desc id="desc">当前内容 query cQ 经 WQK 得到 latent query a，独立历史缓存 cKV 进入 content score。qR 与 kR 分支按各自位置旋转产生 RoPE score；两种 score 相加后 softmax。</desc>
+  <defs><marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#334155"/></marker></defs><rect width="1280" height="560" fill="#f8fafc"/><text x="48" y="52" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="27" font-weight="700" fill="#0f172a">MLA：cQ 生成吸收 Query，历史 cKV 独立进入 score</text>
+  <g font-family="Segoe UI,Microsoft YaHei,sans-serif" text-anchor="middle">
+    <rect x="45" y="100" width="170" height="68" rx="12" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/><text x="130" y="141" font-size="18" fill="#1e3a8a">当前 cQ</text>
+    <rect x="265" y="100" width="185" height="68" rx="12" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/><text x="357" y="141" font-size="17" fill="#4c1d95">W_QK 合并</text>
+    <rect x="505" y="100" width="160" height="68" rx="12" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/><text x="585" y="141" font-size="18" fill="#14532d">a = cQ W_QK</text>
+    <rect x="45" y="205" width="200" height="68" rx="12" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/><text x="145" y="232" font-size="18" fill="#1e3a8a">历史 cKV [T,d_c]</text><text x="145" y="257" font-size="14" fill="#1e3a8a">独立缓存输入</text>
+    <rect x="505" y="205" width="200" height="68" rx="12" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/><text x="605" y="246" font-size="18" fill="#14532d">content score</text>
+    <rect x="45" y="340" width="200" height="68" rx="12" fill="#fef3c7" stroke="#d97706" stroke-width="2"/><text x="145" y="367" font-size="17" fill="#78350f">qR raw ← cQ</text><text x="145" y="392" font-size="15" fill="#78350f">current position t</text>
+    <rect x="45" y="435" width="200" height="68" rx="12" fill="#fef3c7" stroke="#d97706" stroke-width="2"/><text x="145" y="462" font-size="17" fill="#78350f">kR cache</text><text x="145" y="487" font-size="15" fill="#78350f">history positions j</text>
+    <rect x="320" y="365" width="200" height="88" rx="12" fill="#ffedd5" stroke="#ea580c" stroke-width="2"/><text x="420" y="400" font-size="17" fill="#7c2d12">RoPE(qR,t)</text><text x="420" y="430" font-size="17" fill="#7c2d12">RoPE(kR,j)</text>
+    <rect x="600" y="365" width="190" height="88" rx="12" fill="#fef3c7" stroke="#d97706" stroke-width="2"/><text x="695" y="400" font-size="18" fill="#78350f">RoPE score</text><text x="695" y="430" font-size="15" fill="#78350f">qRₜ · kRⱼ</text>
+    <circle cx="925" cy="280" r="34" fill="#fff" stroke="#334155" stroke-width="2"/><text x="925" y="288" font-size="25" fill="#0f172a">+</text>
+    <rect x="1020" y="235" width="205" height="90" rx="14" fill="#fce7f3" stroke="#db2777" stroke-width="2"/><text x="1122" y="272" font-size="18" fill="#831843">softmax</text><text x="1122" y="300" font-size="15" fill="#831843">combined score</text>
+  </g>
+  <g fill="none" stroke="#334155" stroke-width="3" marker-end="url(#arr)"><path d="M215 134H260"/><path d="M450 134H500"/><path d="M665 134H735V205H710"/><path d="M245 239H500"/><path d="M245 375H315"/><path d="M245 469H285V430H315"/><path d="M520 409H595"/><path d="M705 239H835V270H887"/><path d="M790 409H850V290H887"/><path d="M960 280H1015"/></g>
+  <text x="48" y="535" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="16" fill="#475569">内容投影可吸收到 Query；RoPE 依赖当前位置 t 与历史位置 j，单独保存小维度 kR cache。</text>
+</svg>

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="460" viewBox="0 0 1080 460" role="img" aria-labelledby="t d">
+<title id="t">SmoothQuant以等价变换迁移激活与权重动态范围</title><desc id="d">XW经通道矩阵S改写为XS逆乘SW，浮点乘积保持不变。激活逆缩放与权重放大是并行结果，再各自编码量化，INT32累加后乘scale。</desc>
+<defs><marker id="a" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#475569"/></marker><style>text{font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#172033}.b{stroke-width:2;rx:14}.x{fill:none;stroke:#475569;stroke-width:2.5;marker-end:url(#a)}.h{font-size:20px;font-weight:700}.s{font-size:16px}</style></defs>
+<rect width="1080" height="460" fill="#f8fafc"/><text x="40" y="42" class="h">SmoothQuant 重分配范围，不删除离群值</text>
+<rect x="65" y="100" width="210" height="82" class="b" fill="#dbeafe" stroke="#3b82f6"/><text x="170" y="134" text-anchor="middle" class="h">X × W</text><text x="170" y="160" text-anchor="middle" class="s">原始浮点线性层</text><path d="M275 141H333" class="x"/>
+<rect x="345" y="82" width="370" height="122" class="b" fill="#ede9fe" stroke="#8b5cf6"/><text x="530" y="122" text-anchor="middle" class="h">X′ = X S⁻¹</text><text x="530" y="153" text-anchor="middle" class="h">W′ = S W</text><text x="530" y="184" text-anchor="middle" class="s">X′W′ = XW</text>
+<path d="M715 122H783" class="x"/><rect x="795" y="82" width="220" height="82" class="b" fill="#ffedd5" stroke="#f97316"/><text x="905" y="116" text-anchor="middle" class="h">INT8 编码</text><text x="905" y="142" text-anchor="middle" class="s">Xq 与 Wq</text>
+<path d="M905 164V192" class="x"/><rect x="795" y="204" width="220" height="72" class="b" fill="#dcfce7" stroke="#22c55e"/><text x="905" y="235" text-anchor="middle" class="h">INT32 累加</text><text x="905" y="260" text-anchor="middle" class="s">乘 sx × sw 恢复尺度</text>
+<path d="M445 204V290H270V308" class="x"/><rect x="70" y="318" width="310" height="74" class="b" fill="#dcfce7" stroke="#22c55e"/><text x="225" y="350" text-anchor="middle" class="h">激活范围收窄</text><text x="225" y="376" text-anchor="middle" class="s">减少离群值占满格点</text>
+<path d="M615 204V290H805V308" class="x"/><rect x="680" y="318" width="310" height="74" class="b" fill="#fef3c7" stroke="#d97706"/><text x="835" y="350" text-anchor="middle" class="h">权重范围扩大</text><text x="835" y="376" text-anchor="middle" class="s">权重量化误差仍需校准</text>
+<text x="540" y="436" text-anchor="middle" class="s">α 决定迁移比例；两侧量化误差由校准集分别评估</text>
+</svg>

@@ -1,29 +1,60 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const introductions = require('./paper-introductions.cjs');
+const categoryOrder = [
+  '模型基础与完整结构',
+  '注意力、序列建模与长上下文',
+  'MoE 与条件计算',
+  '训练、优化与后训练',
+  '生成、推理与检索算法',
+  '量化与模型压缩',
+  '多模态与生成模型',
+  '高效计算与系统论文',
+];
+// Keep IDs and source paths stable. Display order is explicit per category.
 const papers = [
-  [20,'数学与并行算法','Online Softmax','notes/algorithms/online-softmax.md'],
-  [21,'数学与并行算法','Parallel Reduce','notes/algorithms/parallel-reduce.md'],
-  [22,'Attention','FlashAttention：分块与在线归约','notes/algorithms/flash-attention-mechanism.md'],
-  [23,'Attention','FlashAttention-2','notes/algorithms/flash-attention-2.md'],
-  [24,'Attention','MQA 与 GQA','papers/attention/gqa.md'],
-  [25,'Attention','MLA：低维缓存与权重吸收','notes/algorithms/mla-deepseek.md'],
-  [26,'Attention','DSA：索引与稀疏选择','notes/algorithms/dsa-sparse-attention.md','roadmap/curriculum/papers/dsa.md'],
-  [27,'Attention','Gated DeltaNet 与线性注意力','notes/algorithms/gdn-linear-attention.md'],
-  [28,'Attention','FlashAttention 与可编程注意力专题','notes/algorithms/fa4-flexattention.md'],
-  [29,'Attention','低精度与结构复用 Attention 专题','notes/algorithms/attention-2026-sage3-kascade.md'],
-  [30,'模型架构','DeepSeek：参数、KV 与计算量','notes/algorithms/deepseek-v32-handcalc.md'],
-  [31,'模型架构','DeepSeek-V4 架构专题','notes/algorithms/deepseek-v4.md'],
-  [32,'模型架构','MoE 路由与专家','notes/algorithms/moe-inference.md'],
-  [33,'量化与低精度','INT8 与 FP8','notes/algorithms/quantization-int8-fp8.md'],
-  [34,'推理系统','Speculative Decoding','notes/algorithms/speculative-decoding.md'],
-  [35,'推理系统','Prefill / Decode 分离','notes/algorithms/pd-disaggregation.md'],
-  [36,'推理系统','PagedAttention','papers/inference/paged-attention.md'],
-  [37,'训练与优化','Adam、AdamW 与训练状态','notes/algorithms/optimizers-adam.md'],
-  [38,'训练与优化','ZeRO 与模型状态分片','papers/training/zero-paper.md'],
-  [39,'模型架构','DeepSeek-V4.1-Flash：缓存、索引与训练推理协同','roadmap/curriculum/papers/deepseek-v41.md'],
-  [40,'训练与优化','Scaling Law、强化学习与长任务推理','roadmap/curriculum/papers/inference-workloads.md'],
-].map(([id,category,title,source,override])=>({id,category,title,source,override}));
+  [20,'高效计算与系统论文',1,'Online Softmax','notes/algorithms/online-softmax.md'],
+  [21,'高效计算与系统论文',2,'Parallel Reduce','notes/algorithms/parallel-reduce.md'],
+  [22,'高效计算与系统论文',3,'FlashAttention：分块与在线归约','notes/algorithms/flash-attention-mechanism.md'],
+  [23,'高效计算与系统论文',4,'FlashAttention-2','notes/algorithms/flash-attention-2.md'],
+  [24,'注意力、序列建模与长上下文',1,'MQA 与 GQA','papers/attention/gqa.md'],
+  [25,'注意力、序列建模与长上下文',2,'MLA：低维缓存与权重吸收','notes/algorithms/mla-deepseek.md'],
+  [26,'注意力、序列建模与长上下文',3,'DSA：索引与稀疏选择','notes/algorithms/dsa-sparse-attention.md','roadmap/curriculum/papers/dsa.md'],
+  [27,'注意力、序列建模与长上下文',5,'Gated DeltaNet 与线性注意力','notes/algorithms/gdn-linear-attention.md'],
+  [28,'高效计算与系统论文',5,'FlashAttention 与可编程注意力专题','notes/algorithms/fa4-flexattention.md'],
+  [29,'高效计算与系统论文',6,'低精度与结构复用 Attention 专题','notes/algorithms/attention-2026-sage3-kascade.md'],
+  [30,'模型基础与完整结构',7,'DeepSeek：参数、KV 与计算量','notes/algorithms/deepseek-v32-handcalc.md'],
+  [31,'模型基础与完整结构',8,'DeepSeek-V4 架构专题','notes/algorithms/deepseek-v4.md'],
+  [32,'MoE 与条件计算',1,'MoE 路由与专家','notes/algorithms/moe-inference.md'],
+  [33,'量化与模型压缩',1,'INT8 与 FP8','notes/algorithms/quantization-int8-fp8.md'],
+  [34,'生成、推理与检索算法',2,'Speculative Decoding','notes/algorithms/speculative-decoding.md'],
+  [35,'高效计算与系统论文',7,'Prefill / Decode 分离','notes/algorithms/pd-disaggregation.md'],
+  [36,'高效计算与系统论文',8,'PagedAttention','papers/inference/paged-attention.md'],
+  [37,'训练、优化与后训练',2,'Adam、AdamW 与训练状态','notes/algorithms/optimizers-adam.md'],
+  [38,'高效计算与系统论文',9,'ZeRO 与模型状态分片','papers/training/zero-paper.md'],
+  [39,'模型基础与完整结构',9,'DeepSeek-V4.1-Flash：缓存、索引与训练推理协同','roadmap/curriculum/papers/deepseek-v41.md'],
+  [40,'训练、优化与后训练',5,'Scaling Law、强化学习与长任务推理','roadmap/curriculum/papers/inference-workloads.md'],
+  [41,'模型基础与完整结构',1,'语言模型：从 token 到 next-token 目标','papers/foundations/01-language-modeling.md'],
+  [42,'模型基础与完整结构',2,'Attention：从相似度到加权读取','papers/foundations/02-attention.md'],
+  [43,'模型基础与完整结构',3,'Transformer Block：残差、归一化与 MLP','papers/foundations/03-transformer-block.md'],
+  [44,'模型基础与完整结构',4,'位置编码：绝对位置、相对位置与 RoPE','papers/foundations/04-position-encoding.md'],
+  [45,'模型基础与完整结构',5,'完整 Decoder：一次前向与逐 token 解码','papers/foundations/05-complete-decoder.md'],
+  [46,'模型基础与完整结构',6,'Transformer 家族：结构变化与权衡','papers/foundations/06-transformer-families.md'],
+  [47,'注意力、序列建模与长上下文',4,'Mamba：输入选择的状态空间模型','papers/topics/ssm-mamba.md'],
+  [48,'训练、优化与后训练',1,'训练目标、优化与 Scaling Law','papers/topics/training-and-scaling.md'],
+  [49,'训练、优化与后训练',3,'LoRA：冻结底座上的低秩增量','papers/topics/lora-adaptation.md'],
+  [50,'训练、优化与后训练',4,'对齐与强化学习：目标函数如何改变回答','papers/topics/alignment-and-rl.md'],
+  [51,'生成、推理与检索算法',1,'采样与搜索：从概率分布到候选决策','papers/topics/sampling-and-search.md'],
+  [52,'生成、推理与检索算法',3,'检索与记忆：把外部证据接入生成','papers/topics/retrieval-and-memory.md'],
+  [53,'量化与模型压缩',2,'GPTQ：校准输入上的权重重构','papers/topics/gptq.md'],
+  [54,'量化与模型压缩',3,'AWQ：用激活重要性选择权重量化缩放','papers/topics/awq.md'],
+  [55,'量化与模型压缩',4,'SmoothQuant：把激活离群值迁移到权重','papers/topics/smoothquant.md'],
+  [56,'多模态与生成模型',1,'视觉语言模型：从图像 patch 到文本 token','papers/topics/vision-language.md'],
+  [57,'多模态与生成模型',2,'Diffusion 与 Flow Matching：从训练噪声到生成轨迹','papers/topics/diffusion-and-flow.md'],
+  [58,'高效计算与系统论文',10,'并行 Scan 与 Selection：前缀、统计量和 Top-k','papers/topics/scan-and-selection.md'],
+  [59,'量化与模型压缩',5,'蒸馏与压缩：迁移函数、删结构与低秩近似','papers/topics/compression-and-distillation.md'],
+  [60,'注意力、序列建模与长上下文',6,'长上下文：位置外推、局部注意力与记忆压缩','papers/topics/long-context-design.md'],
+].map(([id,category,order,title,source,override])=>({id,category,order,title,source,override}));
 
 function prepare(text, paper, repo) {
   if (paper.override) text=fs.readFileSync(path.join(repo,paper.override),'utf8');
@@ -100,4 +131,4 @@ function prepare(text, paper, repo) {
     + 'alpha 必须同时缩放旧分母和旧输出分子。FA1 与 FA2 都有 Q/KV 分块；FA2 还改进 Q 块在 CTA 间的并行和 warp 内分工，不能总结为“FA1 一行、FA2 一块”。\n';
   return text.trim()+'\n';
 }
-module.exports={papers,prepare};
+module.exports={papers,categoryOrder,prepare};

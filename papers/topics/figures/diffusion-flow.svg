@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="700" viewBox="0 0 1080 700" role="img" aria-labelledby="t d">
+<title id="t">Diffusion与Flow Matching分别区分训练目标和采样路径</title>
+<desc id="d">Diffusion训练从干净样本生成带噪状态并监督噪声或score，采样从纯噪声沿学习的反向转移恢复数据。Flow训练在端点对上回归条件速度v_cond=x-z，模型总体预测条件平均场；生成时从噪声积分v_theta场，二者不混为一条速度。</desc>
+<defs><marker id="a" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#475569"/></marker><style>text{font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#172033}.b{stroke-width:2;rx:14}.x{fill:none;stroke:#475569;stroke-width:2.5;marker-end:url(#a)}.h{font-size:20px;font-weight:700}.s{font-size:16px}.lane{font-size:18px;font-weight:700}</style></defs>
+<rect width="1080" height="700" fill="#f8fafc"/><text x="40" y="42" class="h">训练使用监督目标；采样使用已学习的模型预测</text>
+<rect x="40" y="68" width="485" height="250" rx="16" fill="#eff6ff" stroke="#93c5fd"/><text x="64" y="102" class="lane">Diffusion 训练</text>
+<rect x="65" y="135" width="155" height="74" class="b" fill="#dbeafe" stroke="#3b82f6"/><text x="142" y="166" text-anchor="middle" class="h">干净样本 x₀</text><text x="142" y="191" text-anchor="middle" class="s">与随机 ε</text>
+<path d="M220 172H284" class="x"/><rect x="296" y="135" width="194" height="74" class="b" fill="#fee2e2" stroke="#ef4444"/><text x="393" y="166" text-anchor="middle" class="h">带噪状态 xₜ</text><text x="393" y="191" text-anchor="middle" class="s">模型回归 ε / score</text>
+<text x="282" y="257" text-anchor="middle" class="s">监督项：噪声预测误差</text>
+
+<rect x="555" y="68" width="485" height="250" rx="16" fill="#f0fdf4" stroke="#86efac"/><text x="579" y="102" class="lane">Diffusion 采样</text>
+<rect x="580" y="135" width="135" height="74" class="b" fill="#e2e8f0" stroke="#64748b"/><text x="647" y="166" text-anchor="middle" class="h">纯噪声 xT</text><text x="647" y="191" text-anchor="middle" class="s">采样起点</text>
+<path d="M715 172H764" class="x"/><rect x="776" y="135" width="124" height="74" class="b" fill="#ede9fe" stroke="#8b5cf6"/><text x="838" y="166" text-anchor="middle" class="h">反向步骤</text><text x="838" y="191" text-anchor="middle" class="s">εθ / scoreθ</text>
+<path d="M900 172H928" class="x"/><rect x="940" y="135" width="80" height="74" class="b" fill="#dcfce7" stroke="#22c55e"/><text x="980" y="166" text-anchor="middle" class="h">x₀</text><text x="980" y="191" text-anchor="middle" class="s">样本</text>
+<text x="797" y="257" text-anchor="middle" class="s">多步反向转移 / probability-flow ODE</text>
+
+<rect x="40" y="342" width="485" height="300" rx="16" fill="#f5f3ff" stroke="#c4b5fd"/><text x="64" y="376" class="lane">Flow Matching 训练</text>
+<rect x="65" y="410" width="142" height="82" class="b" fill="#e2e8f0" stroke="#64748b"/><text x="136" y="442" text-anchor="middle" class="h">端点对 (z,x)</text><text x="136" y="471" text-anchor="middle" class="s">采样 t</text>
+<path d="M207 451H245" class="x"/><rect x="257" y="410" width="114" height="82" class="b" fill="#dbeafe" stroke="#3b82f6"/><text x="314" y="442" text-anchor="middle" class="h">xₜ</text><text x="314" y="471" text-anchor="middle" class="s">插值点</text>
+<path d="M207 469V540H245" class="x"/><rect x="257" y="520" width="218" height="82" class="b" fill="#ffedd5" stroke="#f97316"/><text x="366" y="552" text-anchor="middle" class="h">条件目标 vcond = x − z</text><text x="366" y="580" text-anchor="middle" class="s">该端点对的训练目标</text>
+<text x="282" y="624" text-anchor="middle" class="s">模型拟合 E[vcond | xₜ,t]，并非唯一的单样本场</text>
+
+<rect x="555" y="342" width="485" height="300" rx="16" fill="#fff7ed" stroke="#fdba74"/><text x="579" y="376" class="lane">Flow Matching 采样</text>
+<rect x="580" y="430" width="140" height="82" class="b" fill="#e2e8f0" stroke="#64748b"/><text x="650" y="462" text-anchor="middle" class="h">噪声 z</text><text x="650" y="490" text-anchor="middle" class="s">t = 0</text>
+<path d="M720 471H792" class="x"/><rect x="804" y="430" width="200" height="82" class="b" fill="#dcfce7" stroke="#22c55e"/><text x="904" y="462" text-anchor="middle" class="h">积分 dx/dt = vθ</text><text x="904" y="490" text-anchor="middle" class="s">模型预测的边缘速度场</text>
+<text x="797" y="568" text-anchor="middle" class="s">ODE solver 沿 vθ 逐步前进，终点生成数据样本</text>
+</svg>

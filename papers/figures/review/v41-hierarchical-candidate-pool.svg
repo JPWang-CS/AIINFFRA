@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1300" height="500" viewBox="0 0 1300 500" role="img" aria-labelledby="title desc">
+  <title id="title">V4.1 CSA2 分层候选池与最终 Top-K</title>
+  <desc id="desc">Full indexer 对全部可见位置评分，按八个 token 一块取最大值并选最多 2048 块，形成最多 16384 个候选；Reindex 层以自己的分数在候选池选 512 个位置；Reuse 层复用最近选择而不重新评分。</desc>
+  <defs><marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#334155"/></marker></defs>
+  <rect width="1300" height="500" fill="#f8fafc"/><text x="48" y="52" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="27" font-weight="700" fill="#0f172a">CSA2 两级预算：先缩小搜索域，再由各层重评分选 Top-K</text>
+  <g font-family="Segoe UI,Microsoft YaHei,sans-serif" text-anchor="middle">
+    <rect x="40" y="135" width="200" height="110" rx="14" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/><text x="140" y="177" font-size="19" fill="#1e3a8a">Full indexer</text><text x="140" y="210" font-size="16" fill="#1e3a8a">全部可见位置评分</text>
+    <rect x="290" y="135" width="230" height="110" rx="14" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/><text x="405" y="177" font-size="18" fill="#4c1d95">块内取最大分数</text><text x="405" y="210" font-size="16" fill="#4c1d95">B = 8 tokens / block</text>
+    <rect x="570" y="135" width="220" height="110" rx="14" fill="#fef3c7" stroke="#d97706" stroke-width="2"/><text x="680" y="177" font-size="18" fill="#78350f">选最多 P=2048 块</text><text x="680" y="210" font-size="16" fill="#78350f">候选上限 16,384 位</text>
+    <rect x="840" y="135" width="200" height="110" rx="14" fill="#ffedd5" stroke="#ea580c" stroke-width="2"/><text x="940" y="177" font-size="18" fill="#7c2d12">Reindex</text><text x="940" y="210" font-size="16" fill="#7c2d12">本层重评分候选</text>
+    <rect x="1080" y="135" width="180" height="110" rx="14" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/><text x="1170" y="177" font-size="18" fill="#14532d">Top-K = 512</text><text x="1170" y="210" font-size="16" fill="#14532d">供主 Attention</text>
+    <rect x="845" y="315" width="405" height="95" rx="14" fill="#e2e8f0" stroke="#64748b" stroke-width="2"/><text x="1047" y="352" font-size="18" fill="#334155">Reuse layer</text><text x="1047" y="382" font-size="16" fill="#334155">复用最近 Top-K；本层不重评分</text>
+  </g>
+  <g fill="none" stroke="#334155" stroke-width="3" marker-end="url(#arr)"><path d="M240 190H285"/><path d="M520 190H565"/><path d="M790 190H835"/><path d="M1040 190H1075"/><path d="M1170 245V310"/></g>
+  <text x="48" y="455" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="16" fill="#475569">候选池上限与最终稀疏预算不同；被初始块筛选排除的位置，后续层无法重新选回。</text>
+</svg>

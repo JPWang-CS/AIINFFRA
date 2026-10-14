@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
+const {papers:paperCatalog} = require('./paper-catalog.cjs');
 const html = fs.readFileSync(path.join(__dirname,'index.html'),'utf8');
 const papers = JSON.parse(html.match(/<script id="paper-content-data" type="application\/json">([\s\S]*?)<\/script>/)[1]);
 const articles = [...html.matchAll(/<article class="chapter" id="chapter-(\d+)"[\s\S]*?<\/article>/g)];
@@ -17,7 +18,7 @@ for (const match of articles) {
   assert(!/^\s*(?:~~~|```)(?:python|cpp|cuda|bash)\s*$/m.test(prose),
     `Chapter ${id} contains an unrendered code fence`);
 }
-assert.equal(articles.length,39);
+assert.equal(articles.length,18+paperCatalog.length);
 assert.equal(hits.length,0,JSON.stringify(hits,null,2));
 const v41Body = papers['39'];
 assert.equal([...v41Body.matchAll(/<h3\b[^>]*>多模态张量路径：patch token 到语言 token/g)].length,1,
@@ -29,5 +30,5 @@ const llamaDetail = html.match(/<details>\s*<summary>完整本地 Llama 校准�
 assert(llamaDetail && /<pre\b/.test(llamaDetail[1]) && /<code\b/.test(llamaDetail[1]),
   'The complete Llama program must render as code, not raw Markdown inside HTML');
 assert(!llamaDetail[1].includes('~~~python'), 'No literal fence in the Llama program');
-console.log('PASS: 39 reader articles checked for retired planning/status boilerplate.');
+console.log('PASS: '+articles.length+' reader articles checked for retired planning/status boilerplate.');
 console.log('Editorial guard only; technical constraints are retained and prose still needs human review.');

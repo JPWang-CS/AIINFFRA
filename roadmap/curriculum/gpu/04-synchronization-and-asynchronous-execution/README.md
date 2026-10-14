@@ -1,8 +1,8 @@
 # 第四章 线程协作、同步与异步执行
 
-设一个 block 中的线程先把输入写入 shared memory，再由其他线程读取。如果消费者先运行，它可能读到旧值；若生产者尚未完成全部写入，消费者可能读到一部分新值、一部分旧值。同步原语要同时回答两个问题：哪些线程必须在同一点会合，以及会合前的写入何时对参与线程可见。只有这两个条件都满足，消费者才能开始读取。
+先跟踪一份数据从写入到读取，再判断它何时能被覆盖。以两个线程共用一格 shared memory 为例：线程 0 写入后，线程 1 才能读；线程 1 读完后，线程 0 才能把这格位置交给下一份数据。这两条边分别回答“数据何时可读”和“空间何时可复用”。同步原语把这些先后关系落实到线程、stream 或异步引擎。
 
-本章从这个生产者—消费者关系出发，依次说明 block 内归约、warp 内交换、stream/event 依赖，以及异步拷贝与缓冲区复用。后续专题再处理跨 block、跨 kernel、跨进程和跨 API 的同步。
+本章按依赖范围递进：先看 block 内归约与 warp 内交换，再看 stream/event 如何连接不同队列；随后把同样的生产、消费、复用关系扩展到双缓冲、`cp.async`、barrier 和 TMA。后半部分介绍 Graph、内存分配、跨进程及图形 API 互操作，读者可以沿用同一问题检查对象在哪创建、谁在读写、由什么完成点保护释放。
 
 ## 1. 两个线程交接 shared 数据
 
@@ -20,7 +20,9 @@ if (threadIdx.x == 0) output[blockIdx.x] = tile[1];
 }
 ```
 
-此片段要求一维 block 至少有两个线程（`blockDim.x >= 2` 且 `blockDim.y == blockDim.z == 1`），否则 thread 1 不存在；若 block 有多个 y/z 维线程，多个 `threadIdx.x == 0` 线程会重复写同一元素。所有线程须按相同顺序经过两个 barrier。第一个 barrier 建立“写完后再读”的顺序；第二个 barrier 建立“线程 1 写完后线程 0 再读”的顺序。它只同步一个 block，不能代替不同 block 之间的依赖。
+该片段使用一维 block，线程数至少为 2（`blockDim.x >= 2` 且 `blockDim.y == blockDim.z == 1`），这样 thread 1 才存在，且只有一个 `threadIdx.x == 0` 负责写入。所有线程按相同顺序经过两个 barrier：第一个等线程 0 写完，第二个等线程 1 写完。`__syncthreads()` 的范围是当前 block；不同 block 的依赖需放在 kernel launch 或其他全局同步机制上建立。
+
+把两次交接具体走一遍：线程 0 把 20 写进 `tile[0]`，第一个 `__syncthreads()` 等 block 中线程到齐后，线程 1 才计算出 42 并写入 `tile[1]`。第二个 barrier 等线程 1 完成这次写入，线程 0 才把 42 写到 global output。若线程 0 还要在下一轮覆写 `tile[1]`，则必须先确认线程 1 已经读完；这就是后面双缓冲里的“可复用”依赖。
 
 这也是 shared-memory 归约的基本结构：线程先写各自输入或单位元，再同步；随后某些线程写部分和，下一轮读取前再同步。同步点由共享数据的生产—消费关系决定。
 
@@ -28,7 +30,7 @@ if (threadIdx.x == 0) output[blockIdx.x] = tile[1];
 
 长度不是 block size 整数倍时，尾部线程没有输入值，但归约仍需要完整定义 shared tile 的初始内容。求和应写入单位元 `0`，求最大值应写入 `-infinity`；若线程未写入，归约线程随后可能读取未初始化的 shared 值，结果不确定。
 
-是否能让某些线程退出，要看它们是否还需参加后续 barrier，以及剩余线程是否会读取它们负责的 shared 位置。因而不能把所有提前 `return` 一概说成死锁，也不能把“没有死锁”当成数据已经正确交接的证明。
+尾部线程是否能退出，要逐一检查两件事：它之后是否仍属于某个 barrier 的参与集合，以及其他线程是否会读取它负责的 shared 位置。退出规则和数据正确性是两个问题；即使剩余线程能通过 barrier，也必须确保归约读到的是有效输入或单位元。
 
 `examples/reduction_tail.cu` 使用 256-thread block 对 `n=100003` 的数组求和。每个线程先把有效元素或单位元写入 shared memory，之后每一轮二分归约都由所有线程执行 `__syncthreads()`，只有读写范围由 `if (tid < stride)` 缩小。线程块结果再由 host 做最后的 CPU 合并，因此代码可以把“block 内同步正确性”和“跨 block 没有隐式 barrier”分别讲清楚。
 
@@ -204,7 +206,7 @@ int main() {
 
 </details>
 
-这是 block 同步的教学例程，不是 LeetGPU 完整 reduction：跨 block 的最后一次求和由 CPU 执行。平台题要求最终结果留在 device `output[0]`，应在 GPU 上继续归约 partial；普通 kernel launch 之间的同 stream 顺序可作为全局阶段边界，不能在普通 block 之间使用裸 barrier。
+这是 block 同步的教学例程。它把每个 block 的部分和拷回 CPU 合并；LeetGPU 题还要求最终结果写入设备端 `output[0]`，因此需继续在 GPU 上分层归约 partial。普通 kernel launch 之间的同 stream 顺序可作为全局阶段边界；跨 block 协作应使用题目支持的全局同步机制。
 
 编译和运行本地示例：
 
@@ -214,15 +216,13 @@ nvcc -std=c++17 -O2 examples/reduction_tail.cu -o reduction_tail
 ./reduction_tail
 ```
 
-若 `index >= n` 的线程在写单位元前退出，后续归约仍可能读到未初始化位置；若各线程对共享数据阶段的读写顺序不一致，也可能破坏数据依赖。CUDA 对已退出线程和 block barrier 有专门规则，因此应针对具体 barrier、剩余参与者与数据读写判断，而不是仅凭出现 `return` 就断言死锁。异步 barrier 还需按其 arrival count、phase 和 drop-out 规则显式维护参与集合。
-
-对于本例的 block-wide `__syncthreads()` 归约，让所有线程写入有效值或单位元，并按相同阶段到达同步点，最容易验证。需要可变参与集合时，应依据 `cuda::barrier` 或 Cooperative Groups 的 arrival、phase 和 drop-out 规则构造协议。
+如果 `index >= n` 的线程在写单位元前退出，归约线程会读到未初始化位置。本例让全部 256 个线程在每一轮写入或读取后按相同顺序经过 block barrier，因此参与集合固定。需要可变参与集合时，`cuda::barrier` 和 Cooperative Groups 提供显式的到达与退出机制，代码必须按各自规则更新预期参与数。
 
 ### 2.1 CPU 参考与边界算例
 
-上例的 CPU 参考是 `std::accumulate(host_input.begin(), host_input.end(), 0.0)`，用 double 累加已存储的 float 输入；GPU 块内仍为 float 树归约，块间结果在 host 以 double 合并。验证同时检查有限值与 `abs_error <= 1e-4 + 1e-6 * abs(reference)`，容纳不同归约顺序的舍入差异。三个有价值的边界分别是 `n=0`、`n=1` 和 `n=block_size+1`。当前例程固定使用 `n=100003` 以强制产生尾部，扩展时应保留这些小尺寸，因为单个大 shape 只能证明某一条地址路径被走过。
+上例的 CPU 参考用 `std::accumulate(host_input.begin(), host_input.end(), 0.0)` 对已存储的 float 输入做 double 累加；GPU block 内采用 float 树归约，块间结果在 host 以 double 合并。验证检查有限值及 `abs_error <= 1e-4 + 1e-6 * abs(reference)`，容纳归约次序造成的舍入差异。扩展时还应检查 `n=0`、`n=1` 和 `n=block_size+1`；当前例程用 `n=100003` 产生尾部数据。
 
-每轮归约写出的部分和会被下一轮读取，所以轮次之间需要会合；最后一次写入后若没有其他线程再读 shared tile，写出 block partial 前不需要为这个数据依赖额外设置 barrier。
+每轮归约产生的部分和会在下一轮读取，因此线程需在阶段之间会合。最后一轮之后没有其他线程再读 shared tile，线程 0 可直接写出 block partial。
 
 ## 3. Warp 内交换与归约结果
 
@@ -246,7 +246,7 @@ nvcc -std=c++17 -O2 examples/warp_mask_reduce.cu -o warp_mask_reduce
 ./warp_mask_reduce
 ```
 
-若代码使用 `__shfl_down_sync(0xffffffffu, value, offset)`，32 个 lane 都应执行该 intrinsic；只让 active lane 进入会违反 `_sync` intrinsic 的参与要求。shared-memory 的 warp 内读写也不能依赖“同一个 warp 会同时执行”来代替 `__syncwarp(mask)`。现代独立线程调度下，应在读者开始读取前明确会合。只用 shuffle 交换寄存器时，mask 表达 warp 参与关系；shared-memory 生产者与消费者还需要对应的 warp barrier。
+使用 `__shfl_down_sync(0xffffffffu, value, offset)` 时，32 个 lane 都要执行该 intrinsic。warp 内的 shared-memory 写入与读取之间，则用 `__syncwarp(mask)` 建立会合点。shuffle 的 mask 指定参与 lane；shared-memory 交接还需保证生产者已写完、消费者再读取。
 
 本例使用 full mask，是因为 32 个 lane 都执行 shuffle，并将无效输入设为 0。若改用只覆盖 19 个 lane 的 mask，还须保证 mask 内线程全部执行该 intrinsic，并显式处理 shuffle 源 lane 超出有效范围的情况。
 
@@ -254,7 +254,7 @@ nvcc -std=c++17 -O2 examples/warp_mask_reduce.cu -o warp_mask_reduce
 
 本节的平台练习是 [LeetGPU Reduction](https://leetgpu.com/challenges/reduction)，对应的公开题面实现见 [Reduction #4 源码](https://github.com/AlphaGPU/leetgpu-challenges/tree/main/challenges/medium/4_reduction)。题目对 32-bit float 向量求总和，输入长度为 1 至 100,000,000，输出为设备端 `output[0]`；N=4,194,304 是性能形状，误差阈值为 `atol=rtol=1e-5`，参考结果为 `torch.sum(input.double()).float()`。请在平台空题面自行实现，不把本地示例误当作提交答案。
 
-本地 `reduction_tail.cu` 只在每个 block 内归约，再由 CPU 合并 partial；这不是平台要求的完整 GPU reduction。平台版本应继续在 GPU 上归约 partial，直到只剩一个值写入 `output[0]`。可重复启动 reduction kernel：每个 block 读取一段 partial，写出下一层 partial，直到输出数量为 1。相邻 kernel 放在同一 stream 时，后一次启动在前一次完成后执行；不要用跨 block 自旋或裸 barrier 建立 grid-wide 同步。
+本地 `reduction_tail.cu` 在 block 内归约后，由 CPU 合并 partial。平台版本则逐层在 GPU 上归约 partial，直到一个值写入 `output[0]`：每个 block 读取一段 partial 并写出下一层结果，重复启动 kernel 直到输出数量为 1。同一 stream 中相邻 kernel 按顺序执行，可用作各层归约的边界。
 
 若在服务器验证自写的完整 GPU reduction，以下记录只填实测值。形状和数值阈值沿用题面，kernel 配置与实测设备由运行时填写：
 
@@ -304,11 +304,18 @@ barrier 使参与者会合；fence 约束指定范围内的内存操作顺序；
 
 ## 4. Stream、event 与主机等待
 
-Stream（流）是有序命令队列：同一 stream 内的 kernel、copy 和 event 按入队顺序执行；不同 stream 只有在依赖、copy engine、kernel 资源和 runtime 语义允许时才可能重叠。Event（事件）是插入 stream 的完成标记，可以用于跨 stream 建立依赖，也可以用于 GPU 时间测量。一个异步 API 返回，不等于对应操作已经开始，更不等于操作已经完成。
+Stream（流）是有序命令队列：同一 stream 内的 kernel、copy 和 event 按入队顺序执行。不同 stream 是否重叠，取决于数据依赖、copy engine、kernel 资源和 runtime 规则。Event（事件）是插入 stream 的完成标记，可用于跨 stream 建立依赖或测量 GPU 时间。异步 API 返回表示操作已提交；操作何时开始和完成，由设备执行进度决定。
 
-涉及 CPU 内存的 `cudaMemcpyAsync` 只有在 host buffer 为 pinned/page-locked（页锁定）时才可能在设备侧异步传输；pageable（可分页）内存也能正确使用，但可能退化为同步行为。函数名中的 `Async` 不足以证明存在 overlap。CUDA 还区分 legacy default stream 与 per-thread default stream：未显式指定 stream 的 kernel 或同步 copy 会进入默认 stream，legacy default stream 与 blocking stream 之间可能产生额外同步。
+涉及 CPU 内存的 `cudaMemcpyAsync` 使用 pinned/page-locked（页锁定）内存时，才具备设备侧异步传输的条件；pageable（可分页）内存可能先经过 host staging。CUDA 还区分 legacy default stream 与 per-thread default stream：未显式指定 stream 的 kernel 或同步 copy 会进入默认 stream，legacy default stream 与 blocking stream 之间可能发生额外同步。
 
 ### 4.1 用 event 建立跨 stream 依赖
+
+把数据交接扩展到两条 stream：A 完成生产后记录 event；B 等到该 event 后才启动消费者。`cudaEventRecord` 把完成标记排在 A 的生产操作之后，`cudaStreamWaitEvent` 将依赖排进 B。这样，B 等待的是这项生产工作。
+
+<figure class="diagram-frame">
+<img src="figures/cross-stream-event-dependency.svg" alt="stream A 的 produce 完成后记录 produced event，stream B 等待该事件再执行 consume">
+<figcaption>跨 stream event 交接顺序。</figcaption>
+</figure>
 
 假设 stream A 产生 `buffer`，stream B 消费 `buffer`，安全协议是：
 
@@ -319,13 +326,16 @@ cudaStreamWaitEvent(stream_b, produced, 0);
 consume<<<grid, block, 0, stream_b>>>(buffer);
 ```
 
-如果删掉 `cudaStreamWaitEvent`，两 stream 可能按任意资源可用顺序运行，消费者读取的只是旧数据或半写入数据。若把两个 kernel 放在同一 stream，stream 顺序本身提供依赖，但也会放弃跨 stream 并行机会。若只在 host 侧调用 `cudaDeviceSynchronize()`，它能保护最终读取，却没有表达“B 只等 A 的第一个阶段”，因而通常会过度串行化。
+省略 `cudaStreamWaitEvent` 时，B 没有等候 A 写完的依赖，可能在生产完成前读取 buffer。把两个 kernel 放在同一 stream 可由 stream 顺序保证先后；host 调用 `cudaDeviceSynchronize()` 则会等全设备工作完成，范围大于只等待 A 的生产阶段。
 
-`cudaEventRecord` 之后的 `cudaEventSynchronize` 是 host 等待；`cudaStreamWaitEvent` 是 device command queue 里的依赖。两者作用不同。计时也必须把 event 放在同一条可以覆盖被测工作或明确 join 依赖的 stream 中，否则可能只测到一条 stream 的局部时间。
+`cudaEventRecord` 后的 `cudaEventSynchronize` 让 host 等待事件；`cudaStreamWaitEvent` 则把依赖加入设备命令队列。测量跨 stream 工作时，将结束 event 放在覆盖全部被测工作的 stream，或先把各 stream 的完成依赖汇合到计时 stream。
 
 ### 4.2 批量内存拷贝：stream 顺序、源访问顺序与属性分段
 
-当程序需要搬运很多彼此独立的小 buffer 时，逐个调用 `cudaMemcpyAsync` 会重复支付 host 侧 API/driver 提交开销。`cudaMemcpyBatchAsync` 把多个 pointer-to-pointer 拷贝作为一批提交；它表达的是“这一批在指定 stream 中的位置”，不是批内逐项顺序：批次整体排在同一 stream 前序工作之后、后序工作之前，但同批各项之间没有顺序保证。因此每个拷贝都必须能独立完成。若 B 的 source 是 A 的 destination，A 与 B 必须拆到两个有 stream/event 依赖的批次；把它们放在同一批次，不能靠数组下标暗示先后。
+许多互不依赖的小 buffer 可用 `cudaMemcpyBatchAsync` 一次提交。批次作为整体排在指定 stream 的前序和后序工作之间；批内拷贝没有逐项顺序保证，因此必须彼此独立。若 B 的 source 是 A 的 destination，应拆成两个批次，并用 stream 顺序或 event 建立 A 到 B 的依赖。
+
+<details>
+<summary>批量复制的参数、版本差异与完整程序</summary>
 
 以 CUDA Runtime API 13.3.0 为目标时，C 接口的真实声明是：
 
@@ -336,15 +346,15 @@ cudaError_t cudaMemcpyBatchAsync(
     size_t numAttrs, cudaStream_t stream);
 ```
 
-`dsts[i]`、`srcs[i]`、`sizes[i]` 共同定义第 i 项。`attrsIdxs` 不是每项各自的属性编号，而是属性分段的起点。例如 `count=5`、`attrsIdxs={0,3}` 表示 `attrs[0]` 用于拷贝 0、1、2，`attrs[1]` 用于拷贝 3、4。起点必须从 0 开始、严格递增，最后一个小于 `count`，且 `numAttrs <= count`。每项都必须落入一个有效属性段；不要把数组留在未初始化状态。
+`dsts[i]`、`srcs[i]`、`sizes[i]` 定义第 i 项。`attrsIdxs` 保存属性分段的起点。例如 `count=5`、`attrsIdxs={0,3}` 表示 `attrs[0]` 用于拷贝 0–2，`attrs[1]` 用于拷贝 3–4。起点从 0 开始并严格递增，最后一个小于 `count`，且 `numAttrs <= count`；数组中的每一项都须落在一个属性段内。
 
 每段属性中的 `srcAccessOrder` 是对 source 生命周期和访问时序的承诺：
 
-- `cudaMemcpySrcAccessOrderStream`：source 按 stream 顺序被访问。对于 pinned host source，API 返回后 copy 仍可能在设备/传输引擎上进行；host 不得覆盖或释放 source，直到该 stream 上的 copy 完成。示例中用 `cudaStreamSynchronize` 建立这个回收点。
-- `cudaMemcpySrcAccessOrderDuringApiCall`：source 可以不按 stream 顺序读取，但对该 source 的访问必须在 API 调用返回前完成。适合调用期间仍存活的临时栈数据；它不代表整个 batch（尤其 device destination）已经完成。
-- `cudaMemcpySrcAccessOrderAny`：source 可以在 API 返回后、也可以不按 stream 顺序访问。适合由 `malloc` 等 CUDA 外部方式分配、且调用期间没有其他在途访问者的 host source；调用者必须保持它不变且不释放，直到通过 stream/event 确认消费完成。它不是“生命周期任意”的许可。
+- `cudaMemcpySrcAccessOrderStream`：source 按 stream 顺序读取。对于 pinned host source，API 返回后 copy 仍可能进行；host 应等该 stream 完成后再覆盖或释放 source。本例用 `cudaStreamSynchronize` 建立回收点。
+- `cudaMemcpySrcAccessOrderDuringApiCall`：API 返回前完成对 source 的读取，读取顺序可不同于 stream 顺序。适合调用期间有效的临时栈数据；device destination 的操作仍可能在 API 返回后继续。
+- `cudaMemcpySrcAccessOrderAny`：source 可在 API 返回后读取，且读取顺序不受 stream 限制。适合由 `malloc` 等 CUDA 外部方式分配、调用期间没有其他访问者的 host source；调用者应保持 source 不变，直到 stream/event 确认读取完成。
 
-下面的例程以三个 pinned H2D source 和一个调用期栈 source 示范两个连续属性段。4 个目的地址互不重叠，且没有任何一项依赖另一项。API 使用 non-blocking stream，因为该接口不接受 legacy NULL stream；示例先同步再读取结果并释放仍可能被设备读取的 pinned buffers。
+例程用三个 pinned H2D source 和一个调用期栈 source 示范两个属性段。4 个目的地址互不重叠，拷贝之间没有数据依赖。该接口不接受 legacy NULL stream，因此例程使用 non-blocking stream，并在同步后读取结果和释放 pinned buffers。
 
 <details>
 <summary>完整 CUDA C++ 程序：pinned H2D 与临时 source 分段</summary>
@@ -459,7 +469,7 @@ int main() {
 
 </details>
 
-这四份数据的 CPU 期望值是 `copy 0..2: 100*i+j`、`copy 3: 900+j`，其中 `0 <= j < 16`；设备回读逐元素检查同一映射。编译和现场运行：
+这四份数据的 CPU 期望值是 `copy 0..2: 100*i+j`、`copy 3: 900+j`，其中 `0 <= j < 16`；设备回读逐元素检查同一映射。以下命令从仓库根目录运行：
 
 ```bash
 nvcc --version
@@ -467,30 +477,25 @@ nvcc -std=c++17 -O2 roadmap/curriculum/gpu/04-synchronization-and-asynchronous-e
 ./memcpy_batch_async
 ```
 
-此程序明确按 CUDA Runtime API 13.3.0 官方 reference 签名编写：`dsts`、`srcs` 都是 `const void **`，总参数数为 8。CUDA 13.4 仍为 8 个参数，但指针数组的限定符已改为 `void *const *dsts` 与 `const void *const *srcs`；用其他 Toolkit 编译时，必须以安装版本的 `cuda_runtime_api.h` 与对应 Runtime API reference 为准，不要只凭 `CUDART_VERSION` 猜测旧参数布局。CUDA 12.8/12.9 的旧 Runtime API 原型带 `size_t *failIdx`；CUDA 13.0 起 NVIDIA 以 rich error reporting 改用不带该参数的新原型。因此 CUDA Programming Guide 13.3 §3.1 中仍带 `failIdx` 的示例签名已经过时，不能原样复制。旧原型的 `failIdx` 用于报告具体失败的 copy index；若错误不对应单一 copy，值为 `SIZE_MAX`，传 `nullptr` 则不记录索引。13.x 应检查调用返回码，并在必要时检查 `cudaStreamSynchronize` 的异步错误。无论版本如何，失败索引都不表示其余 batch 项已经按数组顺序完成。
+此程序按 CUDA Runtime API 13.3.0 reference 的签名编写：`dsts`、`srcs` 都是 `const void **`，共 8 个参数。CUDA 13.4 保留 8 个参数，但指针数组限定符改为 `void *const *dsts` 和 `const void *const *srcs`。编译时应核对安装版本的 `cuda_runtime_api.h` 和对应 reference。CUDA 12.8/12.9 的原型含 `size_t *failIdx`；CUDA 13.0 起改为不带该参数的 rich error reporting 接口。旧版 `failIdx` 报告单项失败的 copy index；错误不对应单一拷贝时为 `SIZE_MAX`，传 `nullptr` 则不记录索引。13.x 应检查 API 返回码，并按需检查 `cudaStreamSynchronize` 返回的异步错误。
 
-属性段索引若将 `attrsIdxs={0,3}` 错写为 `{0,2}`，第二段会从第 2 项开始并与第一段重叠。`DuringApiCall` source 若在 API 返回后才初始化，API 将读取未初始化值；`Stream` 或 `Any` source 若在调用返回后立即改写，也可能与在途 copy 竞争。批内多个 copy 没有按数组顺序执行的保证：若 header copy 依赖 payload copy，应拆成两个有 stream/event 顺序的 batch。
+以 `attrsIdxs={0,2}` 代替 `{0,3}` 会让两个属性段从第 2 项重叠。`DuringApiCall` source 必须在调用期间已初始化；`Stream` 或 `Any` source 要保持不变，直到读取完成。依赖 header copy 的 payload copy 应放入后续批次，并由 stream/event 排定顺序。
+
+</details>
 
 ## 5. 双缓冲与缓冲区复用
 
 <figure class="diagram-frame">
-<img src="figures/buffer-lifecycle.svg" alt="两个slot分别经过输入填充H2D计算D2H事件完成后再允许复用">
-<figcaption>图：每个slot的依赖顺序。图中阶段宽度没有时间含义，是否实际重叠需要看时间线。</figcaption>
+<img src="figures/double-buffer-ownership.svg" alt="两个缓冲槽按数据块轮流由生产者写入、消费者读取，消费者完成后槽位才回到空闲">
+<figcaption>缓冲区读写顺序。</figcaption>
 </figure>
 
-> [!WARNING] 异步返回不等于 buffer 可以复用
-> **提交操作与操作完成是不同时间点。** CPU 覆写输入、读取输出或复用同一slot，必须等待相应最后一次使用完成；事件记录的位置决定了等待能保护什么。
+> [!IMPORTANT] 缓冲区复用时机
+> 先写入，再等操作完成，然后读取；最后一个读者结束后，缓冲区才能覆盖。event 的记录位置决定等待覆盖哪些操作。
 
-`examples/stream_event_pipeline.cu` 是自包含的两 stream pipeline：每个 chunk 选择 `slot = chunk % 2`，在该 slot 的 stream 上依次排入 H2D、scale kernel、D2H，并在 D2H 后记录 `completed[slot]`。当 chunk 2 要重新使用 slot 0 时，host 先等待 `completed[0]`，确认前一次 D2H 已经结束，再写入 slot 0 的 host 输入缓冲区。这个等待是双 buffer 的生命周期边界，而不是性能上的多余同步。
+`examples/stream_event_pipeline.cu` 是两 stream 示例：每个 chunk 选择 `slot = chunk % 2`，在对应 stream 上依次排入 H2D、scale kernel 和 D2H，并在 D2H 后记录 `completed[slot]`。
 
-下面只是协议的时序示意，不是某次运行采集的 Nsight Systems 时间线，也不表示两个 copy engine 一定重叠：
-
-```text
-slot 0: H2D(0) -> scale(0) -> D2H(0) -> completed[0]
-slot 1:              H2D(1) -> scale(1) -> D2H(1) -> completed[1]
-slot 0:                                  wait completed[0]
-                                           H2D(2) -> ...
-```
+chunk 0 使用 slot 0：H2D 读取 host 输入，kernel 读取 device 输入并写结果，D2H 写入 host 输出，随后记录 `completed[0]`。chunk 1 使用 slot 1，读写顺序独立。chunk 2 回到 slot 0，host 先等 `completed[0]`，再改写输入。两槽让不同 chunk 可以分别推进；实际重叠情况由传输引擎、SM 资源和 pinned/pageable 内存路径决定。
 
 编译和运行：
 
@@ -501,28 +506,30 @@ nvcc -std=c++17 -O2 examples/stream_event_pipeline.cu -o stream_event_pipeline
 ./stream_event_pipeline --pageable
 ```
 
-默认分配的是 pinned host buffer；`--pageable` 切换到普通 host allocation，目的是做语义和时间线对照，不是把 pageable 版本当成异步 overlap 基线。例程包含 CPU reference，并对每个 chunk 的 `3.0f` 缩放结果检查误差。工程 benchmark 还应把 warmup、event 计时、PCIe/互联状态、chunk size 和 stream 数记录在同一份实验日志中。
+默认使用 pinned host buffer；`--pageable` 切换为普通 host allocation，用于比较语义和时间线。例程包含 CPU reference，并检查每个 chunk 乘以 `3.0f` 后的结果。正式性能测试还应记录预热次数、event 计时范围、PCIe/互联状态、chunk size 和 stream 数。
 
-如果把 `cudaEventRecord(completed[slot], stream)` 放在 D2H 之前，host 便可能在复制结束前复用 slot。H2D 从 `host_input[slot]` 读取，D2H 向 `host_output[slot]` 写入：过早改写输入可能与 H2D 竞争，过早复用或覆盖输出可能与 D2H 写入竞争。例程把 event 放在 D2H 之后，并在下一次使用 slot 前等待它，因此输入、输出和 device slot 都不会过早复用。每个 chunk 后调用 `cudaDeviceSynchronize()` 虽能等待全设备工作，却也会消除两条 stream 的潜在重叠；这里按 slot 的最后一次使用设置等待点。
+`completed[slot]` 记录在 D2H 之后，所以 host 等待它时，H2D 已不再读取输入，D2H 也已写完输出。若把 event 提前到 D2H 之前，CPU 可能与传输同时改写输入或覆盖输出。逐 chunk 调用 `cudaDeviceSynchronize()` 会等待全设备工作；本例只在复用对应 slot 前等待其完成 event。
 
-双 buffer 能否隐藏传输延迟取决于每个 stage 的时间关系：若 H2D、compute、D2H 使用相同的硬件引擎或 kernel 已占满 SM，第二条 stream 不一定并行；若 host memory pageable，copy 可能先在 host 侧完成 staging。只有 Nsight Systems 时间线或等价的 event/engine 证据能证明 overlap，不能从 API 名称或总耗时下降单独推出。
+双缓冲能否隐藏传输延迟，取决于 H2D、kernel 和 D2H 对硬件引擎与 SM 的占用；pageable host memory 还可能先经过 host staging。用 Nsight Systems 时间线或 event/engine 数据检查实际重叠。
 
 [NVIDIA CUDA Samples 的 simpleStreams 示例](https://github.com/NVIDIA/cuda-samples/tree/5443602d89ed99aede2e4b7bf329daddeadb320e/cpp/0_Introduction/simpleStreams)把页锁定的主机缓冲区切成若干块，每条 stream 对自己的块依次提交 H2D、kernel 和 D2H。单条 stream 内的顺序保护块内数据；不同块彼此独立时，复制与计算才有机会重叠。本节的 `stream_event_pipeline.cu` 进一步将两个缓冲区的复用时刻放在 D2H 之后记录的 event 上，避免主机提前改写仍在传输的输入或输出。
 
-评估时间线时应比较各 stream 上的 H2D、kernel、D2H 区间和 slot 等待点。某个 sample 通过对所有 stream 同步得到的总时间只反映该测量方法，不能据此称为无额外同步开销的最佳基准；本节保留真实运行表格供目标设备记录。
+评估时间线时，比较各 stream 上的 H2D、kernel、D2H 区间和 slot 等待点，并记录所有 stream 的同步范围与计时方法。
 
 服务器对照保持 chunk 数和计算一致，只切换 pinned/pageable host buffer，并从时间线确认是否重叠。表内数值由实际运行填写：
 
-| 配置 | GPU / CC | correctness | 单 chunk time | H2D / D2H 带宽 | 时间线观察 |
+| 配置 | GPU / CC | 正确性 | 单 chunk 耗时 | H2D / D2H 带宽 | 时间线观察 |
 |---|---|---|---|---|---|
 | pinned，2 streams，`--pageable` 关闭 | — | — | — | — | — |
 | pageable，2 streams，`--pageable` 开启 | — | — | — | — | — |
 
 ## 6. `cp.async`：异步搬运与计算重叠
 
-CUDA 13.3 §4.11.1 将 LDGSTS（Load Global to Shared，global 到 shared 的异步加载路径）描述为 CC 8.0+ 的 element-wise global-to-shared 机制。支持的单次元素宽度是 4、8、16 字节；源和目的地址需要相应对齐，128-byte 对齐通常更利于批量访问。底层事务发起后，线程可以继续执行，但必须使用 shared-memory barrier 或 pipeline 追踪完成；异步事务完成后，若数据还要被其他线程消费，通常还需要 block-wide 的可见性/会合步骤。
+先看一个 tile 的交接：线程把 global memory 数据搬到 shared memory。搬运期间可执行不依赖该 tile 的工作；确认搬运完成后再读 shared。使用两个槽位时，计算当前槽位的同时可尝试填充另一槽；覆盖旧槽前，先等读者结束。是否重叠取决于这段独立工作和硬件资源。
 
-高层 `cuda::memcpy_async`、Cooperative Groups `memcpy_async` 和低层 `__pipeline_memcpy_async` 都可能映射到这条路径，但生成的指令、commit/wait 批次与编译目标必须检查。使用异步 API 不保证硬件一定在当前 shape 上并发执行；手册也明确把“是否实际异步”留给硬件实现。性能假设应写成：增加一个 stage 可能覆盖 global-to-shared latency，同时增加 shared、barrier 和 register 压力；需要通过编译资源、指令和时间线验证。
+CUDA 13.3 §4.11.1 将 LDGSTS（Load Global to Shared，global 到 shared 的异步加载路径）列为 CC 8.0+ 的逐元素搬运机制，单次元素宽度支持 4、8、16 字节，源和目的地址须满足相应对齐。高层 `cuda::memcpy_async`、Cooperative Groups `memcpy_async` 与低层 `__pipeline_memcpy_async` 提供不同接口；具体生成指令和完成协议要按所用接口检查。发起线程等到自己的搬运完成后，若 tile 由其他线程消费，还须建立线程间可见和会合关系。
+
+异步 API 允许线程先继续执行，但当前形状是否有可重叠的工作、硬件是否并行搬运，都取决于依赖、资源和实现。增加 stage 可能覆盖部分 global-to-shared 等待，也会增加 shared、barrier 和 register 用量；应对照编译资源、实际指令和时间线，再判断收益。
 
 ### 6.1 拷贝完成与线程间同步
 
@@ -532,11 +539,11 @@ CUDA 13.3 §4.11.1 将 LDGSTS（Load Global to Shared，global 到 shared 的异
 
 ![shared 槽位的提交、就绪、消费与释放](examples/pipeline-lifecycle.svg)
 
-当前 tile 必须在读取前完成搬入。流水可能失去重叠的情形是：当前 tile 已可读，却先等未来 tile 全部到齐，再开始计算。判断时要看 wait 等待的是哪个 batch，而不是只看 wait 出现在代码中的位置。
+读取当前 tile 前，先等待它对应的搬运 batch。若当前 tile 已就绪，代码却先等待未来 tile，等待期间便没有当前 tile 的计算可执行。分析时按 wait 所属 batch 判断它保护哪段数据。
 
 ### 6.2 完整环形 stage 的 kernel
 
-下面用 1、2、3 个 stage 对照相同算法。每个 tile 有 128 个 float，输出为本 tile 中当前位置与下一位置之和；最后一个 lane 环回本 tile 的第一个位置，尾部无效位置按零处理。它是局部相邻读取例子，不是跨 tile 的全局 stencil，也不是 GEMM。
+下面用 1、2、3 个 stage 执行相同算法。每个 tile 有 128 个 float，输出为当前位置与下一位置之和；最后一个 lane 环回 tile 的第一个位置，尾部无效位置按零处理。例子只读取当前 tile 内的相邻元素。
 
 <!-- source-check: examples/cp_async_ring.cu -->
 ~~~cpp
@@ -585,30 +592,30 @@ __global__ void cp_async_ring_kernel(const float* in, float* out, int count) {
 }
 ~~~
 
-每个 stage 使用 128×4=512 bytes，行首与各 float 地址满足这里 4-byte 异步拷贝的对齐要求。每个线程发起自己的拷贝；越界线程仍提交零填充操作，source 选择合法的 in 而不构造越过分配范围的指针。
+每个 stage 占 128×4=512 bytes，行首及每个 float 地址都满足 4-byte 拷贝的对齐要求。每个线程发起自己的拷贝；越界线程提交零填充操作，source 使用合法的 `in` 地址。
 
-先填入 min(STAGES,total_tiles) 个 batch，再开始消费。稳态保留最后 STAGES−1 个较新的 batch 在途，等待最老的可读；尾部剩余 batch 变少后用 wait_prior(0) 保守排空。这里的参数是“允许剩下多少个较新的 batch”，不是“等第几个物理槽”。
+先填入 `min(STAGES,total_tiles)` 个 batch，再开始消费。稳态时保留最新的 `STAGES−1` 个 batch 在途，并等待最早的 batch 完成。尾部待处理 batch 减少后，`wait_prior(0)` 等待所有较新的 batch 完成。参数表示允许保留的在途 batch 数；槽位仍由 `t % STAGES` 选择。
 
-两次 syncthreads 保护不同的边：
+两次 `__syncthreads()` 分别保护两个交接点：
 
-- 第一次在各线程 wait 之后，保证 tile 的全部生产者都已就绪，再跨线程读取。
-- 第二次在读取之后，保证全部消费者结束，再向同一个 slot 发起下一轮拷贝。
+- 第一次在各线程 wait 之后，确认所有生产者都已完成，再跨线程读取 tile。
+- 第二次在读取之后，确认所有消费者都已结束，再向同一个 slot 发起下一轮拷贝。
 
-二者不是冗余的“双保险”。只保留其中一次，分别会留下读未完成数据或覆盖仍在读取数据的风险。尾部线程虽然不写有效输出，仍然参与两次同步，不能用 if(idx>=count) return 跳出协议。
+尾部线程虽然不写有效输出，仍须参加两次同步。执行 `if (idx >= count) return` 会让这些线程跳过后续 barrier，破坏 block 的参与协议。
 
 ### 6.3 拷贝批次、缓冲槽位与尾块
 
-设 STAGES=3、总共 7 个 tile。初始 batch 为 0/1/2，对应槽 0/1/2。消费 0 后提交 3 到槽 0；消费 1 后提交 4 到槽 1；消费 2 后提交 5 到槽 2；消费 3 后提交 6 到槽 0。
+设 `STAGES=3`，共 7 个 tile。初始 batch 0/1/2 分别放入槽 0/1/2。消费 0 后将 3 放入槽 0；消费 1 后将 4 放入槽 1；消费 2 后将 5 放入槽 2；消费 3 后将 6 放入槽 0。
 
-末尾槽中是 6/4/5，但逻辑消费顺序仍是 4/5/6。每次复用槽 0 都要经过新的完成周期，所以除了 slot=t%3，还应在推导中保留 generation=t//3。实际 API 用 batch/phase/token 表示相应顺序，不能把模运算的结果当成完整同步状态。
+处理完 tile 3 后，槽 0/1/2 分别存放 6/4/5；接下来的消费顺序仍是 4/5/6。槽位会循环使用，因此推导时同时记录 `slot=t%3` 和 `generation=t//3`。API 通过 batch、phase 或 token 追踪对应轮次。
 
-分支还会影响 warp 的 pipeline 序列。若 commit 在严重分歧的路径中执行，线程感知的 batch 序列可能与 warp 实际提交序列不一致，造成额外等待。这里所有线程执行同样次数的提交与等待；数据 predicate 只决定复制有效值还是零，不改变协议参与次数。需要在分歧后提交时，应按对应 API 要求先重新会合，而非默认所有 lane 自然在同一拍到达。
+分支会影响 warp 的 pipeline 序列。若线程在分歧路径中执行 commit，各线程看到的 batch 序列可能不同，从而产生额外等待。本例所有线程提交和等待相同次数；数据 predicate 只选择复制有效值或零，不改变参与次数。其他控制流应按所用 API 的要求重新会合后再提交。
 
 ### 6.4 正确性程序与性能结论分开
 
-完整程序比较 count=1、128、129、1025，以及三个 stage 配置，CPU 参考按相同 tile 内环回与尾部规则计算输出。它会打印设备名称和 Compute Capability，并拒绝把不支持的设备当成成功运行。
+完整程序比较 count=1、128、129、1025 和三个 stage 配置。CPU 参考采用相同的 tile 内环回与尾部规则计算输出；程序打印设备名称和 Compute Capability，不支持的设备会返回 skip 状态。
 
-下面的 sm_80 只是一个编译目标示例，应替换成 Toolkit 支持且与验证设备匹配的目标；不能把编译到一个较老架构的空分支当成已执行异步路径。
+下面以 `sm_80` 为编译目标示例；应根据 Toolkit 和验证设备选择支持的目标。较旧架构分支不执行异步搬运路径。以下命令从仓库根目录运行：
 
 ~~~bash
 nvcc -O3 -lineinfo -arch=sm_80 roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/examples/cp_async_ring.cu -o cp_async_ring
@@ -618,36 +625,38 @@ compute-sanitizer --tool racecheck ./cp_async_ring
 compute-sanitizer --tool synccheck ./cp_async_ring
 ~~~
 
-这组程序没有计时，也没有证明 stage=3 更快。输出正确后，还需检查生成代码是否走 LDGSTS/cp.async；再在具有足够工作量的实验里，和同步搬运版本对齐工作量、布局、线程数及计时边界。当前小例子只有一个 CTA，主要用于理解协议，不能外推整卡吞吐。
+这组程序检查正确性，不包含计时。验证输出后，先检查生成代码是否使用 LDGSTS/cp.async，再用足够大的工作量与同步搬运版本比较，并固定工作量、布局、线程数和计时范围。当前示例只有一个 CTA，用于讲解协议。
 
 
 ## 7. 异步屏障：阶段、计数与参与线程
 
-`cuda::barrier` 具有 expected arrival count、phase 和 arrival token。初始化必须在任何线程 arrive 之前完成；常见 bootstrap 是由一个线程初始化，再用一次 block sync 让所有参与者看到已初始化对象。一个 phase 中的 arrive 数达到期望值后，phase 前进；wait 使用当前或紧邻前一 phase 的 token。手册 §4.9.6 还允许 transaction count 追踪异步内存操作的完成。
+生产者写完后通知消费者数据已就绪；消费者读完后通知生产者槽位可覆盖。每个槽位都要分别走完这两次交接。
 
-因此 producer-consumer 协议不是“生产者写完后随便 signal”：需要一个 `filled` 状态表示 consumer 可以读，需要一个 `empty` 状态表示 producer 可以复用。双 buffer 为每个 slot 维护独立 phase 或 event；多个 stage 只是把状态机扩展为更多 slot，并把同步元数据和 shared 预算一起扩大。
+`cuda::barrier`（异步屏障）让线程先到达，再用 token 等待同一阶段完成。初始化时指定预期到达次数；所有到达计数满足后，阶段推进并重置计数。初始化必须早于任何线程参与，常由一个线程初始化，再用 block sync 让其他线程看到 barrier。带 transaction count 的 barrier 还要等异步传输字节数完成，因此“线程已到齐”和“数据已搬完”都满足后，消费者才可读取。
 
-现代 CUDA 的提前退出要精确描述。对于固定参与的 block barrier，参与者必须继续遵守每一轮 barrier；对于可变参与的 asynchronous barrier，参与者提前退出前必须按 API 规则显式 drop out，剩余参与者的 expected count 才与新集合一致。不能写成“所有提前 return 必然死锁”，也不能写成“只要同一 warp 就安全”；正确性来自参与集合和 phase 计数，而不是偶然调度。
+双缓冲通常为每个槽位维护独立阶段，分别表示“数据已就绪”和“读者已结束”。增加 stage 时，同步状态和 shared memory 用量也随槽位数增加。
+
+参与集合变化时，退出线程必须按所用 API 更新后续到达人数。使用 `cuda::barrier` 时，`arrive_and_drop()` 先计入当前阶段的到达，再把下一阶段的预期到达数减一；例如尾部线程完成当前轮后返回，需在返回前调用它，其他线程下一轮按减少后的数量到达。使用 `cuda::pipeline` 的线程则在退出前调用 `cuda::pipeline::quit()`。Cooperative Groups 的组屏障要求组内线程每阶段都参与；归约尾部线程仍应写入单位元并继续到达屏障。
 
 ### 7.1 屏障阶段的完成条件
 
-普通 arrive/wait 关注参与线程是否到齐；追踪异步事务的 barrier 还需要对应的 transaction count 归零。以一个由 A 和 B 两块输入组成的 stage 为例，若共预期传输 X bytes，却只完成其中一块，不能因发起线程已经 arrive 就认为整个 stage ready。
+普通 arrive/wait 在参与线程全部到达后完成当前阶段。若 barrier 还追踪异步事务，则对应 transaction count 也须归零。比如 A、B 两块输入合计预期传输 X bytes，只完成 A 时，即使发起线程已经 arrive，stage 仍未就绪。
 
-token 必须对应正在等待的 phase。槽位复用后，旧 phase 的完成不代表新 phase 完成；只盯同一地址上的一个“ready bit”，可能把上一轮信号误当成本轮信号。等待、消费和释放都应带着正确的轮次推导。
+token 与它取得时的 phase 关联。槽位进入下一轮后，旧 token 对应的完成状态不再描述新数据；等待、消费和释放都要跟踪当前轮次。
 
-参与者提前退出还要区分机制。可变参与的 barrier/pipeline 有自己的 drop/quit 协议；它们不是对任意 return 的自动修复。最容易检查的尾部实现仍是让无效数据使用单位元，而所有协议参与者按同一轮数到达同步点。
+尾部归约若让线程提前返回，需按 barrier 或 pipeline 的退出规则处理参与人数；本章归约例程让越界线程写入单位元并参与每轮同步，因此参与集合保持固定。
 
 ## 8. TMA、tensor map、swizzle 与 cluster/DSM
 
-TMA（Tensor Memory Accelerator，张量内存加速器）是 CC 9.0+ 的多维 bulk asynchronous copy 路径。对于多维 global/shared tile，host 侧通常创建 tensor map，描述 shape、stride、box、swizzle 和 memory layout，再把它作为 `__grid_constant__` kernel 参数传入。global-to-shared 的完成通常由 shared-memory barrier 观察；shared-to-global 或 shared-to-distributed-shared-memory（DSM，分布式 shared memory）的完成机制和发起线程约束不同。
+TMA（Tensor Memory Accelerator，张量内存加速器）提供 CC 9.0+ 的多维异步批量搬运。搬运多维 global/shared tile 时，host 创建 tensor map，描述矩阵形状、行跨度、搬运块、swizzle 和内存布局，再将其作为 `__grid_constant__` kernel 参数传入。global-to-shared 完成状态通常由 shared-memory barrier 跟踪；shared-to-global 和 shared-to-distributed-shared-memory（DSM，分布式 shared memory）使用不同的完成机制与发起要求。
 
-TMA 的核心收益是把重复的多维地址计算和搬运组织交给专门机制，核心代价是 descriptor、alignment、barrier phase、stage 生命周期和架构边界。§4.11.2 给出的版本边界是 CC 9.0+；§4.11.2.2 的多维接口通过 `cuTensorMapEncodeTiled` 创建 tensor map。swizzle 不是任意“把矩阵转一下”：它是为了让 shared-memory 访问布局和 bank/传输粒度匹配，具体 128B、64B、32B 模式有 inner dimension、repeat、shared/global alignment 条件，不能脱离 tensor map 与目标 CC 猜测收益。
+TMA 将重复的多维地址计算与搬运交给专用机制，同时引入 descriptor、对齐、barrier phase、stage 生命周期和架构要求。CUDA Programming Guide §4.11.2 将版本范围列为 CC 9.0+；§4.11.2.2 用 `cuTensorMapEncodeTiled` 创建多维 tensor map。swizzle 用于匹配 shared-memory 布局与 bank/传输粒度；128B、64B、32B 模式各有内维、重复方式和 shared/global 对齐条件，应按 tensor map 与目标 CC 配置。
 
-Thread Block Cluster（线程块集群）把一组 CTA 作为更高层的调度与同步单位；DSM 允许 cluster 内 block 访问分布在各 block 的 shared memory。它不是任意 grid-wide barrier，也不能跨 cluster 随意读 shared memory。§4.11.2 的 TMA 表列出了 global 到 `shared::cluster` 的路径，§4.11.3 的 STAS 还展示了 register 到 cluster DSM 的小数据搬运；这些路径都依赖 CC 9.0+ 和对应编译/runtime 支持。编译时核对目标架构，运行时检查生成指令、数据依赖和实际重叠。
+Thread Block Cluster（线程块集群）把一组 CTA 作为更高层的调度与同步单位；DSM 允许 cluster 内 block 访问各 block 的 shared memory，同步范围限于同一 cluster。CUDA Programming Guide §4.11.2 列出 global 到 `shared::cluster` 的 TMA 路径，§4.11.3 的 STAS 展示 register 到 cluster DSM 的小数据搬运。这些路径要求 CC 9.0+ 和对应编译/runtime 支持；应检查编译目标、生成指令、数据依赖及时间线。
 
 ### 8.1 TMA 的两个方向，完成含义不同
 
-对 global→shared 的 bulk copy，消费者关注“目的 tile 是否已经可读”。对 shared→global 的 bulk copy，生产者想复用 shared 时，首先关注“TMA 是否已经读完源 tile”。后者不等于其他设备或 host 已经观察到最终 global 写入。
+global→shared 搬运完成后，消费者可以读取目的 tile。shared→global 搬运时，生产者要复用 shared 源槽，应等待 TMA 读完源数据；host 或其他设备读取最终 global 写入还需对应的 kernel/stream 同步。
 
 | 阶段 | 必须建立的关系 | 常见误用 |
 |---|---|---|
@@ -657,43 +666,43 @@ Thread Block Cluster（线程块集群）把一组 CTA 作为更高层的调度�
 | shared→global | 等源 shared 读取完成，再允许覆盖 | 提交后立即把源槽位写成下一 tile |
 | kernel 外消费 global | 建立正确的 kernel/stream/event 依赖 | 把 source-read completion 当成 host 可读 |
 
-generic proxy 可以理解为普通线程读写所处的内存访问语义域，async proxy 表示异步搬运路径。它们之间有专门的顺序要求；“线程已经 syncthreads”与“异步引擎看到了这些写入”不是可以任意互换的说法。应使用手册给出的 proxy fence 与完成机制，而不是猜一条更强的全局同步就能替代所有约束。
+generic proxy 指普通线程的内存访问路径，async proxy 指异步搬运路径。普通线程写 shared 后，异步引擎读取前须按 API 要求执行 proxy fence；`__syncthreads()` 负责 block 内线程会合，proxy fence 则让异步路径观察到这些写入。
 
 CUDA Programming Guide 的 shared→global 示例先对普通 shared 写入执行 async proxy fence，再让 block 会合；随后由发起线程提交 bulk copy 并等待 bulk group 读完 shared。这个 read-completion 边界允许复用源缓冲；外部消费者仍须遵循 kernel/stream 的同步顺序。
 
-### 8.2 tensor map 和 swizzle 不能与矩阵加载各自设计
+### 8.2 tensor map、swizzle 与矩阵加载的布局
 
-二维 row-major 矩阵的地址包含 base、shape、元素大小和行 stride。tensor map 将这些信息与 box、swizzle 等描述一起交给硬件；它不是只保存一根指针。
+二维行主序矩阵的地址由 base、形状、元素大小和行跨度共同决定。tensor map 将这些信息连同 box、swizzle 等布局描述交给硬件。
 
-若 TMA 用一种 swizzle 把 tile 写入 shared，而 consumer 仍按普通 row-major 解释同一地址，就可能读错数据。即便数学下标相同，物理 shared 坐标也可能不同。可先用坐标标识作为输入值，验证 producer 写入到 consumer 读出的完整映射，再做 bank 和吞吐实验。
+若 TMA 用 swizzle 把 tile 写入 shared，consumer 就要按对应布局读取。相同数学下标可能落在不同物理 shared 坐标。先用坐标标识值逐项核对 producer 写入和 consumer 读出的映射，再测 bank 行为与吞吐。
 
-增加 swizzle 不能保证所有加载都无 bank conflict。要检查实际指令一次访问的 lane 集合、元素大小、地址和布局要求，不能沿用 FP32 标量访问的 bank 手算直接推断 FP16 矩阵加载。
+分析 swizzle 时，按实际指令的 lane 集合、元素大小、地址和布局检查 bank 行为；FP16 矩阵加载需根据其指令访问重新计算。
 
 ### 8.3 矩阵计算也可能尚未读完 shared
 
-同步 WMMA 教学例子先把输入载入 fragment，再做矩阵乘。采用异步矩阵指令时，矩阵操作本身可能在发起线程继续执行后仍读取 shared。这就产生了两个不同的就绪条件：copy 完成让 consumer 能开始，矩阵读取完成才让 producer 能覆写。
+同步 WMMA 教学例子先把输入载入 fragment，再做矩阵乘。异步矩阵指令发起后，矩阵单元可能继续读取 shared，而发起线程已执行后续指令。因此要区分两个完成点：copy 完成后 consumer 可开始；矩阵单元读完后 producer 才能覆盖该槽位。
 
-TMA 的完成信号不能替代矩阵指令自身的完成条件。warpgroup 参与、异步 MMA 的 commit/wait、寄存器与 shared 生命周期都须按具体指令族处理；同步 `mma_sync` 的代码顺序不能直接移植到异步接口。不同代际的矩阵接口还可能使用不同存储对象，因此通用槽位状态图只说明依赖关系，具体调用仍须遵循目标接口的要求。
+TMA 完成后，矩阵单元仍可能在读取 shared。异步 MMA 按对应指令族的 warpgroup 参与方式和 commit/wait 协议管理寄存器与 shared 生命周期；不同代际的矩阵接口也可能使用不同存储对象，需按目标接口建立槽位依赖。
 
 ### 8.4 Attention 的数据复用与同步
 
-FlashAttention（FA）实现中，CTA/program 对 Q tile、K/V tile 的映射是实现选择与算法组织的结合，不能简化成“FA1 按一行、FA2 按块”。FA1 与 FA2 都以 Q/K/V 分块和 online softmax 减少片外访存；FA2 进一步把单个 head 的多个 Q tile 分给不同 thread block，改变 block 内 warp 分工并减少 non-matmul 工作。一个 program 可以固定负责 `Q_i`，然后扫描多个 `K_j,V_j`；具体 CTA 组织还要结合 batch/head、causal mask、warp specialization、pipeline 和目标架构决定。
+FlashAttention（FA）中，CTA/program 如何映射 Q tile 与 K/V tile，取决于算法组织和具体实现。FA1 与 FA2 都以 Q/K/V 分块和 online softmax 减少片外访存；FA2 还可把同一 head 的多个 Q tile 分给不同 thread block，调整 block 内 warp 分工并减少非矩阵计算。一个 program 可固定负责 `Q_i`，再依次读取多个 `K_j,V_j`；实际 CTA 组织还取决于 batch/head、causal mask、warp specialization、pipeline 和目标架构。
 
-因此阅读 CUDA/Triton 代码时应逐项核对：`pid` 到底索引 batch/head/Q tile 的哪一维，`Q_i` 是多少行，`K_j,V_j` 是多少列，score tile 是否写入 shared，online state `m,l,U` 由哪些线程持有，barrier 保护的是哪一块 buffer。只看到“一个 program 处理一个 Q tile”，还不能推出 block 内的 warp 分工和物理缓冲区布局。
+阅读 CUDA/Triton 代码时，沿着 `pid` 到 batch/head/Q tile 的索引，确认 `Q_i` 的行数、`K_j,V_j` 的列数、score tile 是否写入 shared、online state `m,l,U` 由哪些线程持有，以及 barrier 保护哪个 buffer。一个 program 对应一个 Q tile 时，仍需继续查看 block 内 warp 分工和物理缓冲区布局。
 
 ### 8.5 从一次 TMA 搬入，到安全地复用同一块 shared
 
-用一个完整的小程序把前面的协议连起来：把 1024 个 int 从 global 搬到 shared，所有线程分别给其中的元素加一，再用 bulk copy 写入另一块 global 数组。随后用同一个 shared buffer 处理下一 tile。输入输出不重叠；一个 CTA 有 128 个线程，每个线程处理八个元素。
+下面的程序把前面的协议连起来：将 1024 个 int 从 global 搬到 shared，所有线程分别加一，再用 bulk copy 写入另一块 global 数组，最后复用同一个 shared buffer 处理下一 tile。输入输出不重叠；一个 CTA 有 128 个线程，每个线程处理八个元素。
 
-这不是追求吞吐的实现，而是把两种完成机制放在一段可检查的代码中。第一次等待回答“数据是否已经搬入”；第二次等待回答“异步引擎是否已经读完 shared”。漏掉第二次等待，下一 tile 就可能覆盖尚未被写回引擎读出的内容。
+这个例程检查两个完成点：第一次等待确认数据已经搬入；第二次等待确认异步引擎已经读完 shared。第二次等待完成后，下一 tile 才能复用该槽位。
 
 ![TMA 搬入就绪与 shared 源读取结束是两个不同的完成点](./examples/tma-lifetime.svg)
 
 barrier 的到达计数和事务计数要分别计算。假设当前阶段有 128 个线程需要到达，搬入量为 4096 字节。硬件必须观察到全部线程到达，同时搬运事务完成，才可以完成这一阶段。如果线程先到齐，仍要等数据；如果数据先完成，仍要等参与者。
 
-这里调用绑定 barrier 的 cuda::memcpy_async，它会自动登记本次异步搬运，**不要再为同一份数据额外登记一次 4096 字节**。更底层的 memcpy_async_tx 或 PTX bulk 接口需要程序显式安排事务计数，这两种接口的责任不能混用。重复登记可能让 barrier 等待永远不会到来的事务，漏登记则破坏“等待完成即数据可读”的依据。
+这里的 `cuda::memcpy_async` 绑定 barrier，并自动登记本次异步搬运；同一笔 4096 字节传输无需再登记一次。更底层的 `memcpy_async_tx` 或 PTX bulk 接口则由程序显式设置事务计数。登记次数应与实际传输量对应，否则 barrier 可能一直等待，或在数据就绪前完成。
 
-下面是程序的核心 kernel。leader 在 warp 0 内选举，只有它发起搬运；其他线程仍要参加 barrier 和计算。搬运的发起者数量为一，不表示 barrier 的参与者数量也为一。
+下面是程序的核心 kernel。leader 在 warp 0 内选出，负责发起搬运；整个 block 的线程都参与 barrier 和后续计算。
 
 <!-- source-check: examples/tma_roundtrip.cu -->
 ~~~cpp
@@ -767,19 +776,19 @@ __global__ void tma_roundtrip(const int* input, int* output, int tiles) {
 
 逐段看复用边界：
 
-1. init 后的 CTA 会合，使所有线程在使用 full 前看到初始化结果。full 是每轮复用的 barrier，不是在循环里反复重新初始化的对象。
+1. init 后 CTA 会合，使所有线程在使用 full 前看到初始化结果。full 在循环各轮之间复用。
 2. memcpy_async 之后，所有线程 arrive 并持 token 等待对应阶段。读取 shared 必须放在等待之后。
 3. 每个写线程执行 proxy fence，再进行 CTA 会合。前者发布本线程的普通 shared 写入，后者把所有写者的完成关系传递给发起输出搬运的 leader；仅由 leader 执行 fence 不足以替其他线程发布写入。
-4. leader 提交 shared→global bulk copy，并用 bulk group 的 read wait 等它读完 shared。这里不是普通 cp.async 的 wait_group，也不是前面 full barrier 的等待。
+4. leader 提交 shared→global bulk copy，并用 bulk group 的 read wait 等异步引擎读完 shared。此 wait 保护源槽位；前面的 full barrier 则协调 CTA 线程。
 5. 最后的 CTA 会合把 leader 的等待结果通知其他线程。下一轮才允许写同一 buffer。CPU 读取最终输出，仍在 stream 同步之后。
 
 最后一步不只保护下一次 TMA 写入，还防止其他线程过早进入下一轮的 shared 读写。只让 leader 等待、其余线程继续覆盖，是常见的“加了 wait 仍然错误”。
 
 ### 8.6 对齐和尾块：本例显式补齐，不依赖隐式填零
 
-一维 bulk copy 的源地址与目标 shared 地址按 16 字节对齐，传输大小也是 16 的倍数。1024 个 int 对应 4096 字节，下一 tile 的偏移仍保持对齐；`cudaMalloc` 的基址配合显式 shared 对齐满足本例要求。`aligned_size_t` 只是声明地址满足对齐条件，不会修正错误地址或替应用分配 padding。
+一维 bulk copy 的源地址和目标 shared 地址按 16 字节对齐，传输大小也为 16 的倍数。1024 个 int 共 4096 字节，下一 tile 的偏移继续满足对齐；`cudaMalloc` 基址与显式 shared 对齐满足本例要求。`aligned_size_t` 用于声明对齐条件，实际地址需由程序确保。
 
-实际长度为 1025 时，本例分配两个完整 tile，即 2048 个 int。前 1025 个是有效输入，余下 1023 个由 host 填入 -71。kernel 对整个 2048 元素执行加一，所以 padding 区的预期输出是 -70，而不是保持不动或自动为零。输出末尾再多分配 16 个 guard 元素，填入 -999；这些元素位于全部 tile 之外，必须保持不变。
+实际长度为 1025 时，本例分配两个完整 tile，共 2048 个 int。前 1025 个是有效输入，其余由 host 填入 -71。kernel 对所有元素加一，因此 padding 区的预期输出为 -70。输出末尾另分配 16 个 guard 元素并填入 -999，kernel 应保持这些值不变。
 
 <!-- source-check: examples/tma_roundtrip.cu -->
 ~~~cpp
@@ -811,49 +820,49 @@ __global__ void tma_roundtrip(const int* input, int* output, int tiles) {
         }
 ~~~
 
-这样有三种独立检查：有效结果应为 input+1，padding 应为 -70，guard 应为 -999。最后一种检查可以发现写出了分配给 tile 的范围；前两种还能发现读错 tile、跳过计算、重复加一等问题。长度 3077 会复用 shared buffer 四次，覆盖的不只是单次拷贝。
+程序分别检查有效结果 `input+1`、padding 的 -70 和 guard 的 -999。guard 检查捕获 tile 范围外的写入；另外两项可定位错读 tile、漏算或重复计算。长度 3077 会复用 shared buffer 四次。
 
-本例的 padding 方式不适用于所有 TMA 搬运。二维 tensor-map copy 的越界处理遵循不同接口要求；是否能补零、怎样补零由矩阵算法决定。本例使用完整且合法的一维传输，以便单独检查 buffer 生命周期。
+本例用完整且合法的一维传输检查 buffer 生命周期。二维 tensor-map copy 的越界处理依接口和矩阵算法而定，需单独设置。
 
 ### 8.7 从协议正确到重叠执行
 
-上述单 buffer 程序每轮先等搬入，再计算，再等源读取完成，因此没有声称把相邻 tile 的搬运与计算重叠。要形成重叠，需要至少让下一 tile 有另一处可写的存储，并让 producer 可以在 consumer 计算时继续推进。
+上述单 buffer 程序每轮依次等待搬入、计算、等待源读取完成。若要让相邻 tile 的搬运和计算重叠，至少需要另一个槽位供下一 tile 写入，让 producer 能在 consumer 计算时继续推进。
 
-增加第二个 buffer 不是全部改动。每个槽位都需要分别表达“当前数据已就绪”和“上一位读者已结束”。若把 shared→global 搬运替换为异步矩阵指令，源 buffer 的最后一个读者就变成矩阵单元，释放条件也要换成对应矩阵指令的完成协议；不能继续沿用 bulk copy 的等待指令。
+每个槽位都要分别标记“数据已就绪”和“读者已结束”。若把 shared→global 搬运换成异步矩阵指令，矩阵单元会成为 shared 源的最后一个读者；槽位释放需等待该指令族自己的完成事件。
 
-线程块集群（Thread Block Cluster）还会扩大读者集合：本 CTA 的 shared 若被同一 cluster 内其他 CTA 通过 DSM 读取，必须等这些远端读者完成后再复用或退出。DSM 是 Distributed Shared Memory，分布式共享内存；本地 syncthreads 只覆盖本 CTA，不能证明远端读者结束。由此可以看出，增加 cluster、增加 stage 与增加计算异步程度，都需要一起重新核对存储生命周期。
+线程块集群（Thread Block Cluster）会扩大读者集合。本 CTA 的 shared 若被同一 cluster 内其他 CTA 通过 DSM（Distributed Shared Memory，分布式共享内存）读取，应等这些远端读者完成后再复用或退出。本地 `__syncthreads()` 只等待本 CTA 的线程；cluster 中的读者还需 cluster 范围的同步。增加 cluster、stage 或异步计算时，应重新核对槽位的最后一个读者。
 
 ### 8.8 二维 tensor map：形状、行跨度与 tile 坐标
 
-一维 bulk copy 只需连续地址和字节数。二维矩阵的一块数据通常跨越多行，行尾还有不属于当前 tile 的元素或 padding，因此不能直接用一次连续拷贝描述。Tensor map 把矩阵的逻辑大小、物理行跨度、tile 形状和布局方式交给硬件，发起一次加载时再指定 tile 的起点。
+一维 bulk copy 用连续地址和字节数描述。二维矩阵 tile 跨越多行，每行还可能有 tile 外元素或 padding；tensor map 因而要描述矩阵逻辑大小、物理行跨度、tile 形状和布局，加载时再给出 tile 起点。
 
-先固定一个容易检查的对象：int32 行主序矩阵 X，逻辑 shape 为 rows×cols，每个 tile 为 8 行、32 列。不启用 interleave 或 swizzle。物理每行预留 pitch 个元素，地址为：
+以 int32 行主序矩阵 X 为例：逻辑形状为 rows×cols，每个 tile 为 8 行、32 列，不启用 interleave 或 swizzle。物理每行预留 pitch 个元素，地址为：
 
 $$
 \operatorname{addr}(r,c)=\operatorname{base}+4(r\cdot\operatorname{pitch}+c).
 $$
 
-这里 base 按字节计，4 是一个 int32 的字节数。若在 C++ 中对 int 指针做加法，则只写 input+r*pitch+c，不能再乘一次 4。
+这里 base 以字节计，4 是一个 int32 的字节数。C++ 对 int 指针做加法时使用 `input+r*pitch+c`，指针步长已经按元素计。
 
-Tensor map 的维度按变化最快的一维在前排列。因此行主序的列维在前，不是直接照抄常见的 shape=(rows,cols)：
+Tensor map 按最快变化维度优先排列。因此行主序的列维在前，维度顺序为 `{cols, rows}`：
 
 | 描述项 | 本例传入值 | 单位和含义 |
 |---|---|---|
 | globalDim | {cols, rows} | 元素数，描述逻辑矩阵 |
 | globalStrides | {pitch × 4} | 字节数，跨到下一行 |
 | boxDim | {32, 8} | 元素数，描述一次加载的 tile |
-| elementStrides | {1, 1} | 采样步长，不是 globalStrides 的另一种写法 |
-| tensorCoords | {bx × 32, by × 8} | 元素坐标，不是 tile 编号，也不是字节偏移 |
+| elementStrides | {1, 1} | 采样步长，单位为元素 |
+| tensorCoords | {bx × 32, by × 8} | tile 起点的元素坐标 |
 
 例如 rows=9、cols=33 时，取 pitch=36，行跨度为 144 字节，满足本例的 16 字节对齐要求。grid 为 2×2。右下 tile 的起点是列 32、行 8，也就是坐标 {32,8}，其中只有局部位置 [0][0] 有效，其余位置都在逻辑矩阵外。
 
-这也说明，输入分配了 rows*pitch 个元素，不代表矩阵有 pitch 列。把 globalDim[0] 填成 36，TMA 就会把物理 padding 当成有效输入；把 globalStrides 填成 36，又会把跨行距离从正确的 144 字节改成错误的数值。前者可能产生错误结果，后者还可能直接被编码接口拒绝。
+输入分配 `rows*pitch` 个元素，逻辑列数仍是 `cols`。例如 pitch=36 时，`globalDim[0]` 应为 33；填 36 会把 padding 当成有效列。`globalStrides` 则以字节计，本例应为 144；填 36 会把行跨度设错，descriptor 可能因此编码失败。
 
 ### 8.9 完整二维加载例子：把 shared tile 导出检查
 
-程序先在 host 建立描述符，再按 const __grid_constant__ 参数传给 kernel。输入保持存活到 kernel 执行完成；描述符不是输入数据的副本，也不拥有输入分配。本例使用直接链接 CUDA Driver 的方式调用 cuTensorMapEncodeTiled，主机内存分配和 kernel launch 仍用 Runtime API。
+程序先在 host 创建 descriptor，再通过 `const __grid_constant__` 参数传给 kernel。输入分配须存活到 kernel 完成；descriptor 记录访问信息，不复制或拥有输入。本例用 CUDA Driver API 的 `cuTensorMapEncodeTiled` 创建 descriptor，其余主机内存分配和 kernel launch 使用 Runtime API。
 
-下面的第一段包含头文件、错误检查、描述符创建和 kernel。每个 CTA 加载一个 tile，等待完成后，用普通 global store 导出全部 256 个元素，包括越界补零的位置。输出是用于检查布局的 tile 数组，不是一次矩阵转置或 GEMM。
+下面的程序创建 descriptor 并实现 kernel。每个 CTA 加载一个 tile，等待完成后用普通 global store 导出 256 个元素，包括逻辑越界位置的零值。输出用于检查布局。
 
 <!-- source-check: examples/tma_tensor_map.cu -->
 ~~~cpp
@@ -935,13 +944,13 @@ __global__ void gather_tiles(const __grid_constant__ CUtensorMap map, int* tiles
 
 注意这里使用的是底层 cp_async_bulk_tensor，所以 leader 必须显式登记事务。它通过 barrier_arrive_tx 同时完成自己的那一次 arrive，并登记整个 tile 的字节数；其他线程只做普通 arrive。**Leader 不再额外调用一次 ready.arrive，否则同一线程会被计数两次。**
 
-部分 tile 虽然只有一个有效元素，shared 目的地仍是完整的 8×32 int32 tile，事务字节按整个 tile 计算。逻辑越界位置由此次加载补零，不能只登记有效的四个字节。本例 shared 对齐为 128 字节，不能照搬一维 bulk copy 示例的 16 字节 shared 对齐。
+部分 tile 可能只有一个有效元素，但 shared 目的地仍是完整的 8×32 int32 tile，事务字节按整个 tile 计算；其余逻辑越界位置由此次加载补零。本例 shared 对齐为 128 字节。
 
-等待后，普通线程读取 tile 并写入各自独占的输出区域；这里没有 shared→global 的异步 bulk store，所以不需要它的 bulk-group read wait。不同的输出路径有不同的完成责任，不应机械复制上一段程序的所有等待。
+等待后，普通线程读取 tile 并写入各自独占的输出区域。这里使用普通 global store，没有 shared→global 异步 bulk store，因此不涉及 bulk-group read wait。
 
 ### 8.10 怎样证明 padding 没有混进矩阵
 
-每个真实元素赋值为 1000*r+c+1，使行、列错误容易识别；物理行 padding 填 -77。输出数组先填 -999，并在所有 tile 之后额外保留 16 个 guard 元素。检查的是三件不同的事：有效位置正确、逻辑越界位置为零、输出 guard 未被覆盖。
+每个有效元素设为 `1000*r+c+1`，便于识别行列错误；物理行 padding 填 -77。输出先填 -999，所有 tile 之后再留 16 个 guard 元素。检查有效值、逻辑越界处的零值，以及 guard 是否保持原值。
 
 <!-- source-check: examples/tma_tensor_map.cu -->
 ~~~cpp
@@ -991,9 +1000,9 @@ bool run_case(int rows, int cols) {
 }
 ~~~
 
-例如右下 tile 若读出了 -77，说明逻辑宽度、坐标或边界处理有误；如果仍是 -999，说明该位置没有被写到；若读到了下一行的标识值，应先检查维度顺序和行跨度。这些异常值帮助定位错误，不代替 memcheck 对实际越界访问的检查。
+右下 tile 若读到 -77，应检查逻辑宽度、坐标和边界处理；若仍为 -999，说明该位置未写入；若读到下一行标识值，应检查维度顺序和行跨度。memcheck 可进一步检查实际越界访问。
 
-程序入口查询能力并覆盖 1×1、8×32、9×33、17×65。长度为一的维度也是测试对象；零维矩阵则应由 host 单独处理，本例不创建零大小描述符。完整入口如下：
+程序入口查询设备能力，并覆盖 1×1、8×32、9×33、17×65。零维矩阵由 host 单独处理；本例不创建零大小 descriptor。完整入口如下：
 
 <!-- source-check: examples/tma_tensor_map.cu -->
 ~~~cpp
@@ -1024,7 +1033,7 @@ int main(int argc, char** argv) {
 }
 ~~~
 
-本地验证可分别运行二维 tensor-map 示例和一维 TMA roundtrip。设备支持与 kernel correctness 需要由实际 CUDA 程序检查；CPU 坐标脚本只验证地址模型，不证明 TMA 执行或性能重叠。
+在第 4 章目录中运行以下二维 tensor-map 和一维 TMA roundtrip 命令。CPU 坐标脚本核对地址模型；设备支持、kernel 正确性与执行情况由 CUDA 程序检查。
 
 ```bash
 nvcc -O2 -std=c++17 -lineinfo -arch=sm_90 examples/tma_tensor_map.cu -lcuda -o tma_tensor_map
@@ -1038,7 +1047,7 @@ compute-sanitizer --tool memcheck --error-exitcode=1 ./tma_roundtrip
 compute-sanitizer --tool racecheck --error-exitcode=1 ./tma_roundtrip
 ```
 
-如需测量吞吐，先保持输入长度与访问过程一致，再比较单缓冲与多 stage 版本；本例当前代码只作正确性检查，不预填任何预期性能值：
+若要测吞吐，保持输入长度和访问过程一致，再比较单缓冲与多 stage 版本。本例用于正确性检查，性能数据待实测：
 
 | 输入 / stage | GPU / CC | correctness / guard | kernel time | 有效带宽 | overlap（Nsight Systems） |
 |---|---|---|---|---|---|
@@ -1046,20 +1055,20 @@ compute-sanitizer --tool racecheck --error-exitcode=1 ./tma_roundtrip
 
 ### 8.11 从这个例子接到 GEMM，还需要改变什么
 
-对 A[M,N]、B[N,K]，分别创建两个描述符。A 的最快维是 N，B 的最快维是 K；不能把 A 的 descriptor 用到 B 上，只换一个指针。若采用本章约定的输出 tile BM×BK、归约块 BN，第 t 轮的 A 起点为 {t*BN,bm*BM}，B 起点为 {bk*BK,t*BN}，它们的 box 分别为 {BN,BM} 和 {BK,BN}。
+对 A[M,N]、B[N,K] 分别创建 descriptor。A 的最快维是 N，B 的最快维是 K，因此两者的维度与 stride 描述不同。若输出 tile 为 BM×BK、归约块为 BN，第 t 轮 A 起点为 `{t*BN,bm*BM}`，B 起点为 `{bk*BK,t*BN}`，对应 box 分别为 `{BN,BM}` 和 `{BK,BN}`。
 
-这里假设 A/B 都是行主序、连续内维，各自的行 stride 符合接口约束。转置 view、非连续切片以及更复杂布局不能只修改逻辑 shape；必须重新核对描述符能否表达该物理访问，或先转换布局。
+这里假设 A/B 均为行主序、内维连续，且行跨度符合接口要求。转置 view、非连续切片等布局需重新确认 descriptor 能否表达其物理访问；必要时先转换布局。
 
-本例关闭 swizzle，因此 shared 可以按 tile[row][col] 解读。若开启 swizzle，TMA 写入的位置和矩阵指令读取的位置必须对应。不能只把枚举从 NONE 改成某个 swizzle 模式，却保留原来的 shared 索引。正确的验证顺序是先用坐标标识值检查 producer→consumer 的实际数据，再核对 bank 行为与矩阵加载指令。
+本例关闭 swizzle，因此 shared 可按 `tile[row][col]` 解读。开启 swizzle 后，矩阵指令的 shared 索引须与 TMA 写入布局对应。先用坐标标识值逐项检查 producer→consumer 的数据，再核对 bank 行为与矩阵加载指令。
 
-因此，二维 tensor map 补上的是规则矩阵搬运，不是完整高性能 GEMM。后续还要组合多槽位、矩阵 fragment/descriptor、计算完成通知和 epilogue；单 tile 搬运正确，也不能推出这些组合已经正确或一定更快。
+二维 tensor map 负责规则矩阵搬运。完整 GEMM 还需组合多槽位、矩阵 fragment/descriptor、计算完成通知和 epilogue；每个部分都要按其数据依赖验证。
 
 <details>
 <summary>拓展：Stream-ordered allocation 与 CUDA Graph</summary>
 
 ## 9. Stream-ordered allocation：按流顺序分配与释放
 
-kernel 的读写可以排进 stream，分配和释放同样可以。cudaMallocAsync 与 cudaFreeAsync 接收 stream 参数，表示分配何时可用、释放何时发生，而不是“主机函数返回时设备已经完成操作”。
+kernel 的读写、内存分配和释放都可以排进 stream。`cudaMallocAsync` 与 `cudaFreeAsync` 的 stream 参数指定分配可用和释放生效的顺序；主机函数返回时，设备操作仍可能在执行。
 
 对一块缓冲区 p，必须满足：
 
@@ -1069,11 +1078,11 @@ $$
 \operatorname{free}(p).
 $$
 
-其中 all uses 包括 kernel、异步复制以及其他 stream 的访问。主机先调用哪个函数，只说明提交顺序；跨 stream 的执行关系仍需 event 等机制建立。
+这里的 all uses 包括 kernel、异步复制和其他 stream 的访问。主机调用顺序确定提交先后；跨 stream 访问还需 event 等依赖建立执行顺序。
 
 ### 9.1 一份缓冲区，三条 stream
 
-考虑三种责任：producer 分配并写入数据；consumer 修改数据并拷回 host；reclaimer 等待全部访问结束后释放。依赖如下：
+用三个角色看这段生命周期：producer 分配并写入；consumer 修改数据并拷回 host；reclaimer 等所有访问结束后释放。依赖如下：
 
 | stream | 排队的操作 | 依赖由谁建立 |
 |---|---|---|
@@ -1082,9 +1091,9 @@ $$
 | reclaimer | wait done、free | done 保证最后一次复制已经结束 |
 | CPU | 等待 reclaimer 完成后检查 host | 该等待传递地覆盖前两条 stream |
 
-ready 放在 produce 后，而不只是 alloc 后，是因为 consumer 还需要生产的数据。done 放在 D2H 后，而不只是 consume 后，是因为异步复制也使用 device 缓冲区。如果还有另一个消费者，需要一起收集它的完成事件，不能只等其中一个。
+`ready` 记录在 produce 后，保证 consumer 读到已写数据；`done` 记录在 D2H 后，覆盖异步复制对 device buffer 的最后一次读取。多个 consumer 都访问该分配时，reclaimer 等待每个 consumer 的完成事件。
 
-下面是完整的教学程序。三个 stream 都显式使用 non-blocking 属性，不依赖 legacy default stream 的隐式同步；输出使用 pinned host memory，避免把 pageable memory 的隐藏行为当作正确性来源。
+完整程序为三个 stream 显式设置 non-blocking 属性，并把输出放在 pinned host memory 中，明确呈现每条 stream 的依赖。
 
 <!-- source-check: examples/stream_ordered_lifetime.cu -->
 ~~~cpp
@@ -1171,7 +1180,7 @@ int main() {
 
 ~~~
 
-程序使用 1025 个元素，既覆盖完整 block，也覆盖尾 block。正确输出为 2i+1；检查在 reclaimer 同步之后进行。该同步通过 wait done、wait ready 形成传递依赖，所以没有必要再插入一次全设备同步来证明数据就绪。
+程序处理 1025 个元素，覆盖完整 block 和尾 block。预期输出为 `2*i+1`；检查发生在 reclaimer 同步之后。reclaimer 等待 `done`，而 `done` 位于 consumer stream 中，consumer 又等待 `ready`，因此该同步沿依赖链覆盖 producer、consumer 和 D2H。
 
 在有 CUDA Toolkit 和受支持设备的环境中，从仓库根目录编译运行：
 
@@ -1180,51 +1189,51 @@ nvcc -O2 -std=c++17 roadmap/curriculum/gpu/04-synchronization-and-asynchronous-e
 ./stream_ordered_lifetime
 ~~~
 
-这个程序检查生命周期，不提供性能结论。SKIP 只说明设备或 memory-pool 能力不可用，不能算作正确性通过。计时应另区分冷启动、首次扩池和稳定复用，避免把初始化时间混进 kernel 时间。
+这个程序检查生命周期。输出 `SKIP` 表示设备或 memory-pool 能力不可用。性能测量应分别记录冷启动、首次扩池和稳定复用时间。
 
 ### 9.2 cudaFree 的释放条件
 
-对 cudaMallocAsync 得到的分配，直接用 cudaFree 释放时，程序必须自行保证所有访问已经完成。不能沿用“cudaFree 总会替我等所有 kernel”的假设。
+释放 `cudaMallocAsync` 分配前，应用需先确认所有访问都已完成，再调用 `cudaFree`。
 
-同样，在主机已经调用 cudaFreeAsync 后，不应再对这根指针调用 cudaPointerGetAttributes 来猜测它是否仍然有效。对象生命周期由排队的操作和依赖定义，不是由指针数值看起来还在决定。
+主机排入 `cudaFreeAsync` 后，该指针已进入释放流程。对象何时结束由 stream 中的操作和依赖决定，不能通过指针数值或 `cudaPointerGetAttributes` 判断后续可访问性。
 
-一种常见误修复是删掉跨 stream 的 event，再靠反复 sleep 等待。运行时调度改变后它仍可能失败。正确方法是证明 alloc→use→free 的每条边，而不是挑一个“足够久”的延迟。
+跨 stream 生命周期应由 alloc→use→free 的依赖链保证。`sleep` 延时无法表达这条顺序，调度改变后也无法保证访问已完成。
 
 ### 9.3 内存池的已用容量、保留容量与释放阈值
 
 内存池可保留已释放的物理内存，为后续请求复用：
 
-| 量 | 表示什么 | 不能怎样理解 |
+| 量 | 含义 |
 |---|---|---|
-| UsedMemCurrent | 当前分配中尚不可复用的容量 | 不等于所有 pool 占用 |
-| ReservedMemCurrent | pool 当前持有的物理内存容量 | 比 used 大不自动证明泄漏 |
-| ReleaseThreshold | 同步点尝试向系统归还内存时的保留阈值 | 不是分配硬上限，也不预先分配这许多字节 |
-| MemHigh 属性 | 历史高水位 | 不等于此刻活跃容量 |
+| UsedMemCurrent | 当前分配中尚不可复用的容量 |
+| ReservedMemCurrent | pool 当前持有的物理内存容量 |
+| ReleaseThreshold | 同步点尝试归还内存时的保留阈值，影响 pool 保留量 |
+| MemHigh 属性 | 历史分配高水位 |
 
-若热循环每次同步后都缩池，下次分配可能重新向系统申请。提高保留阈值可能减少分配开销，也可能占用其他工作需要的容量。显存紧张时，可以在确认相关访问结束后用 cudaMemPoolTrimTo 尝试收缩；仍活跃的分配不会因为期望 trim 就被强行释放。
+热循环若每次同步后都缩池，下次分配可能重新向系统申请。提高保留阈值可减少重复分配，也会保留更多容量。显存紧张时，确认相关访问结束后可用 `cudaMemPoolTrimTo` 请求收缩；活跃分配仍按其生命周期保留。
 
-分析服务 OOM 时，应同时看 pool reserved、used、活跃 KV、workspace 和其他分配来源。不能把 CUDA pool 的统计直接当作 PyTorch 或其他 allocator 的完整统计，除非确认它们实际使用同一条分配路径。
+分析服务 OOM 时，同时查看 pool reserved、used、活跃 KV、workspace 和其他分配来源。CUDA pool 统计只覆盖该 pool 的分配；PyTorch 或其他 allocator 使用不同路径时，需分别查看。
 
 ### 9.4 复用策略也会影响性能时间线
 
-同一 stream 的释放后再分配容易建立复用顺序；跨 stream 可利用显式 event 依赖。允许 opportunistic reuse 时，分配模式还受另一 stream 实际执行到哪里影响；允许 internal dependencies 时，allocator 可能为了复用而插入等待。
+同一 stream 中，释放后再分配可按队列顺序复用内存；跨 stream 则通过显式 event 建立依赖。启用 opportunistic reuse 后，分配器会参考其他 stream 的实际进度；启用 internal dependencies 后，分配器也可能插入等待以复用内存。
 
-因此，内存占用下降与并行度下降可能同时发生。需要在时间线上检查新出现的等待边，不能看到“Async”就推断永不阻塞、永不串行。把所有自动复用关闭也不是普遍优化，它可能增加容量和系统分配压力。
+复用策略可能同时降低内存占用并增加等待。检查时间线中新增的依赖边，并结合内存容量与并发度选择策略；关闭所有自动复用也可能增加容量和系统分配压力。
 
-多 GPU 下，pool allocation 的 peer 访问由 cudaMemPoolSetAccess 等 pool API 管理，不能只调用 cudaDeviceEnablePeerAccess 就假定生效。设置前还要检查设备间 peer 能力。这个权限问题和 stream 生命周期问题独立：有权访问不表示已经分配完成，也不表示数据生产者已经完成。
+多 GPU 的 pool allocation 通过 `cudaMemPoolSetAccess` 等 pool API 授予 peer 访问。设置前检查设备间 peer 能力；访问权限与 stream 生命周期是两项条件，读取前仍需等待分配和数据生产完成。
 
 
 ## 10. CUDA Graph：重放、动态长度与内存生命周期
 
-假设一次计算依次执行几十个短 kernel。CPU 为每个 kernel 准备参数、调用 runtime、提交任务；GPU 做完一个短任务后，可能等待下一批提交。即使单个 kernel 已优化得很好，整段计算仍可能受提交开销限制。
+一次计算若依次执行几十个短 kernel，CPU 需要逐个准备参数并提交任务。GPU 完成一个短任务后可能要等后续提交，因此整段计算会受主机提交开销影响。
 
-CUDA Graph 将一组操作及其依赖先描述出来，实例化后用一次 graph launch 提交。它优化的是重复执行这组工作时的调度与提交路径。**Graph 不自动把多个 kernel 融成一个 kernel，也不自动消除中间 tensor 的 global-memory 读写。** 想减少这些读写，仍要考虑算子融合；想加快单个 GEMM，仍要优化计算与数据复用。
+CUDA Graph 先记录一组操作及其依赖，再将其实例化，并用一次 graph launch 提交。重复执行时可减少主机调度与提交工作。Graph 保留原有 kernel 和中间 tensor 读写；减少这些读写需融合算子，提升单个 GEMM 则需优化计算与数据复用。
 
 ### 10.1 图定义、实例化与执行
 
-`cudaGraph_t` 是操作描述：有哪些节点，节点之间有哪些依赖，kernel 的参数是什么。`cudaGraphExec_t` 是实例化得到的可执行图。`cudaGraphLaunch` 才把可执行图送入 stream。三者不是同一个对象或同一次动作。
+`cudaGraph_t` 描述节点、节点依赖和 kernel 参数；`cudaGraphExec_t` 是实例化后的可执行图；`cudaGraphLaunch` 将它排入 stream。这三个对象分别负责构图、执行准备和提交。
 
-显式 Graph API 逐个添加节点并保存 node handle，适合自行管理的小图。Stream capture 则将已有的异步 stream 代码记录为图，适合由库调用组成的较大工作流。Capture 期间，捕获的 GPU 操作是在构图，不是在正常排队执行；CPU 的普通 C++ 语句仍然执行。
+显式 Graph API 逐个添加节点并保存 node handle，适合直接管理节点；Stream capture 则记录已有的异步 stream 操作，适合由库调用组成的工作流。Capture 期间，GPU 操作被记录进图，CPU 普通 C++ 语句仍照常执行。
 
 ~~~cpp
 // d_x/d_tmp/d_y 已分配；stream 为显式创建的 non-blocking stream。
@@ -1240,19 +1249,19 @@ CUDA_CHECK(cudaGraphLaunch(exec, stream));
 CUDA_CHECK(cudaStreamSynchronize(stream));
 ~~~
 
-如果两次 launch 之间只改了 `alpha = 3.0f`，不会自动改变图中已经保存的 kernel 参数。相反，若保留 `d_x` 的地址，通过正确的 stream 顺序向其写入一批新数据，下一次 replay 会读取新数据。区分“参数中的地址”和“地址所指的内容”，是理解 graph replay 的关键。
+两次 launch 之间把 `alpha` 改为 `3.0f`，图中保存的 kernel 参数仍是旧值，需更新节点参数。若 `d_x` 地址不变，并在 replay 前按 stream 顺序写入新数据，下一次 replay 会读取该地址中的新内容。图保存指针参数；设备数组内容由排在 replay 前的操作更新。
 
 ### 10.2 图中的参数与设备数据
 
-下面的三层对象各有自己的生命周期：
+以下三类对象分别保存参数值、设备地址和地址中的数据：
 
 | 对象 | Graph 保存什么 | 下一轮改变它需要什么 |
 |---|---|---|
 | `int n`、`float alpha` | 添加或更新节点时的参数值 | 更新对应 exec node，或重建/更新整图 |
 | `float* d_x` | 这个设备指针的值 | 指针换地址时更新节点；旧地址用完才能释放 |
-| `d_x[0:n]` | 不把数组内容复制进图定义 | 正常写入数据，并排在 replay 读取之前 |
+| `d_x[0:n]` | 图定义不包含数组内容 | 在 replay 读取前写入数据 |
 
-显式 kernel node 的参数数组保存“参数值在 host 上的位置”。因此传指针参数时放 `&d_x`，传整数参数时放 `&n`，不是把 `d_x` 当作 host 参数存储来读取：
+显式 kernel node 的参数数组保存参数值所在的 host 地址。传指针参数时放 `&d_x`，传整数参数时放 `&n`：
 
 ~~~cpp
 void* arguments[] = {&d_x, &d_tmp, &n, &alpha};
@@ -1267,17 +1276,17 @@ cudaGraphNode_t affine_node = nullptr;
 CUDA_CHECK(cudaGraphAddKernelNode(&affine_node, graph, nullptr, 0, &params));
 ~~~
 
-CUDA 在添加/更新调用中取得参数值；它不会在每次 launch 时重新去这个 host 数组读取参数。另一方面，参数指向的 device allocation 必须在实际执行期间保持有效。Host 参数数组用完，与 device buffer 可以释放，是两件事。
+CUDA 在添加或更新节点时读取参数值。之后 launch 使用图中保存的值；参数指向的 device allocation 则须在执行期间保持有效。Host 参数数组和 device buffer 的生命周期分别管理。
 
-输入和输出复用也要遵守异步生命周期。使用 pinned host input 时，H2D 尚未完成前不要改写该输入；D2H 尚未完成前不要读取 host output。Graph launch 返回只说明已提交，不代表这些访问完成。
+使用 pinned host input 时，等 H2D 完成后再改写输入；等 D2H 完成后再读取 host output。Graph launch 返回时操作已提交，完成状态由 stream/event 同步确认。
 
 ### 10.3 动态长度不一定需要重建图
 
-计算 `y[i]=max(alpha*x[i]+bias,0)`，设备缓冲区预留 1025 个元素，实际长度依次是 1、257、1025。始终是 affine→ReLU 两个节点，改变的只是 n、alpha、bias 和 grid，这属于参数变化，而不是拓扑变化。
+计算 `y[i]=max(alpha*x[i]+bias,0)`，设备缓冲区预留 1025 个元素，实际长度依次为 1、257、1025。图始终包含 affine→ReLU 两个节点；每轮更新 n、alpha、bias 和 grid，节点连接关系保持不变。
 
-当 `n=257` 时，两个 kernel 都应启动两个 256-thread block，并分别检查 `i<n`。只更新 affine 而不更新 ReLU，后者仍可能处理旧长度；只更新 n 而保留不足的 grid，则可能漏算。输出缓存大小足够，不代表执行形状已正确更新。
+当 `n=257` 时，两个 kernel 都启动两个 256-thread block，并检查 `i<n`。affine 与 ReLU 节点的 n 和 grid 都要同步更新，确保有效元素全被处理，尾区保持原值。
 
-本节程序在每轮把整个输出预填成哨兵值，计算后同时检查前 n 个结果和 n 之后的区域。有效结果正确、尾区未改写，分别检查了数值和边界。每轮改变输入，即使 device 地址固定，也能验证 replay 不是重复输出旧数据。
+本节程序每轮先将整个输出填为哨兵值，再检查前 n 个计算结果和 n 之后的尾区。正确结果和未改写的尾区分别验证数值与边界；每轮更新输入，检查固定 device 地址读取的是新内容。
 
 <!-- source-check: examples/graph_replay.cu -->
 ~~~cpp
@@ -1516,13 +1525,13 @@ cleanup:
 }
 ~~~
 
-此处 H2D、输出初始化和 D2H 放在图外，两个计算节点在图内，所有操作在同一 stream 上排序。这样能单独观察 node 参数更新，也避免把 memcpy node 的额外更新限制混进第一个例子。对图内的 memcpy，改变长度或地址必须按该 API 的维度、内存类型、设备/context 等限制另行检查。
+此例将 H2D、输出初始化和 D2H 放在图外，只把两个计算节点放入图中；同一 stream 排定全部操作，以便单独观察 node 参数更新。图内 memcpy 若改变长度或地址，需按其维度、内存类型、设备/context 等 API 条件检查。
 
-`cudaGraphExecKernelNodeSetParams` 修改可执行图；`cudaGraphKernelNodeSetParams` 修改图定义。只改后者，不会自动修改已经实例化的 exec。单节点更新还需要原图中的对应 node handle，所以例程保留原图，直到不再需要更新。
+`cudaGraphExecKernelNodeSetParams` 更新可执行图；`cudaGraphKernelNodeSetParams` 更新图定义。若要更新已实例化的图，应调用前者。单节点更新需要原图中的 node handle，因此例程保留原图供后续定位节点。
 
 ### 10.4 参数更新与重新实例化
 
-如果改动少且持有 node handle，直接更新节点最清楚。如果重新 capture 得到一个参数已变化、拓扑相同的图，可尝试 `cudaGraphExecUpdate`。后者需要匹配节点类型、依赖以及构图/捕获顺序，不只是“看起来都是两个 kernel”。
+改动少且持有 node handle 时，可直接更新节点。重新 capture 得到参数变化但拓扑相同的新图时，可尝试 `cudaGraphExecUpdate`；更新要求节点类型、依赖和构图/捕获顺序符合 API 条件。
 
 CUDA 12+ Runtime API 的结果结构写法如下，假定 `updated_graph` 已成功创建，`stream` 是此例唯一执行 stream：
 
@@ -1542,13 +1551,13 @@ if (status == cudaErrorGraphExecUpdateFailure) {
 }
 ~~~
 
-这里先同步是为了让最小示例的资源更换边界简单明确，不是说每次 exec 参数更新都要求等待 GPU。参数更新只影响之后提交的 launch，不修改已经排队或正在运行的 launch；应用仍要为它们使用的缓冲区保留足够长的生命周期。多个 host 线程访问同一 graph 对象也要自行串行化，graph API 不提供任意并发修改的线程安全保证。
+例子先同步，以便明确资源更换时点。参数更新作用于之后提交的 launch；已排队或正在运行的 launch 继续使用提交时的参数与缓冲区。多个 host 线程访问同一 graph 对象时，应由应用串行安排更新。
 
-增加 kernel、改变节点类型或依赖拓扑时，通常需要重新实例化，或选择已缓存的另一张图。数据相关分支可使用 conditional node：设备端写入条件，IF/WHILE/SWITCH 选择执行预先定义的 body graph；它不是 replay 时任意执行 Python `if`，可用节点与更新方式受 API 限制。
+增加 kernel、改变节点类型或依赖拓扑时，通常重新实例化，或选择缓存中的另一张图。数据相关分支可用 conditional node：设备端写入条件，由 IF/WHILE/SWITCH 选择预先定义的 body graph。可用节点和更新方式按 API 规定。
 
-### 10.5 Shape 分桶：少建图和少做无效计算之间的取舍
+### 10.5 按容量档选择 CUDA Graph
 
-服务中经常把请求数或 token 数归到若干 bucket。例如准备容量为 128、256、512 的图，实际有 193 个 token 就选 256 桶。选择函数与数学无关，只负责找到最小的可容纳容量：
+服务可将请求数或 token 数归入若干容量档。例如准备容量为 128、256、512 的图，实际有 193 个 token 就选 256 档。选择函数只寻找能容纳当前请求的最小容量：
 
 ~~~python
 def choose_bucket(size, buckets=(128, 256, 512)):
@@ -1562,23 +1571,23 @@ def choose_bucket(size, buckets=(128, 256, 512)):
     return None  # 更大请求走普通执行路径，或显式建立更大容量的图。
 ~~~
 
-193/256 约为 75.4%，只表示逻辑有效元素占容量的比例，不等于 GPU 利用率。实际开销取决于尾部 mask、kernel 是否仍做整块矩阵乘、额外的 packing，以及 active sequence 的元数据读取。更密的 bucket 能减少 padding，也会增加实例化、缓存和维护成本。
+193/256 约为 75.4%，表示有效元素占预留容量的比例。实际开销还取决于尾部掩码、kernel 是否处理整块矩阵、额外打包操作和 active sequence 元数据读取。增加容量档可减少 padding，也会增加实例化、缓存和维护成本。
 
-固定 bucket 的常用办法是将实际长度、slot mapping 等元数据放在固定地址的 device buffer 中，每轮只更新内容。Kernel 从该 buffer 读取真实长度。这样可保持 launch 参数不变，但每个使用者都必须正确读取并应用它；不能因为某一个 kernel 有 mask，就假定后续归约、KV 更新和 sampling 都安全。
+固定容量档可把实际长度、slot mapping 等元数据放在固定地址的 device buffer 中，每轮更新其中内容。Kernel 从该 buffer 读取真实长度，可保持 launch 参数不变；归约、KV 更新和 sampling 等每个步骤都要按实际长度处理。
 
-Graph 缓存键不能只用 batch size。dtype、布局、attention backend、workspace、设备或模型权重版本若改变执行路径或地址要求，旧图就可能不再适用。改变 KV 页表内容和改变页表 buffer 地址也应分别处理。
+Graph 缓存键应包含会改变执行路径或地址要求的条件，例如 batch size、数据类型、布局、attention backend、workspace、设备和模型权重版本。KV 页表内容变化与页表 buffer 地址变化分开处理。
 
-### 10.6 图内分配：固定地址不等于数据永久存在
+### 10.6 图内分配：临时存储的生命周期
 
-前面的例子把 device buffer 长期分配在图外。另一种方式是在 capture 中使用 `cudaMallocAsync` 和 `cudaFreeAsync`，将分配、使用和释放作为图节点。这样，临时存储的生命周期由 GPU 执行到哪个节点决定：
+前例把 device buffer 长期分配在图外。也可在 capture 中使用 `cudaMallocAsync` 和 `cudaFreeAsync`，将分配、使用和释放记录为图节点；临时存储按图的执行位置开始和结束：
 
 ![图内临时分配从 alloc 到所有使用结束，再由 free 释放；持久输出独立保留](./examples/graph-memory-lifetime.svg)
 
-分配节点建立时，CUDA 就提供该节点的虚拟地址，后面的 kernel 可把它写进参数。但这时还不能据此在 host 或图外启动一次访问，假设 allocation 已经在 GPU 时间线上生效。实际分配生命周期从执行到 alloc 节点开始，到对应 free 操作结束。
+创建分配节点时，CUDA 会提供虚拟地址供后续 kernel 节点设置参数。GPU 执行到 alloc 节点时分配才生效，执行到对应 free 节点时生命周期结束；host 或图外访问应排在图内分配完成之后。
 
-每次 replay 都重新经历这段生命周期。相同指针值不会让上次的数据跨 free 保留；下一轮必须重新初始化将要读取的内容。例程把中间结果复制到图外的持久输出，再释放 scratch，因此完成后检查的是持久输出，不是已释放的 scratch。
+每次 replay 都重新经历分配到释放的生命周期。相同指针地址不保留上一轮数据，下一轮需重新初始化将读取的内容。例程先将中间结果复制到图外的持久输出，再释放 scratch；完成后检查持久输出。
 
-下面摘出完整例程中的 kernel，以及从 capture 到逐次检查的连续代码。host 预先分配 device_output 和 pinned host_output，scratch 只由图管理；CUDA_TRY 失败时进入统一清理路径，若 capture 尚未结束则先结束它。
+下面展示 kernel，以及从 capture 到逐轮检查的代码。host 预先分配 device_output 和 pinned host_output，scratch 由图管理；`CUDA_TRY` 失败时进入统一清理路径，并在 capture 未结束时先结束 capture。
 
 <!-- source-check: examples/graph_memory.cu -->
 ~~~cpp
@@ -1638,23 +1647,23 @@ __global__ void fill_transform(int* values, int n) {
   }
 ~~~
 
-如果不在图内释放，graph allocation 可以在图外继续使用，但访问必须排在分配之后，最终释放必须排在全部消费者之后。跨 stream 时仍需 event 依赖。消费者自己在 kernel 中轮询一个 flag，不足以替代 allocator 所需的操作完成顺序。
+graph allocation 若保留到图外使用，访问排在分配之后，释放排在全部消费者之后；跨 stream 访问仍用 event 建立依赖。kernel 内轮询 flag 不会建立 allocator 所需的操作顺序。
 
-`cudaGraphInstantiateFlagAutoFreeOnLaunch` 可以在下一次 launch 时释放上次留下的 graph allocation，但不会替应用等待所有外部消费者，也不会在最后一次使用后替应用自动收尾。尤其要注意：销毁 graph 对象并不自动释放仍存活的 graph allocation。
+`cudaGraphInstantiateFlagAutoFreeOnLaunch` 可在下一次 launch 时释放上次留下的 graph allocation。外部消费者仍须先完成访问；最后一次使用后也要安排释放。销毁 graph 对象本身不会释放仍存活的 graph allocation。
 
-如果所需 scratch 超过原容量，不能把 allocation node 当成普通 kernel 的 n 参数原地改大。应选择容量足够的图、重新构建相应图，或将 workspace 移到图外管理。对节点级 allocation/free 参数更新，不应假定普通 exec-node 更新 API 支持它。
+所需 scratch 超过原容量时，选择更大容量的图、重建图，或将 workspace 移到图外管理。节点级 allocation/free 参数更新按对应 API 能力处理。
 
 ### 10.7 Capture 的依赖必须闭合
 
-Capture 区间里不要调用 stream/device synchronize 来“等刚才的计算”。刚才记录的是图结构，不是一次普通执行。同步接口、默认 stream 的隐式依赖、库内部不支持 capture 的操作，都可能让 capture 无效；失败后仍应结束 capture 并处理错误，而不是用一个空 graph 继续实例化。
+Capture 区间内记录的是图结构，GPU 操作尚未按普通调用执行；此时调用 stream/device synchronize 会使 capture 失败。默认 stream 隐式依赖和不支持 capture 的库调用也会中断 capture。发生错误后，结束 capture 并处理返回状态，再决定是否实例化。
 
-跨 stream 捕获时，event 可以把第二条 stream 纳入同一张图。结束 capture 前，还要把支路汇回开始 capture 的 origin stream：主路 record ready，支路 wait ready 后工作，支路 record done，主路 wait done，最后在主路 EndCapture。只做 fork 不做 join，无法得到完整闭合的捕获。
+跨 stream capture 可用 event 纳入第二条 stream。结束前把支路汇回 origin stream：主路记录 ready，支路等待后执行工作并记录 done，主路等待 done，最后在主路调用 EndCapture。
 
-首次使用库的初始化、JIT 编译、workspace 选择与 capture 也要区分。通常先用相同配置完成必要预热，再进入 capture。不要把不受支持的 host 操作藏在 capture 内，并期待 Graph 自动把它变成设备节点。
+库初始化、JIT 编译和 workspace 选择应在 capture 前完成。用相同配置预热后再开始 capture；只在 capture 支持的 host/API 操作会记录为图节点。
 
 ### 10.8 Graph 的正确性检查与计时
 
-把总时间分成三类：构图/实例化与首次上传、稳定 replay、每轮输入准备与输出消费。前两项不能混成一个“Graph 耗时”。GPU event 记录的是设备时间线上的区间，host wall time 才能体现 CPU 提交与同步路径；两种口径都应写清是否包含拷贝、更新和等待。
+将总时间分为构图/实例化与首次上传、稳定 replay、每轮输入准备与输出消费三部分。GPU event 测量设备时间线区间；主机时钟包含 CPU 提交和同步路径。记录各项是否包含拷贝、更新与等待。
 
 设普通路径稳定每轮为 T_e，Graph 路径每轮为 T_g，额外的一次性建立成本为 C，忽略其他变化时，需要重复次数 R 满足：
 
@@ -1664,13 +1673,13 @@ C+RT_g<RT_e
 R>\frac{C}{T_e-T_g},\qquad T_e>T_g.
 $$
 
-这是摊销关系，不是性能预测。如果每轮还要重新 capture 或实例化，相应成本不能留在 C 里只算一次。不同 shape 访问同一个 bucket 的次数较少时，一张更快的 replay 图也未必在总体上划算。
+该公式说明一次性成本的摊销条件。若每轮重新 capture 或实例化，相应开销应计入每轮成本。若某容量档的请求次数少，较快的 replay 也可能抵不过建图成本。
 
-公平对照应让普通路径异步提交同样的一串 kernel，最后统一等待，而不是普通路径每个 kernel 都 synchronize、Graph 路径却只等一次。预热、输入、精度和计时范围相同后，用 Nsight Systems 检查 CPU launch 间隙是否缩短、GPU 工作是否连续；用 Nsight Compute 分析单个 kernel 时，要留意 profiler replay 对原执行时间线的影响。
+对照时让普通路径异步提交相同 kernel 序列，并在末尾统一等待。固定预热、输入、精度和计时范围后，用 Nsight Systems 查看 CPU launch 间隙和 GPU 工作连续性；用 Nsight Compute 分析单个 kernel 时，注意 profiler replay 会改变执行过程。
 
-对很大的计算密集 GEMM，减少提交开销可能只带来很小收益；对 Decode 中大量短任务，提交路径可能更重要。但 KV 带宽、batch、CPU 调度和 kernel 融合也会改变占比，不能单凭“Decode”这个名字预设加速比例。
+计算量大的 GEMM 中，提交开销占比可能较小；Decode 包含大量短任务时，提交路径可能更显著。KV 带宽、batch、CPU 调度和 kernel 融合也会改变这一占比，需按实际负载测量。
 
-以下程序分别检查参数更新、图内临时分配及 child/conditional/device graph 的功能。它们用于正确性检查，不是 replay 性能基准：
+从第 4 章目录运行以下命令，分别检查参数更新、图内临时分配及 child/conditional/device graph 功能。它们用于正确性检查。
 
 ```bash
 nvcc -O2 -std=c++17 -lineinfo examples/graph_replay.cu -o graph_replay
@@ -1691,11 +1700,11 @@ nvcc -O2 -std=c++17 -rdc=true -arch=sm_80 examples/graph_advanced.cu -o graph_ad
 | `257`，ordinary / graph | — | — | — | — | — |
 | `1025`，ordinary / graph | — | — | — | — | — |
 
-### 10.9 Child graph：复用结构，不等于设备端动态发起
+### 10.9 Child graph：在父图中组合子图
 
-Child graph node 将一段已经构造好的图作为父图中的一个节点。它解决的是结构组合：父图可以把“子图完成”作为后续节点的依赖。它不需要由 GPU 代码调用 graph launch，也不是 CUDA Dynamic Parallelism。
+Child graph node 将已构造好的图嵌入父图。父图可让后续节点等待子图完成。子图由 host 构造，不由 GPU 代码发起；这与 CUDA Dynamic Parallelism 的运行时 child grid 不同。
 
-下面用三个独立模式区分 child、conditional 和 device launch。共同计算只有对一个 int 加上指定值，避免数据规模掩盖执行顺序。辅助函数如下，错误会返回失败而不是继续使用无效 handle：
+下面分开演示 child、conditional 和 device launch。每种模式只对一个 int 加上指定值，便于追踪执行顺序。辅助函数在 CUDA 调用失败时返回错误：
 
 <!-- source-check: examples/graph_advanced.cu -->
 ~~~cpp
@@ -1745,7 +1754,7 @@ void verify(int* output, int expected, cudaStream_t stream, const char* label) {
 }
 ~~~
 
-Child 模式将“加七”放在子图中，然后在父图中加入依赖这个子图节点的“加二”。初始值为零，所以结果应为九。普通 child node 嵌入的是源子图的副本；销毁构图时的源 child 对象，不会删除已经嵌入父图的节点。该例不包含图内分配节点，不应将这种复制行为推广到具有特殊 ownership 规则的所有图。
+Child 模式在子图中执行“加七”，父图再依赖该子图节点执行“加二”。初值为零，最终结果为九。普通 child node 嵌入源子图的副本，因此销毁源 child 对象后，父图中的节点仍保留。此例未使用图内分配节点。
 
 <!-- source-check: examples/graph_advanced.cu -->
 ~~~cpp
@@ -1767,13 +1776,13 @@ void run_child(int* output, cudaStream_t stream) {
 }
 ~~~
 
-共享设备指针不表示自动共享执行顺序。若把“加二”节点的依赖删掉，两个节点就可能竞争同一个输出；图能被实例化也不代表应用的数据依赖已经正确描述。
+两个节点即使使用同一 device pointer，执行顺序仍由图依赖定义。移除“加二”对 child node 的依赖后，两个节点会并发访问同一输出。
 
 ### 10.10 Conditional node：条件可变，图的结构仍需事先确定
 
-Conditional node 根据设备端的条件值选择是否执行 body graph。本例创建默认条件为零和一的两张图，各重放两次：每次先将输出清零，再执行图。默认零不执行“加七”，结果为零；默认一执行，结果为七。
+Conditional node（条件节点）读取设备端条件值，决定是否执行 body graph。本例分别以 0 和 1 创建两张图，各重放两次。每次先清零输出；条件为 0 时结果为 0，为 1 时执行“加七”并得到 7。
 
-cudaGraphCondAssignDefault 表示每次 graph execution 都重新给 handle 赋默认条件。若不设这个标志，也没有上游 kernel 调用 cudaGraphSetConditional，不能假定条件会沿用上一次的值。需要数据相关控制时，应由上游设备计算设置条件，并通过图依赖确保条件节点在它之后执行。
+`cudaGraphCondAssignDefault` 会在每次 graph execution 时重设默认条件。采用设备计算结果控制分支时，由上游 kernel 调用 `cudaGraphSetConditional`，并用图依赖确保条件节点在该计算之后执行。
 
 <!-- source-check: examples/graph_advanced.cu -->
 ~~~cpp
@@ -1802,15 +1811,15 @@ void run_conditional(int* output, cudaStream_t stream) {
 }
 ~~~
 
-Body graph 不是任意 host 代码：不能把普通 Python 分支、CPU 文件读写或不受支持的节点直接放进去。IF、WHILE、SWITCH 也不意味着拓扑在运行中任意变化，可能执行的 body 仍提前构造。WHILE 的终止条件由程序保证，API 不会替应用修复一个永远不结束的循环。
+Body graph 由受支持的图节点组成，host 侧 Python 分支和文件读写不属于可执行节点。IF、WHILE、SWITCH 选择预先构造的 body graph；WHILE 的退出条件由应用保证。
 
-本例把 conditional 与 device launch 分成不同模式，因为 conditional body 对节点类型和设备端发起有额外限制。不要看到两者都能“在 GPU 上做决定”，就假定可以任意嵌套。
+Conditional node 与 device launch 使用不同的节点和执行规则；组合前须核对各自支持的节点类型与嵌套方式。
 
 ### 10.11 Device graph launch：先上传，从另一张图中发起
 
-设备端发起需要三步准备：host 构造 child graph，使用 DeviceLaunch 标志实例化，再上传设备端执行所需的资源。发起调用的 kernel 还必须运行在另一张图中；普通三尖括号直接启动这个 kernel 不是本例的合法替代。
+设备端发起需先由 host 构造 child graph，用 DeviceLaunch 标志实例化，再上传执行资源。负责发起的 kernel 本身也须作为另一张图的节点运行。
 
-设备端不能随意选一条普通 CUDA stream。本例使用 cudaStreamGraphFireAndForget，并且只让一个线程调用，避免多个线程同时发起同一个 device graph。发起函数返回只说明提交结果，不能紧接着在该线程里读取 child 的输出。
+本例使用 `cudaStreamGraphFireAndForget`，并由一个线程发起 device graph。发起函数返回时只得到提交状态；读取 child 输出前，host 等待父图 stream 完成。
 
 <!-- source-check: examples/graph_advanced.cu -->
 ~~~cpp
@@ -1851,9 +1860,9 @@ void run_device(int* output, cudaStream_t stream) {
 }
 ~~~
 
-Host 等待父图所属 stream 完成后才检查。这里的完成覆盖父图产生的 fire-and-forget child 执行环境，不是依靠一次随意延时猜测 child 已结束。若父图内部还有读取 child 结果的工作，不能只给它接一条依赖“发起 kernel”的普通边；需要符合设备图执行环境的 tail-launch 等顺序机制。
+Host 等待父图所属 stream 完成后再检查结果；该完成点也覆盖 fire-and-forget child 的执行。若父图内还有节点读取 child 结果，需按设备图执行环境规定的 tail-launch 等机制建立依赖。
 
-更新 device graph 也不能与设备端 replay 随意并发。Host 更新后还要重新上传；相同 device graph 的重叠设备端 launch、以及 host/device 同时发起同一 graph，均受接口限制。图结构、资源生命周期和执行环境要一起检查。
+更新 device graph 后，host 需重新上传。相同 device graph 的重叠设备端 launch，以及 host 与 device 同时发起同一 graph，都受 API 约束；更新时应同时检查图结构、资源生命周期和执行环境。
 
 <details>
 <summary>展开三个模式的完整命令行入口</summary>
@@ -1902,11 +1911,11 @@ int main(int argc, char** argv) {
 
 ### 10.12 Dynamic Parallelism：device runtime 发起 child grid
 
-CUDA Dynamic Parallelism（CDP）允许正在 GPU 上运行的 parent kernel 通过 CUDA Device Runtime 用 `child<<<grid, block, shared, stream>>>(...)` 创建一个新的 child grid。它适合设备侧才能决定工作规模的递归/不规则任务：决定 launch 的数据留在 GPU，避免先把决策结果拷回 host 再逐层 launch。CDP 的执行对象是运行时新发起的 kernel grid；`cudaGraphAddChildGraphNode` 是 host 已构建图中的结构化子图，device graph launch 则是在 device 上 replay 一张 host 预先 instantiate/upload 的图，三者并不等价。
+CUDA Dynamic Parallelism（CDP，动态并行）允许 GPU 上运行的 parent kernel 通过 CUDA Device Runtime 调用 `child<<<grid, block, shared, stream>>>(...)` 创建 child grid。它适合工作规模由设备数据决定的递归或不规则任务，可省去将决策结果拷回 host 再逐层 launch 的步骤。CDP 运行时创建 kernel grid；`cudaGraphAddChildGraphNode` 将 host 构造的子图嵌入父图；device graph launch 则重放 host 已实例化并上传的图。
 
-版本与编译条件：CUDA 12.0 起默认是 CDP2；CC 9.0 及更新设备只支持 CDP2。CDP1 是较旧目标上的 legacy 路径，当前文档标记为计划移除。以下最小例程明确面向 CUDA 13.3 + `sm_90`，需要 separate compilation（`-rdc=true`）及支持 device-side kernel launch 的 GPU；在无该设备的主机上，最多只能检查 host 侧源码，不能得到 GPU 通过结论。
+CUDA 12.0 起默认使用 CDP2；CC 9.0 及更新设备支持 CDP2。CDP1 是旧目标上的 legacy 路径，当前文档标记为计划移除。以下例程面向 CUDA 13.3 与 `sm_90`，需 separate compilation（`-rdc=true`）以及支持 device-side kernel launch 的 GPU。
 
-Parent-child grid 的完成关系是嵌套的：child 由 parent 发起，parent grid 不会在其创建的 child grids 尚未完成时被视为完成。launch 对发起它的 device thread 是异步的；这不代表 child 与 parent 一定并发。child 全局内存访问只在定义的 launch/completion 边界上与 parent 建立可依赖的视图；不要把 parent 与 child 的 global store 当作任意时刻立即可见。Shared memory 属于 CTA，local memory 属于 thread；不能把它们的地址传给 child grid 后使用。
+Parent 发起 child grid 后，parent grid 要等所有 child grid 完成才结束。launch 对发起线程异步返回；parent 与 child 是否并发取决于资源和调度。全局内存依赖按规定的 launch/completion 边界建立。每个 CTA 的 shared memory 和每个 thread 的 local memory 属于各自执行范围，child grid 使用自己的存储。
 
 <details>
 <summary>完整 CUDA C++ 程序：parent 发起 child grid 并验证全局内存结果</summary>
@@ -2012,7 +2021,7 @@ int main() {
 
 </details>
 
-编译和现场运行：
+从仓库根目录编译并运行：
 
 ```bash
 nvcc --version
@@ -2033,9 +2042,9 @@ nvcc -std=c++17 -O2 -arch=sm_90 -rdc=true \
 
 ## 11. CUDA VMM：虚拟地址、物理分配、映射与权限
 
-普通 `cudaMalloc` 把若干底层步骤收在一个调用中。CUDA Virtual Memory Management（VMM）则把“占一段虚拟地址”“创建物理 backing allocation”“把 backing 映射到 VA”“授权哪些 device 访问”分开，使 allocator 能在保留稳定 VA 的同时按需替换或拼接物理块。VMM 不是把 `cudaMalloc` 换成另一种分配器；它把原来由 runtime/driver 隐藏的地址与存储关系交给程序维护。
+`cudaMalloc` 将多项底层操作合并为一次调用。CUDA Virtual Memory Management（VMM，虚拟内存管理）则分别处理虚拟地址预留、物理 backing allocation 创建、映射和设备访问授权，让 allocator 能保留稳定 VA 并按需替换或拼接物理块。使用 VMM 时，程序直接管理这些地址与存储关系。
 
-一个可访问的 VMM 区域需要依次完成：按设备属性取得粒度；按粒度向上取整；`cuMemAddressReserve` 保留 VA；`cuMemCreate` 创建 pinned physical allocation object；`cuMemMap` 建立 VA 到 allocation 的映射；最后 `cuMemSetAccess` 设置设备访问权限。**`cuMemMap` 成功不代表地址已获读写权限**；未授权就由 kernel 或设备操作访问会失败。下例选当前 GPU 为 location，只给该 GPU 读写权限，再用 `cuMemsetD32` 和 `cuMemcpyDtoH` 检查 mapped range。
+建立可访问的 VMM 区域依次执行：查询粒度并向上取整；`cuMemAddressReserve` 预留 VA；`cuMemCreate` 创建 pinned physical allocation object；`cuMemMap` 建立映射；`cuMemSetAccess` 授予设备访问权限。映射完成后再设置权限，随后 kernel 或设备操作才能访问。下例只授予当前 GPU 读写权限，并用 `cuMemsetD32` 与 `cuMemcpyDtoH` 检查映射范围。
 
 <!-- source-check: examples/vmm_roundtrip.cu -->
 ```cpp
@@ -2062,7 +2071,7 @@ nvcc -std=c++17 -O2 -arch=sm_90 -rdc=true \
     CU_CHECK(cuMemcpyDtoH(host.data(), address, kLogicalBytes));
 ```
 
-allocation size 和 map/unmap offset 必须满足 VMM allocation granularity；逻辑长度不是粒度整数倍时，地址空间和物理 backing 都要按粒度取整，但 kernel/消费者仍只能按逻辑长度访问。清理顺序与建立相反：先确保没有 in-flight consumer，再 `cuMemUnmap`，`cuMemRelease` physical allocation handle，最后 `cuMemAddressFree` 释放完整且已 unmap 的 reservation。不能在映射仍存在时释放 VA，也不能因为 `cuMemRelease` 成功就假定 VA 已退回。异常清理必须按“是否成功 reserve/create/map”分别判断，部分构建的对象只清理已创建的阶段。
+allocation size 和 map/unmap offset 按 VMM allocation granularity 对齐。逻辑长度向上取整到该粒度以预留地址空间和 physical backing；kernel 仍按逻辑长度访问。清理按建立的逆序执行：等待在途 consumer 完成，`cuMemUnmap`，`cuMemRelease` physical allocation handle，再由 `cuMemAddressFree` 释放已解除映射的完整 reservation。异常路径按 reserve/create/map 已完成的阶段清理对象。
 
 ```bash
 nvcc -std=c++17 -O2 roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/examples/vmm_roundtrip.cu -lcuda -o vmm_roundtrip
@@ -2070,13 +2079,13 @@ nvcc -std=c++17 -O2 roadmap/curriculum/gpu/04-synchronization-and-asynchronous-e
 ./vmm_roundtrip
 ```
 
-示例查询 `CU_DEVICE_ATTRIBUTE_VIRTUAL_MEMORY_MANAGEMENT_SUPPORTED`，设备不支持时以 77 跳过。它验证本设备上的 reserve/create/map/access 与读写生命周期；不验证跨设备、跨进程导入、fabric 或 allocator 性能。具体 API 还要求 UVA 与支持的 CUDA Driver/Toolkit。
+从仓库根目录运行以下命令。示例查询 `CU_DEVICE_ATTRIBUTE_VIRTUAL_MEMORY_MANAGEMENT_SUPPORTED`，设备不支持时返回 77。它检查本设备上的 reserve/create/map/access 和读写生命周期；跨设备、跨进程导入、fabric 与 allocator 性能需另行验证。相关 API 还要求 UVA 和兼容的 CUDA Driver/Toolkit。
 
 ### 11.1 多 GPU VMM：共享 backing、独立 VA 与逐设备授权
 
-VMM 把三个容易混为一谈的对象分开：`CUmemGenericAllocationHandle` 标识物理 backing；`cuMemAddressReserve` 在当前进程/VA 中保留一段地址；`cuMemMap` 将 backing 的一段 offset 映射到该 VA。映射不自带权限。一个 shareable backing 可以通过多次 `cuMemMap` 映射成不同虚拟地址（virtual aliases/proxies），也可以在其他 GPU 或进程各自的 VA 中再映射；每一段映射都必须单独设置 `cuMemSetAccess`。
+VMM 分别管理三个对象：`CUmemGenericAllocationHandle` 标识物理 backing；`cuMemAddressReserve` 在当前进程预留 VA；`cuMemMap` 将 backing 的一段 offset 映射到该 VA。每个映射再通过 `cuMemSetAccess` 设置权限。一个 shareable backing 可多次映射为不同虚拟地址（virtual aliases/proxies），也可映射到其他 GPU 或进程各自的 VA。
 
-在同一进程的双 GPU 情况，先查询两卡 VMM 与 peer 可达能力。下面示意一份在 GPU 0 创建的 allocation 被映射成两个 alias，再授权 GPU 0 和 GPU 1；真实代码还要按每卡 VMM allocation granularity 校验 `bytes`，并处理所有 API 返回值：
+同一进程使用两张 GPU 时，先查询两卡的 VMM 与 peer 可达能力。下面将 GPU 0 创建的 allocation 映射为两个 alias，再分别授权 GPU 0 和 GPU 1。实际代码还需按每卡的 VMM allocation granularity 校验 `bytes` 并处理 API 返回值：
 
 ```cpp
 int vmm0 = 0, vmm1 = 0, peer01 = 0;
@@ -2114,9 +2123,9 @@ CU_CHECK(cuMemSetAccess(alias0, bytes, rights, 2));
 CU_CHECK(cuMemSetAccess(alias1, bytes, rights, 2));
 ```
 
-这里的两张表并不意味着“GPU 0 写完，GPU 1 立刻就能在任意并发 kernel 中读到”。CUDA 将 aliases 视为同一 allocation 的多个 proxy；经一个 proxy 的写入，在执行该写入的 device operation 完成前，与其他 proxy 的访问不一致。特别是同一个 kernel/grid 一边写 `alias0`、一边从 `alias1` 读，不能把 alias 当成同一条可即时一致的地址；这是未定义的访问模式。可靠协议是先在生产 GPU 的 operation 写完，再用跨设备支持的 event/stream dependency 或进程间 semaphore 建立完成顺序，之后启动消费者 GPU 的 operation 读另一个 alias。无先后关系的两个 GPU kernel 同时读写同一 backing 仍然是数据竞争。
+两张 alias 指向同一 backing，但访问顺序仍需显式建立。经一个 proxy 写入的数据，要等该 device operation 完成后，另一 proxy 才能读取一致的数据。同一 kernel/grid 同时通过 `alias0` 写、通过 `alias1` 读会产生未定义行为。正确顺序是生产 GPU 完成写入，经跨设备 event/stream dependency 或进程间 semaphore 通知后，再启动消费者 GPU 读取。没有先后关系的并发读写仍构成数据竞争。
 
-不同进程不能直接使用发送来的 `CUdeviceptr` 数值。生产者需要按平台选择 POSIX FD/Win32 或 fabric shareable handle，调用 `cuMemExportToShareableHandle`；消费者调用 `cuMemImportFromShareableHandle` 得到自己的 allocation handle，重新 reserve 自己的 VA、map，再对所需 device 调 `cuMemSetAccess`。跨进程/节点的正确状态顺序是：
+不同进程各自使用本地 `CUdeviceptr`。生产者按平台选择 POSIX FD/Win32 或 fabric shareable handle，并调用 `cuMemExportToShareableHandle`；消费者用 `cuMemImportFromShareableHandle` 导入 allocation handle，再预留本地 VA、映射并调用 `cuMemSetAccess`。跨进程/节点按以下顺序交接：
 
 ```text
 producer: create backing -> export shareable handle -> send OS handle
@@ -2126,13 +2135,13 @@ consumer: read/write through its local VA -> signal last-use completion
 producer/consumer: wait for all users -> unmap each VA -> release imported/exported handle refs -> free reservations
 ```
 
-CUDA 12.4 起 Driver API 提供 `CU_MEM_HANDLE_TYPE_FABRIC`，但仅在受支持的 GPU fabric/platform 可用；多节点导出还要求 IMEX 服务/通道已由系统配置。POSIX FD/Win32 handles 与 fabric handles 的能力边界不同，不要假设同节点的普通 OS handle 能跨节点。VMM 的 fabric 映射是 address-centric：kernel 通过普通地址 load/store 访问已映射 peer allocation；它不是 collective，不自动 reduce，也不是跨节点消息完成通知。大规模通信若更适合 put/get/reduction，应评估 NCCL/NVSHMEM 或 Compute Fabric Transport，而不是手工把每个远端地址都映射成 pointer。
+CUDA 12.4 起 Driver API 提供 `CU_MEM_HANDLE_TYPE_FABRIC`，仅适用于受支持的 GPU fabric/platform；多节点导出还需系统配置 IMEX 服务/通道。POSIX FD/Win32 与 fabric handle 的能力范围不同，同节点 OS handle 不用于跨节点共享。VMM fabric 映射让 kernel 通过普通地址 load/store 访问已映射的 peer allocation，不包含 collective、reduce 或消息完成通知。大规模 put/get/reduction 通信可评估 NCCL、NVSHMEM 或 Compute Fabric Transport。
 
 ## 12. CUDA IPC：跨进程共享设备内存
 
-CUDA IPC memory handle 把一个可共享的 device allocation 交给另一个进程导入。生产者用 `cudaIpcGetMemHandle` 导出 handle，经 pipe、Unix socket 或共享内存等普通 OS IPC 通道传递；消费者在自己的进程中先选择相同 device，再 `cudaIpcOpenMemHandle` 获得本进程可用的 device pointer。这个 pointer 只在导入进程和导入生命周期内有效，不能序列化成数值后当作另一进程的同地址指针使用。
+CUDA IPC memory handle 让另一个进程导入可共享的 device allocation。生产者用 `cudaIpcGetMemHandle` 导出 handle，经 pipe、Unix socket 或共享内存等 OS IPC 通道传递；消费者选择相同 device 后调用 `cudaIpcOpenMemHandle`，取得本进程的 device pointer。跨进程交接和使用都通过导入的 handle 完成，pointer 在消费者进程内有效。
 
-下面程序采用 fork 后立即 exec 同一个可执行文件的父/子结构：fork 之前没有任何 CUDA 调用，子进程不沿用 fork 时的地址空间或 CUDA 状态；exec 后它作为新进程选择 device 0、导入 handle、同步复制并检查数据。生产者在发送 handle 前已完成 HtoD；消费者 DtoH 完成后先 `cudaIpcCloseMemHandle`，再向父进程发送 close-ack。父进程收到 ack 并 `waitpid` 确认消费者退出后才 `cudaFree`。这条顺序定义了 allocation 生命周期，而不是“句柄发出去后生产者随时可以 free”。发生异常、没有收到 ack 时，父进程也先关闭 pipe 并 wait 子进程，确认 importer 不再存活，再释放 allocation。
+下面的父/子进程例程在 fork 后立即 exec 同一可执行文件。fork 前不调用 CUDA；exec 后子进程选择 device 0、导入 handle、同步复制并检查数据。生产者完成 HtoD 后发送 handle；消费者完成 DtoH 后调用 `cudaIpcCloseMemHandle`，再发送 close-ack。父进程收到 ack 并通过 `waitpid` 确认子进程退出后，才释放 allocation。异常路径也先关闭 pipe 并等待子进程退出，再释放内存。
 
 <!-- source-check: examples/ipc_memory_lifecycle.cu -->
 ```cpp
@@ -2190,7 +2199,7 @@ IPC producer 的对应顺序是“数据准备完成 → 导出并发送 handle 
     }
 ```
 
-Legacy `cudaIpc*` memory sharing is Linux-only，不支持 `cudaMallocManaged`；producer/consumer 应由兼容的 driver/runtime 构建并运行。对 `cudaMalloc` 子分配块导出时，handle 可能暴露底层较大的共享块；示例按 2 MiB 对齐的分配尺寸演示并解释这一安全边界。IPC handle 只解决“能导入同一 allocation”，不自动解决多轮生产—消费同步、覆盖时机、进程崩溃恢复或访问互斥。反复复用的生产者/消费者需要另建每轮 event/semaphore/sequence 协议，并保持 producer allocation 存活直到所有 importer 都关闭。
+Legacy `cudaIpc*` memory sharing 仅支持 Linux，不支持 `cudaMallocManaged`；producer/consumer 应使用兼容的 driver/runtime。导出 `cudaMalloc` 子分配块时，handle 可能暴露底层较大的共享块；示例按 2 MiB 对齐的分配尺寸处理这一边界。IPC handle 建立 allocation 导入路径；多轮生产—消费还需逐轮 event/semaphore/sequence 同步，并让 producer allocation 存活到所有 importer 关闭。以下命令在 Linux 仓库根目录运行。
 
 ```bash
 # Linux，须以 ./ 路径运行，使 exec 能重新启动同一个文件
@@ -2201,9 +2210,9 @@ nvcc -std=c++17 -O2 roadmap/curriculum/gpu/04-synchronization-and-asynchronous-e
 
 ### 12.1 Stream-ordered memory-pool IPC：共享 pool 与单个 allocation
 
-`cudaMemPoolExportToShareableHandle`/`cudaMemPoolImportFromShareableHandle` 共享的是一个 IPC-capable memory pool；`cudaMemPoolExportPointer`/`cudaMemPoolImportPointer` 再把该 pool 中某一份 allocation 分享给对端。它与前面的 legacy `cudaIpcGetMemHandle`/`cudaIpcOpenMemHandle` 是两条不同的 API/lifetime 路径：不要把 `cudaMallocAsync` pool 中的 allocation 误当作 legacy IPC handle，也不要用 legacy IPC 章节替代 memory-pool IPC。
+`cudaMemPoolExportToShareableHandle`/`cudaMemPoolImportFromShareableHandle` 共享 IPC-capable memory pool；`cudaMemPoolExportPointer`/`cudaMemPoolImportPointer` 再共享该 pool 中的一份 allocation。此路径使用 memory-pool IPC API；legacy `cudaIpcGetMemHandle`/`cudaIpcOpenMemHandle` 管理另一种 allocation 生命周期。
 
-CUDA 13.3/13.4 Runtime API 的 pool IPC 顺序如下。生产进程创建 pool 时必须设置非 `cudaMemHandleTypeNone` 的 handle type；以 Linux 同机进程为例，选择 POSIX FD。OS handle 应通过 Unix-domain socket 的 `SCM_RIGHTS` 传递，不能只把整数 fd 值写进消息。`cudaMemPoolPtrExportData` 不是 CUDA pointer，也不是 OS handle，可随普通 IPC 消息传递。
+CUDA 13.3/13.4 Runtime API 的 pool IPC 顺序如下。生产进程创建 pool 时设置非 `cudaMemHandleTypeNone` 的 handle type；Linux 同机进程可用 POSIX FD，并通过 Unix-domain socket 的 `SCM_RIGHTS` 传递 OS handle。`cudaMemPoolPtrExportData` 是 allocation 元数据，可随普通 IPC 消息传递。
 
 ```cpp
 // Producer: create an IPC-capable pool and share the pool object.
@@ -2250,11 +2259,11 @@ CUDA_CHECK(cudaStreamSynchronize(consumer_stream));
 send_importer_free_ack();
 ```
 
-生产者必须等到每个 importer 都已停止访问并释放其 imported pointer，才能释放 producer allocation。最易审核的流程是 consumer 在 free 完成后发 ACK；producer 收到所有 ACK 后才 `cudaFreeAsync(producer_ptr, producer_stream)` 并同步该 stream。`cudaMemPoolDestroy` 在还有 outstanding allocation/free 时会返回并延迟释放相关资源，但这不代替 consumer/producer 之间的生命周期协议。imported pool 只用于 import allocation，不支持在对端新建 allocation，也不能用 `cudaDeviceSetMemPool` 将 imported pool 设为当前 pool。
+生产者等每个 importer 停止访问并释放 imported pointer 后，再释放 producer allocation。可由 consumer 在 free 完成后发 ACK；producer 收齐 ACK 后调用 `cudaFreeAsync(producer_ptr, producer_stream)` 并同步该 stream。`cudaMemPoolDestroy` 遇到 outstanding allocation/free 时会延迟释放资源；imported pool 用于导入 allocation，不能作为对端 allocator，也不能设为当前 pool。
 
-Pool IPC 允许对端导入并映射 allocation，但不会自动建立 producer kernel 与 consumer kernel 的先后顺序。上例以 stream 同步后的 host READY 消息表示数据已就绪；生产系统可改用受支持的进程间 event 或 external semaphore，并为数据 ready 与 last-use 建立依赖。多 GPU 同进程还须在分配前检查 `cudaDeviceCanAccessPeer`，再以 `cudaMemPoolSetAccess` 授权；pool 默认只有驻留 device 可访问，权限设置作用于该 pool 的 allocations，不会随 `cudaDeviceEnablePeerAccess` 自动开放。常见错误包括用 `cudaMemHandleTypeNone` 创建后尝试导出、未导入 pool 就导入 pointer、未等待 allocation/data ready 就读取、producer 未收到所有 importer free ACK 就释放，以及把 imported pool 当作 allocator 再分配。
+Pool IPC 负责导入和映射 allocation；producer 与 consumer 的先后顺序仍由同步对象建立。上例用 stream 同步后的 host READY 消息表示数据就绪；生产环境可使用支持的进程间 event 或 external semaphore，并分别标记 ready 与 last-use。多 GPU 同进程先查询 `cudaDeviceCanAccessPeer`，再用 `cudaMemPoolSetAccess` 授权；pool 默认只允许驻留 device 访问，权限由 pool API 设置。
 
-CUDA 12.x 较早的 legacy `cudaIpc*` memory sharing 是 Linux-only，且不支持 `cudaMallocManaged`；以上 pool 方案通过 OS shareable handle 支持相应平台声明的 handle 类型，但平台、进程权限、driver/runtime 兼容性仍须现场查询。它不会让任意 GPU topology 自动具备 peer read/write 能力。
+早期 CUDA 12.x 的 legacy `cudaIpc*` memory sharing 仅支持 Linux，且不支持 `cudaMallocManaged`。Memory-pool IPC 按平台声明的 handle type 使用 OS shareable handle；还需核对平台能力、进程权限和 driver/runtime 兼容性。peer read/write 能力由设备拓扑和访问授权决定。
 
 </details>
 
@@ -2263,9 +2272,9 @@ CUDA 12.x 较早的 legacy `cudaIpc*` memory sharing 是 Linux-only，且不支�
 
 ## 13. Programmatic Dependent Launch：提前启动与数据依赖
 
-PDL（Programmatic Dependent Launch）让同一 stream 中的 secondary kernel 有机会在 primary kernel 完全退出前开始执行。它针对的是“secondary 有一段独立 preamble 可提前做，随后才读取 primary 的结果”，例如先准备与输入无关的元数据或清零独立输出。primary 的每个 CTA 在适当位置调用 `cudaTriggerProgrammaticLaunchCompletion()`，表示后继工作可以被考虑提前调度；这一步本身不是全 grid 结果发布，不代表 primary 已经完成，更不代表写入已可见。
+PDL（Programmatic Dependent Launch，程序化依赖启动）允许同一 stream 中的 secondary kernel 在 primary 完全退出前开始。若 secondary 先有一段不依赖 primary 输出的准备工作，例如生成元数据或清零独立输出，就可在等待依赖数据前执行。primary 的每个 CTA 在合适位置调用 `cudaTriggerProgrammaticLaunchCompletion()`，通知运行时后继工作可提前调度。读取 primary 结果前，secondary 仍需通过 `cudaGridDependencySynchronize()` 等待依赖完成。
 
-secondary 通过 `cudaLaunchKernelEx` 与 `cudaLaunchAttributeProgrammaticStreamSerialization` 声明可程序化解除 stream serialization。它可以先做不读取 primary 输出的 preamble，但在读取依赖数据前必须调用 `cudaGridDependencySynchronize()`（或采用等效且正确的依赖检查）。下面每个 primary CTA 都到达 trigger；secondary 所有线程都在读取前经过 dependency synchronization。kernel 的函数正确性不依赖两个 grid 必须同时驻留或发生 overlap；重叠是运行时在目标资源可用时提供的机会，不是性能或进度保证。若算法用 spin wait 假设另一个 kernel 必须并发驻留，可能在资源受限时死锁，不能这样构造正确性。
+secondary 用 `cudaLaunchKernelEx` 和 `cudaLaunchAttributeProgrammaticStreamSerialization` 声明可程序化解除 stream serialization。它可先执行不读取 primary 输出的 preamble；读取依赖数据前，所有线程调用 `cudaGridDependencySynchronize()`。本例的数值结果不依赖两个 grid 并发驻留；实际重叠由运行时和资源条件决定。用 spin wait 假定另一 grid 必定并发驻留，资源不足时可能死锁。
 
 <!-- source-check: examples/pdl_and_memory_domains.cu -->
 ```cpp
@@ -2316,11 +2325,11 @@ __global__ void secondary_kernel(const int* produced,
     CUDA_CHECK(cudaGetLastError());
 ```
 
-PDL overlap 需要 compute capability 9.0+；不支持的设备应跳过 PDL 路径或使用普通同 stream kernel 顺序，不能静默地把示例变成依赖未定义并发的 spin protocol。示例用 volatile 保留 preamble 写/读，便于观察依赖边界，但它只检查同步与数值正确性，**不证明两个 kernel 实际重叠**；trigger 表示允许提前发射，不构成并发保证。
+PDL 需要 compute capability 9.0+。不支持的设备使用普通同 stream kernel 顺序。示例以 volatile 保留 preamble 写读，并检查同步与数值结果；trigger 允许后继工作提前发射，实际重叠需由目标设备时间线确认。
 
 ## 14. Memory Synchronization Domains：内存同步域
 
-Memory synchronization domains（内存同步域）给 kernel launch 标记 fence/写入所属域，以便减少无关流量互相扩大 fence 范围的成本。CUDA 12.0 与 CC 9.0（Hopper）开始提供多个物理域；旧设备查询通常只有一个域。逻辑 domain `Default`/`Remote` 与物理域编号分离：kernel 可以选择语义域，较高层再用 mapping 把逻辑域映射到设备的物理域。下例先查询 `cudaDevAttrMemSyncDomainCount`，仅在有至少两个域时把 kernel 标记为 remote，并把 default/remote 分别映射到物理域 0/1。
+Memory synchronization domains（内存同步域）为 kernel launch 标记 fence 和写入所属域，以缩小不相关操作受到的同步范围。CUDA 12.0 与 CC 9.0（Hopper）开始支持多个物理域；旧设备通常查询到一个域。逻辑域 `Default`/`Remote` 通过 mapping 映射到物理域编号。下例查询 `cudaDevAttrMemSyncDomainCount`，仅当至少有两个域时，才将 kernel 标为 remote，并映射到物理域 1。
 
 <!-- source-check: examples/pdl_and_memory_domains.cu -->
 ```cpp
@@ -2345,9 +2354,9 @@ Memory synchronization domains（内存同步域）给 kernel launch 标记 fenc
         CUDA_CHECK(cudaLaunchKernelEx(&domain_config, mark_domain, output, n));
 ```
 
-域选择**不是**权限声明，也不改变 kernel 能访问哪些地址；它改变的是内存操作参与 fence/order 的域。**同一 GPU 上跨不同域建立先行关系时，必须使用 system-scope fencing/synchronization；device-scope fence 不足以把另一域的写纳入累积可见性。**代码审查时先画清 producer/consumer 所属域，再检查 release/acquire scope、barrier/fence 与通信操作，不要只看到 Remote 就推断可跨进程或跨 GPU 访问。域数、逻辑映射、NCCL/NVSHMEM 等库的 launch 属性要一起核对；是否减少 fence interference 是性能假设，需用系统时间线和目标设备测量验证。
+域选择只决定内存操作参与哪个 fence/order 范围，不改变地址访问权限。同一 GPU 的不同域之间建立先行关系时，使用 system-scope fencing/synchronization；device-scope fence 不会把另一域的写纳入可见性。代码审查时确认 producer/consumer 所属域，再检查 release/acquire scope、barrier/fence 和通信操作。域数、逻辑映射及 NCCL/NVSHMEM 等库的 launch 属性需一并核对；减少 fence interference 的效果由系统时间线和设备测量判断。
 
-PDL 与 memory-domain 程序要求 CUDA Toolkit 12.0+；用支持 PDL overlap 的架构目标编译，再在设备上查询 CC 和 domain count：
+PDL 与 memory-domain 程序要求 CUDA Toolkit 12.0+。从仓库根目录用支持 PDL 的架构目标编译，并在设备上查询 CC 和 domain count：
 
 ```bash
 nvcc -std=c++17 -O2 -arch=sm_90 roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/examples/pdl_and_memory_domains.cu -o pdl_and_memory_domains
@@ -2361,29 +2370,31 @@ nvcc -std=c++17 -O2 -arch=sm_90 roadmap/curriculum/gpu/04-synchronization-and-as
 
 ## Cluster Launch Control：异步取消与工作精确覆盖
 
-把 `N` 个独立 tile 按每 CTA 处理 `B` 个元素拆开时，固定工作量的 grid 通常有 `G=ceil(N/B)` 个 CTA。常规 grid-stride loop 固定较小的 `G`，让 CTA `b` 依次处理 `b, b+G, b+2G,...`；这样减少 CTA 数并摊薄每 CTA 的 prologue/setup 开销。代价是动态负载不均可能让少数长 CTA 拖住尾部；固定 CTA 数没有一波波待调度的 tile block，调度器能利用的 CTA 完成边界也更少，因此不能把它理解成 block 级抢占保证。Blackwell 的 Cluster Launch Control（CLC）提供第三种选择：保留按 tile 数确定的 grid，并允许一个已运行 CTA 异步请求取消一个尚未开始的 CTA；若取消成功，scheduler 返回被取消 CTA 的 block index，当前 CTA 接手那个 tile。它结合固定工作量的负载平衡与固定 CTA 数的 prologue/提交开销收益。CLC 是 scheduler work-stealing 接口，不是 DSM：没有跨 CTA shared memory、没有远程 shared load，也不自动传递用户数据。
+把 `N` 个独立 tile 按每 CTA 处理 `B` 个元素拆开，固定工作量的 grid 通常有 `G=ceil(N/B)` 个 CTA。grid-stride loop 可固定较小的 `G`，由 CTA `b` 依次处理 `b, b+G, b+2G,...`，从而摊薄 prologue/setup 开销；tile 耗时不均时，少数长 CTA 仍可能拖住尾部。Blackwell 的 Cluster Launch Control（CLC）提供另一种工作分配方式：grid 仍按 tile 数确定，已运行 CTA 可请求取消尚未启动的 CTA；请求成功后取得其 block index 并接手该 tile。CLC 调整 tile 的执行者，不搬运 CTA 间数据；跨 CTA 数据共享仍由 DSM 等机制承担。
 
-三种 grid 组织方式的关系可以用下表判断：
+三种 grid 组织方式的取舍如下：
 
 | 组织方式 | 每 CTA 工作 | 优势 | 代价或限制 |
 |---|---|---|---|
-| Fixed work per CTA | 一个 tile；grid 大小随问题规模增加 | 可用多波次平衡负载；CTA 结束后 scheduler 可继续安排其他工作 | CTA 数和 prologue/setup 数随 tile 数增加 |
-| Fixed CTA count / grid-stride | CTA 数固定；每 CTA 循环处理多个 tile | prologue 可摊薄、CTA dispatch 开销较低 | tile 成本不均时尾部负载不均；不提供相同的 block 级调度机会 |
-| CLC work stealing | 初始 tile 仍按 CTA 划分；运行中的 CTA 可接手被取消的未启动 tile | 降低尾部负载不均，同时保留 fixed-work 的 block 供给 | 只取消未启动 CTA；request/barrier/proxy 协议有架构与语义约束 |
+| 组织 | 每 CTA 工作 | 优势 | 代价或限制 |
+|---|---|---|---|
+| 固定每 CTA 工作量 | 一个 tile；grid 随问题规模增加 | 多轮 CTA 调度可平衡总工作量 | CTA 数和 prologue/setup 数随 tile 数增加 |
+| 固定 CTA 数 / grid-stride | CTA 数固定；每 CTA 循环处理多个 tile | 摊薄 prologue，减少 CTA 调度数量 | tile 耗时不均时，尾部仍由长 CTA 决定 |
+| CLC 工作接力 | 运行中的 CTA 接手被取消的未启动 tile | 缓解尾部负载不均，保留按 tile 分配工作 | 只能取消尚未启动的 CTA；request/barrier/proxy 遵循架构与 API 约束 |
 
-CLC 在 Blackwell（CC 10.0+）引入；接口通过 libcu++ `cuda::ptx` 暴露。本节示意按 CUDA 13.3 工具链、`sm_100`+ 编译的 block 版 request/wait/decode 协议，不是可直接单独编译的 kernel（`process_tile`、完整 launch/边界逻辑由具体问题定义）。编译目标与 PTX/API 版本必须同时支持 CLC，不能在旧 GPU 上把编译或 CPU 模拟说成设备验证。
+CLC 在 Blackwell（CC 10.0+）引入，通过 libcu++ `cuda::ptx` 提供接口。下面按 CUDA 13.3、`sm_100`+ 展示 block 版 request/wait/decode 顺序；`process_tile` 和完整 launch/边界逻辑由具体问题实现。编译目标、PTX/API 版本和设备都需支持 CLC。
 
-一个 CTA 的协议由下表中的状态迁移组成：
+一个 CTA 按以下状态推进：
 
 | 状态 | CTA 动作 | 下一步条件 |
 |---|---|---|
-| 初始化 | thread 0 初始化 shared mbarrier，arrival count 为 1 | 所有线程越过初始化同步后开始工作 |
-| 当前 tile | 处理 `bx` 对应的数据 | tile 独立计算可以与取消请求同时进行 |
-| 取消请求 | 单线程发 async `try_cancel`，登记 `uint4` transaction bytes | barrier phase 完成后解码 |
-| 成功 | 读取取消 CTA 的 index，处理该 tile，并用 proxy fence 管理 shared result | result 槽位安全复用后返回当前 tile 状态 |
-| 失败 | 不解码 index，结束当前 CTA 的 steal loop | 其他未启动 CTA 仍由 scheduler 正常安排 |
+| 初始化 | thread 0 初始化 shared mbarrier，arrival count 设为 1 | 全 CTA 越过初始化同步 |
+| 当前 tile | 处理 `bx` 对应的数据 | 可与取消请求并行推进独立计算 |
+| 取消请求 | 单线程调用 async `try_cancel`，登记 `uint4` transaction bytes | barrier phase 完成后读取结果 |
+| 成功 | 取回被取消 CTA 的 index 并处理该 tile；用 proxy fence 管理 shared result | result 槽位可安全复用后继续请求 |
+| 失败 | 结束当前 CTA 的 steal loop | scheduler 继续安排其他未启动 CTA |
 
-核心 API 次序如下。先由一个线程请求，再登记 `uint4` 结果的 transaction bytes；当前 CTA 可以在等待 cancel 完成期间做当前 tile 的独立计算。等 barrier 完成后必须先检查 success，只有成功才可解码 index：
+API 顺序如下：一个线程发出请求并登记 `uint4` 结果的 transaction bytes；CTA 在等待期间处理当前 tile；barrier 完成后检查取消结果，成功时再读取 block index：
 
 ```cpp
 #include <cooperative_groups.h>
@@ -2431,17 +2442,17 @@ while (true) {
 }
 ```
 
-`blockIdx.x` 是 grid 中原始 CTA index；每个已运行 CTA 先完成自己的 tile，成功取消才再处理返回的未启动 index。尾部 CTA 因而可以帮忙处理还没启动的 tile，但取消失败并不是 kernel 错误：可能已经没有可取消 index，也可能调度器需要安置更高 priority 的工作。失败后正确路径是不再请求、不读取结果 index、结束本 CTA 的 steal loop，让 scheduler 继续启动仍待运行的正常 CTA。下面三种逻辑错误有明确的语言/硬件后果：
+`blockIdx.x` 是 CTA 的初始 tile index。每个 CTA 先完成自己的 tile，取消成功后再处理返回的未启动 index。取消失败表示没有可接手的 tile，或调度器正安排更高优先级工作；该 CTA 结束 steal loop，由 scheduler 启动剩余 CTA。API 对以下操作规定为 undefined behavior：
 
-- 查询失败后仍调用 `clusterlaunchcontrol_query_cancel_get_first_ctaid_x`，该读取是 undefined behavior。
-- 某 CTA 已观察到一次 cancel 失败，随后再次提交 cancel request，同样是 undefined behavior。成功并继续循环则不同；但 result/barrier 必须按 phase 安全复用。
-- 多个线程各自发 cancel 却共享一个 result buffer/barrier，会同时取消多个 CTA 并产生写冲突；默认单请求线程更容易证明。
+- 取消失败后调用 `clusterlaunchcontrol_query_cancel_get_first_ctaid_x` 读取 index。
+- 同一 CTA 观察到取消失败后再次提交 cancel request。
+- 多线程共享一个 result buffer/barrier 并同时发出请求。
 
-Cluster 版不是把 block 版代码简单换成 `__cluster_dims__`。需要先确保 cluster 中所有 CTA 都已存在（例如 `cg::cluster_group::sync()`）；请求由单个 cluster thread 发起，cluster CTAs 会收到 multicast result，各 CTA 还须按自己的 local block index 调整被取消的 global index，barrier scope 改为 cluster。即使已有 Cluster/DSM 代码，CLC 也只重排“谁负责哪个尚未启动的 tile”，不会让被取消 CTA 的 shared memory 继续存活；它与 DSM 的 data sharing/exit lifetime 完全不同。
+Cluster 版还需先用 `cg::cluster_group::sync()` 确认 cluster 中所有 CTA 已存在。单个 cluster thread 发起请求，结果 multicast 给各 CTA；各 CTA 按 local block index 调整被取消的 global index，并使用 cluster scope 的 barrier。CLC 将未启动 tile 交给其他 CTA 执行；被取消 CTA 的 shared memory 不会因此延长生命周期。DSM 仍单独负责 cluster 内数据访问。
 
-验证重点是每个 tile 恰好完成一次，而不是检查某次是否发生了 steal。后附 CPU 协议检查枚举 CTA 启动次序和成功取消选择，用 exact-cover 性质验证取消 CTA 不会丢失其 work index、stealer 不会重复处理；它不模拟 Blackwell scheduler、PTX instruction 或 GPU timing。
+验证每个 tile 恰好完成一次。后附 CPU 协议检查枚举 CTA 启动顺序和取消选择，用 exact-cover 检查工作 index 无遗漏、无重复；该模型不模拟 Blackwell scheduler、PTX instruction 或 GPU timing。
 
-也可以在无 CUDA runtime 的 CPU 环境运行下列协议检查。它用抽象状态而不是仿真硬件，覆盖 copy 属性 exact-cover、CLC 小规模取消调度的 tile 恰好一次、失败取消不解码 index、binary/timeline semaphore 的不同提交/完成规则、pool importer 的释放所有权、VMM alias 权限和 parent-child 生命周期；它不声称覆盖 NvSciSync 的平台属性语义。
+下列协议检查可在无 CUDA runtime 的 CPU 环境运行。从仓库根目录启动；程序用抽象状态检查 copy 属性分段、CLC tile 精确覆盖、semaphore 提交/完成规则、pool importer 释放所有权、VMM alias 权限和 parent-child 生命周期。NvSciSync 平台属性不在模型范围内。
 
 ```bash
 python -B -X utf8 roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/examples/cuda_runtime_protocol_checks.py
@@ -2663,9 +2674,9 @@ if __name__ == "__main__":
 
 </details>
 
-检查会枚举 5 个 tile 的所有 120 种 CTA 启动次序和 32 种 steal-request 子集，共 3,840 个抽象 schedule；它证明该模型中 work index 无遗漏、无重复。它不是 CLC PTX、Blackwell 调度、GPU 内存一致性或性能的替代验证。
+检查枚举 5 个 tile 的 120 种 CTA 启动顺序和 32 种 steal-request 子集，共 3,840 个抽象 schedule，并验证模型内 work index 无遗漏、无重复。它只检查 CPU 状态模型。
 
-下例把 CLC 落到一个有确定参考结果的向量变换：每个元素有 `visits[i]` 所有权计数，期望输出为 `3*(i % 113)+1`；kernel 结束后同时要求所有元素 visits 恰为 1、所有输出匹配。它面向 CUDA Toolkit 13.3 与 Blackwell CC 10.0+，没有性能断言；即使本次运行 steal count 为零，仍验证了失败请求/正常调度的精确覆盖。
+下例将 CLC 用于向量变换：每个元素用 `visits[i]` 计数，期望输出为 `3*(i % 113)+1`；kernel 完成后检查计数均为 1 且输出匹配。程序面向 CUDA Toolkit 13.3 与 Blackwell CC 10.0+，从仓库根目录编译运行。即使 steal count 为零，也会检查取消失败后的正常调度和精确覆盖。
 
 ```bash
 nvcc --version
@@ -2900,7 +2911,7 @@ cleanup:
 
 ## CUDA 外部资源互操作：graphics memory 与 semaphore 生命周期
 
-CUDA 与 graphics API（例如 Vulkan）互操作时，memory handle 负责导入同一物理资源，semaphore 负责建立 graphics queue 与 CUDA stream 之间的访问顺序。双方共享 allocation 不代表可以同时读写，也不会自动建立 stream dependency。平台端创建并导出 Vulkan external-memory 与 external-semaphore 对象后，CUDA 侧须匹配 handle type、分配大小和 GPU；Vulkan 与 CUDA 设备应按物理 GPU UUID 对应，不能只比较 ordinal。
+CUDA 与 graphics API（例如 Vulkan）互操作时，memory handle 导入同一物理资源，semaphore 则建立 graphics queue 与 CUDA stream 的访问顺序。共享 allocation 前，平台创建并导出 Vulkan external-memory 和 external-semaphore 对象；CUDA 导入时匹配 handle type、分配大小和 GPU。Vulkan 与 CUDA 设备按物理 GPU UUID 对应。
 
 CUDA 侧 memory 导入的结构如下（handle type、offset、size、dedicated 标志必须和 Vulkan export/allocation 一致）：
 
@@ -2922,9 +2933,9 @@ CUDA_CHECK(cudaExternalMemoryGetMappedBuffer(
     &cuda_pointer, cuda_memory, &buffer_desc));
 ```
 
-`cudaExternalMemoryBufferDesc::flags` 必须为 0，offset/size 还要符合 Vulkan allocation 的对齐和范围要求。Linux Opaque-FD memory import 成功后，FD 所有权转给 CUDA；此后不能再操作或关闭它。Win32 shared NT handle 不转移所有权，应用须按系统 API 关闭。若 handle type 要求 dedicated flag，须与 exporter 创建 allocation 时的设置一致。
+`cudaExternalMemoryBufferDesc::flags` 设为 0，offset/size 按 Vulkan allocation 的对齐和范围设置。Linux Opaque-FD memory import 成功后，FD 所有权转给 CUDA；Win32 shared NT handle 仍由应用关闭。若 handle type 要求 dedicated flag，该设置与 exporter 创建 allocation 时一致。
 
-以 Vulkan timeline semaphore 的一轮交接为例，timeline value 由双方按约定单调递增。graphics 提交资源写入并 signal value `v`；CUDA 将 wait 入队后，再在同一 stream launch consumer/kernel；kernel 完成后 CUDA signal value `v+1`；graphics queue wait `v+1` 后才读取 CUDA 输出或复用资源。这里先 signal 再 wait 是容易检查的交接顺序，不是 timeline wait 的 API 提交限制：
+以 Vulkan timeline semaphore 的一轮交接为例，双方按约定递增 timeline value。graphics 写入资源后 signal `v`；CUDA 在 stream 中 wait `v`，再启动 consumer/kernel；kernel 完成后 CUDA signal `v+1`；graphics queue wait `v+1` 后读取 CUDA 输出或复用资源：
 
 ```cpp
 cudaExternalSemaphoreHandleDesc semaphore_desc{};
@@ -2948,24 +2959,24 @@ CUDA_CHECK(cudaSignalExternalSemaphoresAsync(
 // Vulkan submits a queue wait for value v+1 before using the CUDA result.
 ```
 
-二值和 timeline semaphore 的提交规则不同。对 binary semaphore，signal 必须先提交，再提交与它配对的 wait；一次 signal 对应一次 wait，wait 消费后 semaphore 回到 unsignaled。对 timeline semaphore，wait(value) 等待计数达到或超过 value，因此可先把未来 value 的 wait 入队，再由 Vulkan/CUDA 后续提交 signal；但该 signal 必须最终可达，且 stream/queue 依赖不能形成“signal 等待被自己挡住的后续工作”的循环。所有 value 必须按双方协议单调增长，避免两个在途轮次复用同一 value。API 返回只说明 wait/signal 已入队；资源何时可由另一侧安全使用，取决于 semaphore 的实际 value 与 queue/stream dependency。
+binary semaphore 每次 signal 对应一次 wait，提交 signal 后再提交配对 wait；wait 完成后 semaphore 回到 unsignaled。timeline semaphore 的 `wait(value)` 在计数达到或超过 value 时完成，可先入队等待未来 value，再由 Vulkan/CUDA 提交 signal。依赖图应确保 signal 最终可执行，且双方按协议递增 value，避免在途轮次重复使用。API 返回表示 wait/signal 已入队；另一侧按 semaphore value 和 queue/stream 依赖确认资源可用。
 
-NvSciSync 的用法不同于 binary FD 或 Vulkan timeline：导入的 NvSciSyncObj 需要匹配设备的 attribute list，并声明所需 wait/signal 能力；`NvSciBuf` 的内存同步通常由 semaphore wait/signal 完成，只有确认不需要跨驱动 coherence 时才使用 skip-sync flag。deterministic fence 可在 signal 前排入 wait，但须按其 fence/value 规则管理，不能套用 binary semaphore 的次序。
+NvSciSync 使用导入的 NvSciSyncObj 和设备 attribute list，并声明 wait/signal 能力。`NvSciBuf` 的内存同步通常由 semaphore wait/signal 完成；skip-sync flag 只在确认无需跨驱动 coherence 时使用。deterministic fence 可在 signal 前排入 wait，按其 fence/value 规则管理。
 
-几条互操作路径的差异集中在设备匹配、handle ownership 和同步对象：
+几条互操作路径在设备匹配、handle 所有权和同步方式上各有要求：
 
-| API 路径 | CUDA/外部设备匹配 | memory handle 与所有权 | 同步/一致性要求 |
+| API 路径 | 设备匹配 | memory handle 与所有权 | 同步与一致性 |
 |---|---|---|---|
-| Vulkan external memory | 比较 `VkPhysicalDeviceIDProperties::deviceUUID` 与 CUDA device UUID；不可只比 ordinal | Linux Opaque FD import 成功后 FD 所有权转给 CUDA；Win32 shared handle 留给应用释放。memory type、dedicated allocation、allocation size、buffer offset/size 必须与 Vulkan export 对齐；buffer descriptor flags 为 0 | Vulkan pipeline barrier + external semaphore 建立跨 API dependency。Binary 必须先提交 signal 再提交 wait；timeline 可预先排 future-value wait，但必须保证 signal 可达；CPU mapping 还须 `vkFlushMappedMemoryRanges`/`vkInvalidateMappedMemoryRanges` 与正确的 Vulkan barrier |
-| Direct3D 12 | 用 adapter LUID 匹配 CUDA device LUID | shared heap 与 committed resource 的导入路径不同；D3D12 resource handle 要设 `cudaExternalMemoryDedicated`，NT handle ownership 不转给 CUDA，应用需 `CloseHandle` | 用 D3D12 fence value 与 CUDA imported semaphore 配对；resource state transition/queue fence 仍由 D3D12 管理，import memory 本身不形成队列依赖 |
-| NvSciBuf + NvSciSync | 通过 NvSci 属性协商确定 device 与对象兼容性 | buffer 是 NvSciBuf object，不是 POSIX FD/普通 Vulkan handle；遵守 NvSci object/reference lifetime | `cudaDeviceGetNvSciSyncAttributes` 生成 wait/signal 属性，NvSciSync fence 交接；wait/signal 默认对导入 NvSciBuf 执行跨驱动 memory sync。skip-sync 仅在无需 coherence 时使用；deterministic fence 有单独的 pre-enqueue wait 条件 |
-| OpenGL `cudaGraphics*` | 通过当前 GL context 与 `cudaGLGetDevices` 确认互操作 device | 资源先 register；map 后每轮重新取 mapped pointer；unmap 后还给 GL，最终 unregister | 以 graphics-resource map/unmap 做 ownership handoff；未 unmap 不得让 GL 同时使用，上一轮 device pointer 不能假定下一轮仍有效 |
+| Vulkan external memory | 用 `VkPhysicalDeviceIDProperties::deviceUUID` 和 CUDA device UUID 匹配物理设备 | Linux Opaque FD 导入成功后由 CUDA 持有；Win32 shared handle 由应用释放。memory type、dedicated allocation、allocation size、buffer offset/size 按 Vulkan 导出配置；buffer descriptor flags 设为 0 | Vulkan pipeline barrier 与 external semaphore 建立跨 API 顺序。Binary semaphore 先提交 signal 再提交 wait；timeline semaphore 按 value 排列 wait/signal。CPU mapping 还需配合 `vkFlushMappedMemoryRanges`/`vkInvalidateMappedMemoryRanges` 和 Vulkan barrier |
+| Direct3D 12 | 用 adapter LUID 匹配 CUDA device LUID | shared heap 与 committed resource 使用不同导入路径；D3D12 resource handle 设置 `cudaExternalMemoryDedicated`。NT handle 由应用调用 `CloseHandle` 释放 | D3D12 fence value 与 CUDA imported semaphore 配对；resource state transition 和 queue fence 仍由 D3D12 管理 |
+| NvSciBuf + NvSciSync | 通过 NvSci 属性协商确认设备与对象兼容 | 使用 NvSciBuf object，并遵循 NvSci object/reference 生命周期 | `cudaDeviceGetNvSciSyncAttributes` 提供 wait/signal 属性，使用 NvSciSync fence 交接。wait/signal 默认对导入 NvSciBuf 执行跨驱动内存同步；确认无需 coherence 时才设置 skip-sync。deterministic fence 按其 pre-enqueue wait 条件使用 |
+| OpenGL `cudaGraphics*` | 通过当前 GL context 和 `cudaGLGetDevices` 确认互操作设备 | 资源先 register；每轮 map 后重新查询 mapped pointer；unmap 后交回 GL，最后 unregister | 用 graphics-resource map/unmap 交接访问权。GL 在 CUDA unmap 后使用资源；下一轮重新查询映射地址 |
 
-释放顺序是协议的一部分：先让最后一个 Vulkan/CUDA consumer 完成，并确保不会再向该 semaphore 提交 wait/signal；CUDA mapped buffer pointer 用 `cudaFree` 解除映射，然后再 `cudaDestroyExternalMemory`；所有 outstanding semaphore 操作完成后才 `cudaDestroyExternalSemaphore`。CUDA 销毁 external memory object 不会替你 free 已映射的 device pointer/array；销毁后继续访问映射属于错误。Linux Opaque-FD 与 TimelineSemaphore-FD import 成功后 FD 所有权转给 CUDA，不能再 close/use；Win32 shared handle 不转移所有权，应用负责释放。不要对不同 handle type 使用同一套 close 规则。
+释放前先等待最后一个 Vulkan/CUDA consumer 完成，并停止向 semaphore 提交新操作。用 `cudaFree` 解除 CUDA mapped buffer pointer，再调用 `cudaDestroyExternalMemory`；所有 semaphore 操作完成后调用 `cudaDestroyExternalSemaphore`。销毁 external memory object 不会释放已映射的 device pointer/array。Linux Opaque-FD 和 TimelineSemaphore-FD import 成功后，FD 所有权转给 CUDA；Win32 shared handle 由应用释放。
 
-OpenGL 的 `cudaGraphics*` 注册接口采用另一种 map/unmap 交接模型：资源通常先 `cudaGraphicsGLRegisterBuffer` 注册一次；每一轮 `cudaGraphicsMapResources` 后，通过 `cudaGraphicsResourceGetMappedPointer` 取本轮 pointer，再 enqueue CUDA kernel；kernel 被排入同一 stream 后 `cudaGraphicsUnmapResources` 交还 graphics，未 unmap 时不能让 GL 同时使用该对象。每次 map 后重新查询 mapped pointer，不把上一次映射的 pointer 缓存到下一轮；最终先完成队列上的 CUDA/GL 使用，再 unregister/destroy。Vulkan/D3D external-memory 的 handle import 不应和 GL 的注册式 API 混写成同一生命周期。
+OpenGL 的 `cudaGraphics*` 接口以 map/unmap 交接资源：先用 `cudaGraphicsGLRegisterBuffer` 注册一次；每轮 `cudaGraphicsMapResources` 后，通过 `cudaGraphicsResourceGetMappedPointer` 查询本轮 pointer，再将 CUDA kernel 排入同一 stream；随后用 `cudaGraphicsUnmapResources` 交还 GL。每轮 map 后重新查询 pointer，最终等待 CUDA/GL 队列使用完成，再 unregister/destroy。Vulkan/D3D external-memory 则通过 handle import 建立映射。
 
-集成时要分别检查 allocation offset/size、物理 device、binary semaphore 的 signal/wait 顺序、timeline wait 的目标值、跨 API 读写顺序、在途操作期间销毁 semaphore，以及 unmap 后继续使用旧 pointer 等问题。Vulkan external memory/semaphore 还须匹配 exporter/importer 的 handle type、queue family、allocation/offset/alignment、timeline/binary 类型和 dedicated allocation 设置。下列 Runtime API 片段不构成完整 Vulkan 应用。
+集成时检查 allocation offset/size、物理 device、binary semaphore 的 signal/wait 顺序、timeline wait 目标值、跨 API 读写顺序，以及资源释放前的所有在途操作。Vulkan external memory/semaphore 还需匹配 exporter/importer 的 handle type、queue family、allocation/offset/alignment、timeline/binary 类型和 dedicated allocation 设置。下列 Runtime API 片段展示 CUDA 侧用法；Vulkan 应用另按其 API 建立资源与队列依赖。
 
 </details>
 

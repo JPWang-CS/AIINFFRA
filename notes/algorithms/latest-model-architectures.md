@@ -33,9 +33,9 @@
 
 举例：
 
-- GQA 和 MLA 为什么流行？因为 Decode 阶段是 memory-bound，KV cache 越小，每 token 的 HBM 搬运越少。
+- GQA 和 MLA 为什么影响 Decode？当 KV 读取位于关键路径时，缓存字节数会影响访存时间与容量；权重流量、batch、算术强度和 kernel 也会共同决定结果。
 - MoE 为什么难服务？因为激活参数少，但全部 expert 权重仍占显存；跨卡路由还会引入 AllToAll 通信。
-- Mamba 为什么被讨论？因为 Attention 是 O(seq²)，SSM 是线性扫描，长序列时访存模式完全不同。
+- Mamba 为什么被讨论？它用输入选择的状态递推把扫描成本降为随序列长度线性增长；Attention、SSM、线性注意力有不同的状态和访问语义，混合模型也会保留部分 Attention 层。
 - 为什么量化总是围绕 FFN 和 KV cache？因为权重读取和 KV cache 是 Decode 阶段最大的带宽来源。
 
 所以这一篇不按“模型发布会”写，而是按“组件 + 模型家族 + 对推理系统的影响”写。
@@ -44,29 +44,21 @@
 
 ## 2. Transformer block 骨架
 
-绝大多数 LLM 还是 Decoder-only Transformer。一个典型 block 可以画成：
+绝大多数 LLM 还是 Decoder-only Transformer。典型 pre-norm block 中，Attention 与 FFN/MoE 子层依次读取、更新同一条 hidden-state 流，各自有 residual 汇合：
 
-```text
-输入 x
-  -> RMSNorm / LayerNorm
-  -> Attention（Q/K/V；推理时维护 KV cache）
-  -> residual: x = x + attn_out
-  -> RMSNorm / LayerNorm
-  -> FFN 或 MoE（常见 SwiGLU）
-  -> residual: x = x + ffn_out
-```
+![典型 pre-norm Transformer block 的 Attention、FFN 与 residual 汇合](../../papers/figures/review/transformer-block-residual.svg)
 
 整体模型通常由几十到上百个这样的 block 堆叠而成，前面有 token embedding，最后有 lm_head。
 
-从 Infra 角度，这个 block 产生三类核心成本：
+从 Infra 角度，这个 block 产生三类核心成本；瓶颈由实际形状和运行条件决定：
 
 | 成本 | 来自哪里 | 典型瓶颈 |
 |------|---------|---------|
-| 激活计算 | Attention 的 QK^T / PV，FFN 的矩阵乘 | Prefill 时 compute-bound |
-| 权重读取 | 每层 FFN / attention 的权重 | Decode 时 memory-bound |
-| KV cache | 每层、每 token、每 head 存 K/V | 长上下文或并发高时显存爆炸 |
+| 激活计算 | Attention 的 QKᵀ/PV、FFN 矩阵乘 | 比较 FLOPs/byte 与硬件平衡点；长 prefill 常有较高算术强度 |
+| 权重与 KV 读取 | FFN/attention 权重、历史 KV | 受 batch、上下文、复用、并行切分和互联影响 |
+| KV 容量 | 每层缓存 K/V、latent 或递归状态 | 受层型、序列长度、并发和存储 dtype 影响 |
 
-记牢这个模型，后面所有组件都是往这几个位置“换零件”。
+“Prefill 算力受限、Decode 带宽受限”适合作为待验证的起点。短输入、小 batch、跨卡通信、权重读取或 kernel launch 都可能改变瓶颈；判断时固定 batch、prompt/output 长度、并行策略与计时范围，再用 Roofline 和 profiler 数据核对。
 
 ---
 
@@ -92,16 +84,15 @@ LayerNorm: y = (x - mean) / sqrt(var + eps) * gamma + beta
 RMSNorm:   y = x / sqrt(mean(x^2) + eps) * gamma
 ```
 
-为什么主流模型都爱 RMSNorm：
+RMSNorm 省去均值中心化，只需归约平方均值并缩放。模型是否使用它是架构和训练选择，效果通过训练稳定性及任务评测判断。
 
 - 少一次 mean 计算，reduce 更简单。
 - 经验上训练稳定性够用。
-- 算子侧是典型的 row-wise reduce，和 Softmax 的 memory-bound 特征很像。
-- RMSNorm 少存/少算一个统计量，对长序列训练的数值开销略低。
+- 算子侧对每行计算均方根并缩放，具体瓶颈取决于行宽、batch、融合方式和设备。
 
 Infra 影响：
 
-- Norm 是 memory-bound，优化点是少读几遍 HBM、用 warp reduce、和 residual 融合。
+- Norm 常由输入读取与行规约组成；可考察减少往返、规约映射和与 residual 的融合。
 - 手写 kernel 时，LayerNorm 需要算 mean 和 var；RMSNorm 只算 mean(x²)，代码更短。
 
 ### 3.3 位置编码：从绝对位置到 RoPE
@@ -144,10 +135,12 @@ out = weight @ V
 
 | 变体 | K/V head 数 | KV cache 趋势 | 代表 |
 |------|------------|--------------|------|
-| MHA | 每个 query head 一组 K/V | 最大 | 早期 GPT、BERT |
-| MQA | 所有 query head 共享一组 K/V | 最小，但质量略降 | PaLM 等 |
-| GQA | 若干 query head 共享一组 K/V | 折中 | LLaMA 2/3、Qwen、Mistral |
-| MLA | 把 K/V 压成低秩 latent | 比 GQA 更省 | DeepSeek-V2/V3 |
+| MHA | 每个 query head 一组 K/V | 基准取决于 H 个 KV heads | 早期 GPT、BERT |
+| MQA | 所有 query head 共享一组 K/V | KV heads 最少；质量取决于训练与适配 | PaLM 等 |
+| GQA | 一组 K/V 供多个 query heads 使用 | 介于 MHA 与 MQA，取决于组数 | LLaMA 2/3、Qwen、Mistral |
+| MLA | 多个 head 共享低秩 KV latent，另有位置相关分支 | 取决于 latent/RoPE 宽度、dtype 和布局 | DeepSeek-V2/V3 |
+
+![MHA、MQA 与 GQA 的 Query-head 到 KV-head 共享关系](../../papers/figures/review/attention-head-sharing.svg)
 
 KV cache 大小估算：
 
@@ -155,13 +148,15 @@ KV cache 大小估算：
 KV_bytes = 2 * num_kv_heads * head_dim * seq_len * num_layers * dtype_bytes
 ```
 
-举例：LLaMA-70B 类模型，GQA 的 KV head 比 MHA 少很多，长上下文下能省几十 GB。
+缓存示例应固定 head dimension、层数、上下文长度、并发和 dtype，再按 head 数核算；模型名本身不足以确定字节数。
 
 对推理的意义：
 
 - Decode 是逐 token 生成，每个 token 都要读已生成的 KV。
 - KV cache 越小，单卡能服务的并发越高，PagedAttention 的 block 管理也越轻松。
-- MLA 的 low-rank 设计很好，但解码时还需要做投影展开，属于“省显存、换一点计算”。
+- MLA 的朴素参考路径会逐历史位置恢复完整 K/V；高效 Decode 可把内容 Key 投影吸收到 Query 侧，把 Value 投影吸收到输出侧，并保留独立 RoPE 分支。额外计算和速度收益应按具体权重形状、kernel 与硬件核算。
+
+GQA/MLA 改变 KV 的共享方式或缓存表示。FlashAttention 是 IO-aware 的计算算法与 kernel 实现，可配合不同 attention 结构；它与 MHA→MQA→GQA 的变化属于不同维度，不能排成一条结构演进链。
 
 ### 3.5 FFN 与 SwiGLU
 
@@ -174,8 +169,12 @@ FFN(x) = act(x @ W_up) @ W_down
 SwiGLU 是当前最常用的门控变体：
 
 ```text
-SwiGLU(x) = (x @ W_gate) * silu(x @ W_up) @ W_down
+gate = x @ W_gate
+up = x @ W_up
+SwiGLU(x) = (silu(gate) ⊙ up) @ W_down
 ```
+
+这里 `gate` 经 SiLU 后与 `up` 做逐元素乘法；有些实现交换投影变量名，按实际乘法式辨认两支。
 
 为什么 FFN 重要：
 
@@ -195,7 +194,7 @@ router(x) 选出 top-k expert
 MoE 的 Infra 关键点：
 
 - 激活计算少：每个 token 只走 top-k 个 expert。
-- 显存不小：所有 expert 权重都要加载到显存。
+- 权重容量：完整 expert 集合要有存储位置；全 GPU 常驻时占用设备显存，容量不足也可 offload，代价是路由后的传输与预取。
 - 路由不均衡：有些 expert 忙、有些闲，需要 auxiliary loss 或调度手段。
 - 跨卡推理：expert 放在不同 GPU 上时，token 要 AllToAll 到对应卡。
 
@@ -203,17 +202,17 @@ MoE 的 Infra 关键点：
 
 ### 3.7 SSM / Mamba
 
-状态空间模型把序列更新写成：
+连续状态空间模型可以写成：
 
 ```text
-h_t = A h_{t-1} + B x_t
-y_t = C h_t
+h'(t) = A h(t) + B x(t)
+y(t) = C h(t)
 ```
 
 优势：
 
-- 推理复杂度与序列长度近似线性，不像 Attention 是 O(seq²)。
-- 显存不随上下文二次增长。
+- 固定状态维度时，扫描工作量随序列长度线性增长；完整 self-attention 的 prefill 交互量则随可见 token 对增加。
+- 这一层的推理状态不保存逐 token KV；若模型混合了 attention 层，那些层仍有自己的 KV cache。
 
 代价：
 
@@ -248,7 +247,7 @@ y_t = C h_t
 | MHA | `[H, d]` | `H` | `2 * H * d` |
 | MQA | `[H, d]` | `1` | `2 * d` |
 | GQA | `[H, d]` | `G` | `2 * G * d` |
-| MLA | `[H, d]` | latent `d_c` | `2 * d_c + 少量投影` |
+| MLA | `[H, d]` | latent `d_c` 与 RoPE `d_r` | `d_c + d_r` 元素/每层每 token |
 
 ### 4.2 KV cache 计算公式
 
@@ -263,9 +262,9 @@ KV_bytes = 2 * num_kv_heads * head_dim * seq_len * num_layers * dtype_bytes
 | MHA | 32 | `2*32*128*4096*32*2 = 2 GiB` |
 | GQA(8) | 8 | `2*8*128*4096*32*2 = 512 MiB` |
 | MQA | 1 | `2*1*128*4096*32*2 = 64 MiB` |
-| MLA(latent=512) | 1 latent | 约 `2*512*4096*32*2 = 256 MiB`（未含展开投影） |
+| MLA(latent=512, RoPE=64) | 1 latent + 1 RoPE 向量 | `(512+64)*4096*32*2 = 144 MiB` |
 
-> 这里的 MLA 例子只是示意，实际 DeepSeek 还有额外缓存和投影参数，不要直接拿这个数当论文值。
+> 该教学算例把每个元素按 2 bytes 计，不含页表、scale 与运行时对齐等开销；实际配置应从 latent/RoPE 宽度和缓存 dtype 逐项核算。
 
 ### 4.3 为什么 GQA/MLA 对 Decode 重要
 
@@ -273,7 +272,7 @@ Decode 每生成一个 token：
 
 - 只需要新 token 的 Q。
 - 需要读取全部历史 K/V。
-- 因此 KV 越小，每 token HBM 读取越少，吞吐越高。
+- 因此更紧凑的 KV 表示会减少对应的缓存流量；端到端吞吐仍受权重读取、batch、投影和 kernel 效率影响。
 
 这也是“KV cache 是并发上限”的原因。
 
@@ -322,26 +321,51 @@ output = sum_i probs[topk_i] * expert_i(x)
 
 ## 6. SSM / Mamba 与混合架构
 
-### 6.1 状态方程
+<span id="61-状态方程" aria-hidden="true"></span>
+
+### 6.1 连续状态方程与离散更新
 
 ```text
-h_t = A h_{t-1} + B x_t
-y_t = C h_t
+h'(t) = A h(t) + B x(t)
+y(t) = C h(t)
 ```
 
-- `A` 是状态转移矩阵，`B` 是输入投影，`C` 是输出投影。
-- 推理时每个 token 只更新 hidden state，不保存完整 KV cache。
-- 长序列复杂度线性，但状态容量有限。
+- `A` 决定连续系统的状态转移，`B` 把输入写入状态，`C` 从状态读出结果。离散化后另有 `dA`、`dB` 等 token-step 系数。
+- 长度为 N 的序列被压入固定形状的状态；状态大小不随 N 增长，计算仍随状态维度增加。
 
-### 6.2 Mamba 的关键点
+<span id="62-mamba-的关键点" aria-hidden="true"></span>
 
-- S4 是线性时不变系统；Mamba 的关键是 selective scan，让 `A/B/C` 依赖输入。
-- Mamba-2 把状态方程和 attention 的关系讲得更清楚，提出结构化状态空间对偶。
-- 混合架构（如 Jamba）交替使用 Attention 和 SSM，兼顾长距离和表达能力。
+### 6.2 Mamba 的输入选择与离散状态更新
+
+在作者的 `mamba_ssm/modules/mamba_simple.py` 中，`x_proj` 把输入特征投影后拆成 `dt` 的低秩表示、`B` 与 `C`；独立学习参数 `A_log` 则构造 `A = -exp(A_log)`。可以把实现主线写成：
+
+```python
+dt_low_rank, B, C = split(x_proj(u), [dt_rank, d_state, d_state])
+delta = softplus(dt_proj(dt_low_rank) + dt_bias)
+A = -exp(A_log)
+dA = exp(delta * A)
+dB = delta * B
+```
+
+输入产生 token-dependent `Δ_t/B_t/C_t`，而连续系统的 `A` 保持为学习参数。代码块只摘录分支关系和主要运算，未复制作者内核实现。
+
+简化离散关系为：
+
+$$
+\Delta_t=\operatorname{softplus}(W_\Delta u_t+b_\Delta),\quad
+dA_t=\exp(\Delta_t A),\quad dB_t\approx\Delta_t B_t,\quad
+h_t=dA_t\odot h_{t-1}+dB_t\odot u_t,\quad y_t=C_t h_t.
+$$
+
+`u_t` 表示输入投影及局部卷积后的特征。`dA_t` 是离散状态更新系数，与参数 `A` 分属连续系统和 token 更新两层。作者的 fused selective-scan 路径会实现并融合这些运算；此处的式子用于解释参数依赖关系。来源：[官方 Mamba 实现](https://github.com/state-spaces/mamba/blob/main/mamba_ssm/modules/mamba_simple.py)。
+
+![Mamba 中输入相关 Δ、B、C 与学习参数 A 的离散化路径](../../papers/figures/review/mamba-discretization.svg)
+
+Mamba-2 的结构化状态空间对偶给出 SSM 与 attention-like 计算之间的数学联系；这不等于 SSM 都是线性 Attention。混合模型里模块分工与信息保留由训练形成，不能仅凭层数比例预测质量。
 
 ### 6.3 Infra 影响
 
-- SSM 在长序列下省显存和带宽，但 kernel 不是普通 GEMM，需要专门 scan 实现。
+- SSM 将逐 token 历史缓存替换为递归状态；状态更新、序列 scan 与完整 Attention 的成本仍取决于状态维度、chunking 和硬件，kernel 常需 scan 专用实现。
 - 现有 serving 框架对 SSM 的支持比 Attention 少，需要看具体后端。
 - 面试不要只说“线性复杂度”，要能讲状态容量和 kernel 复杂度。
 
@@ -363,11 +387,13 @@ y_t = C h_t
 
 ## 8. KV cache 深挖
 
-### 8.1 为什么 KV cache 是瓶颈
+<span id="81-为什么-kv-cache-是瓶颈" aria-hidden="true"></span>
 
-- Prefill 阶段一次算完所有 token，适合并行、compute-bound。
-- Decode 阶段逐 token 生成，每次都要把全部历史 K/V 读一遍，memory-bound。
-- KV cache 决定单卡并发、长上下文能力和 prefix cache 的收益。
+### 8.1 何时 KV cache 会成为瓶颈
+
+- Prefill 对长输入通常有较高算术强度；短输入、小 batch、权重读取或跨卡通信可改变主导瓶颈。
+- Decode 每步读取可见历史 KV；当这部分流量进入关键路径时，KV dtype、head 数/latent 宽度和读取布局会影响时间及并发容量。
+- KV 容量影响可容纳并发数；实际延迟还会随 batch、序列长度、调度和 kernel 改变。
 
 ### 8.2 PagedAttention 与 block table
 
@@ -483,7 +509,7 @@ FFN FLOPs ≈ 2 * token * hidden * intermediate * layers * 3（SwiGLU 粗略）
 单请求 KV = 每层 KV head 数 * head_dim * seq_len * 2 * layer 数 * dtype_bytes
 ```
 
-GQA/MLA 能显著提高单卡并发，也因此影响 PagedAttention、prefix cache、PD 分离的收益。
+GQA/MLA 可降低每 token KV 容量，影响并发上限、PagedAttention 分配和 prefix cache 容量；实际 TTFT/TPOT 还取决于调度与关键路径。
 
 ### 12.2 MoE 决定权重显存和通信
 
@@ -495,17 +521,17 @@ MoE 模型“总参数大，激活参数小”。服务时：
 
 ### 12.3 Attention 变体决定 Decode 带宽
 
-Decode 阶段每个 token 主要瓶颈是：
+小 batch、长历史时，Decode 可能受权重与 KV 读取限制；固定配置下可先比较：
 
 ```text
-读 KV cache + 读权重 > 计算量
+算术强度 = FLOPs / 实际读写字节数
 ```
 
-所以 MHA -> GQA -> MLA 的演进本质是“减少每 token 必须读的 KV 字节数”。
+GQA 与 MLA 以不同机制改变 KV 表示；FlashAttention 改变分块计算和中间状态驻留。几种方法可以组合，比较时固定 batch、序列形状、精度与硬件。
 
 ### 12.4 长序列结构决定是否能线性扩展
 
-标准 Attention 的 prefill 计算和 KV 显存都随 seq² 增长。要支持百万级上下文，需要：
+标准全局 Attention 的 prefill 成对交互量随序列长度平方增长，常规 KV cache 容量则随缓存 token 数线性增长。百万级上下文需要分别控制计算、容量和搬运：
 
 - Flash Attention / Ring Attention
 - 分块 prefill / chunked prefill
@@ -538,11 +564,11 @@ RoPE 引入 Q/K 的旋转操作，RMSNorm 引入 row-wise reduce。两者都会�
 
 ### 14.2 MLA 和 GQA 的区别？
 
-“GQA 仍按 token 存 K/V，只是减少 head 数；MLA 把 K/V 压到低维 latent，再在计算时投影回来。省的是 KV cache 存储，代价是多一次低秩投影。”
+“GQA 仍按 token 存完整 K/V，只是减少 KV head 数；MLA 缓存共享 latent 与独立位置分支，Decode 可把内容 Key 投影吸收到 Query、Value 投影吸收到输出侧，避免逐历史位置展开完整 K/V。”
 
 ### 14.3 MoE 为什么推理难？
 
-“MoE 激活参数少、计算省，但全部 expert 权重都要在显存里；token 路由到不同 expert 后，跨卡场景要 AllToAll，且负载不均衡会拖慢整体。”
+"MoE 的单 token 只计算被选专家；完整专家权重需要有存储位置，全 GPU 常驻会占设备显存，offload 会加入传输路径。跨卡路由还要统计 dispatch/combine 和负载尾部。"
 
 ### 14.4 Mamba 能替代 Attention 吗？
 
@@ -552,9 +578,11 @@ RoPE 引入 Q/K 的旋转操作，RMSNorm 引入 row-wise reduce。两者都会�
 
 “RoPE 把位置信息编码成旋转角度，相对位置差可以写成旋转矩阵差；直接外推会掉精度，所以要配合插值、NTK 或 YaRN。”
 
-### 14.6 为什么 Decode 是 memory-bound？
+<span id="146-为什么-decode-是-memory-bound" aria-hidden="true"></span>
 
-“Decode 每次只算一个新 token，但必须读全部权重和全部历史 KV；计算量小，HBM 读取量大。”
+### 14.6 Decode 什么时候受带宽限制？
+
+“单 token、小 batch、长历史时，权重与 KV 读取可能主导关键路径。增大 batch 会摊薄权重读取并增加并发 KV 工作；用固定 shape 的 FLOPs/byte 和 profiler 判断。”
 
 ### 14.7 为什么 MoE 权重量化比 Dense 更敏感？
 
@@ -562,7 +590,7 @@ RoPE 引入 Q/K 的旋转操作，RMSNorm 引入 row-wise reduce。两者都会�
 
 ### 14.8 长上下文为什么难？
 
-“Attention 显存和计算随 seq²，KV cache 也随 seq 线性增长；需要 Flash Attention、Ring Attention、chunked prefill、KV 优化一起配合。”
+"全局 Attention 的 prefill 成对交互量随 seq²，逐 token KV 容量随 seq 线性增长。FlashAttention 改分块执行，PagedAttention 改分配布局，稀疏或状态递推改变历史访问/表示；按瓶颈选择方法。"
 
 ---
 
@@ -577,45 +605,50 @@ RoPE 引入 Q/K 的旋转操作，RMSNorm 引入 row-wise reduce。两者都会�
 
 ---
 
-## 16. 2026 新架构：混合注意力与稀疏注意力
+<span id="16-2026-新架构混合注意力与稀疏注意力" aria-hidden="true"></span>
 
-2026 年四个可学的生产案例，目标都是同一个：**让长上下文变便宜**。
+## 16. 代表性混合注意力与稀疏注意力设计
+
+本节按论文年份与对应配置记录结构变化。以下方法面向不同环节，不能合并成一条统一的 Attention 代际路线。
 
 ### Qwen3.5：GDN 线性注意力混合（省 KV + 近线性长序列）
 
 - 60 层 = 15 组 ×（3 GDN + 1 full attention）；512+1 experts、每 token 激活 10 个；397B 总参 / 17B 激活
-- GDN 层没有传统 KV cache，只有固定大小的 recurrent state + conv state；full attention 层保留精确召回
+- 每个 GDN 层维护 recurrent state 与卷积状态；full-attention 层维护自己的 KV。hidden state 按层序传递，3:1 层比描述配置，不单独保证召回质量
+- ![Qwen3.5 的 GDN 与 full-attention 层序](../../papers/figures/review/gdn-hybrid-layer-flow.svg)
 - 推理影响：长上下文成本接近线性，但 recurrent state 对 prefill 批量不友好（需要 chunked / parallel scan）
 - 详细：[GDN（Qwen3.5）](gdn-linear-attention.md)
 
 ### DeepSeek-V3.2：MLA + DSA（压 KV + 只算 top-k）
 
-- ~685B 总参 / 37B 激活；MLA 压缩 KV 存储，DSA 用 indexer 只选 K=2048 个 key 做完整 attention
-- 复杂度 O(L²) → O(L·K)；推理栈（vLLM / TRT-LLM / SGLang / TileRT）都有 sparse MLA / fp8_ds_mla / MTP-3 支持
-- 详细：[DSA](dsa-sparse-attention.md)
-
-### GLM-5：DSA 架构复用
-
-- 78 层、256 experts、8 active、激活约 44B；代码层面复用 DeepSeek 的 DSA 实现
-- 说明稀疏注意力已成为"标准件"，模型之间互相复用实现
+- 官方 `config_671B_v3.2.json` 用于核对模型结构；激活参数口径与总参数计数应按各自报告来源读取。MLA 压缩缓存表示，DSA indexer 对可见历史选位置供主 Attention gather
+- indexer 仍处理可见历史，选中后主 Attention 只 gather 所选位置；主分支的选中规模不代表全路径复杂度，部署支持按具体框架版本和模型配置确认
 - 详细：[DSA](dsa-sparse-attention.md)
 
 ### DeepSeek-V4：CSA + HCA（MLA 骨架 + 压缩稀疏）
 
-- 发布线：2026-04-24 预览开源（V4-Pro ~1.6T 总参 / ~49B 激活；V4-Flash 284B / ~13B 激活；原生 1M 上下文）；2026-07-31 V4-Flash 正式；2026-08-13 V4-Pro-0813 正式（架构不变，后训练大幅提升）
+- V4 技术报告（arXiv:2606.19348，2026）：Pro 1.6T / 49B 激活，Flash 284B / 13B 激活，报告支持 1M 上下文；此处数字采用论文报告口径。
 - 注意力 = **CSA + HCA 混合**，保留 MLA 低秩 latent 骨架：
   - **CSA（压缩稀疏注意力）**：每 m=4 个 token 用重叠窗口（2m）+ joint softmax 压成 1 个 compressed entry；Lightning Indexer 打分选 top-k（Pro k=1024 / Flash k=512）；核心 attention 是 shared-KV 多 query，所有 head 共用同一组压缩 KV
-  - **HCA（压缩稠密注意力）**：m'=128、无 indexer、无 overlap，对全部压缩 entry 做 dense attention，兜底召回
+  - **HCA（压缩稠密注意力）**：m'=128、无 indexer，对全部 HCA compressed entries 做 dense attention；每个 entry 仍是压缩表示，不保证精确恢复原 token 细节
   - 每层另留最近 128 个未压缩 token 的滑窗分支（`sliding_window=128`）
-- 层排布：V4-Pro 61 层 + MTP，前 2 层纯 HCA，之后 CSA/HCA 交替（`compress_ratios=[128,128,4,128,4,...,4,0]`）；V4-Flash 同模式 43 层
-- 1M 上下文账（对比 V3.2）：V4-Pro prefill FLOPs ≈ 27%、KV cache ≈ 10%；V4-Flash ≈ 10% / 7%；对比 BF16 GQA-8 基线 KV 仅约 2%
+- 层排布：V4-Pro 61 层 + MTP，前 2 层 HCA、之后 CSA/HCA 交替；V4-Flash 43 层，报告配置前 2 层为纯 SWA，其余采用 CSA/HCA 混合。具体层型以 checkpoint config 为准。
+- 1M 上下文账（V4 报告 Figure 1）：相对 V3.2，Pro 单 token FLOPs 约 27%、KV cache 约 10%；Flash 约 10% / 7%。这是论文长上下文比较口径，不代表所有 shape 的服务延迟。
 - 同代配套：partial RoPE（只旋最后 64 维）、attention sink（每 head 可学习 logit）、grouped output projection（组内 bottleneck 1024）、mHC 流形约束超连接（4 条残差流 + 双随机 B 矩阵）、Muon 优化器（替代 AdamW 大矩阵部分）、MoE 权重 MXFP4（E2M1）QAT + 非专家 FP8 + KV 混合精度
-- 推理侧：MegaMoE 波次调度（1.5–1.73×，已进 DeepGEMM）、TileLang/DeepGEMM 替代手写 CUDA/cuBLAS、磁盘 KV + SWA 三档策略
+- 推理侧：报告介绍 MegaMoE2 专家波次调度、TileLang 融合 kernel、batch-invariant kernel 与磁盘 KV / SWA 存储取舍；速度数字和实现边界见 [DeepSeek-V4 专题](deepseek-v4.md)
 - 注意：V4 config 与 V3.2 不兼容（无 `kv_lora_rank`，改用 `compress_ratios`），不要把 V3.2 手算公式直接套 V4
 - 详细：[DeepSeek-V4（CSA + HCA）](deepseek-v4.md) · 对照基准：[DeepSeek-V3.2 / DSA](dsa-sparse-attention.md)
 
 ### 注意力实现侧同步更新
 
-- FA4 + FlexAttention：可编程注意力（score_mod + block 稀疏），Blackwell 上默认后端推进中 → [fa4-flexattention.md](fa4-flexattention.md)
-- SageAttention3：Q/K 量化到 FP4（microscaling），带宽降 4x → [attention-2026-sage3-kascade.md](attention-2026-sage3-kascade.md)
-- Kascade：anchor layer 算 exact top-k、跨层复用索引，免训练 → [attention-2026-sage3-kascade.md](attention-2026-sage3-kascade.md)
+- FlashAttention-4（arXiv:2603.05451，2026-03-05）与 FlexAttention：FA4 是面向特定硬件的注意力 kernel/backend；FlexAttention 表达 score 与 mask 规则。它们改变计算实现，不改变 GQA 的 head-sharing 定义 → [FA4 + FlexAttention](fa4-flexattention.md)
+- SageAttention3（arXiv:2505.11594，2025）：用 NVFP4 微缩放执行低精度注意力矩阵乘，并处理中间概率块的缩放与精度；4-bit payload 不等于总 HBM 字节或时间缩为四分之一 → [SageAttention3 与 Kascade](attention-2026-sage3-kascade.md)
+- Kascade（arXiv:2512.16391，2025；[作者仓库](https://github.com/microsoft/kascade)）：anchor 层产生 top-k 位置，后续层复用该索引映射以省重选开销；稀疏 mask 仍改变各层的实际访问集合 → [SageAttention3 与 Kascade](attention-2026-sage3-kascade.md)
+
+### DeepSeek-V4.1-Flash（arXiv:2609.19969，2026）
+
+V4.1 把图文输入编码、跨层 global KV、逐层 SWA、稀疏选择、条件记忆和 speculative draft 放进一套模型与服务设计。CED 的 encoder 输出为 decoder 每层独立投影 global KV；decoder 的局部 SWA KV 仍由各层 hidden state 生成，缺失时用 bounded replay 近似恢复。CSA2 再分别控制 global KV 来源和 Top-K 索引是否共享。
+
+![DeepSeek-V4.1-Flash 的图文输入、CED、CSA2、SWA 与 DSpark 数据流](../../papers/figures/review/v41-token-flow.svg)
+
+同一报告还讨论 Single-Pass mHC、Engram、DSpark、FP4 main KV、训练共享状态和异步后训练。这些机制分别改变 residual mixing、条件记忆、候选验证、缓存表示与训练数据流，细节见 [V4.1 技术报告](https://arxiv.org/abs/2609.19969) 和 [DeepSeek API 2026-09-10 更新](https://api-docs.deepseek.com/news/news260910/)。

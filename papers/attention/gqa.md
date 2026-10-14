@@ -38,6 +38,8 @@ MQA: Q_i @ K_0.T    (所有 Q heads 共享同一个 KV)
 
 ## 核心思想
 
+![MHA、MQA 与 GQA 的 KV-head 共享关系](../../papers/figures/review/attention-head-sharing.svg)
+
 将所有 Query heads 的 K/V 合并为一组，可能损失原模型的表达能力。GQA 在完全独立与全部共享之间增加可调的分组数，研究缓存容量、推理速度与质量如何权衡。
 
 已有 MHA checkpoint 可以保留 Query 与 FFN 权重，将同组 KV 投影取平均作为初始化，再继续训练以适应新结构。是否能维持原模型质量仍需评估，不能把 head 共享理解为无损删除冗余参数。

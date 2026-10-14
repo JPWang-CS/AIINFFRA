@@ -1,0 +1,43 @@
+Validation evidence — 2026-10-14
+
+Working directory: D:\Desktop\Code\Learn\AIINFFRA
+
+Torch interpreter:
+D:\Desktop\Code\Learn\AIINFFRA\.venv\Scripts\python.exe
+Version: torch 2.7.1+cpu
+The example leaves the model and tensors on PyTorch's default CPU device.
+
+1. NumPy semantic and source-sync validation
+
+Command:
+& 'C:\Users\w00939120\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' 'D:\Desktop\Code\Learn\AIINFFRA\papers\foundations\examples\validate_foundations.py'
+
+Exit code: 0
+Raw stdout:
+PASS: 1 source block(s) match and compile
+PASS: NumPy full/token/chunk cache equality, causal prefix, per-layer cache shapes
+PASS: Post-LN chain-rule vs finite difference max error 1.796e-10
+PASS: cross-entropy logit gradient vs finite difference max error 1.303e-10
+CPU NumPy mathematical checks only; this does not establish PyTorch runtime or GPU behavior.
+
+2. PyTorch source syntax compilation
+
+Command:
+& 'D:\Desktop\Code\Learn\AIINFFRA\.venv\Scripts\python.exe' -m py_compile 'D:\Desktop\Code\Learn\AIINFFRA\papers\foundations\examples\tiny_transformer.py'
+
+Exit code: 0
+Raw stdout: (empty)
+
+3. Complete PyTorch CPU training, generation, and cache checks
+
+Command:
+& 'D:\Desktop\Code\Learn\AIINFFRA\.venv\Scripts\python.exe' 'D:\Desktop\Code\Learn\AIINFFRA\papers\foundations\examples\tiny_transformer.py'
+
+Exit code: 0
+Raw stdout:
+loss: 2.5071 -> 0.0013
+logits: (1, 4, 16)
+attention/cache per layer: [(1, 2, 4, 4), (1, 2, 4, 4)]
+next-token probabilities: (1, 16)
+greedy continuation: [[2, 5, 7, 1, 9, 7]]
+PASS: training gradients, causal prefix, full/token/chunk cache equality

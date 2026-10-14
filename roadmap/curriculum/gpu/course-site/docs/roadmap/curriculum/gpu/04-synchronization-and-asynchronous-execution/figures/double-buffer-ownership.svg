@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="410" viewBox="0 0 1040 410" role="img" aria-labelledby="title desc">
+<title id="title">双缓冲读写顺序</title>
+<desc id="desc">两个槽位分别经历空闲、生产者写入、数据就绪、消费者读取和再次可写。</desc>
+<style>
+@media (prefers-color-scheme: dark) {
+  svg > rect { fill: #111827; }
+  svg text { fill: #edf2f7; }
+  svg text[fill="#526b82"] { fill: #b7c5d4; }
+  svg rect[fill="#e6edf5"] { fill: #263548; stroke: #91a4b8; }
+  svg rect[fill="#d9eafb"] { fill: #183b5a; stroke: #76a8d2; }
+  svg rect[fill="#d8f0e7"] { fill: #173d36; stroke: #75b59f; }
+  svg rect[fill="#fce9c9"] { fill: #49391e; stroke: #d4aa62; }
+  svg path { stroke: #a8bacb; }
+}
+</style>
+<rect width="1040" height="410" rx="12" fill="#f8fafc"/>
+<g font-family="Segoe UI, Microsoft YaHei, sans-serif" fill="#16324f">
+<text x="32" y="42" font-size="24" font-weight="700">一个槽位要等两件事：数据就绪，读者结束</text>
+<text x="32" y="72" font-size="15" fill="#526b82">依赖关系示意</text>
+<text x="32" y="145" font-size="17" font-weight="700">slot 0</text>
+<text x="32" y="269" font-size="17" font-weight="700">slot 1</text>
+<g font-size="15" text-anchor="middle">
+<rect x="130" y="108" width="150" height="58" rx="8" fill="#e6edf5" stroke="#8298ad"/><text x="205" y="143">空闲 / 可写</text>
+<rect x="330" y="108" width="150" height="58" rx="8" fill="#d9eafb" stroke="#3977a8"/><text x="405" y="143">生产者写入</text>
+<rect x="530" y="108" width="150" height="58" rx="8" fill="#d8f0e7" stroke="#438873"/><text x="605" y="143">数据就绪</text>
+<rect x="730" y="108" width="150" height="58" rx="8" fill="#fce9c9" stroke="#b0802c"/><text x="805" y="143">消费者读取</text>
+<rect x="130" y="232" width="150" height="58" rx="8" fill="#e6edf5" stroke="#8298ad"/><text x="205" y="267">空闲 / 可写</text>
+<rect x="330" y="232" width="150" height="58" rx="8" fill="#d9eafb" stroke="#3977a8"/><text x="405" y="267">生产者写入</text>
+<rect x="530" y="232" width="150" height="58" rx="8" fill="#d8f0e7" stroke="#438873"/><text x="605" y="267">数据就绪</text>
+<rect x="730" y="232" width="150" height="58" rx="8" fill="#fce9c9" stroke="#b0802c"/><text x="805" y="267">消费者读取</text>
+</g>
+<g fill="none" stroke="#45677f" stroke-width="2">
+<path d="M280 137h42m-9-7 9 7-9 7"/><path d="M480 137h42m-9-7 9 7-9 7"/><path d="M680 137h42m-9-7 9 7-9 7"/>
+<path d="M880 137h62v51H205v-16m-7 8 7-8 7 8"/>
+<path d="M280 261h42m-9-7 9 7-9 7"/><path d="M480 261h42m-9-7 9 7-9 7"/><path d="M680 261h42m-9-7 9 7-9 7"/>
+<path d="M880 261h78v57H205v-28m-7 8 7-8 7 8"/>
+</g>
+<g font-size="14" fill="#526b82">
+<text x="32" y="345">ready：生产者完成写入后，消费者才读。</text>
+<text x="525" y="345">free：消费者读完后，生产者才覆盖同一槽位。</text>
+</g>
+</g>
+</svg>

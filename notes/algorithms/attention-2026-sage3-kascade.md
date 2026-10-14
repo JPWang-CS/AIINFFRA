@@ -7,6 +7,8 @@
 
 ## 解决了什么问题
 
+![SageAttention3 的 NVFP4 矩阵乘与 Kascade 的 anchor/reuse 索引](../../papers/figures/review/sage3-kascade.svg)
+
 FlashAttention 已经把“避免物化 N×N 中间矩阵”推进到很高水平。SageAttention3（2025-05）与 Kascade（2025-12）分别从量化和结构复用继续压长序列推理的成本：
 
 1. **降低注意力矩阵乘的操作数精度**：SageAttention3 用 NVFP4 微缩放，把 Q、K、注意力块 P 和 V 都送入两个 FP4 矩阵乘；它不是只量化 Q/K 的缓存技巧

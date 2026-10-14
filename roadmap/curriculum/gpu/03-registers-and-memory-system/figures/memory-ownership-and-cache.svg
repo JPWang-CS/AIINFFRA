@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="590" viewBox="0 0 1000 590" role="img" aria-labelledby="title desc">
+<title id="title">CUDA block、SM 与缓存查询层级</title>
+<desc id="desc">block 0 位于 SM 0，block 1 位于 SM 1。每个线程有私有寄存器，block 0 线程共享 shared memory。两个 SM 各有 L1，查询箭头指向设备共享的 L2，再由 L2 未命中时查询 DRAM。右上 warp 示例是无连线说明。</desc>
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#526b82"/></marker>
+<style>
+text{font-family:"Microsoft YaHei","Segoe UI",sans-serif;fill:#18324b}
+.canvas{fill:#f7f9fc}
+.title{font-size:28px;font-weight:700}.head{font-size:24px;font-weight:700}.body{font-size:22px}
+.small{font-size:18px;fill:#526b82}.note{fill:#fff;stroke:#c6d2de;stroke-width:2}
+.sm{fill:#eaf3fb;stroke:#7b9bb8;stroke-width:2}.register{fill:#fff0ce;stroke:#c99b36;stroke-width:2}
+.shared{fill:#d9f0e7;stroke:#4f947b;stroke-width:2}.l1{fill:#dcecff;stroke:#6386bd;stroke-width:2}
+.l2{fill:#cfe3ff;stroke:#527db7;stroke-width:2}.dram{fill:#e4eaf0;stroke:#8999a8;stroke-width:2}
+.flow{fill:none;stroke:#526b82;stroke-width:3;marker-end:url(#arrow)}
+@media(prefers-color-scheme:dark){
+ .canvas{fill:#101820}
+ text{fill:#e6edf5}.small{fill:#b6c4d3}
+ .sm{fill:#1b2a38;stroke:#6d8ba7}.register{fill:#3c321f;stroke:#d0a341}
+ .shared{fill:#19372f;stroke:#58a183}.l1{fill:#1c3048;stroke:#77a2d5}
+ .l2{fill:#203c5e;stroke:#78a4dc}.dram{fill:#303b46;stroke:#98a9b8}
+ .note{fill:#17232e;stroke:#526577}
+ .flow{stroke:#afc0d0}marker path{fill:#afc0d0}
+}
+</style></defs>
+<rect class="canvas" width="1000" height="590" fill="#f7f9fc"/>
+<text class="title" x="24" y="40">block 分驻两个 SM；L2 与 DRAM 在下方共用</text>
+
+<rect class="sm" x="24" y="68" width="460" height="278" rx="14"/>
+<text class="head" x="44" y="104">SM 0 · block 0</text>
+<rect class="register" x="44" y="122" width="195" height="74" rx="12"/>
+<text class="body" x="141" y="153" text-anchor="middle">thread 0 寄存器</text><text class="small" x="141" y="180" text-anchor="middle">线程私有</text>
+<rect class="register" x="253" y="122" width="211" height="74" rx="12"/>
+<text class="body" x="358" y="153" text-anchor="middle">thread 1 寄存器</text><text class="small" x="358" y="180" text-anchor="middle">线程私有</text>
+<rect class="shared" x="44" y="210" width="420" height="54" rx="12"/>
+<text class="body" x="254" y="245" text-anchor="middle">block 0 的 shared</text>
+<rect class="l1" x="44" y="278" width="420" height="50" rx="12"/>
+<text class="body" x="254" y="311" text-anchor="middle">SM 0 的 L1</text>
+
+<rect class="sm" x="516" y="68" width="460" height="278" rx="14"/>
+<text class="head" x="536" y="104">SM 1 · block 1</text>
+<rect class="register" x="536" y="122" width="420" height="74" rx="12"/>
+<text class="body" x="746" y="153" text-anchor="middle">thread 0 寄存器</text><text class="small" x="746" y="180" text-anchor="middle">block 1 的线程私有值</text>
+<rect class="l1" x="536" y="278" width="420" height="50" rx="12"/>
+<text class="body" x="746" y="311" text-anchor="middle">SM 1 的 L1</text>
+
+<path class="flow" d="M254 328 L254 365 L380 365 L380 402"/>
+<path class="flow" d="M746 328 L746 365 L620 365 L620 402"/>
+<rect class="l2" x="250" y="406" width="500" height="82" rx="14"/>
+<text class="head" x="500" y="441" text-anchor="middle">设备共享的 L2</text>
+<text class="small" x="500" y="470" text-anchor="middle">两个 SM 的请求都可查询此层</text>
+<path class="flow" d="M750 447 L836 447"/>
+<text class="small" x="754" y="397">L2 未命中</text>
+<rect class="dram" x="840" y="406" width="136" height="82" rx="14"/>
+<text class="head" x="908" y="441" text-anchor="middle">DRAM</text>
+<text class="small" x="908" y="470" text-anchor="middle">设备内存</text>
+
+<rect class="note" x="24" y="520" width="952" height="48" rx="12" fill="#fff" stroke="#c6d2de" stroke-width="2"/>
+<text class="small" x="44" y="550">示例：两个 warp 各读 A[0]；同 SM 可查 L1，跨 SM 可查共享 L2。</text>
+</svg>

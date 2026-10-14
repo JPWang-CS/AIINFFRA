@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="310" viewBox="0 0 1120 310" role="img" aria-labelledby="title desc">
+<title id="title">N 等于 1000 时，四个 256 线程块覆盖向量加法</title>
+<desc id="desc">前三个 block 分别覆盖索引 0 到 255、256 到 511、512 到 767。第四个 block 的线程候选索引为 768 到 1023，其中 768 到 999 有效，1000 到 1023 越界并由条件屏蔽。</desc>
+<defs>
+ <style>text{font-family:Segoe UI,Microsoft YaHei,sans-serif;fill:#24364b}.small{font-size:15px;fill:#53677d}.title{font-size:24px;font-weight:650}.head{font-size:17px;font-weight:600}.cell{fill:#e7f0fb;stroke:#9db4d0}.tail{fill:#dff2ec;stroke:#78ae9d}.inactive{fill:#fff;stroke:#9aabc0;stroke-dasharray:4 3}.legend{font-size:14px}.canvas{fill:#f8fafc}@media(prefers-color-scheme:dark){text{fill:#e6edf5}.small{fill:#c0ccda}.canvas{fill:#111827}.cell{fill:#243750;stroke:#7892b2}.tail{fill:#1e4339;stroke:#6db39d}.inactive{fill:#17212e;stroke:#9aabc0}.head{fill:#edf4fc}}</style>
+</defs>
+<rect class="canvas" width="1120" height="310" rx="18"/>
+<text x="36" y="42" class="title">N = 1000，blockDim.x = 256 → gridDim.x = 4</text>
+<text x="36" y="72" class="small">每条横条表示一个 block 覆盖的索引区间；尾块虚线部分为无效线程。</text>
+<g transform="translate(36,112)">
+ <text x="0" y="-15" class="head">block 0</text>
+ <rect x="0" y="0" width="224" height="30" rx="5" class="cell"/>
+ <text x="0" y="53" class="small">i = 0…255</text>
+ <text x="280" y="-15" class="head">block 1</text>
+ <rect x="280" y="0" width="224" height="30" rx="5" class="cell"/>
+ <text x="280" y="53" class="small">i = 256…511</text>
+ <text x="560" y="-15" class="head">block 2</text>
+ <rect x="560" y="0" width="224" height="30" rx="5" class="cell"/>
+ <text x="560" y="53" class="small">i = 512…767</text>
+ <text x="840" y="-15" class="head">block 3</text>
+ <rect x="840" y="0" width="203" height="30" rx="5" class="tail"/>
+ <rect x="1043" y="0" width="21" height="30" rx="4" class="inactive"/>
+ <text x="840" y="53" class="small">768–999：232 有效</text>
+ <text x="840" y="76" class="small">1000–1023：24 屏蔽</text>
+ <text x="840" y="99" class="small">最后有效线程：threadIdx.x = 231</text>
+ <text x="840" y="122" class="small">对应全局索引 i = 999</text>
+</g>
+<rect x="36" y="238" width="16" height="16" rx="3" class="cell"/><text x="62" y="252" class="legend">有效元素</text>
+<rect x="170" y="238" width="16" height="16" rx="3" class="inactive"/><text x="196" y="252" class="legend">越界候选索引；不属于数组</text>
+<text x="1080" y="287" text-anchor="end" class="small">有效位置总数：256 + 256 + 256 + 232 = 1000</text>
+</svg>

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="440" viewBox="0 0 1080 440" role="img" aria-labelledby="t d">
+<title id="t">语言模型训练中目标、优化和评价的关系</title><desc id="d">数据与token mask进入next-token交叉熵，梯度经过优化器和学习率更新参数，验证与任务评价回到数据及训练决策。</desc>
+<defs><marker id="a" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#475569"/></marker><style>text{font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#172033}.b{stroke-width:2;rx:14}.x{fill:none;stroke:#475569;stroke-width:2.5;marker-end:url(#a)}.h{font-size:20px;font-weight:700}.s{font-size:16px}</style></defs>
+<rect width="1080" height="440" fill="#f8fafc"/><text x="40" y="42" class="h">一个训练 run 同时定义了“拟合什么”与“如何评价”</text>
+<rect x="40" y="100" width="200" height="92" class="b" fill="#dbeafe" stroke="#3b82f6"/><text x="140" y="136" text-anchor="middle" class="h">数据与序列</text><text x="140" y="165" text-anchor="middle" class="s">token、顺序、mask</text>
+<path d="M240 146H300" class="x"/><rect x="312" y="100" width="200" height="92" class="b" fill="#ede9fe" stroke="#8b5cf6"/><text x="412" y="136" text-anchor="middle" class="h">next-token loss</text><text x="412" y="165" text-anchor="middle" class="s">有效 token 上的 NLL</text>
+<path d="M512 146H572" class="x"/><rect x="584" y="100" width="200" height="92" class="b" fill="#dcfce7" stroke="#22c55e"/><text x="684" y="136" text-anchor="middle" class="h">梯度与更新</text><text x="684" y="165" text-anchor="middle" class="s">AdamW · clipping · ηₜ</text>
+<path d="M784 146H844" class="x"/><rect x="856" y="100" width="184" height="92" class="b" fill="#ffedd5" stroke="#f97316"/><text x="948" y="136" text-anchor="middle" class="h">参数 θ</text><text x="948" y="165" text-anchor="middle" class="s">模型分布改变</text>
+<path d="M948 192V264H684V202" class="x"/><text x="820" y="252" text-anchor="middle" class="s">下一批次继续更新</text>
+<rect x="584" y="286" width="456" height="82" class="b" fill="#fee2e2" stroke="#ef4444"/><text x="812" y="320" text-anchor="middle" class="h">验证 loss、PPL 与任务评测</text><text x="812" y="347" text-anchor="middle" class="s">固定口径；同时报告 token 数与任务条件</text>
+<path d="M856 192V276" class="x"/><path d="M584 327H140V203" class="x"/><text x="356" y="314" text-anchor="middle" class="s">评价结果指导数据与配方修订</text>
+</svg>

@@ -1,5 +1,74 @@
 {
   "version": 1,
+  "paper_algorithm_rebuild_2026_10_14": {
+    "date": "2026-10-14",
+    "scope": "Unified course reader for 18 existing GPU course chapters and 41 paper entries (IDs 20-60), with eight ordered categories; IDs and legacy paper URLs remain stable.",
+    "catalog": "roadmap/curriculum/gpu/course-site/paper-catalog.cjs",
+    "legacy_anchor_baseline": {
+      "file": ".codex/paper-legacy-anchors.json",
+      "source_commit": "10383c57ccc62cc1c081398d1651ef851d7c4470",
+      "policy": "Only anchors present in the published DOM at this fixed source commit are regression requirements; the chapter 31 section-title alias is asserted separately."
+    },
+    "paper_source_files": [
+      "notes/algorithms/online-softmax.md", "notes/algorithms/parallel-reduce.md", "notes/algorithms/flash-attention-mechanism.md", "notes/algorithms/flash-attention-2.md", "papers/attention/gqa.md", "notes/algorithms/mla-deepseek.md", "notes/algorithms/dsa-sparse-attention.md", "notes/algorithms/gdn-linear-attention.md", "notes/algorithms/fa4-flexattention.md", "notes/algorithms/attention-2026-sage3-kascade.md", "notes/algorithms/deepseek-v32-handcalc.md", "notes/algorithms/deepseek-v4.md", "notes/algorithms/moe-inference.md", "notes/algorithms/quantization-int8-fp8.md", "notes/algorithms/speculative-decoding.md", "notes/algorithms/pd-disaggregation.md", "papers/inference/paged-attention.md", "notes/algorithms/optimizers-adam.md", "papers/training/zero-paper.md", "roadmap/curriculum/papers/deepseek-v41.md", "roadmap/curriculum/papers/inference-workloads.md",
+      "papers/foundations/01-language-modeling.md", "papers/foundations/02-attention.md", "papers/foundations/03-transformer-block.md", "papers/foundations/04-position-encoding.md", "papers/foundations/05-complete-decoder.md", "papers/foundations/06-transformer-families.md",
+      "papers/topics/ssm-mamba.md", "papers/topics/training-and-scaling.md", "papers/topics/lora-adaptation.md", "papers/topics/alignment-and-rl.md", "papers/topics/sampling-and-search.md", "papers/topics/retrieval-and-memory.md", "papers/topics/gptq.md", "papers/topics/awq.md", "papers/topics/smoothquant.md", "papers/topics/vision-language.md", "papers/topics/diffusion-and-flow.md", "papers/topics/scan-and-selection.md", "papers/topics/compression-and-distillation.md", "papers/topics/long-context-design.md"
+    ],
+    "source_version_policy": "Paper editions are pinned by their arXiv identifiers. Author-code pointers pin repository and source file/function names as inspected on 2026-10-14; no mutable default-branch pointer is represented as a commit-pinned code snapshot.",
+    "foundation_primary_sources": [
+      "https://arxiv.org/abs/1706.03762",
+      "https://arxiv.org/abs/1607.06450",
+      "https://arxiv.org/abs/2002.05202",
+      "https://arxiv.org/abs/2104.09864",
+      "https://arxiv.org/abs/2407.21783",
+      "https://github.com/openai/gpt-2/tree/master/src/model.py",
+      "https://github.com/meta-llama/llama-models"
+    ],
+    "primary_sources_for_new_topics": [
+      {"id":47,"papers":["https://arxiv.org/abs/2312.00752","https://arxiv.org/abs/2405.21060"],"author_code":"https://github.com/state-spaces/mamba; mamba_simple.py, selective_scan_interface.py, SSD modules"},
+      {"id":48,"papers":["https://arxiv.org/abs/2203.15556","https://arxiv.org/abs/2001.08361","https://arxiv.org/abs/1711.05101"],"author_code":"https://github.com/karpathy/nanoGPT; train.py"},
+      {"id":49,"papers":["https://arxiv.org/abs/2106.09685"],"author_code":"https://github.com/microsoft/LoRA; loralib/layers.py"},
+      {"id":50,"papers":["https://arxiv.org/abs/2203.02155","https://arxiv.org/abs/2305.18290","https://arxiv.org/abs/1707.06347","https://arxiv.org/abs/2402.03300"],"local_case":{"path":"downloads/DeepSeek_V41_Tech_Report.pdf","pdf_pages":[25,29,31],"scope":"verifiability and task/data attribution; effort-group relative advantages and length penalty; stale-token masking and length bias"}},
+      {"id":51,"papers":["https://arxiv.org/abs/1904.09751","https://arxiv.org/abs/2203.11171"]},
+      {"id":52,"papers":["https://arxiv.org/abs/2005.11401","https://arxiv.org/abs/2004.04906"],"author_code":"https://github.com/facebookresearch/DPR; biencoder.py; https://github.com/facebookresearch/atlas"},
+      {"id":53,"papers":["https://arxiv.org/abs/2210.17323"],"author_code":"https://github.com/IST-DASLab/gptq; gptq.py"},
+      {"id":54,"papers":["https://arxiv.org/abs/2306.00978"],"author_code":"https://github.com/mit-han-lab/llm-awq"},
+      {"id":55,"papers":["https://arxiv.org/abs/2211.10438"],"author_code":"https://github.com/mit-han-lab/smoothquant"},
+      {"id":56,"papers":["https://arxiv.org/abs/2010.11929","https://arxiv.org/abs/2103.00020","https://arxiv.org/abs/2304.08485"],"author_code":"https://github.com/openai/CLIP; https://github.com/haotian-liu/LLaVA"},
+      {"id":57,"papers":["https://arxiv.org/abs/2006.11239","https://arxiv.org/abs/2011.13456","https://arxiv.org/abs/2210.02747"],"author_code":"https://github.com/openai/guided-diffusion; https://github.com/facebookresearch/flow_matching"},
+      {"id":58,"author_code":"https://github.com/NVIDIA/cccl; CUB DeviceScan/DeviceSelect and Thrust selection"},
+      {"id":59,"papers":["https://arxiv.org/abs/1503.02531","https://arxiv.org/abs/2306.13649","https://arxiv.org/abs/1910.01108"],"local_case":{"path":"downloads/DeepSeek_V41_Tech_Report.pdf","pdf_pages":[29,31],"scope":"student-policy prefixes versus teacher-generated prefixes; off-policy stale-token masking and length bias"}},
+      {"id":60,"papers":["https://arxiv.org/abs/2104.09864","https://arxiv.org/abs/2306.15595","https://arxiv.org/abs/2309.00071","https://arxiv.org/abs/2004.05150"],"author_code":"https://github.com/jquesnelle/yarn; https://github.com/allenai/longformer"}
+    ],
+    "figures": "papers/topics/figures/ (14 SVG source diagrams and matching PNG previews at each SVG's intrinsic pixel dimensions)",
+    "semantic_checks": "papers/topics/examples/paper_checks.py; NumPy checks cover IDs 47-60, optional --torch checks DPO safe masking, separate winner/loser logits, reference no-grad and backward gradients.",
+    "validation": {
+      "build": "npm run build passed: 59 chapters, 128 readable Markdown pages, 112 local assets, 2796 formulas and 181 original-source excerpts.",
+      "tests": ["node check.cjs --content-only", "node editorial-audit.cjs", "node navigation.test.cjs", "node paper-reader.test.cjs", "node offline-static.test.cjs", "node theme.test.cjs", "node link-audit.cjs", "papers/topics/examples/paper_checks.py", "papers/topics/examples/paper_checks.py --torch"],
+      "link_audit": "129 HTML artifacts, 5769 local href/src targets, 4397 HTML/chapter fragments and 1155 attached-document TOC fragments passed. The initial document-retaining cache was stopped at 120 seconds; the metadata-only cache passed.",
+      "file_url_visual": "Microsoft Edge opened generated index.html directly as file:// at chapter 41. Screenshots: .codex/paper-rebuild-validation/chapter-41-dark.png and chapter-41-light.png; computed backgrounds were rgb(14, 23, 36) and rgb(255, 255, 255), respectively.",
+      "png_dimensions": "All 14 topic PNGs were re-rendered from their SVG elements at intrinsic CSS scale and PNG IHDR dimensions were verified against SVG width/height.",
+      "device_boundary": "Foundation CPU receipt is papers/foundations/examples/validation-2026-10-14.txt. PyTorch CPU validation is recorded there; no GPU execution or performance test was run.",
+      "preservation": "The user independently confirmed 49 protected PATH/NOW/solutions/reference/PDF/original-log file SHA256 values remain unchanged. No PDF was rewritten; no learning status was updated."
+    }
+  },
+  "gpu_cuda_reader_review_2026_10_14": {
+    "scope": "All numbered sections and folded extensions of the five GPU/CUDA chapters; continuous explanations, preserved source examples and measurements, explicit assumptions and eight diagrams.",
+    "audit": ".codex/gpu-cuda-reader-review-2026-10-14.md",
+    "arithmetic_check": ".codex/check-gpu-reading-cases.cjs",
+    "local_cuda_pdf": "downloads/cuda-programming-guide.pdf",
+    "pdf_page_ranges": [[19, 25], [61, 88], [118, 125], [132, 141], [174, 179], [197, 224]],
+    "source_note": "PDF 62 has displaced Python builtin-variable descriptions; the course follows C++ definitions and CUDA API semantics. These are selected source ranges, not a claim of reading the full PDF.",
+    "official_references": [
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/writing-cuda-kernels.html",
+      "https://docs.nvidia.com/cuda/cuda-runtime-api/api-sync-behavior.html",
+      "https://docs.nvidia.com/cuda/cuda-compiler-driver-nvcc/index.html",
+      "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/",
+      "https://docs.nvidia.com/nsight-compute/ProfilingGuide/"
+    ],
+    "preservation": "108 protected implementation/progress/PDF files retain their hashes. All 197 retained original code/example blocks are unchanged; one redundant ASCII double-buffer block was replaced by its diagram. One working-directory command was added.",
+    "validation": "Build passed: 39 chapters, 108 attached pages, 59 assets, 1801 formulas and 180 exact source excerpts. Content, editorial, navigation and offline checks passed. All 283 previously published IDs across chapters 1-5 and 285 local references passed. Eight PNGs and five actual-page diagram views were inspected, including light/dark modes. CPU cases passed; 108 protected source/progress/PDF hashes were unchanged. No GPU or performance execution."
+  },
   "transpose_server_entry_2026_10_14": {
     "script": "solutions/triton/transpose_bench.py",
     "kernel": "solutions/triton/transpose_v2_leetgpu.py",

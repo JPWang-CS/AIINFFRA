@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="570" viewBox="0 0 1120 570" role="img" aria-labelledby="title desc">
+<title id="title">occupancy 驻留上限由最紧资源约束决定</title>
+<desc id="desc">两组理论算例显示线程、warp、寄存器、shared memory 与 block 数上限。第一组由 shared memory 限制为 3 个 block，得到 24 个驻留 warp 和 37.5% 占用率。第二组由寄存器和 shared memory 并列限制为 2 个 block，得到 16 个驻留 warp 和 25% 占用率。</desc>
+<style>
+@media (prefers-color-scheme: dark) {
+  svg > rect { fill: #111827; }
+  svg text { fill: #edf2f7; }
+  svg text[fill="#526b82"] { fill: #b7c5d4; }
+  svg rect[fill="#d9e2ec"] { fill: #35465a; }
+  svg rect[fill="#bf7850"] { fill: #c9794d; }
+  svg rect[fill="#e7f2f0"] { fill: #183b35; stroke: #75b59f; }
+}
+</style>
+<rect width="1120" height="570" rx="12" fill="#f8fafc"/>
+<g font-family="Segoe UI, Microsoft YaHei, sans-serif" fill="#16324f">
+<text x="32" y="42" font-size="24" font-weight="700">同时驻留多少个 block，取决于最先用尽的资源</text>
+<text x="32" y="70" font-size="15" fill="#526b82">理论算例：每个 block 有 256 个线程、8 个 warp。</text>
+<text x="32" y="94" font-size="14" fill="#526b82">每个 SM 有 65,536 个寄存器、96 KiB shared、2,048 个线程、64 个 warp、最多 32 个 block。条长按 0–32 个 block 同一比例。</text>
+<text x="32" y="126" font-size="18" font-weight="700">配置 A：64 registers/thread · 32 KiB shared/block</text>
+<text x="32" y="158" font-size="14">线程上限</text><rect x="170" y="143" width="80" height="20" rx="4" fill="#d9e2ec"/><text x="265" y="159" font-size="14">8 blocks</text>
+<text x="32" y="190" font-size="14">warp 上限</text><rect x="170" y="175" width="80" height="20" rx="4" fill="#d9e2ec"/><text x="265" y="191" font-size="14">8</text>
+<text x="32" y="222" font-size="14">寄存器上限</text><rect x="170" y="207" width="40" height="20" rx="4" fill="#d9e2ec"/><text x="225" y="223" font-size="14">4</text>
+<text x="32" y="254" font-size="14">shared 上限</text><rect x="170" y="239" width="30" height="20" rx="4" fill="#bf7850"/><text x="215" y="255" font-size="14" font-weight="700">3 ← 最小值</text>
+<text x="32" y="286" font-size="14">block 数上限</text><rect x="170" y="271" width="320" height="20" rx="4" fill="#d9e2ec"/><text x="505" y="287" font-size="14">32</text>
+<rect x="690" y="143" width="390" height="148" rx="10" fill="#e7f2f0" stroke="#438873"/>
+<text x="716" y="184" font-size="17" font-weight="700">驻留 3 个 block</text><text x="716" y="220" font-size="16">3 × 8 = 24 个驻留 warp</text><text x="716" y="256" font-size="18" font-weight="700">24 / 64 = 37.5%</text>
+<text x="32" y="342" font-size="18" font-weight="700">配置 B：96 registers/thread · 48 KiB shared/block</text>
+<text x="32" y="374" font-size="14">线程上限</text><rect x="170" y="359" width="80" height="20" rx="4" fill="#d9e2ec"/><text x="265" y="375" font-size="14">8 blocks</text>
+<text x="32" y="406" font-size="14">warp 上限</text><rect x="170" y="391" width="80" height="20" rx="4" fill="#d9e2ec"/><text x="265" y="407" font-size="14">8</text>
+<text x="32" y="438" font-size="14">寄存器上限</text><rect x="170" y="423" width="20" height="20" rx="4" fill="#bf7850"/><text x="205" y="439" font-size="14" font-weight="700">2 ← 并列最小</text>
+<text x="32" y="470" font-size="14">shared 上限</text><rect x="170" y="455" width="20" height="20" rx="4" fill="#bf7850"/><text x="205" y="471" font-size="14" font-weight="700">2 ← 并列最小</text>
+<text x="32" y="502" font-size="14">block 数上限</text><rect x="170" y="487" width="320" height="20" rx="4" fill="#d9e2ec"/><text x="505" y="503" font-size="14">32</text>
+<rect x="690" y="359" width="390" height="148" rx="10" fill="#e7f2f0" stroke="#438873"/>
+<text x="716" y="401" font-size="16" font-weight="700">驻留 2 个 block · 16 个驻留 warp</text><text x="716" y="439" font-size="18" font-weight="700">16 / 64 = 25%</text>
+<text x="32" y="541" font-size="14" fill="#526b82">占用率是驻留比例；性能还取决于指令发射、管线和等待情况。</text>
+</g>
+</svg>

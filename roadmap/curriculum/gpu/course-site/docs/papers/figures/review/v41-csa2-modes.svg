@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="540" viewBox="0 0 1200 540" role="img" aria-labelledby="title desc">
+  <title id="title">CSA2 的 Full、Reindex、Reuse 模式</title>
+  <desc id="desc">三种层模式都计算本层 Query 和 SWA KV；Full 新建 main KV/indexer K 与 Top-K，Reindex 复用缓存但重算 Top-K，Reuse 复用缓存与索引。</desc>
+  <defs><marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#475569"/></marker></defs><rect width="1200" height="540" fill="#f8fafc"/><text x="48" y="52" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="27" font-weight="700" fill="#0f172a">CSA2：缓存所有者与索引所有者分别追踪</text>
+  <g font-family="Segoe UI,Microsoft YaHei,sans-serif" text-anchor="middle">
+    <rect x="35" y="90" width="355" height="390" rx="16" fill="#fff" stroke="#cbd5e1"/><text x="212" y="130" font-size="23" font-weight="700" fill="#0f172a">Full</text>
+    <rect x="422" y="90" width="355" height="390" rx="16" fill="#fff" stroke="#cbd5e1"/><text x="599" y="130" font-size="23" font-weight="700" fill="#0f172a">Reindex</text>
+    <rect x="809" y="90" width="355" height="390" rx="16" fill="#fff" stroke="#cbd5e1"/><text x="986" y="130" font-size="23" font-weight="700" fill="#0f172a">Reuse</text>
+  </g>
+  <g font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="16" text-anchor="middle">
+    <g><rect x="63" y="165" width="135" height="62" rx="10" fill="#dbeafe" stroke="#2563eb"/><text x="130" y="187" font-size="14" fill="#1e3a8a">指定源 hidden</text><text x="130" y="211" font-size="12" fill="#1e3a8a">本层投影 → KV</text><rect x="240" y="165" width="122" height="62" rx="10" fill="#dcfce7" stroke="#16a34a"/><text x="301" y="202" fill="#14532d">main KV</text><path d="M198 196H235" stroke="#475569" stroke-width="2" marker-end="url(#arr)" fill="none"/>
+      <rect x="63" y="260" width="135" height="62" rx="10" fill="#ede9fe" stroke="#7c3aed"/><text x="130" y="297" fill="#4c1d95">indexer Q/K</text><rect x="240" y="260" width="122" height="62" rx="10" fill="#fef3c7" stroke="#d97706"/><text x="301" y="297" fill="#78350f">新 Top-K</text><path d="M198 291H235" stroke="#475569" stroke-width="2" marker-end="url(#arr)" fill="none"/>
+      <text x="212" y="365" fill="#334155">encoder 用本层 Hₗ；CED decoder 用 Henc</text><text x="212" y="390" fill="#334155">本层投影生成 KV；Query / SWA 仍用本层 hidden</text></g>
+    <g><rect x="450" y="165" width="135" height="62" rx="10" fill="#dcfce7" stroke="#16a34a"/><text x="517" y="202" fill="#14532d">复用 main KV</text><rect x="627" y="165" width="122" height="62" rx="10" fill="#dbeafe" stroke="#2563eb"/><text x="688" y="202" fill="#1e3a8a">本层 Query</text>
+      <rect x="450" y="260" width="135" height="62" rx="10" fill="#ede9fe" stroke="#7c3aed"/><text x="517" y="297" fill="#4c1d95">本层 indexer Q</text><rect x="627" y="260" width="122" height="62" rx="10" fill="#fef3c7" stroke="#d97706"/><text x="688" y="297" fill="#78350f">新 Top-K</text><path d="M585 291H622" stroke="#475569" stroke-width="2" marker-end="url(#arr)" fill="none"/>
+      <text x="599" y="365" fill="#334155">复用 main KV/indexer K；</text><text x="599" y="390" fill="#334155">重算选择，当前层仍算 Q/SWA</text></g>
+    <g><rect x="837" y="165" width="135" height="62" rx="10" fill="#dcfce7" stroke="#16a34a"/><text x="904" y="202" fill="#14532d">复用 main KV</text><rect x="1014" y="165" width="122" height="62" rx="10" fill="#dbeafe" stroke="#2563eb"/><text x="1075" y="202" fill="#1e3a8a">本层 Query</text>
+      <rect x="837" y="260" width="135" height="62" rx="10" fill="#fef3c7" stroke="#d97706"/><text x="904" y="297" fill="#78350f">复用 Top-K</text><rect x="1014" y="260" width="122" height="62" rx="10" fill="#e2e8f0" stroke="#64748b"/><text x="1075" y="297" fill="#334155">无重评分</text><path d="M972 291H1009" stroke="#475569" stroke-width="2" marker-end="url(#arr)" fill="none"/>
+      <text x="986" y="365" fill="#334155">复用 KV 与最近选择；</text><text x="986" y="390" fill="#334155">当前层仍算 Query、SWA、Attention</text></g>
+  </g>
+  <rect x="62" y="425" width="1076" height="38" rx="8" fill="#f1f5f9"/><text x="600" y="450" text-anchor="middle" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="15" fill="#475569">CED decoder 的 Full 源是 Henc；Reindex / Reuse 引用最近 Full 源。各模式当前层仍计算 Query 与 SWA。</text>
+</svg>

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="500" viewBox="0 0 1200 500" role="img" aria-labelledby="title desc">
+  <title id="title">MoE 的 shared expert 与 fine-grained routed experts</title>
+  <desc id="desc">每个 token 同时经过每 token 执行的 shared expert 和 Top-K 选择的若干细粒度 routed experts，再合并两条路径。</desc>
+  <defs><marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#334155"/></marker></defs><rect width="1200" height="500" fill="#f8fafc"/><text x="48" y="52" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="27" font-weight="700" fill="#0f172a">共享路径承载通用变换，细粒度专家承接稀疏分工</text>
+  <g font-family="Segoe UI,Microsoft YaHei,sans-serif" text-anchor="middle">
+    <rect x="55" y="205" width="150" height="80" rx="14" fill="#e2e8f0" stroke="#64748b" stroke-width="2"/><text x="130" y="251" font-size="20" fill="#0f172a">token x</text>
+    <rect x="300" y="110" width="205" height="85" rx="14" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/><text x="402" y="147" font-size="19" fill="#0f172a">Shared expert</text><text x="402" y="176" font-size="15" fill="#1e3a8a">每 token 执行</text>
+    <rect x="300" y="300" width="205" height="85" rx="14" fill="#fef3c7" stroke="#d97706" stroke-width="2"/><text x="402" y="337" font-size="19" fill="#0f172a">Router Top-K</text><text x="402" y="366" font-size="15" fill="#78350f">选择少数专家</text>
+    <rect x="610" y="285" width="155" height="62" rx="11" fill="#ffedd5" stroke="#ea580c" stroke-width="2"/><text x="687" y="323" font-size="17" fill="#7c2d12">窄 expert 1</text>
+    <rect x="610" y="360" width="155" height="62" rx="11" fill="#ffedd5" stroke="#ea580c" stroke-width="2"/><text x="687" y="398" font-size="17" fill="#7c2d12">窄 expert 2</text>
+    <rect x="850" y="195" width="160" height="100" rx="14" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/><text x="930" y="235" font-size="19" fill="#0f172a">加权合并</text><text x="930" y="266" font-size="15" fill="#4c1d95">shared + routed</text>
+    <rect x="1060" y="205" width="100" height="80" rx="14" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/><text x="1110" y="251" font-size="19" fill="#14532d">y</text>
+  </g>
+  <g fill="none" stroke="#334155" stroke-width="3" marker-end="url(#arr)"><path d="M205 230H250V152H295"/><path d="M205 260H250V342H295"/><path d="M505 342H570V316H605"/><path d="M505 342H570V391H605"/><path d="M505 152H820V220H845"/><path d="M765 316H820V255H845"/><path d="M765 391H820V270H845"/><path d="M1010 245H1055"/></g>
+  <text x="55" y="465" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="16" fill="#475569">切分更细会改变专家宽度与分桶形状；shared 路径增加固定计算。两者的速度与容量需分开核算。</text>
+</svg>

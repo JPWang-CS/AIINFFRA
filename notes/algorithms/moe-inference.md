@@ -37,12 +37,35 @@ gates = softmax(top_k_scores)   # [seq_len, 2]
 output = sum(gates[t][i] * Expert[top_k_indices[t][i]](x[t]) for i in range(k))
 ```
 
+路由里有一个训练时容易混淆的边界。`router_logits = x @ W_router` 与 softmax 概率对 logits 可微，所选专家的加权输出也把梯度传回被选中的专家和对应 gate；离散的 `topk_indices` 本身没有普通连续梯度，未选专家不会因为该 token 的主任务损失直接收到这条路由梯度。训练因此还需要处理专家负载，否则少数专家可能长期拥挤、另一些专家很少更新。
+
+常见辅助负载损失会把硬路由占比和可微的平均概率结合，例如 `L_balance ∝ E · Σ_e f_e P_e`，其中 `f_e` 是分派到专家 e 的 token 比例，`P_e` 是 batch 中对专家 e 的平均 router probability。`f_e` 通常由离散分派统计，`P_e` 可对 router logits 反向传播。这个式子说明梯度如何推动概率分布趋于均衡；具体论文可能另加 z-loss、序列级损失或容量规则，不能把这一示例当所有 MoE 的训练目标。
+
+![MoE 中 router、离散派发、专家计算和加权合并](../../papers/figures/review/moe-routing.svg)
+
+可以把当前 batch 的执行压缩成下面的形状账：`topk_indices/topk_weights` 为 `[T,K]`，分桶后每个专家收到 `T_e` 行 `[D]`；专家输出按原 token 与 top-k 槽位恢复，再按 gate 加权求和。模型实现还可能对概率重新归一化、加入共享专家，或采用不同的溢出路径。
+
+```python
+logits = x @ W_router                         # [T, E]
+weights, expert_ids = logits.softmax(-1).topk(K, dim=-1)  # [T, K]
+tokens_by_expert = stable_bucket(x, expert_ids)           # each expert: [T_e, D]
+y_slots = run_expert_grouped_gemm(tokens_by_expert)       # restore [T, K, D]
+y = (weights[..., None] * y_slots).sum(dim=1)             # [T, D]
+```
+
+这是路由数据流的解释性伪码，不规定某个框架的 API，也没有覆盖 capacity、padding 或 fused grouped GEMM。
+
 **问题 1：专家利用率不均（load imbalance）**  
 如果大部分 token 都路由到少数几个热门专家，分桶后的 token 数就会偏斜：热门专家的 GEMM 排队，其他设备空闲，尾部完成时间由最慢的桶决定。均匀路由只改善一种负载形状，不能保证专家 GEMM 的矩阵尺寸已经适合硬件。
 
-**可能的训练期缓解手段**：
-- **Auxiliary loss**：训练时加入负载均衡目标，改变路由分布；它会影响训练目标，不能在推理端单独补救既有偏斜。
-- **Expert capacity**：给每个专家预留容量。超出容量时，具体实现可能丢弃 token、走残差或采用其他溢出策略，必须和模型训练时的语义保持一致。
+**负载均衡与容量不是同一机制**：
+- **辅助损失**通过训练梯度改变 router 的概率与后续分派倾向。损失系数过大也会和主任务竞争；它不保证任意 batch 都均匀，也不能在推理时自动修复已经形成的路由偏斜。
+- **无辅助损失的负载调节**也存在，例如按专家维护 bias 并根据近期负载更新。bias 可影响 Top-K 选择，而最终混合权重仍可能使用原 router score；这种更新不等同于对 `topk_indices` 反向传播。
+- **Expert capacity**限制某批次每个专家可接收的 token 数。超过容量后的处理属于模型/实现语义：有的配置会丢弃溢出 token，有的尝试次选专家或保留残差路径；训练与推理必须使用兼容的规则。不能只说“有 capacity”，就推断一定丢 token 或一定保留输出。
+
+DeepSeek-V4.1 报告给出多模态路由的具体设计例子：图像 token 与文本 token 各自使用独立的专家选择 bias，训练步后按本模态负载更新；混合输出仍用原 router scores 计算权重。校正 bias 调整选择集合，原始分数控制所选专家的贡献。
+
+![文本和图像 token 使用独立 bias 选择专家，输出 gate 仍取原始 score](../../papers/figures/review/moe-modality-routing.svg)
 
 ### 2. Expert Parallelism（EP）
 
@@ -72,6 +95,19 @@ GPU 1: Expert 8-15
 
 ## 关键数据/取舍
 
+### 细粒度专家与共享专家
+
+把 FFN 切成更多、更窄的 routed experts，可在相近的激活计算预算下提高专家分工粒度。若同时增大每 token 的 K，分派次数、router 负载和 grouped GEMM 的小矩阵数量也会增加；因此专家更细不自动意味着推理更快，必须看每个专家实际收到多少 token 以及 GEMM 是否足够大。
+
+共享专家则不参与 Top-K 竞争，通常对每个 token 都执行，用于承载多个 token/路由专家都可能需要的通用变换；routed experts 再表达更专门的路径。这样可以减少通用知识在多个专家间重复学习的压力，但共享路径本身增加每 token 计算和权重读取，不能视为免费的负载均衡器。DeepSeekMoE 报告的 fine-grained routed experts 与 shared experts 是模型设计选择，实际作用应按其训练配置和消融范围解释。
+
+| 设计 | 计算图变化 | 需要核对的量 |
+|---|---|---|
+| 更多细粒度 routed experts | expert 数增加、单个 FFN 变窄；每 token 可能提高 K | 每专家 token 数、padding/capacity、GEMM 形状、EP 通信 |
+| Shared expert | 每 token 增加一条固定专家路径，与 routed 输出合并 | shared FFN FLOPs/权重、合并位置、其是否与 routed 路径并行 |
+
+![细粒度路由专家与每 token 执行的共享专家](../../papers/figures/review/moe-shared-finegrained.svg)
+
 | 方案 | 吞吐 | 延迟 | 显存 | 适用 |
 |------|:----:|:----:|:----:|------|
 | 全 GPU（所有专家常驻） | 避免换入 | 少一条传输路径 | 高 | 权重可驻留且通信不是主瓶颈 |
@@ -79,7 +115,7 @@ GPU 1: Expert 8-15
 | Expert parallelism | 取决于桶大小 | 增加 collective 等待 | 分摊到各 GPU | 通信拓扑和负载可控 |
 | Shared Expert（DeepSeek-V3）| 仍需测路由与共享层 | 取决于实现 | 由完整配置决定 | 需要共享能力且保留稀疏路由 |
 
-DeepSeek-V3 报告了共享专家与路由专家并存的设计；讨论其收益时，应分别统计共享路径、路由路径和通信，而不是把共享专家直接当作负载均衡保证。
+DeepSeek-V3 报告了共享专家与路由专家并存的设计，并采用 auxiliary-loss-free load balancing。讨论其收益时，应分别统计共享路径、路由路径和通信；论文中的负载偏置更新属于训练时的路由调节，不意味着离散 Top-K 选择可微，也不代表推理时仍执行同一套更新。
 
 ---
 

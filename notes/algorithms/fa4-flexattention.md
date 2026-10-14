@@ -1,6 +1,6 @@
 # FlashAttention-4 与 FlexAttention：可编程的注意力
 
-> 注意力演进类 · 2026-03 PyTorch 公布 FA4 backend 集成 · FlexAttention 编译路径 · 官方博客 + 仓库整理
+> 注意力实现类 · FlashAttention-4 arXiv:2603.05451（2026-03-05） · FlexAttention 编译路径
 > 挂靠：主线 A/B 注意力实现侧 · B3 之后 · torch.compile 方向
 
 ---
@@ -12,6 +12,8 @@
 ## 核心思路
 
 ### 1. FlexAttention：把 mask 变成可编程的
+
+![FlexAttention 规则与 FA4/Triton backend 的分工](../../papers/figures/review/fa4-flexattention.svg)
 
 PyTorch 的 FlexAttention 提供两个"钩子"，用户不写 kernel，只写规则：
 
@@ -62,4 +64,4 @@ FlexAttention 会把这些规则编译进 kernel。用户可以快速改数学�
 
 ---
 
-*配套：FA2 机制 [flash-attention-2.md](flash-attention-2.md) · [PyTorch FA4 官方博客](https://pytorch.org/blog/flexattention-flashattention-4-fast-and-flexible/) · [FA4 官方实现](https://github.com/Dao-AILab/flash-attention) · B3 Triton Flash Attention（Lesson 按需生成）*
+*参考：[FlashAttention-4 原论文](https://arxiv.org/abs/2603.05451) · [PyTorch FlexAttention / FA4 博客](https://pytorch.org/blog/flexattention-flashattention-4-fast-and-flexible/) · [作者实现](https://github.com/Dao-AILab/flash-attention) · [FA2 机制](flash-attention-2.md)*

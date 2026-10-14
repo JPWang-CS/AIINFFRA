@@ -126,6 +126,10 @@ $$
 
 **结论**：每个块的贡献都要乘一个修正因子 $\exp(m_{\text{block}} - m)$，这就是 online 更新公式的来源。
 
+![两个局部 softmax 状态合并到统一最大值](../../papers/figures/review/online-softmax-merge.svg)
+
+图中 $(m,\ell,U)$ 对应最大值、指数和与未归一化 Value 累加器。合并两个 tile 时，同一修正因子分别缩放局部 $\ell$ 与 $U$，因此合并后才计算 $O=U/\ell$。
+
 > **为什么会有"A、B 两块"这个推导**：就是为了证明——数据分给多个线程各算各的、最后 merge，结果和一次算全部 x 完全等价。merge 公式就是 `m = max(m_A, m_B)`、`S = S_A·e^(m_A-m) + S_B·e^(m_B-m)`。每个线程把自己的那段 x 当成一个独立的小 softmax，算出局部状态，交给 merge。
 
 ### 多线程下全局 max 怎么来的：两级归约

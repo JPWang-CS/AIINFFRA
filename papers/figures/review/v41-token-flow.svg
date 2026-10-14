@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1300" height="560" viewBox="0 0 1300 560" role="img" aria-labelledby="title desc">
+  <title id="title">DeepSeek-V4.1 编码器与解码器 token 路径</title>
+  <desc id="desc">文本和图像进入 20 层因果编码器产生 Henc；指定编码器层各自投影 global KV 供解码器读取。当前 suffix hidden 进入 20 层解码器内的 Query、SWA 和 global KV attention，最后归一化并投影为 logits。</desc>
+  <defs><marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#334155"/></marker></defs>
+  <rect width="1300" height="560" fill="#f8fafc"/><text x="48" y="52" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="27" font-weight="700" fill="#0f172a">V4.1：编码器建立上下文，解码器逐层读取并生成 logits</text>
+  <g font-family="Segoe UI,Microsoft YaHei,sans-serif" text-anchor="middle">
+    <rect x="45" y="190" width="155" height="90" rx="14" fill="#e2e8f0" stroke="#64748b" stroke-width="2"/><text x="122" y="225" font-size="18" fill="#0f172a">文本 / 图像</text><text x="122" y="253" font-size="15" fill="#475569">输入 tokens</text>
+    <rect x="260" y="170" width="195" height="130" rx="14" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/><text x="357" y="215" font-size="20" fill="#1e3a8a">因果 Encoder</text><text x="357" y="250" font-size="17" fill="#1e3a8a">20 层</text><text x="357" y="278" font-size="14" fill="#475569">各层保留自身 hidden</text>
+    <rect x="520" y="170" width="165" height="130" rx="14" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/><text x="602" y="215" font-size="20" fill="#4c1d95">Henc</text><text x="602" y="250" font-size="16" fill="#4c1d95">编码上下文</text><text x="602" y="278" font-size="14" fill="#475569">供 decoder 读取</text>
+    <rect x="515" y="365" width="175" height="92" rx="14" fill="#fef3c7" stroke="#d97706" stroke-width="2"/><text x="602" y="402" font-size="17" fill="#78350f">指定层投影</text><text x="602" y="430" font-size="15" fill="#78350f">global KV</text>
+    <rect x="790" y="170" width="230" height="150" rx="14" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/><text x="905" y="210" font-size="20" fill="#14532d">因果 Decoder · 20 层</text><text x="905" y="248" font-size="16" fill="#14532d">suffix hidden → 本层 Query</text><text x="905" y="276" font-size="15" fill="#14532d">SWA + 读取 global KV</text><text x="905" y="301" font-size="13" fill="#475569">每层按自身路径计算</text>
+    <rect x="1090" y="190" width="165" height="90" rx="14" fill="#fce7f3" stroke="#db2777" stroke-width="2"/><text x="1172" y="225" font-size="18" fill="#831843">FinalNorm</text><text x="1172" y="253" font-size="16" fill="#831843">lm_head → logits</text>
+  </g>
+  <g fill="none" stroke="#334155" stroke-width="3" marker-end="url(#arr)"><path d="M200 235H255"/><path d="M455 235H515"/><path d="M685 235H735V210H785"/><path d="M685 410H735V280H785"/><path d="M1020 235H1085"/><path d="M600 300V360"/></g>
+  <text x="48" y="510" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="16" fill="#475569">global KV 由指定 encoder hidden 投影；decoder 各层仍以当前 suffix hidden 计算 Query 与 SWA。</text>
+</svg>

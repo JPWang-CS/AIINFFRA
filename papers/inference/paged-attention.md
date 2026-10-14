@@ -57,6 +57,8 @@ Beam 2: "Translate to French: Hello" → "Salut"
 
 ## 核心思想：虚拟内存 for GPU
 
+![逻辑 KV block 通过 block table 映射到非连续物理页](../../papers/figures/review/paged-kv.svg)
+
 ### OS 虚拟内存的类比
 
 | OS 虚拟内存 | PagedAttention | 目的 |

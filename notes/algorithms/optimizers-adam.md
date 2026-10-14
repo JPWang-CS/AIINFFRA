@@ -27,6 +27,8 @@ Adam 使用动量和逐参数二阶统计调整更新；AdamW 将 weight decay �
 
 ### 2. Adam：两个 EMA + 偏差修正
 
+![Adam 的一阶/二阶状态、偏差修正与 AdamW 衰减分支](../../papers/figures/review/adam-state-update.svg)
+
 Adam 给每个参数维护两个指数滑动平均（EMA）：
 
 ```text

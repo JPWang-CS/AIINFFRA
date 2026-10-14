@@ -33,6 +33,8 @@
 
 ## 核心思路：物理分离 P 和 D 节点
 
+![Prefill worker、KV 传输与 Decode worker 的服务路径](../../papers/figures/review/pd-disaggregation.svg)
+
 **Splitwise (Patel et al., 2023) / DistServe (Zhong et al., 2024)**：
 
 ```

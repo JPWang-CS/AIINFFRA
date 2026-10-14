@@ -6,6 +6,10 @@
 
 ## 1. Prefill/Decode 与训练/推理不在同一个分类轴上
 
+![按 shape、batch 与通信定位推理瓶颈的工作负载示意](../../../papers/figures/review/inference-workload-roofline.svg)
+
+Prefill 常以较长序列的矩阵乘和注意力为主，Decode 常以单步权重与历史 KV 读取为主；这是候选瓶颈，不是阶段定义。判断时固定模型、dtype、prompt/output 长度、batch、并行策略与计时边界，计算该段的 $AI=FLOPs/Bytes$，再和设备的计算/带宽平衡点比较，并用 profiler 计数确认。提高 batch 会让权重被更多 token 共用，同时增加 KV 并发访问；跨卡 collective 也可能在任一阶段进入关键路径。
+
 Prefill（提示词阶段）和 Decode（逐 token 阶段）描述自回归生成时如何处理 token；训练和推理描述是否通过损失更新参数。强化学习（RL，Reinforcement Learning）训练包含 rollout 生成样本，因此同一训练系统内部会反复执行 Prefill/Decode，但 rollout 还要维护行为策略版本、奖励和可训练 token 的状态。
 
 | 阶段 | 输入和计算 | 损失或反馈 | 是否更新参数 |

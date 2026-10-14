@@ -44,6 +44,8 @@ $$
 
 所有块扫完后归一化：$O \leftarrow O / \ell$（只在最后做一次，循环里不归一化）。伪代码（对应上面的公式）：
 
+![FlashAttention 中 Q tile 驻留与 K/V tile 流式处理](../../papers/figures/review/fa-qkv-roles.svg)
+
 ```
 对 Q 的每个块 (Br 行,整块一起向量化算):
   初始: m = full(Br, -inf)              # [Br]    每行 running max

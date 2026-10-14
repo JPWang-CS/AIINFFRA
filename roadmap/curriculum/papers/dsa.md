@@ -18,6 +18,8 @@ O=\frac{\sum_{t\in\mathcal I}\bigl[e^{s_t}v_t\bigr]}
 {\sum_{t\in\mathcal I}e^{s_t}}.
 $$
 
+![Indexer 选位置，主 Attention gather 对应 KV entry 并重新归一化](../../../papers/figures/review/dsa-index-gather.svg)
+
 这里有两种分数：indexer 的 u 用于筛选，主 Attention 的 s 用于加权。把两者混为一谈，会误读训练目标、cache 和 kernel 数据流。
 
 选中索引不一定每个 Attention head 都独立生成。DeepSeek-V3.2-Exp 的公开推理实现把所选位置的 mask 广播到主 Attention head 维；不能概括为“每头各选一组”。是否跨层复用又是另一个设计维度。

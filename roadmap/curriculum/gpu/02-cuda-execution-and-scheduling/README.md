@@ -1,6 +1,8 @@
 # 第 2 章：CUDA 执行模型与指令调度
 
-CUDA 先按 x、再按 y、最后按 z 的顺序为 block 内线程编号，并按连续 32 个编号组成 warp。这个分组关系可用二维 block 的小例子直接计算。
+CUDA 按线程坐标生成线性编号，每 32 个线程组成一个 warp。线程块驻留到 SM 后，调度器在这些线程束中选择下一条指令可执行的 warp 发射；若线程等待数据，其余就绪线程束仍可继续推进。依赖链、分支和浮点计算方式由此影响实际执行过程。
+
+CUDA 先按 x、再按 y、最后按 z 的顺序为 block 内线程编号；每 32 个线程组成一个 warp（线程束）。下面用二维 block 计算这一分组关系。
 
 ## 1. 线程编号与 warp 分组
 
@@ -15,7 +17,7 @@ CUDA 先按 x、再按 y、最后按 z 的顺序为 block 内线程编号，并�
 
 CUDA 把同一个 block 中连续 32 个线性编号归为一个 warp（线程束）。warp 是硬件调度线程的基本组，一个 lane（线程束内位置）对应组内的一条线程，编号为 0 到 31。`block(4,2)` 只有 8 个线程，所以它们占据一个 warp 的前 8 个 lane；本 block 的线程数不会因此补到 32，另一个 block 的线程也不会拼进来。
 
-把线程块 x 方向的一排改为 16 个线程：`dim3 block(16,4)` 有 64 个线程。第一个 warp 取连续的 32 个线性编号，正好包括 `threadIdx.y=0` 的 16 个线程和 `threadIdx.y=1` 的 16 个线程；第二个 warp 则包括 `threadIdx.y=2` 与 `threadIdx.y=3` 的线程。这里的“排”只指线程块坐标，还不是矩阵的一整行；warp 的边界始终由线性编号每 32 个切分。
+把 block 的 x 方向设为 16：`dim3 block(16,4)` 有 64 个线程。第一个 warp 包含 `threadIdx.y=0` 和 `threadIdx.y=1` 各 16 个线程；第二个 warp 包含 y=2 和 y=3 的线程。warp 按线性编号每 32 个线程划分；若这些线程处理矩阵，实际对应位置由 kernel 下标决定。
 
 <figure class="diagram-frame">
 <img src="assets/warp-linearization.svg" alt="上图展示 block(4,2) 的 8 个线程属于同一 warp 的前 8 个 lane；下图展示 block(16,4) 中 threadIdx.y 不同的四排线程分成两个 warp，每个 warp 包含相邻两排的各 16 个线程。">
@@ -83,18 +85,18 @@ extern "C" void solve(const float* A, const float* B, float* C,
 
 这份代码中，`k` 是输出列，`m` 是输出行；两者分别由 block 坐标和块内线程坐标计算。`idx=m*K+k` 是行优先数组 C 中的元素位置。每个有效线程沿归约维 `n` 求和，最后写一个 `C[m,k]`。`sum` 从零开始，写回时覆盖旧值。边界判断把行或列越界的线程排除，保护 A、B、C 的访问。
 
-在上述 kernel 中，`threadIdx.x` 增加 1 就向右移动一个输出列，`threadIdx.y` 增加 1 就移动到下一输出行；每个线程只负责一个 `C[m,k]`。因此 `blockDim.x` 是**一个 block 在输出行中最多覆盖的列数**，不是整个矩阵的列数。先看没有越界线程的内部 block：
+在上述 kernel 中，`threadIdx.x` 增加 1 就向右移动一个输出列，`threadIdx.y` 增加 1 就移动到下一输出行；每个线程负责一个 `C[m,k]`。因此 `blockDim.x` 是**一个 block 在输出行中覆盖的列数**。先看没有越界线程的内部 block：
 
 | 线程块 | warp 0 的 32 个线程 | 对输出 C 的覆盖 |
 |---|---|---|
 | `block(16,16)` | `y=0,x=0…15`；`y=1,x=0…15` | 相邻两行，各 16 列 |
 | `block(32,8)` | `y=0,x=0…31` | 同一行的连续 32 列 |
 
-例如 C 有 64 列，16 列宽的 block 需要沿列方向排 4 个，32 列宽的 block 需要排 2 个。表中的“一行”指 warp 当前负责的输出行片段；完整矩阵行仍有 64 个元素。换一个下标公式，线程负责的数据位置也会随之改变。
+例如 C 有 64 列，16 列宽的 block 沿列方向排 4 个，32 列宽的 block 排 2 个。表中的“一行”是 warp 当前处理的输出片段；完整矩阵行有 64 个元素。线程与数据的位置关系由下标公式确定。
 
 取 `M=3,N=2,K=5`，负责 `C[1,2]` 的线程先算 `idx=1*5+2=7`。循环第 0 次读取 `A[2]` 和 `B[2]`，第 1 次读取 `A[3]` 和 `B[7]`，得到 `C[7]=A[2]B[2]+A[3]B[7]`。若算出的行号为 3 或列号为 5，`if` 条件为假，这个线程跳过计算和写回。
 
-线程数也不等于 tile 元素数。NVIDIA transpose 示例使用 32×32 数据 tile，却配置 32×16（512 个线程）的 block；每个线程通过循环搬运两个元素。线程在 tile 中负责哪些元素由索引表达式决定，不能据 tile 大小直接推断线程数。示例见 [CUDA Samples transpose](https://github.com/NVIDIA/cuda-samples/tree/5443602d89ed99aede2e4b7bf329daddeadb320e/cpp/6_Performance/transpose)。
+数据块的元素数与线程数由索引映射建立关系。例如 NVIDIA transpose 示例使用 32×32 数据块和 32×16（512 个线程）的 block；每个线程循环搬运两个元素。具体映射见 [CUDA Samples transpose](https://github.com/NVIDIA/cuda-samples/tree/5443602d89ed99aede2e4b7bf329daddeadb320e/cpp/6_Performance/transpose)。
 
 Triton MatMul 用 `pid_m`、`pid_k` 选择输出 tile。程序描述的是一个 program 处理哪些元素；Triton 编译器再安排这些元素由哪些线程和 lane 处理。
 
@@ -104,7 +106,7 @@ Triton MatMul 用 `pid_m`、`pid_k` 选择输出 tile。程序描述的是一个
 
 kernel 启动后，设备把 block 分配给 SM。SM 要先为这个 block 留出线程状态、寄存器和共享内存；资源分配完成后，block 处于驻留状态（resident），其中的 warp 才能参与调度。一个 SM 可以同时驻留多个 block，数量由这些资源的上限决定。
 
-Occupancy（占用率）计算的是“当前驻留 warp 数 ÷ 该 SM 支持的最大 warp 数”。例如最大支持 64 个 warp、当前驻留 32 个，occupancy 就是 50%。这些 warp 中仍可能有一部分正在等待数据。
+占用率（occupancy）是当前驻留 warp 数占 SM 最大 warp 数的比例。例如 SM 最多支持 64 个 warp、当前驻留 32 个时，占用率为 50%；其中部分 warp 仍可能等待数据。
 
 设一个 block 包含 $T_{block}$ 个线程，编译器为每个线程分配 $R_{thread}$ 个 32 位寄存器。该 block 的寄存器用量 $R_{block}$ 和 warp 数量 $W_{block}$ 可先估算为：
 
@@ -118,11 +120,11 @@ $$
 ### 2.2 下一条指令可执行：就绪状态
 
 > [!IMPORTANT] 从驻留到执行
-> warp 先取得资源并驻留；下一条指令的数据准备好后进入就绪状态；调度器选中它并发出指令，才开始这次执行。
+> block 取得所需资源后驻留在 SM 上；其中的 warp 在下一条指令条件满足时就绪，由调度器选中并发射。等待、就绪和发射期间，block 持续占用驻留资源。
 
-就绪（eligible）表示 warp 已具备执行下一条指令的条件。比如上一条加载的数据已经返回，或者需要参加同步的线程已经到达。数据未返回、上一条计算尚未产出结果或同步未完成时，这个 warp 继续等待。调度器会从就绪 warp 中选择指令；对应执行管线也必须有接收能力。
+就绪表示 warp 的下一条指令已满足执行条件。例如，前一条加载的数据已返回，或参与同步的线程都已到达。调度器从就绪 warp 中选择指令，并发送给有空位的执行管线。
 
-指令之间的数据依赖也会影响就绪状态。下面比较两段求和代码；[fmaf(a,b,x)](https://docs.nvidia.com/cuda/cuda-math-api/cuda_math_api/group__CUDA__MATH__SINGLE.html#_CPPv44fmaffff) 表示融合乘加 $a\times b+x$，乘加结果只进行一次舍入，简称 FMA（Fused Multiply-Add）。第一段只有一个累加值，下一次乘加必须等待它更新；第二段维护四个独立累加值，可以交错处理。
+指令间的数据依赖会决定下一条指令何时就绪。下面比较两段求和代码；[fmaf(a,b,x)](https://docs.nvidia.com/cuda/cuda-math-api/cuda_math_api/group__CUDA__MATH__SINGLE.html#_CPPv44fmaffff) 表示融合乘加 $a\times b+x$，乘加结果只舍入一次，简称 FMA（Fused Multiply-Add）。第一段每次更新同一个累加值；第二段维护四个独立累加值，互不等待时可交错执行。
 
 ```cpp
 // 依赖链：每条 FMA 都等待上一个 accumulator 的结果
@@ -145,29 +147,34 @@ for (int k = 0; k < K; k += 4) {
 float x = x0 + x1 + x2 + x3;
 ```
 
-第一段的每次 FMA 都依赖上一次 x。第二段有四个独立的累加器：计算 x0 时，可以安排 x1、x2、x3 的指令，不必都等待同一个结果。这提供了指令级并行（Instruction-Level Parallelism，ILP）。
+第一段的每次 FMA 都依赖上一次 x。第二段有四个独立累加器：等待 x0 的结果时，调度器可发出 x1、x2 或 x3 的指令。这种同一线程内可交错执行的工作称为指令级并行（Instruction-Level Parallelism，ILP）。
 
 四条累加链会多占寄存器，也改变最终的浮点求和顺序。正确性比较应使用明确的误差容限；性能比较则同时看耗时、寄存器数和驻留 warp 数。若寄存器增加使 SM 能驻留的 warp 大幅减少，拆累加链也可能变慢。
 
 ### 2.3 发出指令：Issue
 
-发射（issue）是调度器把指令送入执行管线。以显存加载为例，发射之后还要等数据返回。等待期间，调度器可以发出其他就绪 warp 的指令。当前 warp 的下一条指令若不需要这次加载的结果，也可以继续；遇到要使用该结果的指令时，就要等待。
+指令发射是调度器把指令送入执行管线。显存加载发射后，线程等待数据返回；期间调度器可发出其他就绪 warp 的指令。若当前 warp 的后续指令不依赖该数据，它也能继续执行。
 
-例如 warp A 读取显存后，要用读取结果做加法，因此暂时等待。warp B 的乘法输入已经准备好，调度器就可以先发出 B 的指令。A 的数据返回后，它的加法也进入候选队列。两个 warp 的寄存器和线程状态都已驻留在 SM 中，切换时可以直接使用。
+例如，warp A 读取显存后等待结果供加法使用；warp B 的乘法输入已准备好，调度器便可先发出 B 的指令。A 的数据返回后，其加法指令也就绪。A、B 的线程状态和寄存器值仍保存在 SM 上。
 
-分析性能时沿这条顺序检查：资源够放下多少 warp，实际有多少 warp 就绪，调度器又发出了多少指令。驻留数量少时检查寄存器和共享内存；驻留很多却很少就绪时，检查数据依赖、访存等待和同步。
+分析性能时依次查看资源允许驻留多少 warp、其中多少 warp 就绪，以及调度器发射了多少指令。驻留量较低时检查寄存器与共享内存占用；就绪量较低时检查数据依赖、访存等待和同步。
 
-一个 warp 因普通数据依赖而等待时，SM 可以发出同一 SM 上其他已驻留且就绪的 warp 的指令，不必等整个 block 结束。Ascend C 中常由软件把任务切分给 AIV/AIC 等逻辑核实例；GPU 这里说的是 SM 在硬件层面选择 warp 发射指令，两者处于不同层次，不能据此推断某类 AIV/AIC 在等待时不能处理其他任务。
+一个 warp 因数据依赖而等待时，SM 可发出同一 SM 上其他已驻留且就绪 warp 的指令。Ascend C 的 AIV/AIC 工作分配由软件模型组织；这里描述的是 GPU 在 SM 上选择 warp 发射指令，两种机制位于不同层次。
 
-如果所有驻留 warp 都在等数据，occupancy 即使为 100%，执行管线仍会空闲。若少量 warp 已有足够的独立指令填满管线，提高 occupancy 的收益就会较小。
+如果所有驻留 warp 都在等数据，即使占用率达到 100%，执行管线也会空闲。少量 warp 若已有足够的独立指令填满管线，提高占用率的收益就较小。
 
-把 block 从 128 个线程改为 256 个线程，会同时改变 grid 的 block 数、单个 block 的资源需求和尾块大小。应记录这些变化，再比较实际耗时；单看线程数无法选出更快的配置。
+把 block 从 128 个线程改为 256 个线程，会改变 grid 中的 block 数、每个 block 的资源需求和尾块大小。记录这些量并比较实际耗时，才能判断配置效果。
 
 ## 3. SIMT 与分支执行
 
-SIMT（Single Instruction, Multiple Threads，单指令多线程）让程序员写一个线程的计算，硬件按 warp 组织执行。同一条加载指令中，每个线程都可以使用自己的地址。例如 32 个线程都执行 `input[global_id]`，对应的 `global_id` 可以是连续的 32 个元素编号。
+SIMT（Single Instruction, Multiple Threads，单指令多线程）让程序员按单线程描述计算，硬件再以 warp 为组执行。同一条加载指令可由 32 个线程使用各自地址，例如读取连续的 32 个 `input[global_id]` 元素。
 
-当一个 warp 中有线程进入 `if`、另一些进入 `else`，warp 就需要处理两条指令路径，称为分支分歧（divergence）。处理某条路径时，活动掩码（active mask）记录哪些 lane 参加，其他 lane 暂停这条路径。之后线程继续执行共同代码，这个过程称为重汇合（reconvergence）。两条分支谁先执行由生成指令和硬件调度决定。
+当一个 warp 中的线程选择不同分支时，warp 会分别处理各自采用的指令路径，这称为分支分歧（divergence）。活动掩码（active mask）标出当前路径参与的 lane；其他 lane 暂停该路径，之后在共同代码处继续执行，这一步称为重汇合（reconvergence）。
+
+<figure class="diagram-frame">
+<img src="assets/warp-branch-lanes.svg" alt="一个 warp 的 32 个 lane 按 global_id 奇偶分成两条分支：16 个偶数 lane 活动于 even 路径，16 个奇数 lane 活动于 odd 路径，两条路径之后汇合到共同写回。">
+<figcaption>活动 lane 只参加自己选择的路径。图示假定显式分支保留；编译器也可能改写短分支，实际形式要看生成指令。</figcaption>
+</figure>
 
 ```cpp
 if ((global_id & 1) == 0) {
@@ -177,11 +184,11 @@ if ((global_id & 1) == 0) {
 }
 ```
 
-假设这个 warp 的 32 个 lane 对应连续的 `global_id`，其中 16 个执行 even，另外 16 个执行 odd。编译器保留显式分支时，warp 要分别处理两组指令：even 指令由偶数 lane 参加，odd 指令由奇数 lane 参加。每个线程只计算自己选择的路径。若两个函数都很长，warp 要处理的总指令也会很多；若一个 warp 全部选择 even、另一个全部选择 odd，各 warp 内就没有这种分歧。
+假设 32 个 lane 对应连续 `global_id`，其中 16 个选择 even，另 16 个选择 odd。保留显式分支时，even 指令由偶数 lane 执行，odd 指令由奇数 lane 执行；每个线程只计算所选路径。两个路径越长，warp 处理的指令越多。若不同 warp 分别统一选择 even 和 odd，每个 warp 内只需处理一条路径。
 
 ### 3.1 谓词执行与短分支
 
-短分支中，编译器可能省去显式跳转，给指令附上每线程的条件，称为谓词执行（predication）。指令仍会被调度；条件为真的 lane 执行它，条件为假的 lane 不读取操作数、不计算该指令的访问地址，也不写结果。它可以减少跳转和分支控制开销，但仍要调度两条路径的指令。
+短分支中，编译器可能用谓词执行（predication）把条件附在指令上。指令按条件掩码作用于相应 lane，未参与的 lane 不产生该指令的读写结果；这种形式可减少显式跳转。
 
 下面这份源码先做乘法，再做加法，最后选择一个值。按源码计算顺序，每个线程都先算了两个候选值：
 
@@ -191,13 +198,13 @@ float odd_value = input[i] + 3.0f;
 output[i] = ((i & 1) == 0) ? even_value : odd_value;
 ```
 
-“先算两边再选择”会增加算术工作，编译器也可能把这些纯算术改成带谓词的指令。判断时应看最终机器指令：是否有跳转，两条计算是否都保留，分别有哪些 lane 参加。
+这段代码按源码先计算两个候选值，再选择输出。编译器可能保留两次计算，也可能把其中的运算改写为带谓词的指令；查看生成指令可确认采用了哪种形式及各路径的活动 lane。
 
-短分支通常更适合谓词化，因为跳转本身可能占较大比例。长分支则可能受益于真实跳转：例如整个 warp 都选择 even，就可以跳过长长的 odd 路径。如果 warp 内两条路径都有线程参加，长分支仍会产生分歧成本。
+短分支的计算量较小时，谓词执行可省去跳转开销。长分支在整个 warp 选择同一路径时，可跳过另一条路径；warp 内两条路径都有线程时，则需要分别处理两组指令。
 
 ### 3.2 独立线程调度与 warp 协作
 
-从计算能力（Compute Capability，CC）7.0，也就是 Volta 架构开始，GPU 分别记录每个线程执行到了哪条指令。同一个 warp 中，一部分线程可以等待，其他线程继续执行。这称为独立线程调度（Independent Thread Scheduling，ITS）。发出指令时，硬件仍把同一个 warp 中要执行该指令的活动线程组织在一起。
+从计算能力（Compute Capability，CC）7.0（Volta）开始，GPU 为每个线程记录指令位置和执行状态，这称为独立线程调度（Independent Thread Scheduling，ITS）。warp 中部分线程等待时，其他线程可继续；发射指令时，硬件仍按活动 lane 组成 SIMT 执行组。
 
 写代码时要注意：**同一个 warp 中的线程，也需要同步才能保证通过内存交换的数据先写后读。** 例如，线程 0 写共享内存，其他线程随后读取；两步之间用 `__syncwarp()` 等待写入完成：
 
@@ -235,7 +242,7 @@ int from_lane_0 = __shfl_sync(mask, value, 0);
 int from_lane_1 = __shfl_sync(mask, value, 1);
 ```
 
-在这个例子中，lane 0 的 `value` 是 10，lane 1 的 `value` 是 11。因此每个参与线程的 `from_lane_0` 都是 10，`from_lane_1` 都是 11。二维或三维 block 不能直接用 `threadIdx.x & 31` 当作 lane 编号；应先按 CUDA 的线性线程编号计算 lane。
+在这个例子中，lane 0 的 `value` 是 10，lane 1 的 `value` 是 11，因此每个参与线程的 `from_lane_0` 都是 10，`from_lane_1` 都是 11。二维或三维 block 先按 CUDA 线性编号计算 `tid`，再用 `tid % 32` 得到 lane 编号。
 
 共享内存例子用 [__syncwarp](https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/cpp-language-extensions.html#synchronization-functions) 保证先写后读；shuffle 例子用指令自身的同步保证寄存器交换。若同一个 block 的不同 warp 通过共享内存传值，通常在写入与读取之间使用 `__syncthreads()`。
 
@@ -243,6 +250,9 @@ int from_lane_1 = __shfl_sync(mask, value, 1);
 
 
 ## 4. Block 波次与尾部利用率
+
+<details>
+<summary>展开波次公式、算例与负载均衡方法</summary>
 
 假设设备有 $S$ 个 SM，每个 SM 最多同时驻留这个 kernel 的 $B$ 个 block，则同时能放下 $S\times B$ 个 block。再假设各 block 耗时相近，把这一批容量称为“一波”。对于包含 $G>0$ 个 block 的 grid，估算波数为：
 
@@ -258,11 +268,11 @@ $$
 
 当最后一波不足 $S\times B$ 个 block 时，部分资源会提前空闲，形成尾效应。实际设备会在一个 block 结束后继续安排后续 block，并不会等同一波全部结束才开始下一波。上面的公式用于估算等时任务的尾部，实际时间还受各 block 的工作量影响。
 
-block 内也可能存在尾部浪费。例如最后一个 warp 只有少量线程，或者部分线程的元素索引越界，这些位置无法产生有效输出。
+block 内的尾部也会留下无效线程位置，例如最后一个 warp 只有少量有效 lane，或部分线程的元素索引超出数组范围。
 
 例如 `S=4,B=2`，每波容量为 8。10 个等时 block 可以看成第一波 8 个、最后一波 2 个；最后只用了 8 个位置中的 2 个，至多涉及 2 个 SM。8 个 block 刚好满一波，12 个则是 8 个加 4 个。若每个 block 都耗时 t、且并发不改变耗时，10 个 block 的这个简化模型需要约 2t。
 
-矩阵计算中要分开看两种尾部。第一种在 tile 内：例如一个 tile 处理 32 列，矩阵边界只剩 5 列，其余位置由 mask 排除。第二种在设备上：每个 tile 都完整，最后却只剩一两个 block，其他 SM 无事可做。测试整除与非整除形状，可以分别观察这两个问题。
+矩阵计算有两类尾部。tile 内的尾部发生在边界形状，例如 tile 覆盖 32 列而矩阵只剩 5 列，其余位置由 mask 排除。设备调度的尾部发生在 grid 末尾，例如只剩一两个 block 时，其他 SM 没有新任务。用整除和非整除的矩阵形状分别观察这两类情况。
 
 尾部可以从任务划分、block 工作量和资源占用三处处理：
 
@@ -273,9 +283,11 @@ block 内也可能存在尾部浪费。例如最后一个 warp 只有少量线�
 | 调整 tile 或每个 block 的工作量 | block 太少，或每个 block 占用资源过多 | 寄存器、共享内存、驻留 block 数和总工作量 |
 | 为边界形状使用专门 tile/kernel | 主体形状规则，只有边缘剩余区域较小 | 额外分支或启动成本是否低于省下的无效工作 |
 
-动态领取任务主要用于一类逻辑任务：任务事先静态分配给线程或 block 后，因工作量不同而出现负载不均。这时线程或 block 可从任务队列领取下一项。它不意味着每个 CUDA kernel 都需要自己维护队列；普通 CUDA kernel 的 block 结束、资源释放后，硬件调度器会继续安排尚未运行的 block。
+动态领取任务适用于工作量差异较大的逻辑任务：线程或 block 完成当前任务后，可从队列领取下一项。规则工作量的普通 kernel 由硬件调度器在 block 结束、资源释放后安排尚未运行的 block。
 
-例如，把 17 个耗时均为 `t` 且不可再拆分的 block 分配给 8 个可并行执行位置。即使理想地均匀分配，至少一个位置仍要顺序执行 3 个 block，因此总时间下界约为 `3t`；这里假设 8 个位置始终可用、每个 block 耗时不因并发而变化。多补空 block 凑成 24 个，不会减少原有计算。persistent kernel（常驻内核）让一组 block 持续驻留，并在循环中领取多个逻辑任务；它适用于任务粒度或调度方式确有收益的场景，不是普通 block 波次尾部的通用解法。
+例如，17 个耗时均为 `t` 的不可拆分 block 分给 8 个并行位置时，至少一个位置要顺序执行 3 个 block，理想情况下总时间下界约为 `3t`。此估算假设 8 个位置始终可用，且每个 block 耗时不随并发变化。补足空 block 不会减少已有计算量。persistent kernel（常驻内核）让一组 block 持续驻留并循环领取逻辑任务，适用于任务粒度和调度开销经评估后有收益的场景。
+
+</details>
 
 ## 5. 计算管线：普通 CUDA Core、FMA 与 Tensor Core
 
@@ -296,7 +308,7 @@ CUDA Core 算术和 Tensor Core 矩阵指令的处理规模、吞吐率与舍入
 
 ### 5.1 输入、累加器与输出类型
 
-FP16（半精度浮点）和 BF16（一种 16 位浮点格式）常用来保存输入，每个元素占 2 字节。读入之后，代码可以先把它转换为 FP32 再计算，也可以交给接受低精度矩阵操作数的 MMA 指令。先看第一种：**FP16 保存输入，FP32 执行乘加。**
+FP16（半精度浮点）和 BF16（一种 16 位浮点格式）常用来保存输入，每个元素占 2 字节。读入后，代码可先转成 FP32 再计算，也可将低精度矩阵块交给 MMA 指令。先看 FP16 输入、FP32 乘加的顺序：
 
 $$
 \begin{aligned}
@@ -328,11 +340,11 @@ __global__ void half_input_float_accum(const __half* a, const __half* b,
 
 沿代码逐步看：`a[i]`、`b[i]` 是 FP16，每个输入元素占 2 字节；`__half2float` 把它们转成 FP32 的 af、bf；`fmaf` 执行 FP32 乘加；结果写入 float 数组 c，每个输出元素占 4 字节。这里节省的是输入数组的存储和加载数据量。
 
-**转换成 FP32 只改变数值的表示方式，不会恢复先前丢失的精度。** 例如原始值 `1.0001` 保存成 FP16 后舍入为 `1.0`，再转成 FP32 得到的仍是 `1.0`。因此，“输入保存为 FP16”与“执行 FP32 乘法”可以同时成立。
+例如，原始值 `1.0001` 保存成 FP16 时舍入为 `1.0`；之后转成 FP32，参与运算的仍是 `1.0`。因此，输入存储类型为 FP16，乘加运算和累加器类型为 FP32。
 
-另一种写法把 FP16/BF16 矩阵小块直接作为 MMA 操作数，选择 FP32 累加器。矩阵指令按它规定的规则计算。两种实现都可能读取 FP16、写出 FP32；区别要从执行的算术或矩阵指令中确认。
+另一种写法把 FP16/BF16 矩阵块直接作为 MMA 操作数，并使用 FP32 累加器。矩阵指令按其数值规则计算；检查生成的算术指令可确认程序采用显式 FP32 乘加还是矩阵乘加。
 
-下面保留的 FP16 tiled GEMM 使用 `A[M,K] × B[K,N] = C[M,N]`，K 是归约维；这是该原始代码的命名，与前面的 naive 版本不同。`threadIdx.x` 对应输出行 m，`threadIdx.y` 对应输出列 n。输入先搬入 half 类型的共享内存 As、Bs，计算时再转成 float，累加器 sum 也是 float，最后把结果写成 half。
+下面的 FP16 分块矩阵乘法使用 `A[M,K] × B[K,N] = C[M,N]`，K 是归约维。`threadIdx.x` 对应输出行 m，`threadIdx.y` 对应输出列 n。输入先搬入 half 类型的共享内存 As、Bs，读取时转成 float，由 float 类型的 sum 累加，最后写回 half。
 
 <!-- source-check: solutions/cuda/gemm/tiled_fp16.cu -->
 ~~~cpp {8-10,16-27,29-35,39-42}
@@ -388,18 +400,21 @@ __global__ void kernel(const half* A, const half* B, half* C,
 | 前面的 `half_input_float_accum` | FP16 | 显式转成 FP32 | FP32 FMA 的第三个操作数为 0 | FP32 |
 | 上面的 FP16 tiled GEMM | FP16 | 显式转成 FP32 | float 类型的 sum | FP16 |
 
-因此，把输出数组改为 half，改变的是写回类型；要改变累加精度，需要改 sum 或矩阵指令的累加器类型。共享内存中的 As、Bs 每元素占 2 字节，分析 bank 访问时也要按这个宽度计算。
+输出数组改为 half 会改变写回类型；累加精度由 sum 或矩阵指令的累加器类型决定。共享内存 As、Bs 每个元素占 2 字节，分析 bank 访问时按此宽度计算。
 
-tiled GEMM 的最终写回公式是 `C=alpha*sum+beta*C_old`。`alpha` 缩放新结果，`beta` 缩放旧 C。
+<details>
+<summary>延伸：GEMM 的 alpha、beta 与旧输出</summary>
 
-原文件即使在 `beta=0` 时，也会读取旧 C 并计算 `beta*C_old`。所以调用前必须初始化 C；旧值若是 NaN，`0*NaN` 仍会得到 NaN。若接口允许 beta 为零时跳过旧 C，可以写单独分支直接存 `alpha*sum`。代码注释中的带宽倍数需要在设备上测量；算法估算字节数和 profiler 记录的 DRAM 字节数应分别给出。
+tiled GEMM 的写回公式是 `C=alpha*sum+beta*C_old`。`alpha` 缩放新结果，`beta` 缩放调用前的旧输出。原代码在 beta 为零时仍读取 C 并计算 `beta*C_old`，因此调用前需初始化 C；若旧值为 NaN，乘积仍会得到 NaN。代码注释中的带宽倍数需在设备上测量；算法估算字节数与 profiler 记录的 DRAM 字节数分别报告。
+
+</details>
 
 ### 5.2 Triton `tl.dot` 的 `input_precision`
 
 > [!WARNING] FP32 输入也要确认乘法精度
-> `tl.dot` 可以读取 FP32 数组，却按允许的 TF32 精度执行矩阵乘法。设置 `input_precision`，才能明确这次乘法允许使用什么精度。
+> `tl.dot` 处理 FP32 输入时可使用 TF32 精度。用 `input_precision` 指定这次矩阵乘法允许的输入精度。
 
-对 FP32 输入，[tl.dot](https://triton-lang.org/main/python-api/generated/triton.language.dot.html) 的 `input_precision` 决定允许的乘法输入精度。例如 PyTorch 关闭 TF32，而 Triton 允许 TF32，两边就采用了不同的数值计算方式；归约长度很大时，差异可能超过测试容差。要求 IEEE FP32 乘法时，Triton 写成：
+对 FP32 输入，[tl.dot](https://triton-lang.org/main/python-api/generated/triton.language.dot.html) 的 `input_precision` 决定乘法精度。例如 PyTorch 关闭 TF32、Triton 开启 TF32 时，两边的计算路径不同；长归约的误差可能超过测试容差。要求 IEEE FP32 乘法时，Triton 写成：
 
 ```python
 acc = tl.zeros((BLOCK_M, BLOCK_K), dtype=tl.float32)
@@ -412,13 +427,13 @@ acc += tl.dot(tile_a, tile_b, input_precision="ieee")
 torch.backends.cuda.matmul.allow_tf32 = False
 ```
 
-`input_precision="ieee"` 负责这次 dot 的乘法精度；tile_a、tile_b、acc 的类型以及输出数组类型仍由各自代码决定。比如输出是 FP16，FP32 累加结果写回时还会舍入到 FP16。
+`input_precision="ieee"` 指定这次点积的乘法精度；`tile_a`、`tile_b`、`acc` 和输出数组的类型分别由代码确定。例如 FP32 累加结果写入 FP16 输出时，会舍入为 FP16。
 
-小形状通过、长归约失败时，先核对地址和 mask，再固定输入、形状和容差，分别运行 IEEE 与 TF32 版本。记录误差是否随配置改变，再检查累加顺序和输出转换。两种版本都失败时，也要继续用小输入验证索引与边界。FP32 输出会保存已有结果，无法修复此前的乘法或求和误差。
+小矩阵通过、长归约失败时，固定输入、矩阵形状和容差，分别运行 IEEE 与 TF32 版本，比较误差变化，再检查地址、mask、累加顺序和输出转换。FP32 输出保留写回前的累加结果，但乘法与求和路径仍决定最终误差。
 
 ## 6. 依赖链、分支与执行调度实验
 
-本实验在 NVIDIA GeForce RTX 3090、CUDA 12.4（`V12.4.131`）上使用 `sm_86` native 目标。四个 kernel 各自用 CPU 参考实现检查输出，再测平均耗时和源码 FMA 吞吐。命令参数依次是 `n`、`steps`、`repeats`：`257 / 20 / 5` 使用 256-thread block，网格为 2 个 block，第二个尾块只有 1 个有效线程；`1,048,576 / 200 / 50` 用来比较吞吐。
+本实验在 NVIDIA GeForce RTX 3090、CUDA 12.4（`V12.4.131`）上以 `sm_86` 本机目标编译。四个 kernel 各自与 CPU 参考结果比较，再测平均耗时和按源码计算的 FMA 吞吐。命令参数依次为 `n`、`steps`、`repeats`：`257 / 20 / 5` 每个 block 启动 256 个线程，grid 有 2 个 block，尾块只有 1 个有效线程；`1,048,576 / 200 / 50` 用于比较吞吐。以下命令从仓库根目录运行，其中 `cd` 将终端切换到本章目录。
 
 ```bash
 cd roadmap/curriculum/gpu/02-cuda-execution-and-scheduling
@@ -429,11 +444,11 @@ compute-sanitizer --tool memcheck --error-exitcode=1 /tmp/cuda-execution-sm86 25
 /tmp/cuda-execution-sm86 1048576 200 50
 ```
 
-程序先计算 CPU 参考值：两个累加版本使用 `std::fma`，分支版本使用普通乘加表达式。每个 kernel 预热一次，再重复启动 `repeats` 次，用 CUDA event 测量总时间，除以重复次数得到平均单次耗时 `ms`。输入、输出拷贝在计时区间外，连续提交之间的空隙计入总时间。测量结束后，程序把 GPU 结果拷回主机，逐项比较参考值，得到所有元素的最大绝对差 `max_abs_error`。结果有限、误差不超过 `1e-4` 且计时有效时，打印 PASS。`source_FMA_GFLOP_s` 表示按源码计算的浮点吞吐，单位是每秒十亿次浮点操作，一个 FMA 按乘法和加法计两次操作。
+程序先计算 CPU 参考值：两个累加版本使用 `std::fma`，分支版本使用普通乘加表达式。每个 kernel 预热一次，再重复启动 `repeats` 次，用 CUDA event 测量总时间并除以重复次数，得到平均单次耗时 `ms`。输入、输出拷贝在计时区间外，连续提交之间的空隙计入总时间。测量后，程序把 GPU 结果拷回主机，逐项比较参考值并计算最大绝对误差 `max_abs_error`。结果有限、误差不超过 `1e-4` 且计时有效时，打印 PASS。`source_FMA_GFLOP_s` 按源码中的 FMA 数计算每秒十亿次浮点操作；一个 FMA 按一次乘法和一次加法计两次操作。
 
 ### 6.1 依赖链与四条独立累加链
 
-依赖链每元素做 steps 次 FMA，每次等待上一次 x。独立版本维护 x0、x1、x2、x3，每轮分别更新，先求和、减去 `0.6f`，再乘 `0.25f`。steps 为 200 时，前者每元素做 200 次 FMA，后者做 800 次；两个 kernel 使用各自的 CPU reference，输出不要求相同。
+依赖链每个元素执行 steps 次 FMA，每次使用上一步的 x。独立版本维护 x0、x1、x2、x3，每轮分别更新，再求和、减去 `0.6f` 并乘以 `0.25f`。steps 为 200 时，两者每元素分别执行 200 次和 800 次 FMA；各自与对应的 CPU 参考值比较，因为计算公式不同，输出值也不同。
 
 <!-- source-check: examples/execution_and_scheduling.cu -->
 ~~~cpp
@@ -476,13 +491,13 @@ independent    0.0576 ms max_abs_error=0 PASS source_FMA_GFLOP_s=29132.291
 
 每个版本与自己的参考函数比较；两个累加版本的初值和计算路径不同。dependent 每元素做 `200` 次 FMA，共 `209,715,200` 个 FMA，即 `419,430,400` FLOPs，耗时 20.1 us。independent 每元素做 `800` 次 FMA，共 `838,860,800` 个 FMA，即 `1,677,721,600` FLOPs，耗时 57.6 us。四倍源码工作用了约 2.87 倍时间，所以按源码 FMA 数计，单位时间工作量约高 40%，对应约 20.9 TFLOP/s 和 29.1 TFLOP/s。四个累加器属于同一线程，彼此不依赖，增加可连续发射的独立计算指令。
 
-本次编译报告显示，单链每线程使用 9 个寄存器，四链使用 14 个。按 [Ampere Tuning Guide](https://docs.nvidia.com/cuda/ampere-tuning-guide/index.html#occupancy)，RTX 3090 的每个 SM 最多同时驻留 48 个 warp，并有 65,536 个 32 位寄存器。每个 block 的 256 个线程组成 8 个 warp，按 warp 数量上限可以容纳 6 个 block。未计分配取整时，单链每块使用 `9×256=2304` 个寄存器，四链每块使用 `14×256=3584` 个；六个 block 分别需要 13,824 和 21,504 个。实际分配会按硬件粒度取整，可用 occupancy API 查询最终能驻留多少个 block。
+本次编译报告显示，单链每线程使用 9 个寄存器，四链使用 14 个。按 [Ampere Tuning Guide](https://docs.nvidia.com/cuda/ampere-tuning-guide/index.html#occupancy)，RTX 3090 每个 SM 最多驻留 48 个 warp，并有 65,536 个 32 位寄存器。每个 block 的 256 个线程组成 8 个 warp，因此 warp 数量上限对应每 SM 6 个 block。未计分配取整时，单链每块使用 `9×256=2304` 个寄存器，四链每块使用 `14×256=3584` 个；六个 block 分别需要 13,824 和 21,504 个。实际寄存器分配按硬件粒度取整，可用 occupancy API 查询驻留上限。
 
 小输入 `257 / 20 / 5` 中，dependent 为 0.0035 ms、error 0、PASS、2.953 GFLOP/s；independent 为 0.0029 ms、error 0、PASS、14.342 GFLOP/s。
 
 ### 6.2 分支与双路径选择
 
-两种写法都要求偶数位置输出 even_path 的结果、奇数位置输出 odd_path 的结果。分支版本按条件调用函数；程序中名为 `predicated_select_kernel` 的选择版本，则先调用两个函数再选结果。这个函数名沿用示例源码，是否真的编译成谓词指令，要看 PTX/SASS。比较时间时，还要记录最终保留了多少算术指令。
+偶数位置输出 even_path，奇数位置输出 odd_path。分支版本按条件调用对应函数；`predicated_select_kernel` 先算两个候选值再选结果。PTX/SASS 可显示最终采用的跳转、谓词和算术指令；比较时间时一并记录保留的算术量。
 
 <!-- source-check: examples/execution_and_scheduling.cu -->
 ~~~cpp
@@ -528,7 +543,7 @@ predicated     0.0113 ms max_abs_error=1.1920929e-07 PASS
 
 小输入 `257 / 20 / 5` 中，divergent 和 predicated 都是 0.0027 ms、error `5.9604645e-08`、PASS。
 
-两种写法的耗时接近，原因在于候选路径很短，数组读写、内核启动和提交等共同开销会稀释计算部分的差异。编译器还可以将短分支改写为谓词执行；源码中的函数名不能直接说明最终生成了哪些指令。查看 SASS 中的条件跳转、谓词和 FMA，才能进一步对应两种写法。条件执行与短分支优化规则见 [CUDA 12.4 SIMT Architecture](https://docs.nvidia.com/cuda/archive/12.4.0/cuda-c-programming-guide/index.html#simt-architecture) 和 [Control Flow Instructions](https://docs.nvidia.com/cuda/archive/12.4.0/cuda-c-programming-guide/index.html#control-flow-instructions)。
+本次两种写法相差 0.5 μs。候选路径各只有一次 FMA，数组读写、kernel 启动和任务提交占据共同开销。编译器也可能将短分支改写为谓词指令；SASS 中的条件跳转、谓词和 FMA 可用于确认最终指令。相关规则见 [CUDA 12.4 SIMT Architecture](https://docs.nvidia.com/cuda/archive/12.4.0/cuda-c-programming-guide/index.html#simt-architecture) 和 [Control Flow Instructions](https://docs.nvidia.com/cuda/archive/12.4.0/cuda-c-programming-guide/index.html#control-flow-instructions)。
 
 为了把路径差异拉长，新增 probe 仍调用同一个 `branch_probe_kernel`，只改变 `flags`。`flags[i]=1` 调 `even_chain`，`flags[i]=0` 调 `odd_chain`；每个函数的循环都依赖上一步的 `x`，每个线程做 `steps` 次 FMA。`__noinline__` 保留函数调用边界，`#pragma unroll 1` 保留运行时循环。
 
@@ -576,7 +591,7 @@ __global__ void branch_probe_kernel(const float* input,
 
 沿着一个线程的执行顺序看：先用 block 编号和线程编号算出元素位置 `i`，越过数组边界的线程立即退出；有效线程读取 `flags[i]` 和 `input[i]`，进入对应的累加函数，完成循环后把返回值写入 `output[i]`。循环中的 `x` 是该线程的局部计算值，每次 FMA 都使用上一次的结果。两种模式中，每个线程都只计算自己选中的一条链，因此总有效 FMA 数都是 `n×steps`；相同位置的元素可以选中不同的链，输出分别与各自的 CPU 参考值比较。
 
-在章目录下运行：
+从仓库根目录将终端切换到 `roadmap/curriculum/gpu/02-cuda-execution-and-scheduling/`，再运行脚本：
 
 ~~~bash
 bash examples/run_branch_probe.sh
@@ -609,7 +624,7 @@ ptxas info    : Used 10 registers, 384 bytes cmem[0]
 | `cmem[0]=384` | kernel 参数等使用的常量内存，不是每线程 384 字节 |
 | `theoretical_blocks_per_sm=6` | occupancy API 按资源计算的驻留上限；每 block 有 8 个 warp，6 个 block 共 48 个 warp，不是计时期间的实测驻留数 |
 
-输入、flags 和输出由 `cudaMalloc` 在运行时分配。编译开头的 `0 bytes gmem` 不代表程序没有使用显存。报告中还列出了原来的四个 kernel，因为它们在同一个源文件中；这次脚本启动的是 `branch_probe_kernel`。
+输入、flags 和输出由 `cudaMalloc` 在运行时分配。编译报告开头的 `0 bytes gmem` 是该编译阶段的静态字段；程序运行时仍分配并访问这些设备数组。报告也列出同一源文件中的四个原始 kernel；本次脚本实际启动 `branch_probe_kernel`。
 
 小输入首先给出工具自检和两种模式的数值检查结果：
 
@@ -891,6 +906,8 @@ int main(int argc, char** argv) {
 
 </details>
 
+第 6 节把前面的依赖链、分支和类型问题放进同一组实验，保留每个 kernel 的输入、CPU 参考、误差和测量口径。完成主线后，可展开第 4 节，把 grid 大小和驻留 block 上限换成任务量估算。
+
 ## 7. 从 CUDA 源码到 PTX 与 SASS
 
 CUDA 源文件包含 CPU 侧控制代码和 GPU kernel。沿第 6 节的单链 FMA 例子看编译过程，可以分清两边的代码如何进入最终程序，以及 PTX、SASS 分别能说明什么。
@@ -939,11 +956,11 @@ if (launch_status == cudaSuccess) {
 
 分离编译时，host object 与 relocatable device code 可先分别生成，再由设备链接阶段解析跨编译单元的 device 调用。
 
-常见后缀标识不同产物：`.cpp` 通常是主机 C++ 源码；`.cu` 可同时写 host 代码和 kernel；`.ptx` 是虚拟指令集文本；`.cubin` 是目标 GPU 的设备二进制；`.fatbin` 可装多个 cubin 和/或 PTX；`.o` 是编译得到的目标文件，可能只含主机代码，也可能含可重定位设备代码；`.exe` 是 Windows 可执行程序。后缀不能说明 fatbin 是否包含 PTX 回退，需用工具检查。
+常见后缀对应不同产物：`.cpp` 通常是主机 C++ 源码；`.cu` 可同时包含主机代码和 kernel；`.ptx` 是虚拟指令集文本；`.cubin` 是目标 GPU 的设备二进制；`.fatbin` 可装多个 cubin 和/或 PTX；`.o` 是编译得到的目标文件，可能含主机代码或可重定位设备代码；`.exe` 是 Windows 可执行程序。用 `cuobjdump` 可查看可执行文件内包含的设备目标。
 
-PTX（Parallel Thread Execution）是面向虚拟 ISA（指令集架构，Instruction Set Architecture）的中间表示，使用虚拟寄存器。`ptxas` 按目标架构分配物理寄存器、选择指令并安排控制流；SASS 是目标 GPU 机器指令的可读反汇编，GPU 实际执行 cubin 中编码的机器指令。源代码一行可能被合并、展开或消除，一条 PTX 也可能变成多条 SASS。PTX 虚拟寄存器编号和 `.reg` 声明数都不能直接当作每线程物理寄存器数。
+PTX（Parallel Thread Execution）是面向虚拟 ISA（指令集架构，Instruction Set Architecture）的中间表示，使用虚拟寄存器。`ptxas` 按目标架构分配物理寄存器、选择指令并安排控制流；SASS 是目标 GPU 机器指令的可读反汇编，GPU 执行 cubin 中编码的机器指令。编译器可合并、展开或删除源代码操作，一条 PTX 指令也可生成多条 SASS。每线程物理寄存器数应读 `ptxas` 或资源查询报告。
 
-以下 PTX 和 SASS 是教学示意，不是某次真实反汇编。寄存器编号仅用于说明数据角色，地址构造和参数初始化有意省略；实际指令顺序、分支布局和修饰符会随编译器、Toolkit、编译选项和目标 GPU 改变。
+下面的 PTX 与 SASS 片段依据本节源代码整理，用于追踪索引、加载、累加和写回。寄存器编号标示数据角色；地址构造和参数初始化另有省略。实际生成结果随编译器、Toolkit、编译选项和目标 GPU 而变化。
 
 真实 `.ptx` 文件顶部还包含 `.version`、`.target` 和 `.address_size`，分别声明 PTX 版本、虚拟或目标架构，以及地址宽度；以下只摘出 kernel 主体。
 
@@ -996,7 +1013,7 @@ ret;
 
 `%tid.x`、`%ctaid.x`、`%ntid.x` 是线程、block 和 block 尺寸的特殊寄存器；`mov` 将它们读入普通虚拟寄存器，`mad.lo` 计算线性索引。`setp` 设置 predicate，`@%p0 bra` 在索引越界时跳过读写。`mul.wide` 把 `float` 元素索引变成 64 位字节偏移；`%rd2` 始终保存偏移，`%rd3`、`%rd4` 分别保存输入和输出地址。`ld.global`/`st.global` 标出 global 地址空间。循环 predicate 在 `step >= steps` 时退出；`fma.rn.f32` 执行 FP32 融合乘加并按最近偶数舍入，下一轮继续使用 `%f0`，保留单链依赖。PTX 的 `0f` 前缀表示后续 8 个十六进制数按 IEEE 754 FP32 位型解释：`0f3F800008` 对应 `1.000001f`，`0f3727C5AC` 对应 `0.00001f`。
 
-SASS 使用目标 GPU 的物理寄存器和指令编码。表中地址构造、常量初始化及进入循环前的判断有意省略；64 位输入、输出地址分别占 `R6:R7`、`R8:R9` 寄存器对，访存指令以寄存器对的起始寄存器作为地址操作数。循环片段采用 post-test 形式，进入前必须检查 `steps > 0`；本节主示例传入 200。若 `steps=0`，应跳过循环并直接存储输入值，不能执行一次 FMA。
+SASS 使用目标 GPU 的物理寄存器和指令编码。表中省略地址构造、常量初始化及循环入口判断；64 位输入、输出地址分别占 `R6:R7`、`R8:R9` 寄存器对，访存指令用寄存器对起始编号表示地址。循环片段采用 post-test 形式，因此先检查 `steps > 0`；本节传入 200，若 steps 为 0 则直接写回输入值。
 
 | 指令示意 | 数据角色与作用 |
 |---|---|
@@ -1013,9 +1030,9 @@ SASS 使用目标 GPU 的物理寄存器和指令编码。表中地址构造、�
 
 `.reg .f32` 等 PTX 声明使用的是虚拟寄存器；实际每线程物理寄存器数应读 `ptxas` 报告或 `cuobjdump --dump-resource-usage`。`local` 访问也不自动等于 spill：动态寻址的局部数组可能使用 local memory，spill 是寄存器分配不足时的另一种来源。应结合 spill/local 字节报告、SASS 中的 local load/store，以及对应源码对象一起判断。
 
-静态编译与反汇编不需要 GPU，但需要完整 CUDA Toolkit 和可用 host compiler。实际启动、数值正确性、Compute Sanitizer 和性能测量需要兼容设备与驱动。`-O3` 主要设置 host 编译器的优化级别；device 端优化由 CUDA 编译流程及目标架构相关选项决定，不能把 `-O3` 单独视作 GPU 优化或性能证据。`-lineinfo` 加入源码行映射，通常保留优化，但源码行与机器指令不是一对一关系。`-G` 生成设备调试代码，会改变优化和资源用量，不能用它的计时代表正式构建。
+静态编译与反汇编需要 CUDA Toolkit 和主机编译器；kernel 执行、数值验证、Compute Sanitizer 与性能测量还需要兼容设备和驱动。`-O3` 设置主机编译器优化级别；设备代码优化由 CUDA 编译流程及目标架构选项控制。`-lineinfo` 加入源码行映射，源码与机器指令之间通常不是一对一关系。`-G` 生成设备调试代码，会改变优化和资源用量；性能测试应使用实际发布配置。
 
-先用 `nvcc --list-gpu-code` 查看当前 Toolkit 支持生成的 `sm_XX`。命令中的 `XX` 要替换成目标计算能力的主版本和次版本拼接值：例如 CC 8.6 对应 `86`，CC 8.9 对应 `89`。这两个只是示例，实际值要按设备和当前 Toolkit 确认。编译产物检查时固定 Toolkit、host compiler、优化级别和目标架构，并让可执行文件、单独生成的 PTX 与 cubin 使用同一个目标，避免比较到不同架构的代码：
+先用 `nvcc --list-gpu-code` 查看当前 Toolkit 支持生成的 `sm_XX`。命令中的 `XX` 替换为目标计算能力主、次版本的拼接值，例如 CC 8.6 对应 `86`，CC 8.9 对应 `89`。实际值按设备和当前 Toolkit 确认。以下 PowerShell 命令在本章目录运行；编译产物使用相同 Toolkit、主机编译器、优化级别和目标架构，便于比较对应代码：
 
 ```powershell
 # 示例为 CC 8.6；按目标设备改成实际支持的 sm_XX。
@@ -1033,7 +1050,7 @@ cuobjdump --dump-resource-usage execution_check.exe
 nvdisasm --print-code --print-line-info execution_check.cubin
 ```
 
-Linux 上可使用相同选项：
+从仓库根目录切换到本章目录后，Linux 可使用相同选项：
 
 ```bash
 # 示例为 CC 8.6；按目标设备改成实际支持的 sm_XX。
@@ -1057,7 +1074,7 @@ compute-sanitizer --tool memcheck --error-exitcode=1 ./execution_check 257 20 5
 
 上面的编译、反汇编、`ldd` 与 `readelf` 检查可在没有 GPU 的主机上完成；最后两条会启动 kernel 并运行 sanitizer，需要兼容设备与驱动。
 
-需要同时嵌入指定架构 cubin 与可供兼容设备 JIT 的 PTX 时，可构建 fatbin：
+以下命令在本章目录运行。需要同时嵌入指定架构 cubin 与可供兼容设备 JIT 的 PTX 时，可构建 fatbin：
 
 ```bash
 nvcc -O3 -std=c++17 -lineinfo \
@@ -1071,7 +1088,7 @@ cuobjdump --list-ptx execution_fallback
 
 检查依赖链时，在 PTX 中定位循环回边与 `fma.rn.f32`，在 SASS 中查找 `FFMA`、循环计数和分支；若编译器展开循环或合并指令，应以真实控制流及读写同一累加寄存器的依赖为准。检查路径选择时沿 predicate 设置和条件 `BRA` 追踪两条路径；若变成谓词执行或选择指令，就记录实际形式，不从 C++ 函数名推断。检查 local/spill 时对照 `ptxas` 的 spill bytes/local bytes、SASS 中 local load/store 与源码里的动态索引对象。`--resource-usage`、`cuobjdump`、`nvdisasm` 用于查看资源和代码；`ldd`、`readelf -d` 检查 Linux host 动态库。主机崩溃时可运行 `gdb --args ./execution_check 257 20 5`，再用 `run` 和 `bt` 查看调用栈。`CUDA_LAUNCH_BLOCKING=1` 和 Compute Sanitizer 可帮助定位设备执行错误，但会改变执行条件，正式计时应关闭。
 
-Triton 的 PTX/cubin 通常由运行时编译并写入缓存。先运行目标 kernel，再按当前 Triton 版本、设备、dtype、shape 和编译配置定位对应缓存产物；缓存布局会随版本变化。将缓存中的 PTX/cubin 与这次实际 launch 的输入配置对应起来，再检查指令和资源，避免把其他配置的文件当作本次结果。
+Triton 的 PTX/cubin 通常由运行时编译并写入缓存。先运行目标 kernel，再按 Triton 版本、设备、数据类型、输入形状和编译配置定位对应缓存产物；缓存目录结构会随版本变化。将缓存中的 PTX/cubin 与本次启动的输入配置对应，再检查指令和资源。
 
 编译阶段可对照 [NVCC compilation trajectory](https://docs.nvidia.com/cuda/cuda-compiler-driver-nvcc/index.html#the-cuda-compilation-trajectory)；fatbin、cubin 与反汇编工具见 [CUDA Binary Utilities](https://docs.nvidia.com/cuda/cuda-binary-utilities/index.html)；PTX 的指令、特殊寄存器和修饰符见 [PTX ISA](https://docs.nvidia.com/cuda/parallel-thread-execution/)。
 
@@ -1081,15 +1098,15 @@ Triton 的 PTX/cubin 通常由运行时编译并写入缓存。先运行目标 k
 
 | 现象 | 所处阶段 | 首先检查 |
 |---|---|---|
-| 未声明标识符、模板实例化失败、host 函数不能从 device 调用 | 编译 | 声明、头文件、函数执行空间、编译目标和 Toolkit 版本 |
+| 未声明标识符、模板实例化失败、设备函数调用主机函数 | 编译 | 声明、头文件、函数执行空间、编译目标和 Toolkit 版本 |
 | `undefined reference` 或设备链接找不到符号 | 链接 | 定义是否进入构建、声明与定义是否一致、库是否链接、跨文件设备调用是否启用 RDC |
-| 程序启动时找不到共享库 | 装载 | 实际依赖的库及其搜索路径；不要通过随意更换全局库来掩盖版本不匹配 |
+| 程序启动时找不到共享库 | 装载 | 可执行文件依赖的库及其搜索路径，并核对库版本 |
 | kernel 启动配置失败 | 提交 | grid/block、共享内存用量、目标架构与可用设备代码 |
 | 在同步或后续 API 才报告非法访问 | 设备执行 | 同一 stream 之前提交的 kernel、地址与边界；同步点可能只是报告错误的位置 |
 
-RDC（Relocatable Device Code，可重定位设备代码）允许设备端函数跨编译单元链接，通常通过 `-rdc=true` 或分阶段 `-dc`、`-dlink` 构建。它与链接主机侧库是两件事；增加 `-lcuda` 不能修复缺失的设备函数定义。
+RDC（Relocatable Device Code，可重定位设备代码）支持设备端函数跨编译单元链接，通常用 `-rdc=true` 或分阶段 `-dc`、`-dlink` 构建。`-lcuda` 用于链接主机侧 Driver API；设备函数定义仍须加入设备链接输入。
 
-在 Linux 服务器上，可对本章调度示例执行以下检查。先在本章目录编译，再检查生成文件：
+在 Linux 服务器上，从仓库根目录切换到本章目录后，可执行以下检查并检查生成文件：
 
 ```bash
 nvcc -std=c++17 -O2 -g -lineinfo examples/execution_and_scheduling.cu -o execution_check
@@ -1107,7 +1124,7 @@ compute-sanitizer --tool memcheck --error-exitcode=1 ./execution_check 257 20 5
 
 程序装载设备代码后，CPU 侧通过 Runtime API 或 Driver API 建立启动所需的设备上下文、代码模块和 kernel 句柄，再把 launch 请求提交到 stream。两套 API 都控制 GPU；Runtime 封装常见步骤，Driver API 则让程序显式管理这些对象。
 
-以向量加法 `vector_add` 为例，主机先选择一张 GPU，再取得使用这张 GPU 的运行环境。这个环境叫 context（上下文），保存该设备的显存分配、已装载代码和执行资源；它不是线程 block 或 SM。接着，程序把设备代码装载成 module（代码包），再用编译代码中的函数名字查找 `vector_add`。编译代码中用于查找函数或变量的名字称为符号，Driver 找到后返回 `CUfunction` 句柄；句柄只是 API 识别这个 kernel 的标识。
+以向量加法 `vector_add` 为例，主机先选择 GPU，再取得该设备的 context（上下文）。上下文管理设备显存分配、已装载代码和执行资源。程序随后把设备代码装入 module（代码包），按函数符号 `vector_add` 查找入口，Driver 返回 `CUfunction` 句柄供后续启动使用。
 
 主机随后准备参数，把启动请求排进 stream（执行队列）。GPU 按 stream 中的顺序执行，主机在同步或读回结果时等待完成。CUDA C++ 的 `kernel<<<grid, block, shared_bytes, stream>>>(args)` 启动语法由编译器生成主机侧调用，Runtime 负责传参和代码装载等步骤；Driver API 则由程序显式调用选设备、取得 context、装载 module、查找函数和启动 kernel 的接口。
 
@@ -1116,7 +1133,7 @@ compute-sanitizer --tool memcheck --error-exitcode=1 ./execution_check 257 20 5
 <details>
 <summary>PTX、Driver 启动参数与完整向量加法程序</summary>
 
-下面程序嵌入一段 PTX，按“取得主上下文→装载模块→查找 kernel→分配显存→传参启动→复制结果”的顺序执行。PTX 声明三个 64 位设备地址和一个 32 位整数 n，主机侧必须按同样宽度准备参数。
+下面程序嵌入一段 PTX，按“取得主上下文→装载模块→查找 kernel→分配显存→传参启动→复制结果”的顺序执行。PTX 声明三个 64 位设备地址和一个 32 位整数 n，主机侧按相同宽度准备参数。
 
 ```cpp
 .visible .entry vector_add(
@@ -1186,7 +1203,7 @@ DONE:
 
 装载 PTX 时为当前 GPU 编译设备代码，称为 JIT（即时编译）。`cuModuleLoadDataEx` 的 numOptions 指定配置项数量，options 和 optionValues 分别传选项及对应值；本例没有配置，前两者传 `0,nullptr`，optionValues 也传 nullptr。启动 kernel 后，主机继续执行，因此检查结果前先等待 stream 完成。
 
-释放资源时先等设备结束使用，再销毁 stream、释放显存、卸载 module，最后 release 主上下文。主上下文由 retain/release 配对管理；自行创建的 context 才使用对应的 destroy 操作。
+释放资源时先等设备结束使用，再销毁 stream、释放显存、卸载 module，最后 release 主上下文。主上下文由 retain/release 配对管理；自行创建的 context 使用对应的 destroy 操作。从仓库根目录运行以下编译与执行命令，源文件路径相对于仓库根目录。
 
 ```bash
 nvcc -std=c++17 -O2 roadmap/curriculum/gpu/02-cuda-execution-and-scheduling/examples/driver_api_vector_add.cu -lcuda -o driver_api_vector_add
@@ -1202,11 +1219,11 @@ nvcc -std=c++17 -O2 roadmap/curriculum/gpu/02-cuda-execution-and-scheduling/exam
 
 Runtime 初始化会准备运行时状态和上下文；设备代码装载则把某个 kernel 的代码准备好。这两项开销可能发生在不同位置。
 
-Lazy loading（延迟装载）把代码装载推迟到第一次需要该 kernel 时；eager 模式则提前装载。CUDA 11.7 引入这项功能，Linux 从 12.2、Windows 从 12.3 起默认采用 lazy。进程启动前可设置 `CUDA_MODULE_LOADING=LAZY` 或 EAGER，运行时可用 `cuModuleGetLoadingMode` 查询。
+Lazy loading（延迟装载）在首次使用 kernel 时装载代码；eager 模式提前装载。CUDA 11.7 引入此功能，Linux 从 12.2、Windows 从 12.3 起默认采用 lazy。进程启动前可设置 `CUDA_MODULE_LOADING=LAZY` 或 `EAGER`，运行时可用 `cuModuleGetLoadingMode` 查询。
 
-如果要提前准备指定 kernel，用 `cudaFuncGetAttributes` 或 `cuModuleGetFunction` 触发装载。`cudaFree(nullptr)` 可用于准备 Runtime/context，但预载某个 kernel 还需要前面这些函数级操作。
+`cudaFree(nullptr)` 可触发 Runtime/context 初始化。若要提前装载指定 kernel，再调用 `cudaFuncGetAttributes` 或 `cuModuleGetFunction`。
 
-下面示例比较首次启动 add_one 与提前装载。传入 `--preload` 时，程序先调用 `cudaFuncGetAttributes`。启动后检查 `cudaGetLastError()`，同步时再检查设备执行错误。调试可使用 `CUDA_LAUNCH_BLOCKING=1` 使调用阻塞；正式计时恢复正常异步方式。
+下面示例比较首次启动 add_one 与提前装载。传入 `--preload` 时，程序先调用 `cudaFuncGetAttributes`。启动后检查 `cudaGetLastError()`，同步时再检查设备执行错误。调试时可设置 `CUDA_LAUNCH_BLOCKING=1`；正式计时使用默认异步执行。从仓库根目录运行下方命令，源文件路径相对于仓库根目录。
 
 
 <details>
@@ -1250,7 +1267,7 @@ CUDA_LAUNCH_BLOCKING=1 ./runtime_lazy_loading
 
 ## 9. 从线程分工到数据分块
 
-tile 是 kernel 按数据块表达的一组逻辑数据值；它不是新增的内存层。普通 CUDA SIMT kernel 先写每个线程负责哪些元素，再安排 warp 和 block 协作；CUDA Tile 则把一组元素作为 tile 交给编译器，具体由哪些硬件线程执行、使用哪些加载和计算指令由编译结果决定。
+tile 是 kernel 按数据块组织的一组逻辑值。普通 CUDA SIMT kernel 写明每个线程负责的元素，再安排 warp 和 block 协作；CUDA Tile 把一组元素交给编译器，由编译器安排硬件线程、加载和计算指令。
 
 例如向量加法，SIMT 写法给每个线程计算 `blockIdx.x*blockDim.x+threadIdx.x`；tile 写法按逻辑块编号 `bid` 选择第一个或后续的 128 元素块，整块相加后写回。两种写法都要选择块大小、数据类型和 grid，并处理最后一个不完整块。
 
@@ -1272,9 +1289,9 @@ add_simt<<<(n + 127) / 128, 128, 0, stream>>>(a, b, c, n);
 ~~~
 ### 9.2 坐标怎样落到元素和地址
 
-Array 是设备内存中的数组；shape（形状）说明各维有多少个元素，row-major（按行连续）布局把同一行的相邻元素放在连续位置。tile 坐标选中哪一块，局部坐标再选中块内哪一个元素，最后按数组的 shape 和 stride（步长）计算地址。stride 表示相邻索引之间跨过多少个元素或多少字节，单位由接口决定；下面的公式先以元素为单位，换算字节地址时再乘 `sizeof(T)`。
+Array 是设备内存中的数组；形状说明各维的元素数，row-major（按行连续）布局把同一行相邻元素放在连续位置。tile 坐标选择数据块，局部坐标选择块内元素，随后按数组形状和步长计算地址。步长表示相邻索引之间跨过的元素数或字节数，单位由接口决定；下面公式以元素为单位，换算字节地址时再乘 `sizeof(T)`。
 
-设 Array 的 shape 为 `(M,N)`，tile 的 shape 为 `(TM,TN)`。tile 坐标 `(bm,bn)` 中的局部元素 `(i,j)` 对应：
+设 Array 的形状为 `(M,N)`，tile 的形状为 `(TM,TN)`。tile 坐标 `(bm,bn)` 中的局部元素 `(i,j)` 对应：
 
 $$
 r=b_mT_M+i,\qquad c=b_nT_N+j.
@@ -1286,7 +1303,7 @@ $$
 \operatorname{offset}(i,j)=(b_mT_M+i)N+(b_nT_N+j).
 $$
 
-取 `A[10,16]`、tile `(2,4)`、tile 坐标 `(1,2)`，起点是元素 `(2,8)`，不是元素 `(1,2)`。这个 tile 的八个元素如下：
+取 `A[10,16]`、tile `(2,4)`、tile 坐标 `(1,2)`，该 tile 从元素 `(2,8)` 开始，包含以下八个元素：
 
 | tile 内局部行 | 第 0 列 | 第 1 列 | 第 2 列 | 第 3 列 |
 |---|---|---|---|---|
@@ -1299,7 +1316,7 @@ $$
 
 ### 9.3 逻辑 tile、Array 与硬件线程资源
 
-前面的二维示例中，`tile.shape=(2,4)` 表示两行四列、共八个逻辑值；编译器把对这些值的加载、计算和写回分配给硬件线程，并安排寄存器等资源。
+前面的二维示例中，`tile.shape=(2,4)` 表示两行四列、共八个逻辑值；编译器把这些值的加载、计算和写回分配给硬件线程，并安排寄存器等资源。
 
 下面换成一维向量。源数组可以是任意合法长度，例如长度 1025 的向量，用长度 128 的 tile 处理时，最后一块只有一个有效元素。Triton 的向量加一先计算这组元素的地址，再读出值：
 
@@ -1321,7 +1338,7 @@ grid 必须按数组长度正确计算。上述规则处理的是与数组边界
 
 归约是把一组元素合成为一个结果。求和与 GEMM 的无效归约项可填零；求最大值通常填负无穷，例如有效值全是负数时，填零会错误地把最大值变成零。Softmax 则应先排除无效位置，再让它们的指数贡献为零。
 
-`ct.where(mask,x,y)` 选择已经计算出的值。若先加载 x 时地址越界，随后选择 y 也无法补救。因此先保护 load/store 的边界，再选择结果。
+`ct.where(mask,x,y)` 按 mask 选择已计算的值。加载前应用边界 mask，写回时也对输出位置应用 mask，这样越界位置不会参与读写。
 
 ### 9.5 分块大小、数据复用与 FP32 累加器
 
@@ -1382,7 +1399,7 @@ CUDA Tile 的 Python 接口是 `cuda.tile`；C++ 接口使用 `cuda_tile.h` 和 
 | `load_masked` / `store_masked` | 加载或写回时保护尾部无效位置 |
 | `assume_aligned` | 声明地址已经满足对齐条件，不会自动修复地址 |
 
-CUDA Tile C++ 则为指针附上数组 shape，再定义分块：
+CUDA Tile C++ 则为指针附上数组形状，再定义分块：
 
 ~~~cpp
 #include "cuda_tile.h"
@@ -1413,7 +1430,7 @@ add_tile<<<(n + 127) / 128, 1, 0, stream>>>(a, b, c, n);
 
 `128_ic` 在编译时确定 tile 大小，n 在运行时给出数组长度。`load_masked` 负责部分尾块；普通 load 要求整块有效。`assume_aligned` 只告知编译器地址已经对齐，不会替程序调整地址；这里的 16 字节对齐表示地址是 16 的整数倍。比如原始 FP32 指针 a 对齐到 16 字节，a+1 会偏移 4 字节，此时需要重新检查对齐。
 
-CUDA Tile 的 tile 各维大小要求为 2 的幂；这是该具体接口的编译约束，不是所有分块算法或硬件 tile 的通用规则。源数组仍可以是任意合法长度，尾部由 mask 或对应边界模式处理。
+CUDA Tile 接口要求 tile 各维大小为 2 的幂。源数组可使用其他合法长度，尾块由 mask 或相应边界模式处理。
 
 下面的 Python 程序用 PyTorch 分配数组，用 cuTile kernel 做加法。测试输入选用可精确表示的小整数，便于逐元素检查。输出额外分配七个元素作为哨兵区，传入 kernel 的数组视图只包含前 n 个元素；运行后检查哨兵是否仍完整。
 
@@ -1543,7 +1560,7 @@ if __name__ == "__main__":
 
 Triton 的 num_warps 指定每个 program 使用的 warp 数，num_stages 控制编译器安排的流水阶段数；它们与 cuTile 的上述提示是不同参数。修改后，比较生成代码，再测寄存器、共享内存、驻留 warp、访存指令和时间，判断这次参数调整的实际效果。
 
-Host 程序可以让 SIMT kernel 和 tile kernel 先后处理同一显存数组，用 stream 保证顺序。它们的设备函数调用规则则分开：C++ tile 函数与普通 `__device__` 函数不能直接互调。
+Host 程序可在同一 stream 中先后启动 SIMT kernel 和 tile kernel，处理同一设备数组。设备端函数调用须遵循各自接口规则；C++ tile 函数与普通 `__device__` 函数分开调用。
 
 </details>
 
@@ -1669,7 +1686,7 @@ CPU 手算可独立核对变换：tile `[[4,5,6,7],[8,9,10,11]]` 展平为 `[4,5
 
 若只需要累计，不需要旧值，可用 `TiledView.atomic_store_add(tile_index,update_tile)`。两种接口都保护各自的原子更新；让所有线程或 block 等到一起，则需要另行安排同步和 kernel 顺序。
 
-cuTile 代码按逻辑 block 和 tile 描述计算，线程分配由编译器完成；kernel 中没有普通 SIMT 的显式 barrier（让参与线程等候的同步点）。普通 load/store 默认使用较弱的内存顺序，不能据此保证另一个 block 已完成写入。原子更新只保护同一元素的更新，不等于让所有线程或 block 互相等待；跨 block 的原子交换应按文档选取内存顺序和作用范围。
+cuTile 代码按逻辑 block 和 tile 描述计算，线程分配由编译器完成。kernel 的 load/store 按接口定义的内存顺序执行；需要让另一个 block 等待写入完成时，应按文档设置原子操作的内存顺序和作用范围，或用 stream/event 建立 kernel 间依赖。原子更新保证同一元素的更新顺序，不负责让所有线程或 block 集体等待。
 
 若一个 kernel 产生数组，另一个 kernel 读取它，可以把两次启动排到同一 stream，建立先后顺序。使用不同 stream 时，则用 event 或依赖关系让读取等待写入完成。主机想检查结果时，还要等设备工作结束。
 
@@ -1725,6 +1742,8 @@ if __name__ == "__main__":
 ```
 
 </details>
+
+以下内容适合需要从 Python 或 C++ 直接管理 CUDA 资源，或要追查 Driver 返回码与 ABI 兼容时阅读。它们沿用前面解释的 context、stream、设备地址和编译链接概念。
 
 ## 10. Python 与 C++ 的调用边界和资源生命周期
 
@@ -1921,11 +1940,11 @@ if __name__ == "__main__":
 
 输出末尾额外保留一个 FP32 哨兵，检查 out[n] 是否被尾块写坏。主机和设备数组都明确使用 np.float32，使参数类型和复制字节数一致。
 
-使用这些库时，要显式处理三个地方。Numba 设备 kernel 用 `i<n` 保护边界；CuPy 分配 FP32 数组写 `cp.zeros(shape,dtype=np.float32)`，因为它的默认 float 类型通常是 FP64；等待单个 stream 用 `stream.synchronize()`。CuPy 的设备同步由 `cp.cuda.Device` 提供，Numba 的设备级同步是 `cuda.synchronize()`。
+使用这些库时，要处理三项设置：Numba kernel 用 `i<n` 保护边界；CuPy 分配 FP32 数组时写 `cp.zeros(shape,dtype=np.float32)`，其默认浮点类型通常是 FP64；等待单个 stream 用 `stream.synchronize()`。CuPy 设备级同步由 `cp.cuda.Device` 提供，Numba 使用 `cuda.synchronize()`。
 
 Numba kernel 可以使用 CuPy 的当前 stream：先取得 `cp_stream=cp.cuda.get_current_stream()`，再用 `cuda.external_stream(cp_stream.ptr)` 包装，启动时传入这个 stream。这个包装对象只是借用 CuPy 的 stream，不负责销毁它；两边要使用同一设备和 context，CuPy stream 的所有者也要一直存活。
 
-跨库传数组时，CUDA Array Interface（CUDA 数组接口，CAI）是传递地址、形状、数据类型和 stream 等元数据的约定。例如 CuPy 在 stream A 中写入数组，Numba 在同一 stream 或等待相应 event 后才能读取；消费者要按 CAI 提供的完成顺序处理，确保数据已经写好。
+跨库传递数组时，CUDA Array Interface（CUDA 数组接口，CAI）提供地址、形状、数据类型和 stream 等信息。例如 CuPy 在 stream A 中写入数组后，Numba 可在同一 stream 读取，或先等待对应 event；读取方按 CAI 提供的执行顺序获取数据。
 
 按参数手算一次：设备地址 P 指向 4 字节分配，`cuMemsetD32Async(P,0,1,S)` 将一个 32 位值写成零，操作排入 stream S。同步后读回并断言零值，才检查到实际写入。释放 P 前要等设备完成使用。
 
@@ -1945,7 +1964,7 @@ NVCC 编译 .cu 文件时，分别处理主机代码和设备代码。函数前�
 
 Kernel 调用辅助函数时，该函数必须有设备端版本。双限定符函数要让函数体分别通过两侧编译；必要时用 `#if defined(__CUDA_ARCH__)` 选择设备编译分支。这个宏表示当前设备编译目标，运行时查询 GPU 则使用设备属性 API。
 
-模板按参数类型生成相应函数实例，例如同一份乘二函数分别用于 int 和 float。设备调用的实例也要满足设备编译要求。lambda 是没有单独函数名的小函数对象，可以保存外部值；扩展 lambda 用限定符标明执行位置，并传入 `--extended-lambda` 编译选项。捕获的值保存在 lambda 对象里；若捕获了主机指针，它仍指向原来的主机地址，不能直接拿来访问普通设备数组。
+模板按参数类型生成相应函数实例，例如同一份乘二函数分别用于 int 和 float；设备调用的实例也须通过设备编译。lambda 是可保存外部值的小函数对象；扩展 lambda 用限定符标明执行位置，并需 `--extended-lambda` 编译选项。捕获主机指针时，lambda 保存的仍是主机地址；设备代码要访问设备数组，应传入相应设备地址。
 
 显存管理对象 `DeviceBuffer` 负责分配和释放显存；传给 kernel 的 `DeviceSpan` 只携带设备地址和长度，不会替调用方释放显存。异步操作完成前，管理对象和 stream 都必须继续存活。对象创建时执行构造函数、结束生命周期时执行析构函数，把资源的取得和释放放进这两个过程，称为 RAII（Resource Acquisition Is Initialization，对象生命周期管理资源）。
 
@@ -2093,7 +2112,7 @@ int main(int argc, char** argv) {
 <details>
 <summary>C++ 补充：链接属性、设备对象和间接调用限制</summary>
 
-设备函数默认具有 external linkage（外部链接属性，可被其他编译单元引用），示例仍在声明中写 extern。CUDA 13 改变了部分 kernel 和设备变量的默认链接属性，因此维护跨文件代码时要按符号类别检查。相关类别包括 `__global__` 函数和 `__device__`、`__constant__`、`__managed__` 变量，不能套用同一条默认规则。
+设备函数默认具有 external linkage（外部链接属性，可被其他编译单元引用），示例在声明中明确写 `extern`。CUDA 13 调整了部分 kernel 和设备变量的默认链接属性；跨文件构建时，应分别核对 `__global__` 函数与 `__device__`、`__constant__`、`__managed__` 变量的链接规则。
 
 Runtime 把 kernel 参数的字节复制到设备参数区；这个过程不会替程序在 GPU 上调用对象的自定义复制构造函数。若把负责释放显存的对象传进去，主机上的临时对象可能在 kernel 完成前析构，从而提前释放 GPU 仍在使用的内存。
 
@@ -2116,11 +2135,11 @@ Runtime 把 kernel 参数的字节复制到设备参数区；这个过程不会�
 
 设备端 new/delete 使用设备堆，动态共享内存则来自 block 启动配置。cuTile 设备代码禁止普通的非 placement new/delete。
 
-函数指针必须指向当前执行侧可调用的函数。主机不能取得 `__device__` 函数地址，kernel 的主机侧地址与设备侧地址也不能互换。SIMT 设备代码可按支持的规则做间接调用；例如 nvstd::function 可分别在主机和设备包装函数，但这两侧的对象不能互传，也不能作为由主机启动的 kernel 参数。
+函数指针必须指向当前执行侧可调用的函数。主机端和设备端分别使用各自的函数地址；kernel 的主机侧入口与设备侧入口也属于不同地址空间。SIMT 设备代码可按支持规则间接调用；例如 `nvstd::function` 可分别包装主机函数和设备函数，对象各自在对应执行侧使用。
 
 虚函数调用还依赖对象的虚函数表。设备端对象及 override 必须使用一致的执行限定符；把主机上构造的多态对象按值传给 kernel 使用，会产生未定义行为。cuTile 则不支持函数指针调用和虚调用。只有少量可选操作时，模板、直接调用或 switch 更容易检查。
 
-设备代码不支持 C++ 异常和运行时类型识别（RTTI），因此不能使用 throw、try/catch、typeid 和 dynamic_cast。主机代码仍可使用其编译器支持的这些功能。
+CUDA 设备代码支持的 C++ 子集不包括异常处理和运行时类型识别（RTTI）；`throw`、`try/catch`、`typeid` 和 `dynamic_cast` 用于主机代码时则按主机编译器规则处理。
 
 std::vector 等普通容器通常管理主机数据。设备函数需要使用明确支持设备执行的 API，例如 CUDA C++ 标准库 cuda::std 中的相应实现。模板和 constexpr 的函数体同样要满足调用侧的编译要求。
 
@@ -2141,21 +2160,21 @@ nvcc -arch=sm_XX cpp_language_support.o cpp_device_ops.o cpp_device_link.o -o cp
 
 ## 11. 错误定位与 Driver 接口兼容性
 
-当第 7.1 节已经把问题定位到 Driver 调用、启动或同步边界后，需要两类信息继续缩小范围：返回码先给出错误类别，Error Log 记录具体入口、参数和诊断文本；版本查询与 Driver entry point（运行时取得函数地址）则回答当前编译时头文件、Runtime、驱动和目标函数接口是否匹配。
+当错误出现在 Driver 调用、启动或同步边界时，可从两方面继续定位：返回码标明错误类别，Error Log 记录 API 入口、参数和诊断文本；版本查询与 Driver entry point（运行时取得函数地址）用于核对头文件、Runtime、驱动和函数接口的匹配情况。
 
 ### 11.1 Error Log：从错误类别追到具体调用
 
-第 7.1 节的错误阶段表先帮助你判断问题发生在编译、链接、装载、启动还是执行；这里处理已经拿到 Driver 返回码的情况。例如 `CUDA_ERROR_INVALID_VALUE` 只说明参数无效，Error Log Management（错误日志管理）再提供具体入口和英文诊断。本节探针按 Toolkit 13.3 接口编写。
+第 7.1 节按编译、链接、装载、启动和执行阶段分类错误；本节从已取得的 Driver 返回码继续查具体调用。例如 `CUDA_ERROR_INVALID_VALUE` 表示参数无效，Error Log Management（错误日志管理）还可给出对应入口和诊断文本。本节探针使用 Toolkit 13.3 接口。
 
-启动进程前把 CUDA_LOG_FILE 设为 stderr、stdout 或文件路径，可记录时间、线程、来源、级别、API 入口和消息。程序仍应检查每次调用的返回码、启动错误和同步处的执行错误；日志只补充支持接口的诊断。
+启动进程前把 `CUDA_LOG_FILE` 设为 stderr、stdout 或文件路径，可记录时间、线程、来源、级别、API 入口和消息。程序检查 Driver 返回码、kernel 启动状态和同步处返回的执行错误；日志提供对应调用的补充诊断。
 
-cuLogsDumpToFile 把缓冲日志写入文件，cuLogsDumpToMemory 把它们写入主机缓冲区。要只读新日志，先用 `cuLogsCurrent(&iterator,0)` 保存当前位置；iterator 是指向下一条待读消息的位置，再从这个 CUlogIterator 开始导出，读取后位置会推进。传空 iterator 则读取当前缓存，内部最多保留 100 条记录。
+`cuLogsDumpToFile` 将缓冲日志写入文件，`cuLogsDumpToMemory` 将日志写入主机缓冲区。只读取新日志时，先用 `cuLogsCurrent(&iterator,0)` 保存当前位置，再从该 `CUlogIterator` 导出；导出后 iterator 推进到下一条消息。传入空 iterator 时读取当前缓存，最多保留 100 条记录。
 
-导出时提供的 25,600 字节主机缓冲区足以容纳这批保留记录；如果容量不足，会带截断提示并舍弃较老条目。库还可用 cuLogsRegisterCallback 注册 callback（库产生消息时调用的用户函数），再用返回的句柄调用 cuLogsUnregisterCallback 注销；回调签名为 `void callback(void* userData, CUlogLevel level, char* message, size_t length)`。
+提供 25,600 字节主机缓冲区可容纳最多 100 条保留记录。缓冲区较小时，导出结果会带截断提示并舍弃较旧条目。`cuLogsRegisterCallback` 可注册回调函数，库产生日志时调用该函数；用返回句柄调用 `cuLogsUnregisterCallback` 注销。回调签名为 `void callback(void* userData, CUlogLevel level, char* message, size_t length)`。
 
-本节按 Driver 13.3 的覆盖范围使用这些函数。某些接口尚未提供 Error Log 诊断；文件路径也可能在首次写日志时才检查，所以应以返回码和实际日志共同定位。
+Driver 13.3 的部分接口不提供 Error Log 诊断；文件路径也可能在首次写入时才检查。定位时结合返回码和实际日志内容。
 
-下面探针故意给 cuLogsDumpToMemory 传空缓冲区，检查它返回参数无效，再导出日志阅读原因。cuGetErrorName 给出错误名称，日志补充 API 入口和诊断文本。空缓冲调用用于本次排错实验。
+下面的探针向 `cuLogsDumpToMemory` 传入空缓冲区，确认它返回参数无效；随后导出日志查看调用入口和诊断文本。`cuGetErrorName` 返回错误名称。
 
 <details>
 <summary>Error Log Driver API 完整探针</summary>
@@ -2216,7 +2235,7 @@ CUDA_LOG_FILE=stderr ./error_log_probe
 
 版本查询和按 Driver entry point 取得函数指针，是兼容性问题的另一层。函数调用的参数、返回值等二进制传递约定称为 ABI（Application Binary Interface，应用二进制接口）；headers 是编译时包含的头文件，PFN 类型则规定指定版本的参数类型和返回类型。下面先区分各版本数字，再按指定 ABI 取得地址。
 
-程序里常见的三个版本查询分别回答不同问题：
+三个版本查询分别报告以下环境版本：
 
 | 查询 | 回答的问题 |
 |---|---|
@@ -2224,13 +2243,13 @@ CUDA_LOG_FILE=stderr ./error_log_probe
 | cudaRuntimeGetVersion | 进程使用哪个 Runtime API 版本？ |
 | cuDriverGetVersion | 已安装驱动支持哪个 Driver API 版本？ |
 
-驱动安装包的版本号和 GPU 的计算能力则另行查询。记录这些数字时，应带上查询名称，才能判断它描述哪一部分环境。
+驱动安装包版本与 GPU 计算能力由各自查询报告；记录时保留查询名称，便于辨认版本所属组件。
 
-Driver Entry Point Access 在运行时取得某个 Driver 函数的地址，程序再通过该函数指针调用；函数指针类型必须与查得的那一版接口匹配。这个地址用于 CPU 调用 Driver 函数，与第 8 节用来标识 GPU kernel 的 CUfunction 句柄不同。
+Driver Entry Point Access 在运行时取得 Driver 函数地址，程序再通过函数指针调用。指针类型应匹配请求的 ABI 版本；它用于 CPU 调用 Driver 函数。`CUfunction` 则是标识 GPU kernel 入口的句柄。
 
-Toolkit 的 cudaTypedefs.h 为各版接口提供 PFN_... 类型。下面查询 CUDA 11.2 版 cuMemAllocAsync，使用 `PFN_cuMemAllocAsync_v11020`，并向 cuGetProcAddress 请求版本 11020；11020 是所需的 11.2 接口版本，不等同于当前 Toolkit 或驱动的查询值。
+Toolkit 的 `cudaTypedefs.h` 为不同 ABI 版本提供 `PFN_...` 函数指针类型。下面查询 CUDA 11.2 版 `cuMemAllocAsync`，使用 `PFN_cuMemAllocAsync_v11020`，并向 `cuGetProcAddress` 请求 ABI 版本 11020。这个值表示所需接口版本。
 
-查找后检查三项：CUresult 返回码、CUdriverProcAddressQueryResult 查找状态，以及函数指针是否为空。它们分别说明调用有没有成功、所需接口是否找到，以及是否得到了可调用地址。
+查找后检查三项：`CUresult` 返回码、`CUdriverProcAddressQueryResult` 状态和函数指针。它们分别报告查询结果、符号查找状态和可调用地址是否取得。
 
 <details>
 <summary>版本和 Driver entry-point ABI 查询完整程序</summary>
@@ -2292,7 +2311,7 @@ int main() {
 
 </details>
 
-从仓库根目录编译并运行下面程序，检查请求的接口能否找到。若下一步要调用异步分配，还需要选好 context 和 stream，查询设备对内存池的支持，并在最后一次使用后按 stream 顺序释放内存。
+从仓库根目录运行下面命令，查询请求的接口是否可用。若随后调用异步分配，再选择 context 和 stream、查询设备内存池支持，并按 stream 顺序在最后一次使用后释放内存。
 
 本例使用 Toolkit 13.3 的 cudaTypedefs.h。较旧 Toolkit 若缺少相应类型定义，应使用该版本支持的声明与接口，避免用不匹配的函数指针强行调用。
 

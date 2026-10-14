@@ -54,9 +54,33 @@ $$
 需要保存 scale 与 zero-point。实际编码还要裁剪到合法整数范围，并处理常量组；校准范围通常应包含零，以便零点具有明确表示。是否适合采用非对称格式，还要考虑模型分布及 kernel 对 zero-point 的支持。
 
 ### 量化粒度
-- **Per-tensor**：整个 tensor 一个 scale（最粗，精度最低）
-- **Per-channel** (权重)：每个输出通道一个 scale（常用，精度和开销平衡好）
+- **Per-tensor**：整个 tensor 一个 scale；scale 数少，张量内部动态范围差异较大时，小幅值区域可能损失更多分辨率。
+- **Per-channel** (权重)：每个输出通道一个 scale；比 per-tensor 有更多尺度自由度，也增加 scale 存储/读取量，误差取决于校准分布和实际分组定义。
 - **Per-token** (激活)：每个 token 一个 scale；它与 per-group/per-block 是不同维度，实际粒度要按张量布局和 kernel 定义。
+
+## PTQ、QAT 与 fake quant 的前向/反向
+
+PTQ（post-training quantization）从已有浮点权重出发，选择 scale、校准范围并导出低位宽权重；常见流程会用代表性激活估计误差，也有权重重构或 data-free 变体。QAT（quantization-aware training）在训练前向插入量化模拟，让参数在量化误差存在时继续优化。训练 checkpoint 仍可能保存浮点参数，部署时再按目标格式导出。
+
+fake quant（伪量化）在浮点张量上模拟量化与反量化。对对称 INT8 量化组，设范围为 $[q_{min},q_{max}]$，scale 为 s：
+
+$$
+q=\operatorname{clip}(\operatorname{round}(x/s),q_{min},q_{max}),\qquad
+\hat{x}=s q.
+$$
+
+前向执行 round 与 clip，损失看到的是 $\hat{x}$；round 的真实导数几乎处处为 0，直接反传会阻断权重更新。常见 STE（straight-through estimator，直通估计）在反向把 round 近似为恒等映射，并可将 clip 区间外梯度置零：
+
+$$
+\frac{\partial\hat{x}}{\partial x}\approx
+\begin{cases}1,&q_{min}<x/s<q_{max},\\0,&\text{otherwise.}\end{cases}
+$$
+
+这是优化用的 surrogate gradient（替代梯度），不是 round 的数学导数。scale 是否学习、clip 边界如何处理，取决于 QAT 算法；PTQ 不经过这条训练反向路径。
+
+![权重、激活与 KV cache 的常见量化分组轴](../../papers/figures/review/quantization-scale-granularity.svg)
+
+权重常用 per-output-channel 或 per-group 静态 scale，随权重 checkpoint 保存；激活可按 tensor、token 或 channel/group 取 scale，运行时动态计算或从校准结果固定；KV cache 则在写入时按 head、token、block 或 channel-group 量化，读取时按对应 scale 还原。格式与分组轴是两件事：例如 FP4 payload 可配每 16 通道一个 E4M3 scale。scale 的存储、加载与反量化顺序会共同影响误差和访存。
 
 ## FP8 量化
 
@@ -69,7 +93,7 @@ FP8 方案在不同 GPU 代际和库中有不同支持；常见 recipe 使用两
 
 FP8 通常不需要 zero-point（浮点编码自带符号），但仍需要 **scale** 把输入动态范围映射到 FP8 可表示范围。E4M3/E5M2 的前向或反向用途是常见配方，不是所有模型和库的硬性规定；应记录格式、累加类型与 scale 更新策略。
 
-**动态 scale**：可以在当前张量、延迟的历史 amax，或块级统计上更新 scale。当前值更贴近输入但会增加同步/计算，延迟统计减少开销却要承担分布变化带来的溢出风险。
+**动态 scale**：运行时从当前张量、延迟的历史 amax 或块级统计计算/更新 scale。它能跟随当前分布，但增加统计与同步工作；延迟统计可复用历史值，遇到分布变化时更容易饱和或失去有效精度。
 
 ## 性能与精度如何测量
 
@@ -130,8 +154,12 @@ Y_fp16 = (Y_int32.float() * (scale_x * scale_w)).to(torch.float16)
 
 - **KV Cache 量化**：Attention 的 KV Cache 也能量化（省显存），但要小心精度
 - **混合精度**：敏感层保持 FP16，不敏感层 INT8（逐层校准）
-- **动态量化 vs 静态量化**：动态是运行时算 scale（灵活但慢），静态是离线校准（快但需要代表性数据）
+- **动态量化 vs 静态量化**：动态路径在执行时根据输入统计 scale，在线开销随张量与 kernel 设计而变；静态路径读取校准阶段确定的 scale，减少在线统计，但输入分布偏离校准范围时可能饱和或误差增加。
 
 ---
 
-*下一步：[AWQ](remaining-theory-primer.md#c3-awq)（activation-aware 权重量化，解决"哪些层该保持高精度"）*
+## 参考阅读
+
+- [AWQ：Activation-aware Weight Quantization](https://arxiv.org/abs/2306.00978)
+- [GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers](https://arxiv.org/abs/2210.17323)
+- [SmoothQuant: Accurate and Efficient Post-Training Quantization for Large Language Models](https://arxiv.org/abs/2211.10438)

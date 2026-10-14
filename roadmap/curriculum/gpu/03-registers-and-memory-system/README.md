@@ -1,8 +1,8 @@
 # 第 3 章：寄存器文件、地址空间与内存系统
 
-一个 CUDA thread 读取一个 `float`，通常把参与计算的值保存在寄存器中，再写回 global memory；实际存放位置由编译器决定。同一 block 的线程可把各自读到的元素暂存在 shared memory 中，交换数据后继续计算。block 内共享数据可显式使用 `__shared__`。
+一个 CUDA thread 读取一个 `float` 后，编译器通常把正在使用的值放进寄存器，计算完成后再把结果写回 global memory。寄存器按线程分配，但物理上来自该线程所在 SM 的寄存器文件；它不是每个 warp 一份的缓存。需要同一 block 多个线程复用或交换的数据，可以先放进 shared memory。
 
-下面的转置例子会展示两种交换数据的路径：lane 访问 global memory 时，sector 用于统计一条 warp 请求覆盖的 32B 地址区段；shared memory 的 bank 则决定多个 lane 的请求如何并行服务。padding 是在 shared tile 的物理行跨度中增加填充元素，可改变 lane 到 bank 的映射。先从具体地址和线程分工出发，再区分变量可见范围与最终物理存储位置。
+本章沿着数据走过的路径展开：线程私有值和寄存器、寄存器用量对 SM 驻留线程的影响、global memory 的缓存与访问区段、block 内 shared 交换、bank 映射，最后用转置把这些机制连起来。寄存器数、global sector 数和 shared bank 映射回答的是不同问题；后面的例子会从线程访问的具体元素推到对应结果。
 
 ## 1. 线程私有值与寄存器
 
@@ -38,40 +38,40 @@ __global__ void long_live_values(const float* x, float* y, int n) {
 
 这里的 `p0` 到 `p4` 都在末尾求和时使用，因而源码表达了较长、彼此重叠的活跃区间。编译器可能化简常量表达式，所以这段代码只用于说明概念；实际寄存器用量要看编译报告和生成指令。
 
-图中比较不同地址空间的可见范围：寄存器和 local memory 属于单个线程，shared memory 由同一 block 共享，global memory 可由整个 grid 访问。源码作用域说明变量在哪里可见；地址空间说明哪些线程可以访问；实际物理位置还要看编译器如何放置数据。local 是线程私有的地址空间名称，不代表数据位于片上。
+图中比较不同地址空间的可见范围：寄存器和 local memory 属于单个线程，shared memory 由同一 block 共享，global memory 可由有权限的 grid 线程访问。源码作用域说明变量在哪里可见，地址空间说明哪些线程可以访问；实际存放位置由存储空间和编译结果决定。
 
 <figure class="diagram-frame">
 <img src="figures/thread-block-memory-scope.svg" alt="寄存器和local memory属于单个线程，shared memory属于一个block，global memory可由grid中的线程访问">
-<figcaption>图：CUDA 地址空间的可见范围。local memory 虽是线程私有地址空间，物理访问仍可能落到设备内存路径。</figcaption>
+<figcaption>图：CUDA 地址空间的可见范围。寄存器/local memory 按线程私有，shared memory 按 block 共享，global memory 可由 grid 中有权限的线程访问。</figcaption>
 </figure>
 
-常见 CUDA 存储空间的访问范围、生命周期和典型位置如下。表中的生命周期对应语言与 CUDA 存储规则；它不表示寄存器会在运行时按源码行释放，也不表示每个地址空间都由同一种分配方式管理。
+常见 CUDA 存储空间的访问范围、生命周期和典型位置如下。
 
 | 类型 | 可见范围 | 生命周期 | 通常所在位置 |
 |---|---|---|---|
-| 寄存器（device 局部变量未指定其他存储空间） | 单个 thread | 单线程生命周期；物理寄存器槽由编译器分配和复用 | SM 寄存器文件 |
+| 寄存器（device 局部变量未指定其他存储空间） | 单个 thread | 单线程生命周期；物理寄存器槽由编译器分配和复用 | 所在线程所属 SM 的寄存器文件 |
 | Local memory（线程私有对象被放入该地址空间时） | 单个 thread | 对象按其线程内生命周期有效 | device memory 路径，可能经缓存 |
 | `__shared__` | 同一 block 的线程 | 存储随 block 执行期间存在 | SM 片上共享内存 |
 | `cudaMalloc` 的 global allocation | 有权访问该分配的 device thread | 从分配到 `cudaFree` | device global memory |
 | `__device__` 静态变量 | device thread；主机可通过 Runtime API 查询或复制 | program/CUDA context 生命周期 | device global memory |
 | `__constant__` | device thread 只读；主机可通过 Runtime API 更新 | program/CUDA context 生命周期 | device constant memory 与只读缓存路径 |
 
-CUDA 的 storage specifier 表将未指定存储空间的 device 变量列为单线程可见、单线程生命周期；`__shared__` 存储随 block 执行期间存在，`__constant__` 和静态 `__device__` 变量则属于 program/CUDA context。动态 `cudaMalloc` 数组的生命周期从分配持续到释放。shared 中的值会保留到被覆盖或其存储结束；某值最后一次使用的位置描述的是值的活跃区间，不会自动结束 shared 存储。编译器会在一个线程内按值的活跃区间复用物理寄存器；死值不会在运行时逐行把寄存器容量归还给其他 block。普通 kernel 的寄存器资源预算应以编译报告和架构分配粒度为准。
+CUDA 的 storage specifier 表将未指定存储空间的 device 变量列为单线程可见、单线程生命周期；`__shared__` 存储随 block 执行期间存在，`__constant__` 和静态 `__device__` 变量则属于 program/CUDA context。动态 `cudaMalloc` 数组的生命周期从分配持续到释放。shared 中的数据会保留到被覆盖或存储结束；寄存器则由编译器按值的活跃区间分配和复用。编译器报告的每线程寄存器数乘以 block 线程数，可先估出该 block 对 SM 寄存器文件的需求，实际分配还受硬件粒度影响。
 
 ## 2. 寄存器用量与计数单位
 
-> [!IMPORTANT] local 描述作用域，不描述距离
-> **线程私有变量不一定放在寄存器中。** 动态索引数组和较大的局部对象也可能使用 local memory；register spill（寄存器溢出）特指寄存器分配压力导致的值转存。检查编译产物后再判断来源和影响。
+> [!IMPORTANT] 识别 register spill
+> Register spill（寄存器溢出）指寄存器分配压力导致的值转存。线程私有数组进入 local memory 还有动态索引等其他原因；结合编译报告和生成指令判断具体来源。
 
-字节（byte）用于表示地址跨度与数据大小；一个 32-bit word 是 4 byte。编译器报告的寄存器按 32 位为一个计数单位：一个 `float` 或 `int` 标量通常占一个，`double`、64 位指针和 `long long` 通常占多个。源码变量数不等于寄存器数，编译器会拆分、合并、消除或复用值。后文的 sector（地址区段）按 32B 对齐范围统计 global 请求覆盖；bank（存储分组）是 shared memory 并行服务请求的单位。两者都不是 C++ 元素或寄存器。
+字节（byte）用于表示地址跨度与数据大小；一个 32-bit word 是 4 byte。编译器报告的寄存器按 32 位为一个计数单位：一个 `float` 或 `int` 标量通常占一个，`double`、64 位指针和 `long long` 通常占多个。后文的 sector（地址区段）按 32B 对齐范围统计 global 请求覆盖；bank（存储分组）是 shared memory 并行服务请求的单位。两者都不是 C++ 元素或寄存器。
 
-估算一个 block 的寄存器需求可从下式开始：
+每线程寄存器数来自编译器报告；同一 SM 上所有驻留 block 都从该 SM 的寄存器文件取得资源。估算一个 block 的初始需求可从下式开始：
 
 $$
 R_{block} \approx T_{block} \times R_{thread}
 $$
 
-`T_block × R_thread` 先估算一个 block 的寄存器需求。硬件再按架构规定的分配粒度向上取整每个 warp 或 block 的分配量，得到每 block 实际分配值；由寄存器限制决定的驻留 block 数，才是 `floor(SM 可用寄存器总量 / 每 block 实际分配量)`，还要受 warp、block 数和其他资源上限约束。SM 的寄存器总量本身不取整。若 `T_block=256`、每线程报告 64 个寄存器，未计分配粒度时需求为 $256×64=16384$ 个 32 位寄存器。改为 48 时估算为 12288；若因此产生 spill，额外 local 读写可能抵消驻留收益。
+`T_block × R_thread` 先估算一个 block 的寄存器需求。硬件再按架构规定的分配粒度向上取整，得到每 block 的实际分配量。寄存器资源所允许的驻留 block 上限可先按 `floor(SM 可用寄存器数 / 每 block 实际分配量)` 估算，再与 warp、block 数及其他资源上限取较小值。以 256 个线程为例，这相当于 8 个 warp。每线程 64 个寄存器时，未计分配粒度的需求是 $256×64=16384$ 个 32 位寄存器；降到 48 时是 12288，少 4096 个寄存器/ block。这个差值本身不能推出多驻留几个 block：还要看目标 SM 的寄存器总量、分配粒度和其他资源。如果限制寄存器导致 spill，新增的 local 读写也会带来成本。
 
 `ptxas` 的 `Used N registers` 报告目标代码的物理寄存器分配数量；PTX `.reg` 声明的是虚拟寄存器，两者不能直接等同。驻留估算应使用目标编译报告，并按该架构的分配粒度计算。
 
@@ -86,7 +86,7 @@ values[slot] = fmaf(values[slot], 1.0001f, 0.25f);
 
 索引若是编译期常量，编译器可能把 `values[0]`、`values[1]` 等拆成标量，甚至消去整个数组。索引依赖运行时数据时，代码需要保留“基址加偏移”的寻址方式，较难把所有元素固定到独立寄存器；但数组较小且优化充分时，仍可能寄存器化。应结合 `-Xptxas=-v`、`--resource-usage` 和 PTX/SASS 判断，不能只看数组写法下结论。
 
-下面的命令先生成资源摘要，再用寄存器上限较低的版本观察 spill 变化，最后检查 PTX 和 SASS。将 `sm_XX` 换成目标设备的计算能力版本；不同架构的寄存器数据不能直接互用。
+下面的命令先生成资源摘要，再用寄存器上限较低的版本观察 spill 变化，最后检查 PTX 和 SASS。先从仓库根目录切换到 `roadmap/curriculum/gpu/03-registers-and-memory-system/`，再运行命令；其中 `examples/...` 相对于该章目录。将 `sm_XX` 换成目标设备的计算能力版本，不同架构的寄存器数据按各自目标解释。
 
 ```powershell
 nvcc -O3 -std=c++17 -lineinfo --resource-usage `
@@ -116,7 +116,7 @@ float b = a + 1.0f;
 float c = b * 2.0f;
 ```
 
-优化后编译器可能只保留一两个活跃值；一行表达式也可能因 FMA 操作数、地址计算、边界 predicate（谓词条件）或循环展开产生多个临时值。应观察编译结果，不要按源码行数估算寄存器。
+优化后，`b` 和 `c` 可能复用寄存器槽；地址计算、边界 predicate（谓词条件）或循环展开也会产生临时值。编译器报告的是生成代码实际分配的寄存器数。
 
 缩小 `float values[64]` 不保证消除 spill。动态索引、循环展开、同时活跃的累加器、编译目标和寄存器分配粒度都会影响结果。比较两个版本的 `ptxas` 每线程寄存器数、local memory 字节数，以及 SASS 中的 local load/store，才能确认变化。
 
@@ -170,11 +170,18 @@ for (int k = lane * 4; k < K; k += 4 * warpSize) {
 
 ### 4.1 Global memory
 
-Global memory 是 grid 中线程可寻址的设备内存。它容量大，生命周期由分配管理；访问代价受地址合并、对齐、缓存命中和数据复用影响。一次 global load 可能由 L1（一级缓存）或 L2（二级缓存）服务；两级缓存都未命中时，请求才沿显存（DRAM）路径取数。不同 GPU 使用的显存类型不同，例如 GDDR 或 HBM（High Bandwidth Memory，高带宽内存）。缓存命中仍然是 global 地址请求，不等同于使用 shared memory。
+Global memory 是 grid 中线程可寻址的设备内存，分配的生命周期由分配与释放管理。一次 global load 仍由每个执行该指令的线程发出，但数据可以从不同层级得到。L1（一级缓存）位于各 SM；L2（二级缓存）位于设备侧，由各 SM 共用。若两级缓存都没有所需数据，请求再从设备内存（DRAM）取数。设备内存可使用 GDDR 或 HBM（High Bandwidth Memory，高带宽内存）等类型。
+
+例如 warp 0 和 warp 1 都读取 `A[0]`。如果两个 warp 在同一 SM 上运行，它们都执行 global load，第二次读取可能命中该 SM 的 L1；如果两个 warp 在不同 SM 上运行，它们不共用 L1，但可从设备共享的 L2 取得数据。每个 warp 的请求仍按自己的 lane 地址计算。缓存解释“数据从哪层提供”，合并访问解释“一条 warp 请求覆盖哪些地址区段”，两者要分开看。
+
+<figure class="diagram-frame">
+<img src="figures/memory-ownership-and-cache.svg" alt="SM 0 上的 block 0 含 thread 0 和 thread 1，共享 block 0 的 shared memory；SM 1 上的 block 1 含 thread 0。每个 SM 各有 L1，设备共享 L2。箭头从各 L1 指向 L2，再由 L2 未命中时指向 DRAM。">
+<figcaption>block 分处两个 SM；箭头沿 L1 → L2 → DRAM 表示请求查询方向。</figcaption>
+</figure>
 
 ### 4.2 Shared memory
 
-Shared memory（共享内存）是分配给一个 block 的片上存储，同一 block 的线程可以借它交换或复用数据。shared 被划分为可并行服务访问的 bank（存储分组）；下文的示例限定在 32 个 bank、每 bank 按 32 位 word 编址的模型。多个 lane 命中同一 bank 的不同 word 时，请求可能被拆成多批。矩阵转置先用 shared tile 调整 global 读写方向，再通过行跨度 padding 改善这个特定 32 位访问模型下的 bank 映射。
+Shared memory（共享内存）是分配给一个 block 的片上存储，同一 block 的线程可以借它交换或复用数据。它与 L1 使用同一片 SM 物理资源，shared 占用会影响该 kernel 可用的 L1 容量。shared 又分成多个 bank，多个 lane 访问同一 bank 的不同 word 时，请求可能分批服务；第 6 节用 32 位标量例子说明其映射。矩阵转置先用 shared tile 调整 global 读写方向，再通过行跨度 padding 改变 bank 映射。
 
 ### 4.3 Constant memory
 
@@ -182,7 +189,7 @@ Constant memory 是设备端只读地址空间，适合较小且稳定的常量�
 
 ### 4.4 Local memory
 
-Local memory 的地址空间对每个 thread 私有，但名称不表示它位于片上。寄存器溢出、无法标量化的局部数组和较大的线程私有对象都可能使用 local memory；请求也可能经过缓存。它不像 shared 那样由 block 共享，也没有寄存器的低延迟保证。是否构成瓶颈，要结合 `lmem` 报告和机器码判断。
+Local memory 是每个 thread 私有的地址空间，数据走设备内存路径，也可能经过缓存。寄存器 spill、动态索引的局部数组和较大的线程私有对象都可能使用它；查看 `lmem` 报告与 local load/store 指令可判断具体来源。
 
 ### kernel 中的局部变量与 shared memory
 
@@ -201,11 +208,13 @@ __global__ void wrong_memory_model(float* out) {
 
 `x` 和 `tile` 都在 kernel 函数体内声明，但可见范围不同：邻居 thread 不能直接读取 `x`；block 内跨线程读写 `tile` 则要用 barrier（同步屏障）建立生产者与消费者之间的先后关系。
 
-L1/L2 命中仍服务于 global-memory 请求。缓存会改变数据所在层级和访问延迟，不会把 global 地址变成寄存器或 shared 地址；各地址空间的访问范围和同步规则仍然不同。
+L1/L2 为 global 地址请求提供缓存服务；跨线程交换数据仍要用 shared memory 或其他有明确定义的通信方式。
 
 ## 5. Global memory 的 32B sector 手算
 
-本节用一个简单模型统计单条 warp 指令覆盖的 sector。设一个 warp 有 32 个 lane，每个 lane 读取一个 4B `float`，起始地址 `base` 按 32B 对齐，lane `l` 的字节地址为：
+这里按 CUDA global memory 常见的 32B sector 统计单条 warp 指令覆盖的地址区段。假设一个 warp 有 32 个 lane，每个 lane 读取一个 4B `float`，元素自然对齐，且首地址按 32B 对齐；偏移 4B 的例子会单独计算。sector 数表示该请求覆盖的地址区段，缓存和下游传输另按实际访问情况处理。
+
+lane `l` 的字节地址为：
 
 $$
 addr(l)=base+4\times stride\times l
@@ -222,15 +231,15 @@ sector 数是地址映射后不同 32B 区段的数量。合并访问看同一�
 ### stride = 1
 
 <figure class="diagram-frame">
-<img src="figures/lane-sectors.svg" alt="对齐起点下32个lane每人读取4字节，stride1、2、32分别覆盖4、8、32个sector">
-<figcaption>图：按同一条warp加载指令计算sector覆盖。颜色表示分组，数字是lane编号，不是物理内存通道编号。</figcaption>
+<img src="figures/sector-alignment.svg" alt="单条 warp 请求中的 32 个 lane 各读一个 4B FP32。上行从32B对齐基址加0B开始，覆盖4个固定32B sector；下行从同一基址加4B开始，首格与末尾7格未访问，lane31落在第五个sector第一格，共覆盖5个sector。">
+<figcaption>图：sector 边界上下对齐不动。下行在首格空出 4B 后放置 32 个 lane 的数据，再留 7 格；两行统计的是单条 warp 请求覆盖的地址区段，不是 DRAM 访问次数。</figcaption>
 </figure>
 
-当 `base=0` 时，地址 `0, 4, 8, ..., 124` 覆盖 sector 0–3，共 4 个 32B sector；32 个 lane 的有效数据恰为 128B。若 `base=4`，同一组 4B 访问落在 sector 0–4，共 5 个 sector：未对齐使覆盖范围多跨一个 sector。这里仍是单条 warp 请求的 sector 覆盖数，不是 DRAM 流量测量。
+`base=0` 时，地址 `0, 4, 8, ..., 124` 落在 sector 0–3，共 4 个 32B sector；32 个 lane 的有效数据共 128B。若首地址为 `base=4`，地址变为 `4, 8, ..., 128`，覆盖 sector 0–4，共 5 个。两种情况下每个 lane 仍只读一个 FP32；偏移使最后一个元素跨入第五个 sector。
 
 ### stride = 2
 
-地址是 `0, 8, 16, ..., 248`。32 个 lane 各读 4B，有效数据量为 128B；首地址到最后一个元素末尾覆盖 252B 地址范围，对应 8 个 32B sector、共 256B 覆盖量。中间间隔的 float 不属于这条指令读取的数据。这里计算的是单条 warp 请求覆盖的 sector，不是实测 DRAM 流量；缓存命中及后续事务处理会影响实际传输。该模式可能仍可接受，不能仅凭 stride 不为 1 就断言绝对慢。
+地址是 `0, 8, 16, ..., 248`。32 个 lane 各读 4B，有效数据量为 128B；从首地址到最后一个元素末尾覆盖 252B 地址范围，对应 8 个 32B sector。中间间隔的 float 不属于这条指令读取的数据。
 
 ### stride = 32
 
@@ -238,9 +247,9 @@ sector 数是地址映射后不同 32B 区段的数量。合并访问看同一�
 
 ### 连续 lane 不是必要条件
 
-如果 32 个 lane 以任意置换访问同一组地址 `{0, 4, 8, ..., 124}`，去重后的 sector 集仍然是 `{0,1,2,3}`，请求仍可按 4 个 sector 合并。连续 lane 是最容易构造、也最常见的充分条件，但不是合并访问的必要条件。若起始地址未对齐，即使 lane 按连续地址访问，也可能跨过额外的 32B sector。
+如果 32 个 lane 以任意顺序访问同一组地址 `{0, 4, 8, ..., 124}`，去重后的 sector 集仍是 `{0,1,2,3}`。因此判断请求覆盖范围，要看一条 warp 指令产生的地址集合；未对齐时，即使地址连续，也可能多跨一个 32B sector。
 
-**完整算例。** 令 `base=64`、`stride=2`，第 0–3 个 lane 的地址为 64、72、80、88，都落在 sector 2；第 4–7 个 lane 地址为 96、104、112、120，都落在 sector 3。lane 31 读取地址 312，位于 sector 9。因此该 warp 指令覆盖 sector 2 到 9，共 8 个 32B sector。sector 去重描述请求覆盖，不等同于下游 DRAM 实际传输量。
+**完整算例。** 令 `base=64`、`stride=2`，第 0–3 个 lane 的地址为 64、72、80、88，都落在 sector 2；第 4–7 个 lane 地址为 96、104、112、120，都落在 sector 3。lane 31 读取地址 312，位于 sector 9。因此该 warp 指令覆盖 sector 2 到 9，共 8 个 32B sector。
 
 分析 naive GEMM 的线程映射时，要区分单线程跨归约迭代的地址与同一条 warp 指令覆盖的地址。对 `B[n*K+k]`，若同一条指令中相邻 lane 的 `k` 连续，这次读取可以合并；单线程下一轮跨过 K 个元素，不会改变当前 warp 请求的 lane 地址分布。
 
@@ -314,7 +323,7 @@ $$
   <figcaption>连续 word 地址按 bank 交错分组；同一 bank 中可有多个独立位置。</figcaption>
 </figure>
 
-对 C/C++ 行主序的 `float tile[32][32]`：
+bank 编号按 32 位 word 的序号循环分配；它不是矩阵里固定的物理“第几列”。对 C/C++ 行主序的 `float tile[32][32]`：
 
 $$
 word\_index(tile[r][c])=r\times32+c
@@ -359,9 +368,7 @@ warp 中所有 lane 若读取**同一 bank 的同一 word**，例如都读 `tile
 
 ### 访问边界
 
-这个 bank 公式只适用于这里设定的 32 位 word 访问。64 位、向量化或其他 bank width 下，一次指令可能覆盖多个 bank，需按实际访问宽度和目标架构拆解；`float4` 不能当成单个 32 位 word。当前转置 tile 的元素为 `float`，因此上面的手算适用。
-
-在 `tile[32][32]` 中，若 lane 读取 `tile[0][lane]`，访问分散到不同 bank；若读取 `tile[lane][0]`，32 个 lane 落入同一 bank 的不同 word。结论只适用于这里的 32 位访问模型，其他元素宽度要按真实指令重算。
+本节只按 32 位标量访问计算。64 位或向量化指令可能一次访问多个 word，需要按生成的访问宽度和目标架构重新映射。
 
 ## 7. 矩形转置：shared staging 与 padding
 
@@ -392,7 +399,14 @@ tile[ty][tx] = input[row * N + col];
 __syncthreads();
 ```
 
-例如 `3×5` 矩阵的首个 tile 中，线程 `ty=3, tx=0` 没有合法输入行，但代码计算出的转置输出坐标是 `(output_row=3, output_col=0)`，在 `5×3` 输出中合法。它要读取 `tile[0][3]`（对应输入 `(0,3)`），再写到输出 `(3,0)`；若按输入行越界提前退出，就会漏掉这项输出。应让线程完成装载和同步，再按输出坐标单独判断是否写回。归约 kernel 还有另一种情况：缺席线程若未写入单位元，参与归约的线程可能读取未初始化的 shared 值。能否提前退出取决于线程职责、barrier 的参与要求和数据依赖；这个转置例子的直接问题是输入与输出职责不同，提前退出会漏写结果。
+令输入为 `3×5` 矩阵 `A[r,c]=10r+c`，转置结果为：
+
+$$
+A=\begin{bmatrix}0&1&2&3&4\\10&11&12&13&14\\20&21&22&23&24\end{bmatrix},\qquad
+B=A^T=\begin{bmatrix}0&10&20\\1&11&21\\2&12&22\\3&13&23\\4&14&24\end{bmatrix}.
+$$
+
+输入 tile 的线程先按 `row=blockIdx.y*32+ty`、`col=blockIdx.x*32+tx` 读 `A[row,col]`，并写到 `tile[ty][tx]`。第一次 `__syncthreads()` 等所有线程完成这一步。之后转置输出坐标改为 `output_row=blockIdx.x*32+ty`、`output_col=blockIdx.y*32+tx`，并从 `tile[tx][ty]` 读值。首个 tile 中，`ty=3, tx=0` 的输入行越界，所以它向 `tile[3][0]` 写 0；但它的输出坐标 `(3,0)` 在 `5×3` 输出内，读取的实际位置是 `tile[0][3]`，其中存着 `A[0,3]=3`，最后写入 `B[3,0]=3`。若它按输入坐标越界直接退出，就会漏掉这个输出。所有线程先写 tile 并通过屏障，再分别判断输出坐标；单次使用 tile 后 kernel 结束，不需要第二个屏障。若在循环中重用 tile，则覆盖下一块数据前还要确认上一轮读者已完成。
 
 ### 7.3 三条可比较的代码路径
 
@@ -453,19 +467,19 @@ __global__ void transpose_tiled_kernel(const float* input, float* output,
 
 线程先按输入坐标写入 `tile[threadIdx.y][threadIdx.x]`，再用 `tile[threadIdx.x][threadIdx.y]` 交换行列读取。`output_row` 和 `output_col` 是转置后的坐标，线性地址为 `output_row*rows+output_col`。写回阶段 `threadIdx.x` 连续改变 `output_col`，使相邻 lane 写入相邻位置。
 
-模板参数只改 shared memory 的物理行跨度：`false` 为 32 列，`true` 为 33 列。在 FP32、32-bank、32-bit 访问模型中，读取 `tile[threadIdx.x][threadIdx.y]` 时，32 列行跨度可能使同一 warp 的 lane 落到同一 bank 的不同 word；加一列会让相邻行起点错开一个 bank。实际收益仍取决于 lane—地址映射和访问宽度，不能把 padding 当成所有布局的通用优化。
+模板参数只改 shared memory 的物理行跨度：`false` 为 32 列，`true` 为 33 列。在这个 FP32 标量例子中，输出 warp 的 lane `l` 读取 `tile[l][ty]`，对应 bank 为 `(l×stride+ty) mod 32`。stride 为 32 时，所有 lane 都落在 bank `ty`，但访问不同 word；stride 为 33 时，bank 变为 `(l+ty) mod 32`，lane 分散到 32 个 bank。这也把上一节的公式直接用到转置代码上。
 
 [NVIDIA CUDA Samples 的转置示例](https://github.com/NVIDIA/cuda-samples/tree/5443602d89ed99aede2e4b7bf329daddeadb320e/cpp/6_Performance/transpose)用四条路径逐步隔离成本：`copy` 给出同类读写的带宽参照；`transposeNaive` 保留跨步 global 写；`transposeCoalesced` 通过 shared tile 让 global 读写都合并；`transposeNoBankConflicts` 再调整 shared 行跨度，减少列读取的 bank conflict。padding 只针对特定线程与地址的对应关系有效，并非任意矩阵访问的通用优化。
 
 官方例程的逻辑 tile 为 32×32，线程块为 32×16，并要求矩阵尺寸整除 tile；本章实现用 32×32 线程块并处理矩形尾块。线程数、边界工作与 launch 数量不同，因此可以对照算法阶段和访存机制，不应直接把两份程序的毫秒数作横向性能结论。
 
-未 padding 与 padding 版本都使用 `32×32` 线程块，模板参数只改变 shared 行跨度，可用于比较这一布局变化。naive 版本使用 `32×8` 线程块，因此它与 tiled 版本的差异还包含线程组织变化，不能全归因于 padding。程序以 CPU 转置作参考，检查三种输出的最大绝对误差，并用 CUDA event 计时；非有限结果或误差超过阈值都会使程序失败。
+未 padding 与 padding 版本都使用 `32×32` 线程块，模板参数只改变 shared 行跨度，可用于比较这一布局变化。naive 版本使用 `32×8` 线程块，因此两类实现的差值同时包含线程组织与访存布局的影响。程序以 CPU 转置作参考，检查三种输出的最大绝对误差，并用 CUDA event 计时；非有限结果或误差超过阈值都会使程序失败。打印的有效带宽按 `2×rows×cols×sizeof(float) / kernel time` 计算，表示读写逻辑字节数除以时间，不是 profiler 测得的 DRAM 带宽。
 
 ### 转置练习
 
 在 [LeetGPU Matrix Transpose](https://leetgpu.com/challenges/matrix-transpose) 题面从空白实现转置。先处理整除尺寸，再覆盖矩形边界；检查输入、输出的 lane 地址顺序以及 shared tile 的索引交换。平台提交的原始 kernel 应单独归档。
 
-服务器验证使用本章 `examples/transpose_tiled.cu`。固定矩阵尺寸、数据类型、预热和计时方式，比较 naive、未 padding 与 padding 三种实现。先核对 CPU 参考并运行 sanitizer，再记录 kernel 时间、有效带宽、寄存器/shared/local 用量，以及设备可提供的 sector 和 bank 指标。整除尺寸与矩形尾部尺寸分别报告。naive 与 tiled 的线程组织不同，不能把两者差异全归因于 padding。
+服务器验证使用本章 `examples/transpose_tiled.cu`。命令从本章目录运行。固定矩阵尺寸、数据类型、预热和计时方式，比较 naive、未 padding 与 padding 三种实现。先核对 CPU 参考并运行 sanitizer，再记录 kernel 时间、按逻辑读写字节计算的有效带宽、寄存器/shared/local 用量，以及设备可提供的 sector 和 bank 指标。整除尺寸与矩形尾部尺寸分别报告。naive 与 tiled 的线程组织不同，因此差值包含线程组织和访存布局的共同影响；未 padding 与 padding 才只改变 shared 行跨度。
 
 ```bash
 nvcc -O3 -std=c++17 -lineinfo --resource-usage examples/transpose_tiled.cu -o transpose_tiled
@@ -686,11 +700,11 @@ int main(int argc, char** argv) {
 
 ## 8. 缓存复用与 shared staging
 
-重复读取可能由硬件缓存服务，也可以由程序把数据显式搬入 shared memory 暂存（staging），供同一 block 多次使用。缓存位置与替换由硬件根据地址流和其他流量决定；shared 暂存则需要程序安排数据布局、同步屏障（barrier）和复用时机。
+重复读取可由硬件缓存服务，也可由程序把数据搬入 shared memory，供同一 block 多次使用。缓存由硬件根据访问流处理；shared 暂存则需要程序安排数据布局、同步和复用时机。
 
-工作集较小、复用距离短时，global load 加缓存可能已足够，额外搬运和同步反而增加开销。若一个 block 内会重复使用同一 tile，或工作集与访问流使缓存复用不稳定，shared 暂存可以让这部分复用更明确；它仍需配合合并的 global 访问，不能单独保证更快。
+例如一个 block 反复使用同一输入 tile 做多轮计算时，可先合并读取该 tile，再写入 shared，让后续计算从 shared 复用。若数据只读一次，或工作集已经能由缓存有效复用，额外搬运和同步就可能增加开销。是否使用 shared 暂存，要结合数据复用次数和实测时间判断。
 
-比较实现时，固定设备、形状、数据类型和计时范围，并按“硬件机制—代码改动—预期计数—实测”核对：跨步写对应 sector 覆盖，shared 列读对应 bank 映射；tile、padding、线程布局和暂存方式是代码变量；最后先验正确性，再观察时间、缓存/sector、bank、寄存器和 local 访问。
+比较实现时，固定设备、形状、数据类型和计时范围。跨步写对应 sector 覆盖，shared 列读对应 bank 映射；代码变化包括 tile、padding、线程布局和是否使用 shared 暂存。先核对结果，再看时间及缓存、sector、bank、寄存器和 local 访问数据。
 
 ```text
 硬件机制：跨步写覆盖更多 32B sector，或 shared 列读落到同一 bank
@@ -699,7 +713,7 @@ int main(int argc, char** argv) {
 测量：正确性 -> kernel time -> memory sectors/cache -> shared conflicts -> registers/lmem
 ```
 
-一次变快可能同时来自更少的 global sector 覆盖、更好的缓存复用和较少的重复读取，不能只归因于 shared latency。无 padding 与 padding 版本应使用相同的输入输出布局、边界尺寸和计时范围，才能聚焦 shared 行跨度的影响。
+无 padding 与 padding 版本应使用相同的输入输出布局、边界尺寸和计时范围；两版只改变 shared 行跨度，便于判断 padding 对 bank 访问和时间的影响。
 
 ## 9. 编译产物检查：从 CUDA 源码到 PTX 与 SASS
 
@@ -707,7 +721,7 @@ int main(int argc, char** argv) {
 
 对这个 kernel，还要检查未 padding 与 padding 版本的 shared 地址计算是否体现 32/33 元素行跨度，并结合 lane 映射判断 bank 冲突是否减少。若编译器为某些值生成 local load/store，先查看 `ptxas` 的 local/spill 字节报告，再沿指令和源码对象确认来源；动态寻址局部数组可能使用 local memory，但不一定是 spill。静态机器码只能显示生成了什么，不能代替设备计数器或时间测量。
 
-对转置例程可使用以下命令。把 `sm_XX` 换成与目标 GPU 匹配的架构：
+对转置例程可使用以下命令。先从仓库根目录切换到本章目录；命令中的 `examples/...` 相对于该目录。把 `sm_XX` 换成与目标 GPU 匹配的架构：
 
 需要查看源码行对应关系时，生成被检查的 cubin 也要带 `-lineinfo`；`nvdisasm --print-line-info` 只显示产物中已有的行映射，不会为缺少行信息的 cubin 补写映射。
 
@@ -1120,7 +1134,7 @@ void launch_eight_clusters() {
 
 这组代码对照启动参数，不比较性能。两种写法都生成 16 个 block、共 2048 个线程。带 cluster tuple 的 `__block_size__` 已在声明中固定 block 与 cluster 形状，不能再用 `__cluster_dims__` 重复声明。若这种特殊启动还需指定动态 shared 大小或 stream，第二个参数应写占位值 `1`，如 `blocks_as_clusters<<<8, 1, bytes, stream>>>()`。该语法要求工具链支持，且不会改变普通 CUDA launch 的计数规则。
 
-在支持 Cluster 的设备上，可运行 DSM histogram，测试 1、127、129 和 4099 个输入，并与 CPU histogram 对照。CPU 所有权模型只检查分片计算，不代替设备运行或 sanitizer：
+在支持 Cluster 的设备上，可运行 DSM histogram，测试 1、127、129 和 4099 个输入，并与 CPU histogram 对照。先从仓库根目录切换到本章目录；`examples/...` 命令相对该目录运行。CPU 所有权模型检查分片计算，设备程序用于验证实际执行：
 
 ```bash
 python examples/cluster_dsm_ownership_check.py
@@ -1498,4 +1512,6 @@ CUDA 13.3 文档指出 EGM 映射使用 2 MiB 页，超大工作集可能增加 
 
 ## 参考阅读
 
-[CUDA Programming Guide 13.3](../../../../downloads/cuda-programming-guide.pdf)、[Memory Space Specifiers](https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/cpp-language-extensions.html#memory-space-specifiers)、[Green Contexts（CUDA Programming Guide 13.4）](https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/green-contexts.html)、[Extended GPU Memory（CUDA Programming Guide 13.4）](https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/extended-gpu-memory.html)、[Execution Context Runtime API 13.4](https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__EXECUTION__CONTEXT.html)。
+- [CUDA Programming Guide 13.3](../../../../downloads/cuda-programming-guide.pdf)：地址空间、缓存、合并访问、shared memory 与统一内存。
+- [Memory Space Specifiers](https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/cpp-language-extensions.html#memory-space-specifiers)：存储位置、访问范围和生命周期。
+- [Green Contexts](https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/green-contexts.html) · [Extended GPU Memory](https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/extended-gpu-memory.html) · [Execution Context API](https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__EXECUTION__CONTEXT.html)。

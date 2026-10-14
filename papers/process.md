@@ -1,101 +1,29 @@
-# 论文管理工作流
+# 论文阅读与主题教程维护
 
-## 当前管道
+本目录保存论文来源、候选记录和辅助阅读材料。面向读者的机制讲解统一进入[论文与算法阅读器](../roadmap/curriculum/gpu/course-site/index.html?chapter=41)，不要求同一机制在 `papers/` 和 `notes/algorithms/` 各写一份正文。
 
-```text
-research_watch.py
-  -> papers/inbox/YYYY-MM-DD-topic.md
-  -> 每周核验/去重/P0-P2
-  -> 挂到当前或近期 PATH 节点
-  -> 精读/复现
-  -> papers 正式索引 + notes 机制笔记
-```
+## 阅读路径
 
-自动抓取只负责发现，不能自动改 `PATH.md`，也不能把摘要当结论。推荐命令：
+1. 速读：确认研究问题、前代限制、主要贡献、关键公式和是否值得精读。可另写短速读卡，作为筛选记录。
+2. 选定主题后，在同一个阅读器章节连续展开完整机制。说明符号与张量形状，推导关键公式，沿一组小输入手算，再用可解释代码对应算法步骤。
+3. 结合图解说明数据流、条件和计算分支；根据论文问题讨论质量、精度、成本、实验设置和局限。只有论文主张需要实验数字时，才按原论文的 baseline 与测量条件记录结果。
+4. 阅读作者实现时，从论文总仓库入口进入，以模块、类、函数或 kernel 标识符定位。把关键代码行为解释在主题正文中；不以仓库链接替代代码讲解，不复制整份上游仓库。
+5. 参考资料在章节末尾集中列出原论文、作者仓库和必要的本地来源。内部 PDF 页码、源码摘录与校验依据维护在 `.codex/course-source-index.json`。
 
-```bash
+速读卡与正式主题教程分开。速读卡可简短，不承担完整机制教学；正式教程按问题复杂度决定篇幅，不设“一篇一页”限制，也不要求每篇附带 benchmark 表。核心论文和重要最新论文至少做到精读加作者关键代码，能讲清动机、公式推导、张量 shape、算法步骤、作者实现、相关质量实验和局限。一个主题需要比较多篇论文时，正文按共同问题组织，逐一说明各方法的机制差异和来源。
+
+## 候选发现
+
+观察池可从 arXiv、会议论文集和可信技术报告收集候选。抓取脚本是可选发现工具，只向 inbox 写候选材料，不修改论文正文或学习进度：
+
+~~~bash
 python scripts/research_watch.py --topic kernels --days 7 --write-inbox
 python scripts/research_watch.py --topic distributed --days 14 --write-inbox
 python scripts/research_watch.py --topic inference --days 7 --write-inbox
-```
+~~~
 
+候选筛选关注方法是否提供新的算法、数据结构、模型结构、硬件映射或实验认识；核对原论文和作者代码后，再决定速读、纳入某个主题或留在观察池。摘要与搜索结果用于定位，不能替代论文中的定义和推导。
 
-## 节奏
+## 状态与来源
 
-- **每天 5min**：扫 arxiv RSS / X / 公众号标题，有意思的存链接
-- **每周日 30min**：把本周存的链接过一遍 → 补充到索引 → 标记优先级
-- **每月底 30min**：回顾本月精读、归档过时的 P2 条目
-
-## 发现管道
-
-### 主要来源
-
-| 来源 | 频率 | 方法 |
-|------|------|------|
-| arxiv cs.DC | 每日 | `scripts/fetch_papers.py` 自动抓 |
-| arxiv cs.LG | 每日 | 同上 |
-| arxiv cs.CL | 每日 | 同上 |
-| MLSys / OSDI / SOSP / ASPLOS | 每年 | 关注 proceedings |
-| 知乎/公众号 | 日常 | 看到就存 |
-| X/Twitter (AI Infra 圈) | 日常 | 关注 @cHHillee, @tri_dao, @vllm_project 等 |
-
-### 自动抓取
-
-```bash
-# 抓最近 3 天 AI Infra 相关论文（cs.DC + cs.LG + cs.CL）
-python scripts/fetch_papers.py --days 3
-
-# 抓指定关键词
-python scripts/fetch_papers.py --query "attention AND (GPU OR CUDA OR inference)"
-
-# 只看新论文标题，快速筛选
-python scripts/fetch_papers.py --days 7 --titles-only
-```
-
-## 分类标准
-
-| 优先级 | 含义 | 动作 |
-|--------|------|------|
-| P0 | 必须精读，领域基础 | 写完整笔记，搞懂每个设计决策 |
-| P1 | 与当前学习主题相关 | 主题月内精读 |
-| P2 | 知道即可 | 只读 abstract + conclusion，存档 |
-
-## 笔记模板
-
-每篇论文笔记 ≤ 一页，固定四个部分：
-
-```
-# 标题
-**作者/年份/会议** | **状态** | **优先级**
-
-## 解决了什么问题
-（1-2 句话）
-
-## 怎么解决的
-（核心方法，3-5 个要点）
-
-## 关键数据
-（性能数字、消融实验结论）
-
-## 与我何干
-（一句话：对我的工作/学习有什么启发）
-```
-
-## 每月主题轮换
-
-| 月份 | 主题 | 精读重点 |
-|------|------|---------|
-| 2026.06 | CUDA + GPU 架构 | GPU 体系结构论文、CUDA 最佳实践 |
-| 2026.07 | Attention 机制 | Flash Attn 1/2、GQA/MQA、Ring Attn |
-| 2026.08 | Triton + 编译器 | Triton、MLIR、TorchDynamo |
-| 2026.09 | LLM 推理 | PagedAttention、量化、调度 |
-| 2026.10 | LLM 推理（续） | SGLang、SpecDecode、MoE 推理 |
-| 2026.11 | 分布式训练 | ZeRO、FSDP、Megatron、MoE |
-| 2026.12 | Agent 系统 | ReAct、Tool Use、MCP、RAG |
-| 2027.01+ | 待定 | 根据业界动态调整 |
-
-## 归档规则
-
-- P2 论文如果 3 个月没碰 → 移到 `archive/`，只保留索引条目
-- P0/P1 精读过的论文永久保留笔记
-- 每年年底清理一次索引
+论文学习进度由 `PATH.md` 管理，当前阅读焦点由 `NOW.md` 管理。索引、模板和观察池不代表已读或已掌握状态。旧论文笔记继续作为原始材料，来源与验证状态按项目维护索引记录。

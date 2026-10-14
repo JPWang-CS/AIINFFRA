@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="470" viewBox="0 0 1080 470" role="img" aria-labelledby="t d">
+<title id="t">AWQ把激活逆缩放和权重列缩放两路汇合后量化</title>
+<desc id="d">校准输入X经S逆缩放；权重矩阵W的输入通道列经右乘S缩放后量化。两支在矩阵乘时汇合，浮点下XW转置等于XS逆乘WS转置，S由校准统计选择。</desc>
+<defs><marker id="a" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#475569"/></marker><style>text{font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#172033}.b{stroke-width:2;rx:14}.x{fill:none;stroke:#475569;stroke-width:2.5;marker-end:url(#a)}.h{font-size:20px;font-weight:700}.s{font-size:16px}</style></defs>
+<rect width="1080" height="470" fill="#f8fafc"/><text x="40" y="42" class="h">浮点输出保持不变，重要通道权重放大后再量化</text>
+<rect x="45" y="95" width="165" height="74" class="b" fill="#dbeafe" stroke="#3b82f6"/><text x="127" y="126" text-anchor="middle" class="h">输入 X</text><text x="127" y="151" text-anchor="middle" class="s">校准激活</text>
+<path d="M210 132H258" class="x"/><rect x="270" y="95" width="195" height="74" class="b" fill="#ede9fe" stroke="#8b5cf6"/><text x="367" y="126" text-anchor="middle" class="h">X′ = XS⁻¹</text><text x="367" y="151" text-anchor="middle" class="s">激活通道逆缩放</text>
+<rect x="45" y="250" width="165" height="74" class="b" fill="#e2e8f0" stroke="#64748b"/><text x="127" y="281" text-anchor="middle" class="h">权重 W</text><text x="127" y="306" text-anchor="middle" class="s">每列是输入通道</text>
+<path d="M210 287H258" class="x"/><rect x="270" y="250" width="195" height="74" class="b" fill="#ffedd5" stroke="#f97316"/><text x="367" y="281" text-anchor="middle" class="h">W′ = WS</text><text x="367" y="306" text-anchor="middle" class="s">重要通道权重放大</text>
+<path d="M465 287H513" class="x"/><rect x="525" y="250" width="190" height="74" class="b" fill="#fee2e2" stroke="#ef4444"/><text x="620" y="281" text-anchor="middle" class="h">Q(W′)</text><text x="620" y="306" text-anchor="middle" class="s">共享组 scale 量化</text>
+<path d="M465 132H760V185" class="x"/><path d="M715 287H760V235" class="x"/>
+<rect x="772" y="172" width="245" height="82" class="b" fill="#dcfce7" stroke="#22c55e"/><text x="894" y="205" text-anchor="middle" class="h">矩阵乘输出</text><text x="894" y="231" text-anchor="middle" class="s">X′ Q(W′)ᵀ</text>
+<rect x="190" y="365" width="700" height="50" class="b" fill="#fef3c7" stroke="#d97706"/><text x="540" y="396" text-anchor="middle" class="s">XWᵀ = (XS⁻¹)(WS)ᵀ；S 根据校准激活与输出误差选择</text>
+</svg>

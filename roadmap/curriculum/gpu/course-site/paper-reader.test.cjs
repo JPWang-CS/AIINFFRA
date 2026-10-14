@@ -6,13 +6,33 @@ const html=fs.readFileSync(path.join(__dirname,'index.html'),'utf8');
 const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
 const base='http://127.0.0.1:8765/roadmap/curriculum/gpu/course-site/index.html';
 const payload=JSON.parse(html.match(/<script id="paper-content-data" type="application\/json">([\s\S]*?)<\/script>/)[1]);
-const {papers,prepare}=require('./paper-catalog.cjs');
+const {papers,categoryOrder,prepare}=require('./paper-catalog.cjs');
 const repo=path.resolve(__dirname,'..','..','..','..');
+const anchorRegistry=JSON.parse(fs.readFileSync(path.join(repo,'.codex','course-section-anchors.json'),'utf8'));
+const legacyAnchors=JSON.parse(fs.readFileSync(path.join(repo,'.codex','paper-legacy-anchors.json'),'utf8'));
+assert.equal(anchorRegistry.chapters['31']['2|12. 数字账（记住这组数）|1'],18,
+  'Renamed V4 section must retain its old title alias');
+assert.equal(anchorRegistry.chapters['31']['2|12. 架构配置与成本对比|1'],18,
+  'Renamed V4 section must reuse the old stable section ID');
 const examPaper=papers.find(paper=>paper.id===39);
 const preparedExam=prepare(fs.readFileSync(path.join(repo,examPaper.source),'utf8'),examPaper,repo);
 assert(preparedExam.includes("Agent's Last Exam"),'prepare must preserve the official benchmark name');
 assert(!preparedExam.includes("智能体's Last Exam"),'prepare must not translate part of the official benchmark name');
-assert.equal(Object.keys(payload).length,21);
+assert.equal(Object.keys(payload).length,papers.length);
+assert.deepEqual(Object.keys(legacyAnchors.chapters),Array.from({length:21},(_,i)=>String(20+i)));
+for(const [chapter,ranges] of Object.entries(legacyAnchors.chapters)){
+  const body=payload[String(chapter)];
+  assert(body,`Missing legacy paper payload ${chapter}`);
+  const ids=new Set([...JSDOM.fragment(body).querySelectorAll('[id]')].map(node=>node.id));
+  for(const [first,last] of ranges){
+    for(let section=first;section<=last;section++){
+      assert(ids.has(`chapter-${chapter}-section-${section}`),
+        `HEAD-published legacy anchor was not preserved: ${chapter}/${section}`);
+    }
+  }
+}
+assert(!legacyAnchors.chapters['23'].some(([first,last])=>first<=31&&31<=last),
+  'Historical registry-only chapter 23/31 was never published and is not a legacy URL');
 for(const [id,body] of Object.entries(payload)){
   const doc=JSDOM.fragment(body);
   for(const word of ['WIP','等待验收','待讨论','Agent 整合','当前进度','当前状态：','本笔记作为当前学习节']){
@@ -54,6 +74,10 @@ const current=id=>{
 };
 (async()=>{
   click('[data-part-link="papers"]');
+  current(41);
+  assert(d.querySelector('[data-nav-chapter="41"]').closest('.paper-category').open);
+  assert(d.querySelector('#chapter-41 .markdown-body').textContent.includes('next-token'));
+  click('[data-nav-chapter="25"] summary a');
   current(25);
   assert(d.querySelector('[data-nav-chapter="25"]').closest('.paper-category').open);
   assert(d.querySelector('#chapter-25 .katex'));
@@ -83,19 +107,30 @@ const current=id=>{
     }
   }
   assert(!d.querySelector('#chapter-19 .chapter-switch [data-chapter-link="20"]'));
-  assert.equal(d.querySelectorAll('.paper-category').length,6);
+  assert.equal(d.querySelectorAll('.paper-category').length,categoryOrder.length);
+  assert.deepEqual([...d.querySelectorAll('.paper-category > summary')].map(node=>node.textContent),categoryOrder);
+  for(const paper of papers){
+    const peers=papers.filter(p=>p.category===paper.category).sort((a,b)=>a.order-b.order);
+    const at=peers.findIndex(p=>p.id===paper.id);
+    const expected=[peers[at-1]?.id,peers[at+1]?.id].filter(Boolean).map(String);
+    const actual=[...d.querySelectorAll(`#chapter-${paper.id} .chapter-switch [data-chapter-link]`)]
+      .map(node=>node.dataset.chapterLink);
+    assert.deepEqual(actual,expected,`Previous/next paper links must follow category order for ${paper.id}`);
+  }
   assert(d.querySelector('#chapter-39 .markdown-body').textContent.includes('def sinkhorn_step'));
   assert(d.querySelector('#chapter-39 .markdown-body').textContent.includes('16384'));
   assert(d.querySelector('#chapter-40 .markdown-body').textContent.includes('def clipped_objective'));
   assert(d.querySelector('#chapter-4 .markdown-body').textContent.includes('cudaFreeAsync'));
-  click('#chapter-32 .chapter-switch [data-chapter-link="39"]');current(39);
-  click('#chapter-39 .chapter-switch [data-chapter-link="32"]');current(32);
+  assert.equal(d.querySelectorAll('#chapter-32 .chapter-switch [data-chapter-link]').length,0,
+    'Standalone MoE category has no cross-category page turn');
+  click('#chapter-31 .chapter-switch [data-chapter-link="39"]');current(39);
+  click('#chapter-39 .chapter-switch [data-chapter-link="31"]');current(31);
   assert.equal(errors.length,0,errors.map(e=>e.message).join('\n'));
-  for(const [source,id] of [...require('./paper-catalog.cjs').papers.map(p=>[p.source,p.id]),['notes/algorithms/README.md',25]]){
+  for(const [source,id] of [...papers.map(p=>[p.source,p.id]),['notes/algorithms/README.md',41]]){
     const redirect=fs.readFileSync(path.join(__dirname,'docs',source.replace(/\.md$/,'.html')),'utf8');
     assert(redirect.includes('location.replace(') && redirect.includes('?chapter='+id),'Legacy paper redirect '+source);
     assert(!redirect.includes('window.open'),'Do not open paper in another window');
   }
   dom.window.close();
-  console.log('PASS: 21 papers, 6 categories, in-reader routing, folding, hydrated formula/code, copying, category pagination and all subsection anchors.');
+  console.log(`PASS: ${papers.length} papers, ${categoryOrder.length} ordered categories, in-reader routing, folding, hydrated formula/code, copying, category pagination and all subsection anchors.`);
 })().catch(error=>{dom.window.close();console.error(error);process.exitCode=1;});

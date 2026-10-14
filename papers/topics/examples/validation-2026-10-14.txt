@@ -1,0 +1,128 @@
+Paper and algorithm reader final validation receipt — 2026-10-14
+
+Scope
+  Final integration of 18 existing course chapters and 41 paper entries
+  (IDs 20–60), including the six foundation chapters and 14 new topics.
+  The eight category order, legacy IDs/URLs, and source-relative image/link
+  resolution are retained. No learning progress was changed.
+
+Site build
+  Command: npm run build
+  Working directory: roadmap/curriculum/gpu/course-site
+  Exit code: 0
+  Output: Built 59 chapters; generated 128 readable Markdown pages and 112
+  local assets; rendered 2796 formulas; checked 181 original-source excerpts.
+
+Passed checks
+  node check.cjs --content-only
+    PASS: 59 pages, emphasis, highlighted code, formulas, links, unique anchors,
+    search data and address arithmetic.
+  node editorial-audit.cjs
+    PASS: 59 reader articles checked for retired planning/status boilerplate.
+  node navigation.test.cjs
+    PASS: top/side coordination; partition memory; subsection routes; folding;
+    scroll; back/forward; search; chapter 12->13->14->15 and return; direct
+    fragments; invalid route.
+  node offline-static.test.cjs
+    PASS: static entry/assets, embedded search/paper content, local-file
+    navigation branch and server-free NOW links.
+  node paper-reader.test.cjs
+    PASS: 41 papers, 8 ordered categories, in-reader routing, folding,
+    hydrated formula/code, copying, category pagination and all subsection
+    anchors. Includes the fixed published-anchor baseline and chapter 31 title
+    alias assertion.
+  node theme.test.cjs
+    PASS: default dark theme, toggle, persistence and blocked-storage fallback.
+  node link-audit.cjs
+    PASS: 129 HTML artifacts, 5769 local href/src targets, 4397 fragment
+    checks and 1155 docs TOC fragments. Checked paths, URL encoding, target
+    existence, repository containment, raw-Markdown exclusion, chapter route
+    coverage, HTML/chapter anchors and PDF page fragments.
+    The initial JSDOM-document cache was stopped after 120 seconds. The audit
+    now caches only per-file IDs, anchor ownership, published chapter IDs and
+    link metadata, closing each JSDOM window after extraction; the optimized
+    run passed without dropping checks.
+  Bundled Python 3.12.14: papers/topics/examples/paper_checks.py
+    PASS: all 14 NumPy checks for IDs 47–60.
+  Repository .venv/Scripts/python.exe:
+    Command: papers/topics/examples/paper_checks.py --torch
+    PASS: all 14 NumPy checks plus DPO safe -100 masking, separate winner/loser
+    policy logits, reference no-grad, finite loss and backward gradients.
+    No dependency was installed; this targeted check used the existing
+    torch 2.7.1+cpu environment.
+
+Pending/failing integration checks
+  node paper-reader.test.cjs
+    Initial failure: the legacy notes/algorithms/README.md redirect still
+    targeted chapter 25. build.cjs now targets chapter 41; regenerate and rerun.
+  node link-audit.cjs
+    Failure: docs/notes/algorithms/latest-model-architectures.html is missing
+    the referenced fragment #16-2026-新架构混合注意力与稀疏注意力 from the
+    concurrently edited notes/algorithms/latest-model-architectures.md. B was
+    notified and is adding the legacy span alias. Rerun after B's fix.
+
+Figure rendering
+  14 topic SVGs were rendered to matching PNGs under papers/topics/figures/
+  using installed Microsoft Edge through the bundled Playwright package.
+  Bundled Playwright's own Chromium was unavailable; the first Edge screenshot
+  attempt timed out while waiting for fonts. A bounded screenshot without
+  fullPage succeeded. The later GPTQ/AWQ/SmoothQuant/LoRA figures were rendered
+  again after formula/arrow corrections and inspected. Other topic PNGs were
+  also inspected. No image-generation service or package installation was used.
+
+Foundation validation from A
+  Detailed command lines and stdout remain in
+  papers/foundations/examples/validation-2026-10-14.txt. The record reports
+  NumPy source-sync, full/token/chunk cache equality, causal-prefix and shape
+  checks, finite-difference checks, source syntax compilation, and a complete
+  PyTorch CPU tiny-transformer run with loss 2.5071 -> 0.0013. No GPU result.
+
+Figure review follow-up
+  Renderer: bundled Node + Playwright controlling the installed Microsoft Edge
+  executable; screenshots use a 1120px viewport and are saved beside their SVG.
+  Output set: 14 PNGs, matching the 14 SVG topic figures in papers/topics/figures/.
+  After visual review and feedback, corrected and re-rendered:
+    - GPTQ: H=XᵀX remains fixed from calibration; eᵢ=wᵢ−qᵢ; compensation
+      updates other unquantized elements.
+    - AWQ: for W[d_out,d_in], W′=WS and input channels are columns; X/S and
+      Q(WS) are separate branches joined at matrix multiplication.
+    - LoRA: the low-rank forward branch labels s=α/r.
+    - SmoothQuant: removed the unsupported activation-range-to-weight-range
+      causal arrow.
+    - Scan/Top-k: local candidates meet at a bus, which feeds global merge.
+    - Long context: alternatives feed one evaluation bus and then the quality/
+      cost comparison; no method points into another method.
+    - Retrieval: document encoding/index and query encoding are separate; query
+      encoding goes to similarity scoring, not to the document index.
+    - Diffusion/Flow: separate training and sampling lanes; v_cond is the
+      endpoint-pair training target, while generation integrates v_theta.
+  Final PNGs were visually reopened after these corrections. Then all 14 PNGs
+  were re-rendered by screenshotting their SVG element at CSS scale; each PNG
+  IHDR width/height matched its SVG intrinsic width/height. SVG sources did
+  not change in this crop pass. The final site build includes the frozen SVGs.
+
+File URL theme review
+  Installed Microsoft Edge opened the generated site directly at
+  file:///.../course-site/index.html?chapter=41. The chapter rendered as
+  “语言模型：从 token 到 next-token 目标”. Default dark background computed
+  as rgb(14, 23, 36); after the theme toggle, light background was rgb(255,
+  255, 255). Both 1440x1000 screenshots were visually inspected:
+    .codex/paper-rebuild-validation/chapter-41-dark.png
+    .codex/paper-rebuild-validation/chapter-41-light.png
+
+Legacy anchors and preservation
+  .codex/paper-legacy-anchors.json records published paper DOM IDs from fixed
+  source commit 10383c57ccc62cc1c081398d1651ef851d7c4470. All actual published
+  legacy anchors are asserted; chapter 31's prior section-title alias is
+  asserted explicitly. Historical registry keys absent from the source DOM
+  are not treated as published anchors.
+  Main-agent read-only verification: SHA256 values for 49 protected
+  PATH/NOW/solutions/reference/PDF/original-log files are unchanged. Original
+  PDF files and hashes were not modified. No GPU execution or performance test
+  was performed.
+
+Final result
+  All requested final checks passed. Foundation PyTorch CPU evidence and the
+  precise command/output remain in
+  papers/foundations/examples/validation-2026-10-14.txt; it is CPU validation,
+  not GPU evidence. No commit or push was made.

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="500" viewBox="0 0 1200 500" role="img" aria-labelledby="title desc">
+  <title id="title">Prefill 与 Decode 分离的数据和服务路径</title>
+  <desc id="desc">调度器把新 prompt 发给 Prefill worker 计算 prompt hidden/KV；KV 通过互联传给 Decode worker，Decode worker 按 token 生成。传输与排队成本属于同一端到端关键路径。</desc>
+  <defs><marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#334155"/></marker></defs><rect width="1200" height="500" fill="#f8fafc"/><text x="48" y="52" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="27" font-weight="700" fill="#0f172a">PD 分离：不同 worker 承担 prompt 计算与逐 token 生成</text>
+  <g font-family="Segoe UI,Microsoft YaHei,sans-serif" text-anchor="middle">
+    <rect x="45" y="190" width="145" height="80" rx="14" fill="#e2e8f0" stroke="#64748b" stroke-width="2"/><text x="117" y="235" font-size="19" fill="#0f172a">请求路由</text>
+    <rect x="245" y="130" width="245" height="190" rx="16" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/><text x="367" y="173" font-size="21" font-weight="700" fill="#0f172a">Prefill worker</text><text x="367" y="213" font-size="17" fill="#1e3a8a">处理 prompt tokens</text><text x="367" y="247" font-size="16" fill="#1e3a8a">算 hidden / KV</text><text x="367" y="285" font-size="15" fill="#475569">TTFT 相关工作</text>
+    <rect x="590" y="170" width="210" height="110" rx="14" fill="#fef3c7" stroke="#d97706" stroke-width="2"/><text x="695" y="211" font-size="19" fill="#0f172a">KV 传输</text><text x="695" y="242" font-size="16" fill="#78350f">打包 / 链路 / 同步</text><text x="695" y="266" font-size="14" fill="#78350f">量化或并行切分</text>
+    <rect x="900" y="130" width="245" height="190" rx="16" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/><text x="1022" y="173" font-size="21" font-weight="700" fill="#0f172a">Decode worker</text><text x="1022" y="213" font-size="17" fill="#14532d">逐 token 读取 KV</text><text x="1022" y="247" font-size="16" fill="#14532d">采样 / 更新状态</text><text x="1022" y="285" font-size="15" fill="#475569">TPOT 相关工作</text>
+  </g>
+  <g fill="none" stroke="#334155" stroke-width="3" marker-end="url(#arr)"><path d="M190 230H240"/><path d="M490 225H585"/><path d="M800 225H895"/></g>
+  <text x="600" y="416" text-anchor="middle" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="17" fill="#475569">拆分前后都要测 TTFT、TPOT、传输与排队；链路速度和 shape/batch 共同决定收益。</text>
+</svg>

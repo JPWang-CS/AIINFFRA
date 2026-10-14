@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600" role="img" aria-labelledby="title desc">
+  <title id="title">典型 pre-norm Transformer block 的两条 residual 汇合</title>
+  <desc id="desc">hidden state 先经过 norm 与 attention 后在加法节点和残差汇合，再经过 norm 与 FFN/MoE 后在第二个加法节点汇合。</desc>
+  <defs><marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#334155"/></marker></defs><rect width="1200" height="600" fill="#f8fafc"/>
+  <text x="48" y="52" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="27" font-weight="700" fill="#0f172a">一个 block：Attention 与 FFN 顺序处理同一条 hidden-state 流</text>
+  <g font-family="Segoe UI,Microsoft YaHei,sans-serif" text-anchor="middle">
+    <rect x="55" y="250" width="135" height="80" rx="14" fill="#e2e8f0" stroke="#64748b" stroke-width="2"/><text x="122" y="297" font-size="20" fill="#0f172a">输入 x</text>
+    <rect x="265" y="250" width="135" height="80" rx="14" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/><text x="332" y="297" font-size="20" fill="#0f172a">Norm</text>
+    <rect x="475" y="250" width="165" height="80" rx="14" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/><text x="557" y="297" font-size="20" fill="#0f172a">Attention</text>
+    <circle cx="715" cy="290" r="26" fill="#fff" stroke="#334155" stroke-width="2"/><text x="715" y="298" font-size="26" fill="#0f172a">+</text>
+    <rect x="790" y="250" width="135" height="80" rx="14" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/><text x="857" y="297" font-size="20" fill="#0f172a">Norm</text>
+    <rect x="970" y="250" width="165" height="80" rx="14" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/><text x="1052" y="297" font-size="20" fill="#0f172a">FFN / MoE</text>
+    <circle cx="1052" cy="455" r="26" fill="#fff" stroke="#334155" stroke-width="2"/><text x="1052" y="463" font-size="26" fill="#0f172a">+</text>
+  </g>
+  <g fill="none" stroke="#334155" stroke-width="3" marker-end="url(#arr)"><path d="M190 290H260"/><path d="M400 290H470"/><path d="M640 290H684"/><path d="M741 290H785"/><path d="M925 290H965"/><path d="M1135 290H1160V455H1085"/><path d="M55 290V120H715V258"/><path d="M715 316V455H1020"/><path d="M1078 455H1145"/></g>
+  <text x="282" y="112" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="17" fill="#1e3a8a">Attention residual：x + Attention(Norm(x))</text>
+  <text x="790" y="510" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="17" fill="#166534">FFN residual：x′ + FFN(Norm(x′))</text><text x="1165" y="462" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="17" fill="#0f172a">x″</text>
+  <text x="55" y="565" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="16" fill="#475569">N 层 block 按序重复；不是把所有 Attention 层与所有 FFN 层拆成两个独立栈。其他 residual 变体需按模型实现绘制。</text>
+</svg>

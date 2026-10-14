@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520" role="img" aria-labelledby="title desc">
+  <title id="title">DeepSeek-V4 MoE 专家 wave 的通信计算重叠示意</title>
+  <desc id="desc">不同 token wave 依次经过 dispatch、Linear1、activation/cast、Linear2、combine；阶段在时间轴上错开，通信和计算可并行重叠。横向长度不代表实际耗时。</desc>
+  <rect width="1200" height="520" fill="#f8fafc"/><text x="48" y="48" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="26" font-weight="700" fill="#0f172a">MoE 专家 wave：后一批 dispatch 与前一批计算交叠</text>
+  <g font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="15" text-anchor="middle">
+    <text x="260" y="102" fill="#475569">Dispatch</text><text x="450" y="102" fill="#475569">Linear1</text><text x="640" y="102" fill="#475569">Activation / cast</text><text x="830" y="102" fill="#475569">Linear2</text><text x="1020" y="102" fill="#475569">Combine</text>
+    <text x="60" y="172" fill="#0f172a">wave 0</text><text x="60" y="272" fill="#0f172a">wave 1</text><text x="60" y="372" fill="#0f172a">wave 2</text>
+    <g stroke="#2563eb" fill="#dbeafe"><rect x="170" y="135" width="150" height="54" rx="9"/><rect x="320" y="135" width="150" height="54" rx="9"/><rect x="470" y="135" width="150" height="54" rx="9"/><rect x="620" y="135" width="150" height="54" rx="9"/><rect x="770" y="135" width="150" height="54" rx="9"/></g>
+    <g stroke="#16a34a" fill="#dcfce7"><rect x="245" y="235" width="150" height="54" rx="9"/><rect x="395" y="235" width="150" height="54" rx="9"/><rect x="545" y="235" width="150" height="54" rx="9"/><rect x="695" y="235" width="150" height="54" rx="9"/><rect x="845" y="235" width="150" height="54" rx="9"/></g>
+    <g stroke="#d97706" fill="#fef3c7"><rect x="320" y="335" width="150" height="54" rx="9"/><rect x="470" y="335" width="150" height="54" rx="9"/><rect x="620" y="335" width="150" height="54" rx="9"/><rect x="770" y="335" width="150" height="54" rx="9"/><rect x="920" y="335" width="150" height="54" rx="9"/></g>
+    <g fill="#334155"><text x="245" y="169">dispatch</text><text x="395" y="169">GEMM</text><text x="545" y="169">SwiGLU</text><text x="695" y="169">GEMM</text><text x="845" y="169">combine</text><text x="320" y="269">dispatch</text><text x="470" y="269">GEMM</text><text x="620" y="269">SwiGLU</text><text x="770" y="269">GEMM</text><text x="920" y="269">combine</text><text x="395" y="369">dispatch</text><text x="545" y="369">GEMM</text><text x="695" y="369">SwiGLU</text><text x="845" y="369">GEMM</text><text x="995" y="369">combine</text></g>
+  </g>
+  <path d="M170 435H1080" stroke="#334155" stroke-width="2"/><path d="M1080 435l-10-6v12z" fill="#334155"/><text x="625" y="468" text-anchor="middle" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="16" fill="#475569">时间 / 阶段示意（非 ms；各阶段宽度不表示测量时长）</text>
+</svg>

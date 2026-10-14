@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="510" viewBox="0 0 1040 510" role="img" aria-labelledby="title desc">
+<title id="title">block(4,2) 覆盖 3 行 5 列矩阵的四个线程块</title>
+<desc id="desc">左侧显示实际 3 乘 5 矩阵，右侧显示四个各含 4 列乘 2 行候选线程位置的 block。有效元素计数依次为 8、2、4、1。虚线格是越界线程坐标，不表示矩阵填充。</desc>
+<defs><style>text{font-family:Segoe UI,Microsoft YaHei,sans-serif;fill:#25384d}.title{font-size:24px;font-weight:650}.label{font-size:16px;font-weight:600}.small{font-size:14px;fill:#53677d}.cell{stroke:#fff;stroke-width:2}.c0{fill:#dce9fa}.c1{fill:#dff1eb}.c2{fill:#f8e9cf}.c3{fill:#ebdef7}.ghost{fill:#fbfcfe;stroke:#a7b4c4;stroke-dasharray:4 3;stroke-width:1.5}.num{font-size:13px;font-weight:600;text-anchor:middle;dominant-baseline:middle}.block{font-size:14px;font-weight:650}.canvas{fill:#f8fafc}@media(prefers-color-scheme:dark){text{fill:#e6edf5}.small{fill:#c0ccda}.canvas{fill:#111827}.c0{fill:#273b56}.c1{fill:#214338}.c2{fill:#51402b}.c3{fill:#463657}.ghost{fill:#17212e;stroke:#90a2b8}.cell{stroke:#111827}}</style></defs>
+<rect class="canvas" width="1040" height="510" rx="18"/>
+<text x="32" y="42" class="title">3×5 矩阵由 block=(4,2) 分块覆盖</text>
+<text x="32" y="70" class="small">左为实际矩阵，右为线程候选坐标；虚线格表示越界线程。</text>
+<text x="90" y="115" class="label">实际矩阵：15 个元素</text>
+<g transform="translate(76,140)">
+ <g class="num">
+  <rect x="0" y="0" width="58" height="48" class="cell c0"/><text x="29" y="24">(0,0)</text><rect x="58" y="0" width="58" height="48" class="cell c0"/><text x="87" y="24">(0,1)</text><rect x="116" y="0" width="58" height="48" class="cell c0"/><text x="145" y="24">(0,2)</text><rect x="174" y="0" width="58" height="48" class="cell c0"/><text x="203" y="24">(0,3)</text><rect x="232" y="0" width="58" height="48" class="cell c1"/><text x="261" y="24">(0,4)</text>
+  <rect x="0" y="48" width="58" height="48" class="cell c0"/><text x="29" y="72">(1,0)</text><rect x="58" y="48" width="58" height="48" class="cell c0"/><text x="87" y="72">(1,1)</text><rect x="116" y="48" width="58" height="48" class="cell c0"/><text x="145" y="72">(1,2)</text><rect x="174" y="48" width="58" height="48" class="cell c0"/><text x="203" y="72">(1,3)</text><rect x="232" y="48" width="58" height="48" class="cell c1"/><text x="261" y="72">(1,4)</text>
+  <rect x="0" y="96" width="58" height="48" class="cell c2"/><text x="29" y="120">(2,0)</text><rect x="58" y="96" width="58" height="48" class="cell c2"/><text x="87" y="120">(2,1)</text><rect x="116" y="96" width="58" height="48" class="cell c2"/><text x="145" y="120">(2,2)</text><rect x="174" y="96" width="58" height="48" class="cell c2"/><text x="203" y="120">(2,3)</text><rect x="232" y="96" width="58" height="48" class="cell c3"/><text x="261" y="120">(2,4)</text>
+ </g>
+ <text x="145" y="174" class="small" text-anchor="middle">每格标出 (row,col)</text>
+</g>
+<text x="450" y="115" class="label">四个 block 的候选坐标格</text>
+<g transform="translate(450,140)">
+ <g transform="translate(0,0)"><text x="0" y="-10" class="block">(0,0) · 有效 8</text>
+  <rect x="0" y="0" width="36" height="30" class="cell c0"/><rect x="36" y="0" width="36" height="30" class="cell c0"/><rect x="72" y="0" width="36" height="30" class="cell c0"/><rect x="108" y="0" width="36" height="30" class="cell c0"/>
+  <rect x="0" y="30" width="36" height="30" class="cell c0"/><rect x="36" y="30" width="36" height="30" class="cell c0"/><rect x="72" y="30" width="36" height="30" class="cell c0"/><rect x="108" y="30" width="36" height="30" class="cell c0"/>
+ </g>
+ <g transform="translate(230,0)"><text x="0" y="-10" class="block">(1,0) · 有效 2</text>
+  <rect x="0" y="0" width="36" height="30" class="cell c1"/><rect x="36" y="0" width="36" height="30" class="ghost"/><rect x="72" y="0" width="36" height="30" class="ghost"/><rect x="108" y="0" width="36" height="30" class="ghost"/>
+  <rect x="0" y="30" width="36" height="30" class="cell c1"/><rect x="36" y="30" width="36" height="30" class="ghost"/><rect x="72" y="30" width="36" height="30" class="ghost"/><rect x="108" y="30" width="36" height="30" class="ghost"/>
+ </g>
+ <g transform="translate(0,115)"><text x="0" y="-10" class="block">(0,1) · 有效 4</text>
+  <rect x="0" y="0" width="36" height="30" class="cell c2"/><rect x="36" y="0" width="36" height="30" class="cell c2"/><rect x="72" y="0" width="36" height="30" class="cell c2"/><rect x="108" y="0" width="36" height="30" class="cell c2"/>
+  <rect x="0" y="30" width="36" height="30" class="ghost"/><rect x="36" y="30" width="36" height="30" class="ghost"/><rect x="72" y="30" width="36" height="30" class="ghost"/><rect x="108" y="30" width="36" height="30" class="ghost"/>
+ </g>
+ <g transform="translate(230,115)"><text x="0" y="-10" class="block">(1,1) · 有效 1</text>
+  <rect x="0" y="0" width="36" height="30" class="cell c3"/><rect x="36" y="0" width="36" height="30" class="ghost"/><rect x="72" y="0" width="36" height="30" class="ghost"/><rect x="108" y="0" width="36" height="30" class="ghost"/>
+  <rect x="0" y="30" width="36" height="30" class="ghost"/><rect x="36" y="30" width="36" height="30" class="ghost"/><rect x="72" y="30" width="36" height="30" class="ghost"/><rect x="108" y="30" width="36" height="30" class="ghost"/>
+ </g>
+</g>
+<text x="450" y="385" class="small">有效位置：8 + 2 + 4 + 1 = 15 = 3×5</text>
+<rect x="450" y="410" width="16" height="16" class="cell c0"/><text x="474" y="423" class="small">有效矩阵坐标</text><rect x="590" y="410" width="16" height="16" class="ghost"/><text x="614" y="423" class="small">越界线程候选位置</text>
+<text x="1000" y="475" class="small" text-anchor="end">dim3(x,y)：x 方向 4 列，y 方向 2 行。</text>
+</svg>
