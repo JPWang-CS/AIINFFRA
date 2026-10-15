@@ -8,6 +8,8 @@
 | 文件 | 功能 | LeetGPU 原始代码 | 验收 |
 |------|------|------|------|
 | [`transpose_bench.py`](./transpose_bench.py) | 转置 V2 服务器正确性与 CUDA event 计时入口；调用原始平台通过版 | 复用 `transpose_v2_leetgpu.py`，不包含另一份 kernel | 服务器待测；支持 `--correctness-only` 和可配置尺寸 |
+| [`transpose_profile.py`](./transpose_profile.py) | 供外部 Nsight Systems 启动的转置 workload；复用原始 `solve`，应用 API 只标记采集范围 | 不自行计时；profile 前完成正确性、JIT 和 warmup | GPU/Nsight Systems 待采集 |
+| [`profile-transpose-nsys.sh`](../../scripts/profile-transpose-nsys.sh) | 在已启动的个人 tmux 内运行的 Nsight Systems runner | 每次创建独立任务目录并保存命令、日志、报告、stats 与退出码 | 服务器待运行 |
 | [`transpose_v2_leetgpu.py`](./transpose_v2_leetgpu.py) | Triton Matrix Transpose V2，32×32 tile；LeetGPU 原始通过代码 | `LEETGPU_PASS`：2026-10-13，SuccessPublicTrace | 0.33 ms，50.5th percentile；服务器待测 |
 | [`transpose_v2.py`](./transpose_v2.py) | Triton Matrix Transpose V2，32×32 tile历史快照 | 历史本地对话快照；[单元卡](../../notes/triton/transpose-v2-2026-10-13.md) | 历史 `WIP` 快照，未独立验证 |
 | [`transpose_v1.py`](./transpose_v1.py) | Triton Matrix Transpose V1历史快照 | 历史本地对话初版；[单元卡与优化思路](../../notes/triton/transpose-v1-2026-10-13.md) | 历史 `WIP` 快照，未独立验证 |
@@ -29,6 +31,66 @@ python solutions/triton/transpose_bench.py --rows 4096 --cols 4096 --warmup 20 -
 ```
 
 第一条检查五组边界尺寸；第二条还会检查指定的大矩阵，再比较 V2 和预分配输出上的 `output.copy_(input.T)`。脚本打印 GPU、版本、shape、stride、dtype、计时条件、平均 ms 和有效 GB/s。该脚本的本地静态检查不代表服务器验证通过。
+
+### Matrix Transpose V2 外部 Nsight Systems 采集
+
+`transpose_profile.py` 由外部 `nsys` 启动，NVTX 的 `transpose/triton` 与 `transpose/pytorch` 始终标识两段 workload；仅传入 `--capture-profiler-api` 时，CUDA Profiler API 才控制 capture-range。应用不自行计时，也不使用 `torch.profiler`。输入是连续 FP32 矩阵，输出是预分配的连续 FP32 矩阵；PyTorch 对照通过 `out.copy_(x.T)` 物化转置。采集前，两种实现分别完成 bitwise 正确性检查、JIT 和 warmup。
+
+在 AutoDL 当前终端先执行第一段。它记录当前解释器的绝对路径，创建个人根目录，并用独立 socket 启动前台 tmux。若同名会话已存在，只提示 attach，避免重复运行任务。新 shell 启动时清除 `BASH_ENV` 并禁用 history，不读取 HOME 下的 shell 启动文件：
+
+```bash
+( set -e
+PERSONAL_ROOT=/root/autodl-tmp/w00939120
+PROFILE_PYTHON=$(command -v python)
+case "$PROFILE_PYTHON" in /*) ;; *) printf 'python path is not absolute: %s\n' "$PROFILE_PYTHON" >&2; exit 1 ;; esac
+test -x "$PROFILE_PYTHON"
+command -v tmux >/dev/null || { printf 'tmux is unavailable\n' >&2; exit 1; }
+mkdir -p "$PERSONAL_ROOT" || exit 1
+test -d "$PERSONAL_ROOT" && test ! -L "$PERSONAL_ROOT"
+PERSONAL_ROOT=$(cd "$PERSONAL_ROOT" && pwd -P) || exit 1
+REPO_ROOT="$PERSONAL_ROOT/AIINFFRA"
+export PERSONAL_ROOT REPO_ROOT PROFILE_PYTHON
+mkdir -p "$PERSONAL_ROOT/tmp"
+test -d "$PERSONAL_ROOT/tmp" && test ! -L "$PERSONAL_ROOT/tmp"
+if env -u BASH_ENV HISTFILE=/dev/null HISTSIZE=0 HISTFILESIZE=0 TMPDIR="$PERSONAL_ROOT/tmp" \
+  tmux -f /dev/null -S "$PERSONAL_ROOT/.tmux.sock" has-session -t transpose-nsys 2>/dev/null; then
+  printf 'Existing session: tmux -f /dev/null -S %s/.tmux.sock attach -t transpose-nsys\n' "$PERSONAL_ROOT"
+else
+  env -u BASH_ENV HISTFILE=/dev/null HISTSIZE=0 HISTFILESIZE=0 TMPDIR="$PERSONAL_ROOT/tmp" \
+    tmux -f /dev/null -S "$PERSONAL_ROOT/.tmux.sock" new-session -c "$PERSONAL_ROOT" -s transpose-nsys \
+    -e "PERSONAL_ROOT=$PERSONAL_ROOT" -e "REPO_ROOT=$REPO_ROOT" -e "PROFILE_PYTHON=$PROFILE_PYTHON" \
+    -e HISTFILE=/dev/null -e HISTSIZE=0 -e HISTFILESIZE=0 -e BASH_ENV= -e "TMPDIR=$PERSONAL_ROOT/tmp" \
+    'env -u BASH_ENV HISTFILE=/dev/null HISTSIZE=0 HISTFILESIZE=0 bash --noprofile --norc -i'
+fi
+)
+```
+
+确认已进入该 tmux 后，再粘贴第二段。它只在个人目录克隆仓库；已有 checkout 必须干净，并且只允许 fast-forward 更新。旧目录 `~/autodl-tmp/Learn/AIINFFRA` 不参与操作。runner 使用第一段保存的同一 Python 解释器：
+
+```bash
+( set -e
+  set +o history
+  export HISTFILE=/dev/null HISTSIZE=0 HISTFILESIZE=0
+  PERSONAL_ROOT=${PERSONAL_ROOT:?PERSONAL_ROOT was not passed into tmux}
+  REPO_ROOT=${REPO_ROOT:?REPO_ROOT was not passed into tmux}
+  PROFILE_PYTHON=${PROFILE_PYTHON:?PROFILE_PYTHON was not passed into tmux}
+  if [[ -d "$REPO_ROOT/.git" ]]; then
+    cd "$REPO_ROOT"
+    [[ -z $(git status --porcelain) ]] || { printf 'Repository is dirty; stopping without updating it.\n' >&2; exit 1; }
+    git pull --ff-only
+  else
+    git clone https://github.com/JPWang-CS/AIINFFRA.git "$REPO_ROOT"
+  fi
+  cd "$REPO_ROOT"
+  bash --noprofile --norc scripts/profile-transpose-nsys.sh \
+    --personal-root "$PERSONAL_ROOT" --repo-root "$REPO_ROOT" --python "$PROFILE_PYTHON" \
+    --rows 4096 --cols 4096 --warmup 20 --repeats 100 --impl both
+)
+```
+
+每轮运行在 `$PERSONAL_ROOT/runs/transpose-nsys-UTC-PID/` 创建新目录，保存 `command.sh`、`task.log`、`environment.txt`、`transpose.nsys-rep`、`stats.txt` 和独立退出码。`stats.txt` 汇总 CUDA kernel 与 NVTX；runner 会核对 workload 完成标记和报告文件。CUDA-event baseline 仍由上面的 `transpose_bench.py` 单独测量；Nsight Systems 的采集时间不作为 benchmark。
+
+接口依据：[Nsight Systems User Guide](https://docs.nvidia.com/nsight-systems/UserGuide/index.html)；[PyTorch v2.12.1 CUDA Profiler API](https://github.com/pytorch/pytorch/blob/v2.12.1/torch/cuda/profiler.py)。
 
 ### MatMul LeetGPU 入口
 
