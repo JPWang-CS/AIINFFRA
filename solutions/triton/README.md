@@ -7,10 +7,10 @@
 
 | 文件 | 功能 | LeetGPU 原始代码 | 验收 |
 |------|------|------|------|
-| [`transpose_bench.py`](./transpose_bench.py) | 转置 V2 服务器正确性与 CUDA event 计时入口；调用原始平台通过版 | 复用 `transpose_v2_leetgpu.py`，不包含另一份 kernel | 服务器待测；支持 `--correctness-only` 和可配置尺寸 |
-| [`transpose_profile.py`](./transpose_profile.py) | 供外部 Nsight Systems 启动的转置 workload；复用原始 `solve`，应用 API 只标记采集范围 | 不自行计时；profile 前完成正确性、JIT 和 warmup | GPU/Nsight Systems 待采集 |
-| [`profile-transpose-nsys.sh`](../../scripts/profile-transpose-nsys.sh) | 在已启动的个人 tmux 内运行的 Nsight Systems runner | 每次创建独立任务目录并保存命令、日志、报告、stats 与退出码 | 服务器待运行 |
-| [`transpose_v2_leetgpu.py`](./transpose_v2_leetgpu.py) | Triton Matrix Transpose V2，32×32 tile；LeetGPU 原始通过代码 | `LEETGPU_PASS`：2026-10-13，SuccessPublicTrace | 0.33 ms，50.5th percentile；服务器待测 |
+| [`transpose_bench.py`](./transpose_bench.py) | 转置 V2 正确性与 CUDA event 计时入口；调用原始平台通过版 | 复用 `transpose_v2_leetgpu.py`，不包含另一份 kernel | 五个服务器小尺寸正确性通过；AutoDL RTX 4090 的 CUDA-event 计时由用户提供并已归档；本服务器 CUDA-event benchmark 未验证 |
+| [`transpose_profile.py`](./transpose_profile.py) | 供外部 profiler 启动的转置 workload；复用原始 `solve`，应用 API 只标记采集范围 | 不自行计时；profile 前完成正确性、JIT 和 warmup | 本服务器 NCU kernel replay 已通过；AutoDL Nsight Systems 100 次 kernel 统计由用户提供并已归档 |
+| [`profile-transpose-nsys.sh`](../../scripts/profile-transpose-nsys.sh) | 在已启动的个人 tmux 内运行的 Nsight Systems runner | 每次创建独立任务目录并保存命令、日志、报告、stats 与退出码 | runner 本身尚无实际运行证据 |
+| [`transpose_v2_leetgpu.py`](./transpose_v2_leetgpu.py) | Triton Matrix Transpose V2，32×32 tile；LeetGPU 原始通过代码 | `GPU_VALIDATED`（含 `LEETGPU_PASS`）：2026-10-13 平台通过；2026-10-15 服务器小尺寸与 4096×4096 FP32 正确性通过 | 平台 0.33 ms，50.5th percentile；服务器 NCU 诊断记录见[性能验证](../../notes/triton/transpose-performance-2026-10-15.md)，不作为正式 benchmark |
 | [`transpose_v2.py`](./transpose_v2.py) | Triton Matrix Transpose V2，32×32 tile历史快照 | 历史本地对话快照；[单元卡](../../notes/triton/transpose-v2-2026-10-13.md) | 历史 `WIP` 快照，未独立验证 |
 | [`transpose_v1.py`](./transpose_v1.py) | Triton Matrix Transpose V1历史快照 | 历史本地对话初版；[单元卡与优化思路](../../notes/triton/transpose-v1-2026-10-13.md) | 历史 `WIP` 快照，未独立验证 |
 | [`vector_add.py`](./vector_add.py) | Triton Vector Add | **原始 LeetGPU `solve` 尚未单独归档**；当前文件是本地验证/benchmark wrapper | `GPU_VALIDATED`：LeetGPU 通过；AutoDL RTX 3090，Triton 840.1 GB/s，`torch.add` 843.0 GB/s |
@@ -30,7 +30,7 @@ python solutions/triton/transpose_bench.py --rows 37 --cols 65 --correctness-onl
 python solutions/triton/transpose_bench.py --rows 4096 --cols 4096 --warmup 20 --repeats 100
 ```
 
-第一条检查五组边界尺寸；第二条还会检查指定的大矩阵，再比较 V2 和预分配输出上的 `output.copy_(input.T)`。脚本打印 GPU、版本、shape、stride、dtype、计时条件、平均 ms 和有效 GB/s。该脚本的本地静态检查不代表服务器验证通过。
+第一条检查五组边界尺寸；第二条还会检查指定的大矩阵，再比较 V2 和预分配输出上的 `output.copy_(input.T)`。脚本打印 GPU、版本、shape、stride、dtype、计时条件、平均 ms 和有效 GB/s。2026-10-15 服务器验证与 NCU 诊断结果见[性能验证记录](../../notes/triton/transpose-performance-2026-10-15.md)；后续模型和多算子实践再按真实工作负载开展极致优化，不单独推进此处的参数扫描。
 
 ### Matrix Transpose V2 外部 Nsight Systems 采集
 

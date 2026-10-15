@@ -25,7 +25,7 @@
 | Triton Vector Add | `GPU_VALIDATED`，归档有缺口 | RTX3090 840.1 GB/s；`torch.add` 843.0 GB/s；平台原始`solve`未单独归档 | 有机会补原始版本 |
 | Triton MatMul | `GPU_VALIDATED`，阶段性收口 | LeetGPU原始版已归档；RTX3090 20.830 ms / 19,794.1 GFLOPS / `torch.mm` 80.3%；已有Nsys P0-lite | 在 GEMM 章内继续 NCU、PTX/SASS、低精度与多 shape |
 | Triton Softmax | `LEETGPU_PASS` | LeetGPU #5，0.29 ms，47.0th percentile，原始版已归档 | RTX3090二维row-wise correctness、ms、effective GB/s |
-| Triton Matrix Transpose V2 | `LEETGPU_PASS` | 原始平台代码已归档为 [`transpose_v2_leetgpu.py`](./solutions/triton/transpose_v2_leetgpu.py)；2026-10-13 `SuccessPublicTrace`，0.33 ms，50.5th percentile；[原始结果](./notes/triton/logs/2026-10-13-transpose-v2-leetgpu.txt) | 当前实践为服务器正确性与真实性能验证；未提供 GPU 型号、shape、dtype、重复次数或有效带宽 |
+| Triton Matrix Transpose V2 | `GPU_VALIDATED`（LeetGPU 已通过） | 原始平台代码已归档为 [`transpose_v2_leetgpu.py`](./solutions/triton/transpose_v2_leetgpu.py)；LeetGPU 于 2026-10-13 `SuccessPublicTrace`，0.33 ms，50.5th percentile；服务器小尺寸正确性和 4096×4096 FP32 正确性通过；NCU kernel replay 报告完成，诊断采集时长 32.224 μs（不是正式 benchmark）；[验证记录](./notes/triton/transpose-performance-2026-10-15.md) | 本阶段收口；后续在模型和多算子实践中按真实工作负载一起分析、实现极致优化，不单独推进转置调参 |
 | FlashAttention-1 | 理论/读码完成 | CUDA读码与问题记录已保存 | 后续进入第二篇Attention课程实践 |
 | FlashAttention-2 | 阅读完成（2026-09-02） | 仅论文学习完成 | 实践状态独立，尚未开始 |
 | MLA | 论文线`WIP` | 统一笔记已形成 | 公式、cache账本、权重吸收、作者代码回答 |
@@ -36,17 +36,17 @@
 
 | 模块 | 路由 | 状态 |
 |---|---|---|
-| GPU 架构与性能 | [课程路由](./roadmap/curriculum/gpu/README.md) | `WIP`；第一篇第一章已读完，第二章第 1–5 节（含子节）已读；第 6 节 base 与 branch-probe 在 RTX 3090 的正确性和 memcheck 已通过，多轮测量完成（2026-10-10），记为 `GPU_VALIDATED`；实验数据见[原始日志](./notes/cuda/logs/2026-10-10-branch-probe-rtx3090.txt)。保留同页结果分析与服务器最终 SASS 核对项；阅读断点不变 |
-| 算子实现与优化 | [算子路由](./roadmap/curriculum/operators/README.md) | 九类算子正文及页内实践已形成；当前实践为 Matrix Transpose V2 服务器验证，原有实验状态保持独立 |
+| GPU 架构与性能 | [课程路由](./roadmap/curriculum/gpu/README.md) | `WIP`；当前阅读位置为[第 4 章《线程协作、同步与异步执行》](./roadmap/curriculum/gpu/course-site/index.html?chapter=4)。第一章、第二章第 1–5 节及第 6 节 branch-probe 的既有完成记录保持有效；不能据当前入口推断第 3 章或第 4 章已读完 |
+| 算子实现与优化 | [算子路由](./roadmap/curriculum/operators/README.md) | 九类算子正文及页内实践已形成；Matrix Transpose V2 已完成平台与服务器验证并记为 `GPU_VALIDATED`。本次转置验证阶段收口；极致优化留待后续模型及多算子真实工作负载中开展 |
 | 算子内的深入优化 | 各算子正文；[实验检查表](./roadmap/curriculum/performance/README.md)按需使用 | MatMul已有部分证据；未另设优化课 |
 | 量化与模型 GPU 分析 | [量化](./roadmap/curriculum/quantization/README.md) · [Prefill/Decode/Mini Transformer](./roadmap/curriculum/model-analysis/README.md) | 量化及模型分析/Mini Transformer 正文已形成；组合实测未新增 |
 | 系统应用 | [vLLM/多GPU/MoE](./roadmap/curriculum/systems/README.md) | vLLM 与多 GPU 正文已形成；服务与通信实验未在本机执行 |
 
 ### 第一篇保留的基础阅读入口
 
-[第一篇第二章：CUDA 执行模型与指令调度 → 6.《依赖链、分支与执行调度实验》](./roadmap/curriculum/gpu/course-site/index.html?chapter=2#chapter-2-section-12)是保留的基础阅读入口，不是当前实践入口；第一章已读完，第二章第 1–5 节（含子节）已读。第 6 节 base 与 branch-probe 在 RTX 3090 的正确性和 memcheck 已通过，多轮测量完成（2026-10-10），记为 `GPU_VALIDATED`；实验记录见[原始日志](./notes/cuda/logs/2026-10-10-branch-probe-rtx3090.txt)。GPU 基础课程整体仍为 `WIP`，阅读断点、已有实验和既有状态保持不变。
+[第一篇第二章：CUDA 执行模型与指令调度 → 6.《依赖链、分支与执行调度实验》](./roadmap/curriculum/gpu/course-site/index.html?chapter=2#chapter-2-section-12)是保留的历史阅读入口；第一章已读完，第二章第 1–5 节（含子节）已读。第 6 节 base 与 branch-probe 在 RTX 3090 的正确性和 memcheck 已通过，多轮测量完成（2026-10-10），记为 `GPU_VALIDATED`；实验记录见[原始日志](./notes/cuda/logs/2026-10-10-branch-probe-rtx3090.txt)。GPU 基础课程整体仍为 `WIP`；以上历史完成记录保留，当前阅读位置为第 4 章《线程协作、同步与异步执行》，不据此推断其他章节的完成状态。
 
-当前实践入口是[访存与布局算子 → 服务器：真实性能](./roadmap/curriculum/gpu/course-site/index.html?chapter=7#chapter-7-section-28)中的 Triton Matrix Transpose V2 服务器验证；平台归档见[单元卡](./notes/triton/transpose-v2-2026-10-13.md)，服务器结果待补。平台源码示例位于该课[第 6.1 节](./roadmap/curriculum/gpu/course-site/index.html?chapter=7#chapter-7-section-18)，平台通过证据见[LeetGPU：正确性与代码归档](./roadmap/curriculum/gpu/course-site/index.html?chapter=7#chapter-7-section-27)。
+转置 V2 的平台与服务器验证已收口，状态为 `GPU_VALIDATED`；实验记录、指标解释和比较边界见[性能验证记录](./notes/triton/transpose-performance-2026-10-15.md)。当前阅读入口为[第 4 章《线程协作、同步与异步执行》](./roadmap/curriculum/gpu/course-site/index.html?chapter=4)，该 URL 不带节锚点。用户确认极致优化在后续模型实现与多算子组合中按工作负载开展；不在当前阶段单独扫转置参数。
 
 ## 5. 论文线状态
 

@@ -4,26 +4,32 @@
 - 平台归档代码：[transpose_v2_leetgpu.py](../../solutions/triton/transpose_v2_leetgpu.py)
 - 历史本地快照：[transpose_v2.py](../../solutions/triton/transpose_v2.py)
 - 原始平台结果：[2026-10-13-transpose-v2-leetgpu.txt](./logs/2026-10-13-transpose-v2-leetgpu.txt)
-- 状态：`LEETGPU_PASS`。平台 `SuccessPublicTrace` 时间为 2026/10/13 23:21:59，耗时 `0.33 ms`，`50.5th` percentile。归档代码对应本会话贴给用户运行的版本，成绩取自用户回传的页面结果。
-- 服务器真实性能：待测；本次没有 GPU 型号、shape、dtype、重复次数或服务器结果，因此不填写有效带宽。
+- 状态：`GPU_VALIDATED`；LeetGPU `LEETGPU_PASS` 保留。平台 `SuccessPublicTrace` 时间为 2026/10/13 23:21:59，耗时 `0.33 ms`，`50.5th` percentile。归档代码对应用户提供的运行版本，成绩取自用户回传的页面结果。
+- 服务器验证：新私有环境中的五个小尺寸 FP32 正确性检查及 4096×4096 FP32 profiler workload 正确性均通过。NCU kernel replay 报告完成、退出码 0；性能计数器是诊断采集，不能当正式 benchmark。
+- 服务器实验记录：[Transpose V2 性能验证](./transpose-performance-2026-10-15.md)。
 - 服务器入口：[transpose_bench.py](../../solutions/triton/transpose_bench.py)，调用平台通过版 `solve`，不复制 kernel。
-- 下一步：在真实 GPU 上运行服务器脚本，记录 GPU、shape、dtype、正确性、耗时和有效带宽；完成前不推进到 `GPU_VALIDATED`。
+- 下一步：本阶段验证已通过并收口。后续模型实现及多算子组合确定真实工作负载后，再结合工作负载开展极致优化；当前不单独继续转置参数扫描。
 
-| 验收项 | 正确性 | 耗时（ms） | percentile | 有效带宽（GB/s） |
-|------|--------|-----------:|-----------:|-----------------:|
-| LeetGPU V2 平台归档 | 通过 | 0.33 | 50.5th | 未提供 |
-| 服务器 V2 | 待测 |  |  |  |
+| 验收项 | 正确性 | 结果 |
+|------|--------|------|
+| LeetGPU V2 平台归档 | 通过 | 0.33 ms，50.5th percentile |
+| 服务器小尺寸 FP32 | 通过 | `1×1`、`3×5`、`32×32`、`37×65`、`65×37` |
+| 服务器 4096×4096 FP32 | 通过 | NCU replay 目标完成；报告时长 32.224 μs，仅作 profiler 诊断 |
+
+## 当前性能证据
+
+NCU 诊断观察到 L2 throughput 91.071394%、DRAM throughput 66.773761%、SM throughput 27.449247%、LSU 指令吞吐 21.752234%，achieved occupancy 89.170925%。这些比例分别按各自峰值/持续活跃口径归一化，不能相加；L2 throughput 不是命中率，SM throughput 不是 occupancy。L2 是后续检查方向，尚不能据此断言瓶颈。完整条件及指标来源见[性能验证记录](./transpose-performance-2026-10-15.md)。
 
 ## 服务器运行
 
-从仓库根目录、已安装 CUDA 版 PyTorch 和 Triton 的环境执行：
+以下命令是复现实验入口；本单元的服务器正确性与 NCU 采集已在独立记录中完成：
 
 ```bash
 python solutions/triton/transpose_bench.py --rows 37 --cols 65 --correctness-only
 python solutions/triton/transpose_bench.py --rows 4096 --cols 4096 --warmup 20 --repeats 100
 ```
 
-正确性覆盖 `1×1`、`3×5`、`32×32`、`37×65`、`65×37`，并检查指定的测试尺寸。性能比较 V2 和预分配输出的 PyTorch 物化转置，报告 CUDA event 区间均值和有效带宽；本机尚未执行设备验证。
+正确性覆盖 `1×1`、`3×5`、`32×32`、`37×65`、`65×37`，并检查指定的测试尺寸。性能命令比较 V2 和预分配输出的 PyTorch 物化转置，报告 CUDA event 区间均值和有效带宽；本条复现命令尚未在本地执行。
 
 ## 输入输出合同
 
@@ -37,6 +43,6 @@ python solutions/triton/transpose_bench.py --rows 4096 --cols 4096 --warmup 20 -
 
 ## 当前性能证据边界
 
-`tl.trans` 表示逻辑坐标变换。具体线程交换代价取决于前后布局转换；当前没有服务器编译结果或 profiler 数据，不能填写活跃线程数、shared-memory 用量、有效带宽或优化结论。
+`tl.trans` 表示逻辑坐标变换。具体线程交换代价取决于前后布局转换。本次服务器 NCU 报告记录了 kernel 资源和吞吐计数器，见性能验证记录；这组 profiler 结果不替代 CUDA event benchmark，也不足以单独确定优化结论。
 
-物化转置的有效读写字节数为 `2 * rows * cols * element_size`。服务器基线应预先分配输出，并计量 `output.copy_(input.T)` 完成的实际写入；只创建 `input.T` view 不构成同等工作量。服务器记录在真实运行后填写。
+物化转置的逻辑读写字节数为 `2 * rows * cols * element_size`。比较基线应预先分配输出，并计量 `output.copy_(input.T)` 完成的写入；只创建 `input.T` view 不构成同等工作量。当前可参考的 AutoDL CUDA-event 结果记录在性能验证说明中，和服务器 profiler 数据分开呈现。

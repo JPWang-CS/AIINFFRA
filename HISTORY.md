@@ -7,6 +7,8 @@
 
 ## 0. 最后更新
 
+- 2026-10-15（收口 Triton Matrix Transpose V2：LeetGPU 原始通过版继续保留，状态由 `LEETGPU_PASS` 推进为 `GPU_VALIDATED`；新私有环境五个小尺寸 FP32 检查及 4096×4096 FP32 NCU workload 正确性通过。NCU kernel replay 报告完成、退出码 0；32.224 μs 是 profiler 诊断采集时长，不列为正式 benchmark。集中记录保留环境、shape/launch、指标释义、AutoDL 用户提供的独立计时结果与失败路径边界；原始 NCU 文本单独归档。当前阅读入口改为 GPU 课程第 4 章《线程协作、同步与异步执行》，不推断该章或第 3 章已完成。用户决定极致优化留待后续模型实现与多算子组合按真实工作负载开展，本阶段不继续单算子调参；论文线 MLA 不变。PATH/NOW、单元卡、Triton README、周报及讨论路由已同步；未改课程正文、源码、环境或其他并发文件。）
+
 - 2026-10-15（新增外部 Nsight Systems 转置采集入口：`solutions/triton/transpose_profile.py` 复用原始 LeetGPU `solve`，CUDA Profiler API/NVTX 只控制采集边界与标识；`scripts/profile-transpose-nsys.sh` 要求个人 tmux socket，在个人根目录创建独立任务收据并分别记录 profile、stats 和总退出码。README 补充个人 tmux 运行方式与固定输出语义。本地 CPU/mock、shell 语法与参数边界检查通过；未连接服务器、未运行 Nsight Systems、未使用 GPU或安装依赖。原 kernel、CUDA-event baseline、PATH/NOW 和现有环境未改。）
 
 - 2026-10-14（发布 GPU 与论文课程提交 `f63a9e379f198b76f96b224f7e1ce1dfb1c30042` 后，完成私有 GPU sandbox 安装验收。权威任务收据 `runs/20261014T095214Z-251763/exit.txt` 记录退出码 0；新 venv 安装 PyTorch 2.7.1+cu128、Triton 3.3.1 和 NumPy 1.26.4，`pip check` 无破损依赖，CUDA 可见且检测到 8 个设备。Python 3.12.3、driver 570.172.08、nvcc 12.8.61、gcc/g++ 13.3.0 的安装前后输出逐项一致；未改系统工具。PyTorch 预编译列表无原生 `sm_89`，含同主版本 `sm_86` 兼容路径；未验证 Triton JIT、tensor kernel 或课程实验。最初目录选址产生 3 个误建目录，专用 cleanup 成功并确认目录消失；launcher 首次因权限返回 126，之后改用 Bash 启动。主 Agent复核安装收据并接手最小远端验收。初次 dry-run 使用过账号缓存；限定目录后缓存全部写入工作根，已有缓存未清理。overlay 跨容器持久性未确认。环境细节见 `notes/cuda/server-environment-2026-10-14.md`；独立环境 pins 见 `scripts/requirements-gpu-cu128.txt`。PATH/NOW 学习状态未升级。）

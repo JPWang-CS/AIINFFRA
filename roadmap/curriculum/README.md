@@ -48,4 +48,4 @@ CUDA本地手册用于固定教材版本，在线文档用于核查最新API与�
 
 求职复习可按[岗位能力与项目证据](../interviews.md)检查：先解释数学、线程和数据布局，再给正确性、性能分析及模型接入的实际结果。该入口用于整理已有学习成果，不额外增加一条学习顺序；分布式训练、编译器开发和集群运维按目标岗位定向补充。
 
-课程讨论归档：[CUDA 执行模型讨论（2026-10-09）](decisions/2026-10-09-cuda-execution-discussion.md) · [访存与布局讨论（2026-10-12）](decisions/2026-10-12-memory-access-discussion.md)。
+课程讨论归档：[CUDA 执行模型讨论（2026-10-09）](decisions/2026-10-09-cuda-execution-discussion.md) · [访存与布局讨论（2026-10-12）](decisions/2026-10-12-memory-access-discussion.md) · [转置验证与当前学习焦点（2026-10-15）](decisions/2026-10-15-transpose-validation-and-study-focus.md)。
