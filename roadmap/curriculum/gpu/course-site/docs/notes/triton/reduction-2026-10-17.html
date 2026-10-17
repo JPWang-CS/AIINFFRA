@@ -1,0 +1,32 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Triton Reduction 单元卡（2026-10-17） · AIINFFRA 附属文档</title><script src="../../../theme.js?v=3aab643066da"></script><link rel="stylesheet" href="../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../styles.css?v=deca86f54b40"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../index.html?chapter=1">返回课程</a></nav><button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换到浅色模式">浅色</button></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · notes/triton/reduction-2026-10-17.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E5%BD%93%E5%89%8D%E5%8D%95%E5%85%83">当前单元</a></li><li><a href="#%E6%9C%AC%E8%BD%AE%E5%B7%B2%E7%A1%AE%E8%AE%A4%E7%9A%84%E8%AE%A8%E8%AE%BA">本轮已确认的讨论</a></li><li><a href="#%E9%AA%8C%E8%AF%81%E5%90%88%E5%90%8C">验证合同</a></li></ol></nav><div class="markdown-body"><h1 id="triton-reduction-单元卡2026-10-17">Triton Reduction 单元卡（2026-10-17）<a class="heading-anchor" href="#triton-reduction-%E5%8D%95%E5%85%83%E5%8D%A12026-10-17" aria-label="链接到Triton Reduction 单元卡（2026-10-17）">#</a></h1>
+<h2 id="当前单元">当前单元<a class="heading-anchor" href="#%E5%BD%93%E5%89%8D%E5%8D%95%E5%85%83" aria-label="链接到当前单元">#</a></h2>
+<ul>
+<li>题目入口：LeetGPU <a href="https://leetgpu.com/challenges">Challenges</a>，搜索 <strong>Reduction</strong>；题库原题目录为 <a href="https://github.com/AlphaGPU/leetgpu-challenges/tree/main/challenges/medium/4_reduction">Reduction #4</a>。以登录后的当前题面与函数签名为准。</li>
+<li>用户对话代码快照：<a href="../../solutions/triton/reduction_single_block.py">单 block 版本</a>；<a href="../../solutions/triton/reduction_multi_block.py">两阶段多 block 版本</a>。除文件头声明外，代码按用户提供内容原样保存。</li>
+<li>独立服务器校验入口：<a href="../../solutions/triton/reduction_check.py">reduction_check.py</a>。<code>--help</code> 与 <code>--cpu-check</code> 不需要 GPU；默认/<code>--correctness-only</code> 才执行 GPU 正确性，不 benchmark。</li>
+<li>LeetGPU：<code>WIP</code>。快照文件标明尚无平台提交证据；尚未从题面提交或归档通过版。</li>
+<li>服务器：correctness-only 已通过，NVIDIA L20X、PyTorch 2.13.0+cu126、Triton 3.7.1；单 block 36/36，多 block 40/40。逐例、环境和退出收据见<a href="logs/2026-10-17-reduction-nvidia-l20x.txt">服务器日志</a>。</li>
+<li>下一步：按当前 LeetGPU #4 题面独立实现并归档平台版本；服务器结果不能替代平台通过记录。性能工作留待后续真实工作负载决定。</li>
+</ul>
+<h2 id="本轮已确认的讨论">本轮已确认的讨论<a class="heading-anchor" href="#%E6%9C%AC%E8%BD%AE%E5%B7%B2%E7%A1%AE%E8%AE%A4%E7%9A%84%E8%AE%A8%E8%AE%BA" aria-label="链接到本轮已确认的讨论">#</a></h2>
+<ul>
+<li><code>BLOCK_SIZE</code> 表示 program 的逻辑元素数，不等于线程数。常规 NVIDIA Triton 配置 <code>num_warps=4</code> 对应 4 个 warp、128 个线程；<code>tl.sum</code> 是编译器生成的协作归约，不是单线程逐项累加。</li>
+<li>单 block 版本以 <code>next_power_of_2(N)</code> 覆盖整个输入，mask 使越界逻辑位置读取加法单位元 0，最后写一个标量。它适合小归约；随着 N 增大，单个 program 的逻辑 tile 与资源需求也增大。</li>
+<li>多 block 版本用固定 <code>BLOCK_SIZE=256</code> 产生 <code>partial[pid]</code>，每个 program 写入独立位置，再以第二个 kernel 合并 <code>num_blocks</code> 个 partial。<code>partial</code> 由 <code>torch.empty</code> 分配，第一阶段对所有有效 program 全量覆写，所以不需要预先清零；同一 CUDA stream 上的顺序提交保证第二阶段在第一阶段之后执行。</li>
+<li>例如 <code>N=1025</code>：第一阶段启动 <code>ceil(1025/256)=5</code> 个 program，各写一个 partial；第二阶段有效长度为 5，tile 为 <code>next_power_of_2(5)=8</code>，末尾 3 个位置由 mask 作为 0 处理。</li>
+<li>这里的全局数组、load 后的寄存器值和缓存命中属于不同层次：数组在全局地址空间；被 <code>tl.load</code> 的值进入 kernel 的寄存器/编译器分配的数据路径；L1/L2 命中只改变实际访问层级，不改变全局地址空间语义。</li>
+<li>当前多 block 代码固定两阶段。若 N 极大，第二阶段 tile 仍可能过大，因此它不是任意 N 的多级归约实现；本轮保留快照，不把它替换成优化版。</li>
+</ul>
+<h2 id="验证合同">验证合同<a class="heading-anchor" href="#%E9%AA%8C%E8%AF%81%E5%90%88%E5%90%8C" aria-label="链接到验证合同">#</a></h2>
+<ul>
+<li>输入限正整数 N、连续 FP32、一维 CUDA input 和 shape <code>(1,)</code> 的 FP32 output。覆盖 <code>N=1,31,255,256,257,1023,1024,1025,4097</code>；多 block 另覆盖 <code>N=1048576</code>。</li>
+<li>四种数据：全零、全一、正负交替、有界固定种子的随机数。对每个输出使用 FP64 求和参考；精确整数模式要求 <code>actual == reference</code>，随机模式固定为 <code>abs_error &lt;= 2e-4 + 2e-5 * abs(reference)</code>，不按结果调宽容差。</li>
+<li>FP32 并行归约与 FP64 参考的求和顺序不同，随机模式的误差属于浮点累加差异。输出逐项打印 PASS、actual、FP64 reference 和绝对误差，并汇总每个实现/长度的最大误差及 GPU CC、CUDA runtime、PyTorch/Triton 版本与样例数。</li>
+<li>CPU 模式只运行独立的 tile 划分、partial 分组和尾部补零模型；它不验证 Triton 编译器、实际 <code>tl.sum</code> lowering、GPU 执行或平台正确性。指定服务器上的 76 例 GPU correctness 已另行通过，记录和机器收据见<a href="logs/2026-10-17-reduction-nvidia-l20x.txt">日志</a>。</li>
+<li>用户明确授权本次先做服务器 correctness-only；服务器记录与 LeetGPU 状态分开维护，服务器通过不构成 <code>LEETGPU_PASS</code>。</li>
+</ul>
+<p>从仓库根目录运行：</p>
+<div class="code-panel"><div class="code-caption"><span>BASH</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-bash"><span class="code-line" data-line="1">python solutions/triton/reduction_check.py --<span class="hljs-built_in">help</span></span>
+<span class="code-line" data-line="2">python solutions/triton/reduction_check.py --cpu-check</span>
+<span class="code-line" data-line="3">python solutions/triton/reduction_check.py --correctness-only</span></code></pre></div>
+</div></main><script src="../../../reader.js"></script></body></html>

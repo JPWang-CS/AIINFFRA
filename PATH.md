@@ -25,6 +25,7 @@
 | Triton Vector Add | `GPU_VALIDATED`，归档有缺口 | RTX3090 840.1 GB/s；`torch.add` 843.0 GB/s；平台原始`solve`未单独归档 | 有机会补原始版本 |
 | Triton MatMul | `GPU_VALIDATED`，阶段性收口 | LeetGPU原始版已归档；RTX3090 20.830 ms / 19,794.1 GFLOPS / `torch.mm` 80.3%；已有Nsys P0-lite | 在 GEMM 章内继续 NCU、PTX/SASS、低精度与多 shape |
 | Triton Softmax | `LEETGPU_PASS` | LeetGPU #5，0.29 ms，47.0th percentile，原始版已归档 | RTX3090二维row-wise correctness、ms、effective GB/s |
+| Triton Reduction | `WIP` | 单 block 与两阶段多 block 用户快照已归档；NVIDIA L20X 上服务器 correctness 76/76 通过；LeetGPU 尚无新通过证据；[单元卡](./notes/triton/reduction-2026-10-17.md) · [服务器收据](./notes/triton/logs/2026-10-17-reduction-nvidia-l20x.txt) | 按当前 LeetGPU #4 题面实现并归档平台通过版；服务器 correctness 不替代 `LEETGPU_PASS` |
 | Triton Matrix Transpose V2 | `GPU_VALIDATED`（LeetGPU 已通过） | 原始平台代码已归档为 [`transpose_v2_leetgpu.py`](./solutions/triton/transpose_v2_leetgpu.py)；LeetGPU 于 2026-10-13 `SuccessPublicTrace`，0.33 ms，50.5th percentile；服务器小尺寸正确性和 4096×4096 FP32 正确性通过；NCU kernel replay 报告完成，诊断采集时长 32.224 μs（不是正式 benchmark）；[验证记录](./notes/triton/transpose-performance-2026-10-15.md) | 本阶段收口；后续在模型和多算子实践中按真实工作负载一起分析、实现极致优化，不单独推进转置调参 |
 | FlashAttention-1 | 理论/读码完成 | CUDA读码与问题记录已保存 | 后续进入第二篇Attention课程实践 |
 | FlashAttention-2 | 阅读完成（2026-09-02） | 仅论文学习完成 | 实践状态独立，尚未开始 |
@@ -37,7 +38,7 @@
 | 模块 | 路由 | 状态 |
 |---|---|---|
 | GPU 架构与性能 | [课程路由](./roadmap/curriculum/gpu/README.md) | `WIP`；当前阅读位置为[第 4 章《线程协作、同步与异步执行》](./roadmap/curriculum/gpu/course-site/index.html?chapter=4)。第一章、第二章第 1–5 节及第 6 节 branch-probe 的既有完成记录保持有效；不能据当前入口推断第 3 章或第 4 章已读完 |
-| 算子实现与优化 | [算子路由](./roadmap/curriculum/operators/README.md) | 九类算子正文及页内实践已形成；Matrix Transpose V2 已完成平台与服务器验证并记为 `GPU_VALIDATED`。本次转置验证阶段收口；极致优化留待后续模型及多算子真实工作负载中开展 |
+| 算子实现与优化 | [算子路由](./roadmap/curriculum/operators/README.md) | 九类算子正文及页内实践已形成；Matrix Transpose V2 已完成平台与服务器验证并记为 `GPU_VALIDATED`。当前实践焦点为 Triton Reduction（`WIP`），单元记录见[Reduction 单元卡](./notes/triton/reduction-2026-10-17.md)；平台和服务器门分别验收 |
 | 算子内的深入优化 | 各算子正文；[实验检查表](./roadmap/curriculum/performance/README.md)按需使用 | MatMul已有部分证据；未另设优化课 |
 | 量化与模型 GPU 分析 | [量化](./roadmap/curriculum/quantization/README.md) · [Prefill/Decode/Mini Transformer](./roadmap/curriculum/model-analysis/README.md) | 量化及模型分析/Mini Transformer 正文已形成；组合实测未新增 |
 | 系统应用 | [vLLM/多GPU/MoE](./roadmap/curriculum/systems/README.md) | vLLM 与多 GPU 正文已形成；服务与通信实验未在本机执行 |

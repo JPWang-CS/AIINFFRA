@@ -1,0 +1,42 @@
+Triton Reduction correctness record — 2026-10-17
+
+Outcome
+  Server GPU correctness: PASS, exit code 0. No performance benchmark was run.
+  LeetGPU: no new submission evidence; status remains WIP. This server result does not imply LEETGPU_PASS.
+
+Task receipt
+  task_id: reduction-check-20261017-01a01efb
+  remote task directory: /home/LiuYan/w00939120/aiinffra-test/runs/reduction-check-20261017-01a01efb
+  remote identity/container: LiuYan uid 1009; dedicated-developjob-wtl-t1wjo-7c6d5f4d56-qzkfm; /proc/1/cgroup identifies Kubernetes/containerd.
+  isolated tmux socket: <remote task directory>/.tmux.sock
+  completion: exit.txt=0; session inactive after completion; no python/python3 checker process remained.
+  resource cleanup: selected GPU3 UUID had 0 MiB and no compute-app process after the run. The after.txt process scan's awk line matched its own search string; a separate process-name-filtered check found no checker process.
+
+Device and runtime
+  GPU: NVIDIA L20X
+  selected UUID: GPU-b2d439c0-5ad1-b1f4-b639-28da8cd5bf6a
+  torch device properties reported CC 9.0; CUDA runtime 12.6
+  Python 3.12.3; PyTorch 2.13.0+cu126; Triton 3.7.1
+  GPU3 memory: 0 MiB before launch, 0 MiB after completion
+  pre-launch compute-app listing contained no entry for the selected UUID; the workload rechecked this immediately before CUDA execution.
+
+Correctness contract and results
+  Input: positive N, contiguous 1D FP32 on the selected GPU; output shape (1,), FP32.
+  Patterns: zeros, ones, alternating +1/-1, and fixed-seed random values in [-1,1].
+  Exact patterns: actual == FP64 reference for every case; all 57 exact-pattern cases had absolute error 0.
+  Random patterns: fixed atol=2e-4, rtol=2e-5; no tolerance adjustment.
+  Single-block: N=1,31,255,256,257,1023,1024,1025,4097; 36 cases passed.
+  Multi-block: same lengths plus N=1048576; 40 cases passed.
+  Maximum absolute error by implementation/length is in gpu-correctness.txt. Largest was 0.000199173651 for multi-block N=1048576, within the predeclared random tolerance.
+  Each case logged PASS, actual, FP64 reference, and absolute error. Total: 76/76.
+  CPU independent indexing/grouping model: 76 cases passed; it does not validate compiler lowering or actual tl.sum execution.
+
+Source SHA256 (local sources matched the remote copied sources before launch)
+  reduction_single_block.py  9c51aafa37d51acaeffcd2aabb6f8cd655cbfc206eeb9666abd0764b1e9efad7
+  reduction_multi_block.py   fd5a06f56cc137f2092c22359fd02132c7febfd60b8180362bcc5998446adfae
+  reduction_check.py         a7a76e2ebb607b38cfd2da6d672c61de35e753869599e6f3db14e33972a7afd8
+  remote run.sh               709a4048091d05fb56681a18909610b97bcea555d181b9c1cfc04dd06266d170
+
+Machine receipts in the sibling directory `2026-10-17-reduction-l20x/`
+  environment.txt, offline.txt, gpu-correctness.txt, exit.txt, after.txt,
+  gpu-launch-check.txt, compute-apps-launch-check.txt, remote-run.sh

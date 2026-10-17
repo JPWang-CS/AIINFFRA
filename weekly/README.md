@@ -21,6 +21,7 @@
 
 | 日期 | 主题 | 对应 PATH |
 |------|------|----------|
+| [2026-10-17-triton-reduction](2026-10-17-triton-reduction.md) | Triton Reduction 单 block / 多 block 用户快照归档；L20X correctness 76/76 通过，LeetGPU 待提交 | Triton Reduction |
 | [2026-10-13-triton-transpose-leetgpu](2026-10-13-triton-transpose-leetgpu.md) | Triton Matrix Transpose V2 LeetGPU 通过归档；服务器验证待做 | Triton Matrix Transpose V2 |
 | [2026-08-30-triton-matmul-nsys](2026-08-30-triton-matmul-nsys.md) | Triton MatMul Nsight Systems P0-lite：s3/s2 资源与性能因果实验 | B1 |
 | [2026-08-28-triton-matmul-leetgpu](2026-08-28-triton-matmul-leetgpu.md) | Triton MatMul LeetGPU 通过归档 + RTX 3090 服务器验证复盘 | B1 |

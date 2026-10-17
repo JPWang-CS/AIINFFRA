@@ -1,0 +1,97 @@
+GPU=NVIDIA L20X, UUID=b2d439c0-5ad1-b1f4-b639-28da8cd5bf6a, CC=9.0, CUDA runtime=12.6, torch=2.13.0+cu126, triton=3.7.1
+single N=1 pattern=zeros PASS actual=0 fp64_reference=0 abs_error=0
+single N=1 pattern=ones PASS actual=1 fp64_reference=1 abs_error=0
+single N=1 pattern=alternating PASS actual=1 fp64_reference=1 abs_error=0
+single N=1 pattern=random PASS actual=0.71354752779006958 fp64_reference=0.71354752779006958 abs_error=0
+single N=31 pattern=zeros PASS actual=0 fp64_reference=0 abs_error=0
+single N=31 pattern=ones PASS actual=31 fp64_reference=31 abs_error=0
+single N=31 pattern=alternating PASS actual=1 fp64_reference=1 abs_error=0
+single N=31 pattern=random PASS actual=0.091602444648742676 fp64_reference=0.091602591797709465 abs_error=1.47148967e-07
+single N=255 pattern=zeros PASS actual=0 fp64_reference=0 abs_error=0
+single N=255 pattern=ones PASS actual=255 fp64_reference=255 abs_error=0
+single N=255 pattern=alternating PASS actual=1 fp64_reference=1 abs_error=0
+single N=255 pattern=random PASS actual=-13.237780570983887 fp64_reference=-13.23777999356389 abs_error=5.77419996e-07
+single N=256 pattern=zeros PASS actual=0 fp64_reference=0 abs_error=0
+single N=256 pattern=ones PASS actual=256 fp64_reference=256 abs_error=0
+single N=256 pattern=alternating PASS actual=0 fp64_reference=0 abs_error=0
+single N=256 pattern=random PASS actual=-5.7672924995422363 fp64_reference=-5.7672931207343936 abs_error=6.21192157e-07
+single N=257 pattern=zeros PASS actual=0 fp64_reference=0 abs_error=0
+single N=257 pattern=ones PASS actual=257 fp64_reference=257 abs_error=0
+single N=257 pattern=alternating PASS actual=1 fp64_reference=1 abs_error=0
+single N=257 pattern=random PASS actual=2.0599091053009033 fp64_reference=2.059908479306614 abs_error=6.25994289e-07
+single N=1023 pattern=zeros PASS actual=0 fp64_reference=0 abs_error=0
+single N=1023 pattern=ones PASS actual=1023 fp64_reference=1023 abs_error=0
+single N=1023 pattern=alternating PASS actual=1 fp64_reference=1 abs_error=0
+single N=1023 pattern=random PASS actual=19.264383316040039 fp64_reference=19.264382770808879 abs_error=5.4523116e-07
+single N=1024 pattern=zeros PASS actual=0 fp64_reference=0 abs_error=0
+single N=1024 pattern=ones PASS actual=1024 fp64_reference=1024 abs_error=0
+single N=1024 pattern=alternating PASS actual=0 fp64_reference=0 abs_error=0
+single N=1024 pattern=random PASS actual=-16.790874481201172 fp64_reference=-16.790875310194679 abs_error=8.28993507e-07
+single N=1025 pattern=zeros PASS actual=0 fp64_reference=0 abs_error=0
+single N=1025 pattern=ones PASS actual=1025 fp64_reference=1025 abs_error=0
+single N=1025 pattern=alternating PASS actual=1 fp64_reference=1 abs_error=0
+single N=1025 pattern=random PASS actual=-19.538028717041016 fp64_reference=-19.538031412637793 abs_error=2.69559678e-06
+single N=4097 pattern=zeros PASS actual=0 fp64_reference=0 abs_error=0
+single N=4097 pattern=ones PASS actual=4097 fp64_reference=4097 abs_error=0
+single N=4097 pattern=alternating PASS actual=1 fp64_reference=1 abs_error=0
+single N=4097 pattern=random PASS actual=-3.8965854644775391 fp64_reference=-3.8965822120080702 abs_error=3.25246947e-06
+multi N=1 pattern=zeros PASS actual=0 fp64_reference=0 abs_error=0
+multi N=1 pattern=ones PASS actual=1 fp64_reference=1 abs_error=0
+multi N=1 pattern=alternating PASS actual=1 fp64_reference=1 abs_error=0
+multi N=1 pattern=random PASS actual=0.71354752779006958 fp64_reference=0.71354752779006958 abs_error=0
+multi N=31 pattern=zeros PASS actual=0 fp64_reference=0 abs_error=0
+multi N=31 pattern=ones PASS actual=31 fp64_reference=31 abs_error=0
+multi N=31 pattern=alternating PASS actual=1 fp64_reference=1 abs_error=0
+multi N=31 pattern=random PASS actual=0.091602683067321777 fp64_reference=0.091602591797709465 abs_error=9.12696123e-08
+multi N=255 pattern=zeros PASS actual=0 fp64_reference=0 abs_error=0
+multi N=255 pattern=ones PASS actual=255 fp64_reference=255 abs_error=0
+multi N=255 pattern=alternating PASS actual=1 fp64_reference=1 abs_error=0
+multi N=255 pattern=random PASS actual=-13.237780570983887 fp64_reference=-13.23777999356389 abs_error=5.77419996e-07
+multi N=256 pattern=zeros PASS actual=0 fp64_reference=0 abs_error=0
+multi N=256 pattern=ones PASS actual=256 fp64_reference=256 abs_error=0
+multi N=256 pattern=alternating PASS actual=0 fp64_reference=0 abs_error=0
+multi N=256 pattern=random PASS actual=-5.7672924995422363 fp64_reference=-5.7672931207343936 abs_error=6.21192157e-07
+multi N=257 pattern=zeros PASS actual=0 fp64_reference=0 abs_error=0
+multi N=257 pattern=ones PASS actual=257 fp64_reference=257 abs_error=0
+multi N=257 pattern=alternating PASS actual=1 fp64_reference=1 abs_error=0
+multi N=257 pattern=random PASS actual=2.0599081516265869 fp64_reference=2.059908479306614 abs_error=3.27680027e-07
+multi N=1023 pattern=zeros PASS actual=0 fp64_reference=0 abs_error=0
+multi N=1023 pattern=ones PASS actual=1023 fp64_reference=1023 abs_error=0
+multi N=1023 pattern=alternating PASS actual=1 fp64_reference=1 abs_error=0
+multi N=1023 pattern=random PASS actual=19.264383316040039 fp64_reference=19.264382770808879 abs_error=5.4523116e-07
+multi N=1024 pattern=zeros PASS actual=0 fp64_reference=0 abs_error=0
+multi N=1024 pattern=ones PASS actual=1024 fp64_reference=1024 abs_error=0
+multi N=1024 pattern=alternating PASS actual=0 fp64_reference=0 abs_error=0
+multi N=1024 pattern=random PASS actual=-16.790874481201172 fp64_reference=-16.790875310194679 abs_error=8.28993507e-07
+multi N=1025 pattern=zeros PASS actual=0 fp64_reference=0 abs_error=0
+multi N=1025 pattern=ones PASS actual=1025 fp64_reference=1025 abs_error=0
+multi N=1025 pattern=alternating PASS actual=1 fp64_reference=1 abs_error=0
+multi N=1025 pattern=random PASS actual=-19.538032531738281 fp64_reference=-19.538031412637793 abs_error=1.11910049e-06
+multi N=4097 pattern=zeros PASS actual=0 fp64_reference=0 abs_error=0
+multi N=4097 pattern=ones PASS actual=4097 fp64_reference=4097 abs_error=0
+multi N=4097 pattern=alternating PASS actual=1 fp64_reference=1 abs_error=0
+multi N=4097 pattern=random PASS actual=-3.8965797424316406 fp64_reference=-3.8965822120080702 abs_error=2.46957643e-06
+multi N=1048576 pattern=zeros PASS actual=0 fp64_reference=0 abs_error=0
+multi N=1048576 pattern=ones PASS actual=1048576 fp64_reference=1048576 abs_error=0
+multi N=1048576 pattern=alternating PASS actual=0 fp64_reference=0 abs_error=0
+multi N=1048576 pattern=random PASS actual=-243.63232421875 fp64_reference=-243.63212504509886 abs_error=0.000199173651
+SUMMARY multi N=1 patterns=4 max_abs_error=0
+SUMMARY multi N=31 patterns=4 max_abs_error=9.12696123e-08
+SUMMARY multi N=255 patterns=4 max_abs_error=5.77419996e-07
+SUMMARY multi N=256 patterns=4 max_abs_error=6.21192157e-07
+SUMMARY multi N=257 patterns=4 max_abs_error=3.27680027e-07
+SUMMARY multi N=1023 patterns=4 max_abs_error=5.4523116e-07
+SUMMARY multi N=1024 patterns=4 max_abs_error=8.28993507e-07
+SUMMARY multi N=1025 patterns=4 max_abs_error=1.11910049e-06
+SUMMARY multi N=4097 patterns=4 max_abs_error=2.46957643e-06
+SUMMARY multi N=1048576 patterns=4 max_abs_error=0.000199173651
+SUMMARY single N=1 patterns=4 max_abs_error=0
+SUMMARY single N=31 patterns=4 max_abs_error=1.47148967e-07
+SUMMARY single N=255 patterns=4 max_abs_error=5.77419996e-07
+SUMMARY single N=256 patterns=4 max_abs_error=6.21192157e-07
+SUMMARY single N=257 patterns=4 max_abs_error=6.25994289e-07
+SUMMARY single N=1023 patterns=4 max_abs_error=5.4523116e-07
+SUMMARY single N=1024 patterns=4 max_abs_error=8.28993507e-07
+SUMMARY single N=1025 patterns=4 max_abs_error=2.69559678e-06
+SUMMARY single N=4097 patterns=4 max_abs_error=3.25246947e-06
+GPU correctness passed: 76 cases; random atol=0.0002, rtol=2e-05; no benchmark performed

@@ -7,6 +7,9 @@
 
 | 文件 | 功能 | LeetGPU 原始代码 | 验收 |
 |------|------|------|------|
+| [`reduction_single_block.py`](./reduction_single_block.py) | Reduction：单 program 覆盖 N 的用户对话快照 | 文件头注明尚无平台提交证据 | NVIDIA L20X correctness 覆盖 9 个 N × 4 种输入；LeetGPU 未提交；[日志](../../notes/triton/logs/2026-10-17-reduction-nvidia-l20x.txt) |
+| [`reduction_multi_block.py`](./reduction_multi_block.py) | Reduction：256 元素 partial + 第二阶段合并的用户对话快照 | 文件头注明尚无平台提交证据 | NVIDIA L20X correctness 覆盖 10 个 N × 4 种输入；LeetGPU 未提交；[日志](../../notes/triton/logs/2026-10-17-reduction-nvidia-l20x.txt) |
+| [`reduction_check.py`](./reduction_check.py) | 两份快照的 correctness-only GPU 入口与 stdlib CPU 独立索引/分组模型 | 服务器校验工具，不是平台 kernel | GPU correctness 76/76，未 benchmark；逐例与机器收据见[记录](../../notes/triton/logs/2026-10-17-reduction-nvidia-l20x.txt) |
 | [`transpose_bench.py`](./transpose_bench.py) | 转置 V2 正确性与 CUDA event 计时入口；调用原始平台通过版 | 复用 `transpose_v2_leetgpu.py`，不包含另一份 kernel | 五个服务器小尺寸正确性通过；AutoDL RTX 4090 的 CUDA-event 计时由用户提供并已归档；本服务器 CUDA-event benchmark 未验证 |
 | [`transpose_profile.py`](./transpose_profile.py) | 供外部 profiler 启动的转置 workload；复用原始 `solve`，应用 API 只标记采集范围 | 不自行计时；profile 前完成正确性、JIT 和 warmup | 本服务器 NCU kernel replay 已通过；AutoDL Nsight Systems 100 次 kernel 统计由用户提供并已归档 |
 | [`profile-transpose-nsys.sh`](../../scripts/profile-transpose-nsys.sh) | 在已启动的个人 tmux 内运行的 Nsight Systems runner | 每次创建独立任务目录并保存命令、日志、报告、stats 与退出码 | runner 本身尚无实际运行证据 |

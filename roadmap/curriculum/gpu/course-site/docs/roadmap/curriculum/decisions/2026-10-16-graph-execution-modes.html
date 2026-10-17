@@ -1,0 +1,19 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Eager、torch.compile 与 CUDA Graph（2026-10-16） · AIINFFRA 附属文档</title><script src="../../../../theme.js?v=3aab643066da"></script><link rel="stylesheet" href="../../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../../styles.css?v=deca86f54b40"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../../index.html?chapter=1">返回课程</a></nav><button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换到浅色模式">浅色</button></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · roadmap/curriculum/decisions/2026-10-16-graph-execution-modes.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E5%B7%B2%E7%A1%AE%E8%AE%A4">已确认</a></li><li><a href="#%E4%BE%9D%E6%8D%AE">依据</a></li><li><a href="#%E9%AA%8C%E8%AF%81%E8%BE%B9%E7%95%8C">验证边界</a></li></ol></nav><div class="markdown-body"><h1 id="eagertorchcompile-与-cuda-graph2026-10-16">Eager、torch.compile 与 CUDA Graph（2026-10-16）<a class="heading-anchor" href="#eagertorchcompile-%E4%B8%8E-cuda-graph2026-10-16" aria-label="链接到Eager、torch.compile 与 CUDA Graph（2026-10-16）">#</a></h1>
+<h2 id="已确认">已确认<a class="heading-anchor" href="#%E5%B7%B2%E7%A1%AE%E8%AE%A4" aria-label="链接到已确认">#</a></h2>
+<ul>
+<li>第 4 章第 10 节使用同一条 FP32 pointwise 链解释 Eager、<code>torch.compile</code> 和 CUDA Graph；三种路径的输入、数学运算与输出合同相同。</li>
+<li>编译对照使用 <code>backend=&quot;inductor&quot;</code>、<code>fullgraph=True</code> 与 <code>options={&quot;triton.cudagraphs&quot;: False}</code>，分离编译融合和 Inductor 自动 CUDA Graph 的影响。<code>fullgraph</code> 是 Dynamo 捕获约束，不承诺设备侧只有一个 kernel。</li>
+<li>显式 CUDA Graph 捕获原始 Eager 函数，固定输入/输出地址，逐轮复制输入并 replay；教程解释异步返回、buffer 生命周期、静态 shape/dtype/device 检查与舍入容差。</li>
+<li>教学只提供正确性路径。模型与多算子阶段再开展端到端性能和 profiler 实验。</li>
+</ul>
+<h2 id="依据">依据<a class="heading-anchor" href="#%E4%BE%9D%E6%8D%AE" aria-label="链接到依据">#</a></h2>
+<ul>
+<li>PyTorch <code>torch.compile</code> 官方 API：<a href="https://docs.pytorch.org/docs/stable/generated/torch.compile">https://docs.pytorch.org/docs/stable/generated/torch.compile</a></li>
+<li>PyTorch 融合调优指南：<a href="https://docs.pytorch.org/tutorials/recipes/recipes/tuning_guide.html">https://docs.pytorch.org/tutorials/recipes/recipes/tuning_guide.html</a></li>
+<li>PyTorch CUDA Graph：<a href="https://pytorch.org/blog/accelerating-pytorch-with-cuda-graphs/">https://pytorch.org/blog/accelerating-pytorch-with-cuda-graphs/</a></li>
+<li>PyTorch CUDA Graph Trees：<a href="https://docs.pytorch.org/docs/main/user_guide/torch_compiler/torch.compiler_cudagraph_trees.html">https://docs.pytorch.org/docs/main/user_guide/torch_compiler/torch.compiler_cudagraph_trees.html</a></li>
+<li>NVIDIA CUDA Graphs：<a href="https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/cuda-graphs.html">https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/cuda-graphs.html</a></li>
+</ul>
+<h2 id="验证边界">验证边界<a class="heading-anchor" href="#%E9%AA%8C%E8%AF%81%E8%BE%B9%E7%95%8C" aria-label="链接到验证边界">#</a></h2>
+<p>本机 <code>.venv</code> 只安装 <code>2.7.1+cpu</code>，可验证 CPU 数学与 shape，不具备 CUDA Graph 运行条件。<code>--help</code>、CPU 检查、Python AST、课程构建、正文源码摘录、正文检查、编辑检查、导航模拟、链接审计与离线资源/DOM检查通过。离线入口检查允许有效的章节级链接，并验证小节锚点存在且属于当前章节；缺失章节和跨章 fragment 会被拒绝。编译 trace、实际 kernel 数量、GPU 正确性和性能结论需在后续目标设备实验中核实；未做浏览器视觉检查。</p>
+</div></main><script src="../../../../reader.js"></script></body></html>

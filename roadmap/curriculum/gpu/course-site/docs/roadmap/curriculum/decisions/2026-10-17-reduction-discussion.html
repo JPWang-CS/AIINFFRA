@@ -1,0 +1,46 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Reduction 讨论记录（2026-10-17） · AIINFFRA 附属文档</title><script src="../../../../theme.js?v=3aab643066da"></script><link rel="stylesheet" href="../../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../../styles.css?v=deca86f54b40"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../../index.html?chapter=1">返回课程</a></nav><button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换到浅色模式">浅色</button></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · roadmap/curriculum/decisions/2026-10-17-reduction-discussion.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E5%B7%B2%E7%A1%AE%E8%AE%A4">已确认</a></li><li><a href="#%E6%8F%90%E6%A1%88">提案</a></li><li><a href="#%E7%94%A8%E6%88%B7%E6%AD%A4%E5%89%8D%E6%8F%90%E5%87%BA%E7%9A%84%E9%97%AE%E9%A2%98%E4%B8%8E%E9%80%89%E6%8B%A9%E4%BE%9D%E6%8D%AE">用户此前提出的问题与选择依据</a></li><li><a href="#%E6%95%B4%E7%90%86%E5%90%8E%E7%9A%84%E6%8A%80%E6%9C%AF%E7%BB%93%E8%AE%BA">整理后的技术结论</a></li><li><a href="#%E7%94%A8%E6%88%B7%E6%9D%90%E6%96%99%E5%BD%92%E5%B1%9E">用户材料归属</a></li><li><a href="#%E5%BE%85%E5%AE%9A">待定</a></li><li><a href="#%E5%BD%93%E5%89%8D%E8%BE%B9%E7%95%8C">当前边界</a></li></ol></nav><div class="markdown-body"><h1 id="reduction-讨论记录2026-10-17">Reduction 讨论记录（2026-10-17）<a class="heading-anchor" href="#reduction-%E8%AE%A8%E8%AE%BA%E8%AE%B0%E5%BD%952026-10-17" aria-label="链接到Reduction 讨论记录（2026-10-17）">#</a></h1>
+<h2 id="已确认">已确认<a class="heading-anchor" href="#%E5%B7%B2%E7%A1%AE%E8%AE%A4" aria-label="链接到已确认">#</a></h2>
+<p>以下结论由用户讨论确认；代码执行状态与学习平台状态分开记录。</p>
+<ol>
+<li><code>BLOCK_SIZE</code> 是 program 处理的逻辑元素数，不是线程数。<code>num_warps=4</code> 在常规 NVIDIA Triton 模式下表示 4 个 warp、128 个线程。<code>tl.sum</code> 会编译成线程间协作归约，不等于单个线程顺序累加全部元素。</li>
+<li>单 block 版本选择 <code>BLOCK_SIZE=next_power_of_2(N)</code>，一个 program 覆盖输入，掩码尾部以 0 补齐并写出一个标量。随着 N 增大，单个 program 的 tile 增大，可能带来较高资源需求。</li>
+<li>多 block 版本固定第一阶段 tile 为 256，每个 program 写 <code>partial[pid]</code>，避免多个 program 写同一地址；第二个 kernel 以实际 partial 数为 N，并使用其二次幂 tile 完成归约。</li>
+<li><code>partial</code> 用 <code>torch.empty</code> 分配后，第一阶段覆盖所有有效 partial，因此无需清零。两次 kernel 在同一 stream 按提交顺序执行，第二阶段读取第一阶段结果。</li>
+<li><code>N=1025</code> 时，第一阶段有 5 个 program 和 5 个 partial；第二阶段有效长度为 5、tile 为 8，最后 3 个逻辑位置由 load mask 设为 0。它们是逻辑元素位置，不对应固定数量的硬件 lane。</li>
+<li>全局地址空间、load 后的寄存器数据及 L1/L2 命中是不同概念。缓存命中不改变数组位于全局地址空间这一事实。</li>
+<li>当前实现是固定两阶段；超大 N 时第二阶段仍可能需要较大的 tile，不宣称支持任意规模的多级归约。保留用户原始代码，当前 <code>BLOCK_SIZE=256</code> 不擅自调整；极致优化留待后续模型和多算子工作负载。</li>
+<li>正确性合同预先固定为正 N、连续 FP32 输入、<code>output.shape==(1,)</code>；全零、全一、正负交替样例要求逐项精确相等，有界随机样例使用固定 <code>atol=2e-4, rtol=2e-5</code>。FP32 与 FP64 的归约顺序不同，随机样例报告误差时说明顺序差异。CPU 模拟是独立分组模型，不覆盖编译器或实际 <code>tl.sum</code> 路径，也不代表 GPU 正确性。</li>
+</ol>
+<h2 id="提案">提案<a class="heading-anchor" href="#%E6%8F%90%E6%A1%88" aria-label="链接到提案">#</a></h2>
+<ul>
+<li>用户已授权先做服务器多 shape correctness，再按当前 LeetGPU #4 题面独立实现并归档。平台通过和服务器正确性分别记录；服务器结果不能替代 <code>LEETGPU_PASS</code>。</li>
+<li>后续如进入性能工作，按真实设备、精度合同、输入规模和多算子边界选择最小 A/B；本轮不发起广泛参数扫描或 benchmark。</li>
+</ul>
+<h2 id="用户此前提出的问题与选择依据">用户此前提出的问题与选择依据<a class="heading-anchor" href="#%E7%94%A8%E6%88%B7%E6%AD%A4%E5%89%8D%E6%8F%90%E5%87%BA%E7%9A%84%E9%97%AE%E9%A2%98%E4%B8%8E%E9%80%89%E6%8B%A9%E4%BE%9D%E6%8D%AE" aria-label="链接到用户此前提出的问题与选择依据">#</a></h2>
+<p>以下按本轮对话中的问题主题整理，并非逐字引语；用户的学习偏好单独列出，不将其改写成 Agent 观点或用户感想。</p>
+<ul>
+<li>A100 的一个 CTA 最多 1024 个线程，是否因此一个 block 只能处理 1024 个元素？<code>num_warps=4</code> 和 <code>BLOCK_SIZE=1024</code> 如何换算线程与元素工作量？</li>
+<li>一个普通 CTA 在一个 SM 上执行；grid 只有少数 CTA 时，即使 CTA 资源能放下，为什么整张 GPU 仍可能缺少并行度？应先选分解还是先看 occupancy？</li>
+<li>Triton <code>tl.sum</code>、CUDA 显式线程索引/shuffle/shared/barrier、Gluon 显式 layout、TileLang 的 thread binding 与 memory scope/sync 分别由开发者控制什么？换成 <code>T.reduce_sum</code> 是否自然更快？</li>
+<li>Python Tensor、设备指针、全局数组、load 后寄存器值、HBM 事务以及 L1/L2 命中各处于哪一层？partial 写回为什么需要 <code>tl.store</code>？</li>
+<li>用户明确要求先讨论选择依据，除非主动询问，不主动给完整新实现；当前归档保持其原代码，极致优化放到后续模型/多算子实践。</li>
+</ul>
+<h2 id="整理后的技术结论">整理后的技术结论<a class="heading-anchor" href="#%E6%95%B4%E7%90%86%E5%90%8E%E7%9A%84%E6%8A%80%E6%9C%AF%E7%BB%93%E8%AE%BA" aria-label="链接到整理后的技术结论">#</a></h2>
+<p><strong>分解与每线程工作量。</strong> CTA 的线程上限约束线程数，不约束它处理的逻辑元素数。<code>num_warps=4</code> 对应 128 个线程；<code>BLOCK_SIZE=1024</code> 表示 1024 个逻辑元素，平均每线程 8 个元素，具体映射由编译器 layout 决定。普通 CTA 由一个 SM 执行；一个 CTA 即便能驻留，也只给一个 SM 提供该任务。若总 grid 很小，其他 SM 无任务可执行，因此先根据 N 和目标并行度确定 grid/分解，再估每线程工作和资源需求。</p>
+<p><strong>资源与 occupancy 估算示例（假设，不是编译或实测结果）。</strong> A100 每 SM 有 65,536 个 32-bit 寄存器、最多 2,048 个线程。假设一个 CTA 有 128 线程、每线程分配 64 个寄存器，则每 CTA 约占 <code>128×64=8192</code> 个寄存器；只按寄存器容量估算可同时容纳 <code>65536/8192=8</code> 个 CTA，即 32 个 warp。若该 SM 上限按 64 个 warp 计算，这相当于理论 50% warp 驻留。实际驻留还受寄存器分配粒度、shared memory、线程上限和 CTA 上限影响，必须读编译资源信息及 profiler；occupancy 用于解释资源与延迟隐藏，不是单独追求的目标。<code>BLOCK_SIZE=1024</code>、128 线程下“平均 8 元素/线程”也不等于已知每线程寄存器数。</p>
+<p><strong>归约抽象与协作控制。</strong> Triton 提供 <code>tl.sum</code>，编译器为目标布局和类型选择线程级归约路径（例如树形/蝶形协作）；源代码不直接固定每个元素落在哪条 lane。CUDA 可显式控制线程索引、shuffle、shared memory 与 barrier。Gluon 把 layout 作为显式编程对象；TileLang 可描述 thread binding、memory scope 与同步。使用 <code>T.reduce_sum</code> 只表达归约操作，不单独保证比 Triton <code>tl.sum</code> 更快；比较需要同一数值合同和目标设备上的编译/执行证据。</p>
+<p><strong>地址与数据层次。</strong> Python <code>torch.Tensor</code> 持有设备数据并提供元数据；kernel 参数中的 pointer 指向设备地址。<code>tl.load</code> 从全局地址读取，值通常由线程放在寄存器中参与计算，元素到线程/寄存器的具体映射由编译器布局决定。HBM/L2/L1 描述实际流量或命中层级，不改变 pointer 所指对象的全局地址空间。每个 CTA 的 partial 写到 <code>output_ptr + program_id</code>，因此第一阶段必须显式执行相应 <code>tl.store</code>；仅在 Python 中分配 Tensor 不会自动把归约结果写进去。</p>
+<h2 id="用户材料归属">用户材料归属<a class="heading-anchor" href="#%E7%94%A8%E6%88%B7%E6%9D%90%E6%96%99%E5%BD%92%E5%B1%9E" aria-label="链接到用户材料归属">#</a></h2>
+<ul>
+<li>用户原话/问题主题：上节以问题形式归纳；本轮给出的两份 Triton 源码保存在 <code>solutions/triton/reduction_single_block.py</code> 与 <code>reduction_multi_block.py</code>，只添加文件头状态说明。</li>
+<li>Agent 整理：本记录中的机制解释、数量级估算和验证合同；A100 驻留数字明确是基于假设的算术示例，不是编译报告或设备测量。</li>
+<li>已验证状态：NVIDIA L20X 服务器 correctness 76/76 通过；实验边界与详细机器收据见 <a href="../../../notes/triton/logs/2026-10-17-reduction-nvidia-l20x.txt"><code>Reduction GPU 记录</code></a>。平台提交仍待进行。</li>
+</ul>
+<h2 id="待定">待定<a class="heading-anchor" href="#%E5%BE%85%E5%AE%9A" aria-label="链接到待定">#</a></h2>
+<ul>
+<li>当前 LeetGPU 题面是否与归档快照接口完全一致：待进入平台核对并提交。</li>
+<li>多算子/模型工作负载中是否需要改为递归多级归约：待对应工作负载出现后判断。</li>
+</ul>
+<h2 id="当前边界">当前边界<a class="heading-anchor" href="#%E5%BD%93%E5%89%8D%E8%BE%B9%E7%95%8C" aria-label="链接到当前边界">#</a></h2>
+<p>本地归档与 CPU/offline 检查不升级学习状态。没有平台证据时为 <code>WIP</code>；服务器 correctness 通过也不等于 <code>LEETGPU_PASS</code>。性能优化属于后续阶段。</p>
+</div></main><script src="../../../../reader.js"></script></body></html>

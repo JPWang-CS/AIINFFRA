@@ -1223,11 +1223,297 @@ nvcc -O2 -std=c++17 roadmap/curriculum/gpu/04-synchronization-and-asynchronous-e
 多 GPU 的 pool allocation 通过 `cudaMemPoolSetAccess` 等 pool API 授予 peer 访问。设置前检查设备间 peer 能力；访问权限与 stream 生命周期是两项条件，读取前仍需等待分配和数据生产完成。
 
 
-## 10. CUDA Graph：重放、动态长度与内存生命周期
+## 10. 图模式：Eager、torch.compile 与 CUDA Graph
 
 一次计算若依次执行几十个短 kernel，CPU 需要逐个准备参数并提交任务。GPU 完成一个短任务后可能要等后续提交，因此整段计算会受主机提交开销影响。
 
 CUDA Graph 先记录一组操作及其依赖，再将其实例化，并用一次 graph launch 提交。重复执行时可减少主机调度与提交工作。Graph 保留原有 kernel 和中间 tensor 读写；减少这些读写需融合算子，提升单个 GEMM 则需优化计算与数据复用。
+
+### 同一段计算，三种执行方式
+
+先固定计算，再比较执行方式。输入是连续的 FP32 向量 `x[N]`，两个标量为 `ALPHA = 1.25`、`BETA = 0.25`。对每个元素依次计算
+
+$$
+u_i = \alpha x_i,\qquad v_i = u_i + \beta,\qquad y_i = \max(v_i, 0).
+$$
+
+三个向量的 shape 都是 `[N]`。例如 `x = [-2, -1, 0, 2]` 时，乘法得到 `u = [-2.5, -1.25, 0, 2.5]`，加法得到 `v = [-2.25, -1, 0.25, 2.75]`，ReLU 输出 `y = [0, 0, 0.25, 2.75]`。Eager、`torch.compile` 和 CUDA Graph 都执行这一个函数，输入、输出和数学含义保持一致。
+
+![同一条 pointwise 链在 Eager、编译执行和 CUDA Graph 回放中的主机与设备路径](./figures/graph-execution-paths.png)
+
+### Eager 逐算子提交与编译融合
+
+普通 PyTorch Eager 调用直接写出三个运算：
+
+```python
+def pointwise_chain(x):
+    u = x * ALPHA
+    v = u + BETA
+    return torch.relu(v)
+```
+
+在 CUDA tensor 上，Python 依次调用乘法、加法和 ReLU 对应的算子。常见实现会产生三个逐元素 kernel 和两个中间结果，但 Python 行数不能用来断言某个 PyTorch 版本实际发射了几个 kernel。CPU tensor 则在 CPU 上执行；CUDA 路径中，CPU 把工作排入当前 stream 后通常可以继续运行，设备工作稍后完成。因而一次函数调用返回，表示工作已按 stream 顺序提交，GPU 仍可能在执行；读取结果或需要 CPU 端结果时才要在合适边界等待。
+
+`torch.compile` 连接 Python 计算捕获与后端代码生成：TorchDynamo（Dynamo）从 Python 捕获计算图，TorchInductor（Inductor）作为编译后端优化图并生成设备代码。这里让 Inductor 处理同一段函数：
+
+```python
+compiled = torch.compile(
+    pointwise_chain,
+    backend="inductor",
+    fullgraph=True,
+    options={"triton.cudagraphs": False},
+)
+```
+
+调用 `torch.compile(...)` 通常先得到一个包装函数；这一步本身不一定已完成编译。第一次执行 `compiled(x)` 时，Dynamo 才按实际输入追踪函数，Inductor 随后编译捕获区域。之后的新输入若不满足已记录的 shape、dtype 等检查条件（guard），执行可能触发重新编译。
+
+编译图与 CUDA Graph 是不同层次的“图”。Dynamo/Inductor 的计算图以算子为节点、以张量数据依赖为边，编译器可据此改写表达式并融合运算；CUDA Graph 的任务图则以 kernel、内存拷贝等可提交的 GPU 任务为节点，以先后依赖为边，重放时集中提交这些任务。Inductor 可以把乘、加、ReLU 融合进一个 pointwise kernel，避免把 `u`、`v` 写回显存再读出；是否融合、最终生成几个 kernel，应以目标 PyTorch 版本的编译 trace 为准。`fullgraph=True` 要求 Dynamo 把这个函数捕获为一个完整计算图，遇到 graph break 就报错；它约束的是编译器捕获的计算图，不约束设备 kernel 数量。选项 `triton.cudagraphs=False` 明确关闭 Inductor 自动使用 CUDA Graph 的路径，使这里的编译对照只观察编译与融合。若先编译并融合、再捕获编译后的执行任务，那是编译与 CUDA Graph 组合的第四种路径；本节三路对照不包含这种组合。这里通过 `options` 设置该选项，不再同时传 `mode`。
+
+融合会改变中间结果是否写出，也可能让乘加采用不同指令或舍入次序。浮点结果因此用容差比较，不要求逐位完全相同；ReLU 阈值附近的值能看出舍入差异如何影响很小数值的符号。
+
+### CUDA Graph 固定地址并重放 Eager 工作
+
+CUDA Graph 捕获和实例化一组 GPU 任务及其依赖，之后用一次 replay 再提交。这里捕获原始 `pointwise_chain`，不捕获 `compiled`，所以图仍包含 Eager 这三步及其中间读写。编译器图里表示的“算子节点”，与 CUDA Graph 里表示的“kernel 任务节点”不是同一类对象。
+
+捕获时，`static_x` 与 `static_y` 必须保持存活，图会引用捕获时的设备地址。每轮把新值复制进 `static_x`，再重放同一张图：
+
+```python
+static_x = x.clone()
+current_stream = torch.cuda.current_stream()
+warmup_stream = torch.cuda.Stream()
+warmup_stream.wait_stream(current_stream)
+with torch.cuda.stream(warmup_stream):
+    for _ in range(3):
+        pointwise_chain(static_x)
+current_stream.wait_stream(warmup_stream)
+
+g = torch.cuda.CUDAGraph()
+with torch.cuda.graph(g):
+    static_y = pointwise_chain(static_x)
+
+def replay(new_x):
+    if (new_x.shape != static_x.shape or new_x.dtype != static_x.dtype
+            or new_x.device != static_x.device):
+        raise ValueError("new_x must match static_x shape, dtype, and device")
+    static_x.copy_(new_x)
+    g.replay()
+    return static_y
+```
+
+这段顺序保证预热完成后再捕获，首次 JIT 也在 capture 之外。之后 `copy_` 与 `g.replay()` 排在同一条当前 stream 上，所以新输入复制先于图读取。`replay` 返回的 `static_y` 仍是 GPU tensor；函数返回不等于设备工作完成。调用方若要在 CPU 使用结果，需要在读取边界同步或执行会建立依赖的拷贝。下一次 replay 会覆盖同一个输出地址；若要跨轮保留旧结果，应在覆盖前执行 `static_y.clone()`，这会额外分配并复制结果。
+
+不能用 `static_x = new_x` 更新图的输入：这只会把 Python 变量改指向另一个 tensor，捕获图仍读取原来的指针。复用固定 buffer 前要检查 shape、dtype 和 device，避免 `copy_` 广播或转换错误数据。捕获期间不要打印设备值、调用 `.item()` 或同步 stream/device；PyTorch 会管理捕获所需的 graph memory pool。原始输入、输出 buffer 和 graph 对象必须保持存活，覆盖输出前需先复制要保留的结果；图只保存指针，不会延长已释放内存的生命周期。
+
+![CUDA Graph 捕获时绑定的输入、输出地址，以及每轮 copy 与 replay 的先后关系](./figures/graph-static-buffers.png)
+
+### 三条路径共用的正确性例程
+
+完整例程把三种方式放进同一个脚本，并用三批不同输入逐批比较：Eager 直接调用 `pointwise_chain`；编译路径调用 `compiled`；Graph 路径只更新 `static_x` 并重放捕获的 Eager 函数。编译调用和 Graph 捕获都有一次性准备开销，示例把这些准备放在各自的执行步骤中，正确性检查不计时。`--cpu-check` 只在 CPU 上检查手算样例的数值与 shape，不查询 CUDA 设备，也不代表 CUDA Graph 已验证。GPU 环境之后可运行：
+
+```bash
+python roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/examples/graph_execution_modes.py
+python roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/examples/graph_execution_modes.py --cpu-check
+```
+
+第一条命令检查 CUDA 上三条路径的结果，第二条只验证 CPU 数学参考与 shape。两者都使用 `torch.testing.assert_close`，以容差处理不同执行路径可能出现的浮点舍入差异。
+
+<details>
+<summary>完整 Python 程序：三批输入逐一检查三种执行路径</summary>
+
+<!-- source-check: examples/graph_execution_modes.py -->
+
+```python
+"""Compare Eager, torch.compile, and CUDA Graph for one pointwise chain.
+
+The default command checks correctness on CUDA. ``--cpu-check`` checks only
+the CPU mathematical reference and never queries CUDA device availability.
+This example intentionally contains no timing or profiling code.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+
+import torch
+
+
+ALPHA = 1.25
+BETA = 0.25
+
+
+def pointwise_chain(x: torch.Tensor) -> torch.Tensor:
+    """Apply the same three elementwise operations in every execution mode."""
+    u = x * ALPHA
+    v = u + BETA
+    return torch.relu(v)
+
+
+def cpu_cases() -> list[torch.Tensor]:
+    return [
+        torch.tensor([-2.0, -1.0, 0.0, 2.0], dtype=torch.float32),
+        torch.tensor([-4.0, -0.5, 1.0, 3.0], dtype=torch.float32),
+        torch.tensor([0.25, -3.0, 2.5, -1.25], dtype=torch.float32),
+    ]
+
+
+def run_cpu_check() -> None:
+    """Check hand-computed values and shape without touching CUDA state."""
+    x = cpu_cases()[0]
+    expected = torch.tensor([0.0, 0.0, 0.25, 2.75], dtype=torch.float32)
+    actual = pointwise_chain(x)
+    assert actual.shape == x.shape
+    torch.testing.assert_close(actual, expected)
+    print("PASS: CPU reference values and shape")
+
+
+def check_same_shape_dtype_device(
+    new_x: torch.Tensor, static_x: torch.Tensor
+) -> None:
+    """Reject input changes that cannot safely update a captured buffer."""
+    if not isinstance(new_x, torch.Tensor):
+        raise TypeError("new_x must be a torch.Tensor")
+    if new_x.shape != static_x.shape:
+        raise ValueError(
+            f"shape changed: got {tuple(new_x.shape)}, "
+            f"expected {tuple(static_x.shape)}"
+        )
+    if new_x.dtype != static_x.dtype:
+        raise TypeError(f"dtype changed: got {new_x.dtype}, expected {static_x.dtype}")
+    if new_x.device != static_x.device:
+        raise ValueError(
+            f"device changed: got {new_x.device}, expected {static_x.device}"
+        )
+
+
+def gpu_cases(device: torch.device) -> list[torch.Tensor]:
+    """Build three distinct inputs with one static shape for graph replay."""
+    base = torch.arange(257, dtype=torch.float32, device=device)
+    return [
+        (base - 128.0) / 32.0,
+        (64.0 - base) / 16.0,
+        (base.remainder(17.0) - 8.0) / 4.0,
+    ]
+
+
+def run_gpu_check() -> None:
+    if not torch.cuda.is_available():
+        raise RuntimeError(
+            "CUDA is unavailable; use --cpu-check for the CPU reference check"
+        )
+
+    device = torch.device("cuda")
+    batches = gpu_cases(device)
+
+    # This isolated compile comparison disables Inductor's automatic CUDA
+    # Graph path, so compilation/fusion is not mixed with graph replay.
+    compiled = torch.compile(
+        pointwise_chain,
+        backend="inductor",
+        fullgraph=True,
+        options={"triton.cudagraphs": False},
+    )
+
+    # Trigger the first compile before graph capture. The calls are correctness
+    # setup only; this program does not measure their duration.
+    compiled(batches[0])
+
+    # Keep these fixed-address tensors alive as long as the graph can replay.
+    static_x = batches[0].clone()
+    current_stream = torch.cuda.current_stream(device)
+    warmup_stream = torch.cuda.Stream(device=device)
+    warmup_stream.wait_stream(current_stream)
+    with torch.cuda.stream(warmup_stream):
+        for _ in range(3):
+            pointwise_chain(static_x)
+    current_stream.wait_stream(warmup_stream)
+
+    graph = torch.cuda.CUDAGraph()
+    with torch.cuda.graph(graph):
+        # Capture the original Eager function, not the compiled wrapper.
+        static_y = pointwise_chain(static_x)
+
+    for batch_index, new_x in enumerate(batches):
+        eager_y = pointwise_chain(new_x)
+        compiled_y = compiled(new_x)
+
+        check_same_shape_dtype_device(new_x, static_x)
+        # copy_ and replay are ordered on the same current stream. Rebinding
+        # static_x would not change the pointer captured by graph.
+        static_x.copy_(new_x)
+        graph.replay()
+
+        torch.testing.assert_close(compiled_y, eager_y)
+        torch.testing.assert_close(static_y, eager_y)
+        print(f"PASS: CUDA batch {batch_index + 1}/3")
+
+    # graph, static_x, and static_y remain referenced through the final replay.
+    # A later replay will overwrite static_y; clone it first if a caller needs
+    # to preserve a previous result across replays.
+
+
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--cpu-check",
+        action="store_true",
+        help="check the CPU reference values and shape without querying CUDA",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(sys.argv[1:] if argv is None else argv)
+    if args.cpu_check:
+        run_cpu_check()
+        return 0
+    run_gpu_check()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
+</details>
+
+### 从逻辑流量到重复执行成本
+
+令 `N` 为向量元素数，`s=4 B` 为一个 FP32 元素的大小，因此一整条向量占 `Ns` 字节。暂时只数张量读写，不计标量参数。未融合的路径分三步：乘法读取 `x` 并写入 `u`；加法读取 `u` 并写入 `v`；ReLU 读取 `v` 并写入 `y`。每步读一条、写一条，故
+
+$$
+B_{\mathrm{eager}} = 3(Ns + Ns) = 6Ns.
+$$
+
+融合 kernel 则让每个元素只从 `x` 读一次，在寄存器里连续完成乘法、加法和 ReLU，再把最终结果写到 `y`。`u` 和 `v` 不再写回显存，也无需由下一步重新读取，因而
+
+$$
+B_{\mathrm{fused}} = Ns + Ns = 2Ns.
+$$
+
+CUDA Graph 捕获原始 Eager 函数，图内部仍保留三个操作和中间值，内部逻辑读写为 `6Ns`。每轮 replay 之前，本例还执行一次图外的 `static_x.copy_(new_x)`；`new_x` 和 `static_x` 都在 GPU 上，这次 D2D 拷贝再读取 `Ns`、写入 `Ns`，增加 `2Ns`。因此，本例单独计算 Graph 路径时，一轮的张量逻辑流量是 `6Ns + 2Ns = 8Ns`。这个数只包含该路径的输入更新和图内三步，不把正确性脚本额外运行的 Eager 或编译对照算进去。若生产者能按正确依赖直接写入固定的 `static_x`，就可省掉这次输入拷贝。图内三步的 kernel 数也不等于整轮 GPU 工作数量：输入更新是图外任务；具体 copy 实现由框架和设备路径决定。这些都是程序层逻辑读写量，不是 DRAM 计数器实测值；缓存等硬件行为会改变 DRAM 流量。图中三步执行是此计算链的结构示意，目标版本的实际 kernel 数和融合情况应查看编译 trace。
+
+把准备和重复调用放进同一个测量范围，并排除三路共有的环境初始化成本。设 `R` 为重复次数，`C_compile` 是编译准备成本，`C_capture` 是 Graph 捕获、实例化与必要 warmup 的成本，`T_e`、`T_c`、`T_g` 是该范围内各路径每轮的端到端时间，则
+
+$$
+T_{\mathrm{eager}}(R)=R T_e,\qquad
+T_{\mathrm{compile}}(R)=C_{\mathrm{compile}}+R T_c,\qquad
+T_{\mathrm{graph}}(R)=C_{\mathrm{capture}}+R T_g.
+$$
+
+若计时起点包含编译或捕获，准备成本就计入总时间；若比较稳态重放，则应把准备时间单独报告。`T_g` 应包含每轮向固定输入 buffer 的 `copy_`，输入准备的边界也要与 Eager 和编译路径一致。只有当 `T_e > T_g` 时，Graph 才可能在
+
+$$
+R > \frac{C_{\mathrm{capture}}}{T_e-T_g}
+$$
+
+之后抵消准备成本。若二者每轮时间相同或 Graph 更慢，增加重复次数也不会让这条不等式成立。CPU 提交时，GPU 也可以执行已经收到的任务；整轮应从约定的起点量到结果可用，不能直接相加 CPU 提交时间与 GPU 执行时间。若确实把编译与显式 Graph 组合，总成本可写成 `C_compile + C_capture + R·T_compiled_graph`，其中 `T_compiled_graph` 必须按同一输入准备和结果可用边界测量；还要说明 capture 捕获的是编译后的哪组 GPU 任务。
+
+本节用统一计算建立执行模型，实际 profiler 与端到端性能比较放在后续模型和多算子工作负载中进行。进入本节后面的 CUDA C++ 示例时，仍可沿用同一思路：先分清图节点参数、固定地址中的新数据和执行顺序，再讨论动态参数更新、容量分档与 graph memory 的生命周期。
+
+PyTorch 的 `torch.compile` 选项与 `fullgraph` 语义见[官方 API 文档](https://docs.pytorch.org/docs/stable/generated/torch.compile)；pointwise 融合的背景见[官方调优指南](https://docs.pytorch.org/tutorials/recipes/recipes/tuning_guide.html)。CUDA Graph 的捕获与重放约束见[PyTorch CUDA Graph 说明](https://pytorch.org/blog/accelerating-pytorch-with-cuda-graphs/)及[CUDA Graph Trees 文档](https://docs.pytorch.org/docs/main/user_guide/torch_compiler/torch.compiler_cudagraph_trees.html)，CUDA C++ 节点与实例化接口见[NVIDIA CUDA Graphs 指南](https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/cuda-graphs.html)。
+
+本节嵌入的 CUDA C++ `affine → ReLU` 例子计算同一公式，其中 `bias` 对应这里的 `beta`；`affine` kernel 一次完成 `alpha*x + bias`，再由 ReLU kernel 处理结果，所以它把 Python 的乘法与加法合进了同一个手写 kernel，总计两个 kernel。Python 例子仍是三个独立 pointwise 算子；这两种拆分方式不同，数学公式与输入输出合同相同。
 
 ### 10.1 图定义、实例化与执行
 

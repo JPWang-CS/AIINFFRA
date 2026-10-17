@@ -1,0 +1,4 @@
+GPU-34d06e04-4c63-02ac-12c5-cb4fbe14e78f, 324284, sgl_diffusion::scheduler_U0, 103122 MiB
+GPU-7c2d67e2-baa9-e52c-b14b-d323d689db49, 324292, sgl_diffusion::scheduler_U1, 103004 MiB
+GPU-43dd5b59-3ad6-d72e-4b30-97f70795d0d9, 324295, sgl_diffusion::scheduler_U2, 103004 MiB
+GPU-b018d7a0-2075-e96a-33f9-d970485abb1f, 324298, sgl_diffusion::scheduler_U3, 103004 MiB

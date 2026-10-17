@@ -160,6 +160,70 @@ extern "C" cudaError_t launch_row_sum(const float* x, float* y, int rows, int co
 
 **实践绑定：Reduction 题面与 row-wise 教学实现。** 当前只确认 [LeetGPU Challenges](https://leetgpu.com/challenges) 总题库入口和官方 [Reduction #4 原题目录](https://github.com/AlphaGPU/leetgpu-challenges/tree/main/challenges/medium/4_reduction)，不把未从题库页面确认的 slug 写成直达链接。#4 的平台合同是 FP32 一维 `input[N]→output`；本节的 CUDA kernel 则是 `[R,D]→[R]`，以 `D=1000,BLOCK_SIZE=256` 展示尾部和两级归约。二者共享“局部和→warp→CTA”的机制，但不能用一维平台通过代替多行 kernel 的 correctness。服务器编译入口是 `roadmap/curriculum/operators/02-reduction-and-norm/examples/row_sum.cu`，先以 `rows=3, cols=1000` 和非整除列数检查，再谈性能。
 
+### 3.1 一维 Triton Reduction：一个 program 与多个 program
+
+一维求和把 `N` 个 FP32 元素归并成一个标量。Triton program 的逻辑 tile 由 `BLOCK_SIZE` 决定；它不是线程数。`num_warps=4` 表示编译器以四个 warp 组织 program（常规 NVIDIA 模式下为 128 个线程），`tl.sum` 由编译器映射为线程协作归约。
+
+单 program 版本先在 Python host 侧计算 tile 大小并配置 launch；这里 `BLOCK_SIZE` 是逻辑元素数：
+
+~~~python
+BLOCK_SIZE = triton.next_power_of_2(N)
+kernel[(triton.cdiv(N, BLOCK_SIZE),)](
+    input, output, N, BLOCK_SIZE=BLOCK_SIZE, num_warps=4,
+)
+~~~
+
+`@triton.jit` kernel 内部建立逻辑索引、掩码尾部，并执行协作归约后写到唯一输出：
+
+~~~python
+@triton.jit
+def kernel(input_ptr, output_ptr, N, BLOCK_SIZE: tl.constexpr):
+    offset = tl.program_id(0) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+    mask = offset < N
+    input = tl.load(input_ptr + offset, mask, other=0.0)
+    tl.store(output_ptr, tl.sum(input))
+~~~
+
+这个映射减少了阶段数，适合小型 reduction。N 增长时，单个 program 的 tile 也增长；逻辑位置会由多个线程协作处理，不能把 `BLOCK_SIZE` 误读为线程数或把 `tl.sum` 想成单线程循环。
+
+多 program 版本固定第一阶段 tile 为 256。Host 侧分配 `partial` 并启动第一阶段；每个 program 把自己的归约值写入不同的 `partial[pid]`：
+
+~~~python
+BLOCK_SIZE = 256
+num_blocks = triton.cdiv(N, BLOCK_SIZE)
+partial = torch.empty(
+    (num_blocks,), device=input.device, dtype=torch.float32,
+)
+kernel[(num_blocks,)](input, partial, N, BLOCK_SIZE=BLOCK_SIZE, num_warps=4)
+~~~
+
+第一阶段 kernel 内用 program id 区分写回位置。下面这一行属于 `@triton.jit` kernel；它写入当前 program 自己的 partial：
+
+~~~python
+tl.store(output_ptr + tl.program_id(0), tl.sum(input))
+~~~
+
+第二阶段的 launch 属于 Python host 侧。它以有效 partial 数作为输入长度，并选择覆盖该长度的二次幂 tile：
+
+~~~python
+kernel[(1,)](
+    partial, output, num_blocks,
+    BLOCK_SIZE=triton.next_power_of_2(num_blocks), num_warps=4,
+)
+~~~
+
+`partial` 由 `torch.empty` 分配即可，因为第一阶段会覆写每个有效 partial；无需先清零。两个 kernel 在同一 CUDA stream 中顺序提交，第二阶段按序读取第一阶段写入的数据。输入数组位于全局地址空间；通常 `tl.load` 的值由线程放在寄存器中参与运算，具体元素到线程/寄存器的布局由编译器决定。L1/L2 命中描述缓存层次的实际访问，不会改变数组的地址空间属性。
+
+以 `N=1025` 为例，第一阶段有 `ceil(1025/256)=5` 个 program，分别写出 5 个 partial。第二阶段有效长度是 5，因此 `next_power_of_2(5)=8`；tile 的最后 3 个逻辑位置超过有效长度，load mask 使这些位置读取加法单位元 0，最终得到这 5 个 partial 的总和。这里的 3 指逻辑位置数，不是固定的硬件 lane 数。此代码只有两个阶段；若输入极大，第二阶段 tile 仍会变大，所以它不构成适用于任意规模的递归多级归约。
+
+本节的 correctness-only 检查使用正长度、连续 FP32 输入和 shape `(1,)` 输出，覆盖边界长度及全零、全一、正负交替和有界随机数据；以 FP64 求和为参考，整数样例要求精确相等，随机样例使用固定 `atol=2e-4, rtol=2e-5`。从仓库根目录运行：
+
+~~~bash
+python solutions/triton/reduction_check.py --correctness-only
+~~~
+
+CPU 索引/分组模拟仅是独立数学模型，不核验 Triton 编译器、`tl.sum` 实际 lowering 或 GPU 执行；本节不提供性能结论。
+
 ## 4. 从已有 1D Softmax 归档代码理解 partial 合并
 
 已有 solutions/triton/fused_softmax.py 是 LeetGPU Softmax 的 1D、三阶段归档版本。它不是本章 row-wise kernel，也不能用“已经有 Softmax 通过记录”替代 `[R,D]` row-wise 的正确性或性能验证。下面保留三个关键函数的连续原样片段；构建脚本会用 `source-check` 将正文片段与文件内容逐字核对。
@@ -600,7 +664,7 @@ LeetGPU 题面以平台当前页面为准；#4/#50/#113 当前只给 [LeetGPU Ch
 
 ## 服务器：真实性能
 
-服务器实验的前置是 LeetGPU 题面正确性与原始 `solve`/kernel 归档，再有独立 reference 和多 shape 正确性结果。下面的验证脚本提供可复用的 Triton/PyTorch forward 检查与 kernel-only 计时；计时排除 JIT compile、首次分配、finite preflight 和 wrapper 参数检查。
+服务器正确性可对本地快照单独执行，并独立记录结果；它不替代 LeetGPU 题面正确性与原始代码归档。进入真实性能测量前，应先完成题面正确性、归档当前平台 `solve`/kernel，并建立同语义 reference 和多 shape correctness。下面的验证脚本提供可复用的 Triton/PyTorch forward 检查与 kernel-only 计时；计时排除 JIT compile、首次分配、finite preflight 和 wrapper 参数检查。
 
 从仓库根目录，在具备 CUDA、PyTorch 和 Triton 的环境中执行：
 

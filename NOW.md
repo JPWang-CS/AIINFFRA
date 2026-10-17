@@ -12,7 +12,13 @@
 
 课程网页是预生成的静态文件。在文件管理器中双击 `roadmap\curriculum\gpu\course-site\index.html`，用浏览器阅读；不需要启动本机服务。若 Codex 内点击 Markdown 链接只显示 HTML 源码，请用文件管理器打开同一文件。
 
-## 实践线：GPU 基础阅读
+## 实践线：Triton Reduction
+
+实践焦点转到 Triton Reduction，状态为 `WIP`。GPU 基础阅读位置仍是[第 4 章《线程协作、同步与异步执行》](./roadmap/curriculum/gpu/course-site/index.html?chapter=4)，尚未据此标记整章读完；Reduction 的[单元卡](./notes/triton/reduction-2026-10-17.md)记录题目入口、两个用户代码快照、平台/服务器状态与下一步。
+
+NVIDIA L20X 服务器 correctness-only 已通过 76/76；该结果只记录服务器执行，不替代 LeetGPU #4 平台证据。下一步按当前平台题面独立实现并归档通过代码。GPU 正确性入口为 `python solutions/triton/reduction_check.py --correctness-only`，只做 correctness，不 benchmark；本轮未测性能。
+
+## GPU 基础阅读
 
 当前阅读位置为[第 4 章《线程协作、同步与异步执行》](./roadmap/curriculum/gpu/course-site/index.html?chapter=4)。入口只标记当前阅读位置，不代表该章或此前所有章节已完成。课程路由见[GPU 硬件与性能基础](./roadmap/curriculum/gpu/README.md)。
 

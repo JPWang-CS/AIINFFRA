@@ -1,0 +1,2 @@
+AST parse passed: /home/LiuYan/w00939120/aiinffra-test/runs/reduction-check-20261017-01a01efb/source/reduction_single_block.py /home/LiuYan/w00939120/aiinffra-test/runs/reduction-check-20261017-01a01efb/source/reduction_multi_block.py /home/LiuYan/w00939120/aiinffra-test/runs/reduction-check-20261017-01a01efb/source/reduction_check.py
+CPU index/grouping simulation passed: 76 cases; no GPU execution performed

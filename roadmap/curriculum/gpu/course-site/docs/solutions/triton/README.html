@@ -1,4 +1,4 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Triton 实现 · AIINFFRA 附属文档</title><script src="../../../theme.js?v=3aab643066da"></script><link rel="stylesheet" href="../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../styles.css?v=deca86f54b40"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../index.html?chapter=1">返回课程</a></nav><button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换到浅色模式">浅色</button></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · solutions/triton/README.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E5%BD%93%E5%89%8D%E8%BF%9B%E5%BA%A6">当前进度</a></li><li><a href="#matrix-transpose-v2-%E6%9C%8D%E5%8A%A1%E5%99%A8%E8%BF%90%E8%A1%8C">Matrix Transpose V2 服务器运行</a></li><li><a href="#matmul-leetgpu-%E5%85%A5%E5%8F%A3">MatMul LeetGPU 入口</a></li><li><a href="#matmul-leetgpu-%E5%BD%92%E6%A1%A3%E7%BB%93%E6%9E%9C">MatMul LeetGPU 归档结果</a></li><li><a href="#vector-add-benchmark">Vector Add benchmark</a></li><li><a href="#matmul-benchmark">MatMul benchmark</a></li><li><a href="#matmul-%E9%85%8D%E7%BD%AE-sweep2026-08-26">MatMul 配置 sweep（2026-08-26）</a></li><li><a href="#matmul-nsight-systems-p0-lite2026-08-30">MatMul Nsight Systems P0-lite（2026-08-30）</a></li><li><a href="#%E8%A7%84%E5%88%99">规则</a></li><li><a href="#%E9%AA%8C%E8%AF%81%E5%91%BD%E4%BB%A4">验证命令</a></li><li><a href="#%E5%8F%82%E8%80%83">参考</a></li></ol></nav><div class="markdown-body"><h1 id="triton-实现">Triton 实现<a class="heading-anchor" href="#triton-%E5%AE%9E%E7%8E%B0" aria-label="链接到Triton 实现">#</a></h1>
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Triton 实现 · AIINFFRA 附属文档</title><script src="../../../theme.js?v=3aab643066da"></script><link rel="stylesheet" href="../../../vendor/katex/katex.min.css"><link rel="stylesheet" href="../../../styles.css?v=deca86f54b40"></head><body class="doc-page"><header class="topbar"><a class="site-name" href="../../../index.html?chapter=1">AIINFFRA</a><nav><a href="../../../index.html?chapter=1">返回课程</a></nav><button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换到浅色模式">浅色</button></header><main class="content doc-content"><div class="breadcrumb">附属阅读文档 · solutions/triton/README.md</div><nav class="chapter-outline" aria-label="附属文档目录"><p>目录</p><ol><li><a href="#%E5%BD%93%E5%89%8D%E8%BF%9B%E5%BA%A6">当前进度</a></li><li><a href="#matrix-transpose-v2-%E6%9C%8D%E5%8A%A1%E5%99%A8%E8%BF%90%E8%A1%8C">Matrix Transpose V2 服务器运行</a></li><li><a href="#matrix-transpose-v2-%E5%A4%96%E9%83%A8-nsight-systems-%E9%87%87%E9%9B%86">Matrix Transpose V2 外部 Nsight Systems 采集</a></li><li><a href="#matmul-leetgpu-%E5%85%A5%E5%8F%A3">MatMul LeetGPU 入口</a></li><li><a href="#matmul-leetgpu-%E5%BD%92%E6%A1%A3%E7%BB%93%E6%9E%9C">MatMul LeetGPU 归档结果</a></li><li><a href="#vector-add-benchmark">Vector Add benchmark</a></li><li><a href="#matmul-benchmark">MatMul benchmark</a></li><li><a href="#matmul-%E9%85%8D%E7%BD%AE-sweep2026-08-26">MatMul 配置 sweep（2026-08-26）</a></li><li><a href="#matmul-nsight-systems-p0-lite2026-08-30">MatMul Nsight Systems P0-lite（2026-08-30）</a></li><li><a href="#%E8%A7%84%E5%88%99">规则</a></li><li><a href="#%E9%AA%8C%E8%AF%81%E5%91%BD%E4%BB%A4">验证命令</a></li><li><a href="#%E5%8F%82%E8%80%83">参考</a></li></ol></nav><div class="markdown-body"><h1 id="triton-实现">Triton 实现<a class="heading-anchor" href="#triton-%E5%AE%9E%E7%8E%B0" aria-label="链接到Triton 实现">#</a></h1>
 <blockquote><p>位置：这里保存用户的可执行版本和明确标记的 <code>WIP</code> 快照；当前转置单元的题目、平台代码和验收入口见 <a href="../../notes/triton/transpose-v2-2026-10-13.html">Matrix Transpose 单元卡</a>。
 计划入口：<a href="../../roadmap/ai-infra-curriculum.html">roadmap/ai-infra-curriculum.md</a> M2</p>
 </blockquote><h2 id="当前进度">当前进度<a class="heading-anchor" href="#%E5%BD%93%E5%89%8D%E8%BF%9B%E5%BA%A6" aria-label="链接到当前进度">#</a></h2>
@@ -12,16 +12,46 @@
 </tr>
 </thead>
 <tbody><tr>
+<td><a href="reduction_single_block.py"><code>reduction_single_block.py</code></a></td>
+<td>Reduction：单 program 覆盖 N 的用户对话快照</td>
+<td>文件头注明尚无平台提交证据</td>
+<td>NVIDIA L20X correctness 覆盖 9 个 N × 4 种输入；LeetGPU 未提交；<a href="../../notes/triton/logs/2026-10-17-reduction-nvidia-l20x.txt">日志</a></td>
+</tr>
+<tr>
+<td><a href="reduction_multi_block.py"><code>reduction_multi_block.py</code></a></td>
+<td>Reduction：256 元素 partial + 第二阶段合并的用户对话快照</td>
+<td>文件头注明尚无平台提交证据</td>
+<td>NVIDIA L20X correctness 覆盖 10 个 N × 4 种输入；LeetGPU 未提交；<a href="../../notes/triton/logs/2026-10-17-reduction-nvidia-l20x.txt">日志</a></td>
+</tr>
+<tr>
+<td><a href="reduction_check.py"><code>reduction_check.py</code></a></td>
+<td>两份快照的 correctness-only GPU 入口与 stdlib CPU 独立索引/分组模型</td>
+<td>服务器校验工具，不是平台 kernel</td>
+<td>GPU correctness 76/76，未 benchmark；逐例与机器收据见<a href="../../notes/triton/logs/2026-10-17-reduction-nvidia-l20x.txt">记录</a></td>
+</tr>
+<tr>
 <td><a href="transpose_bench.py"><code>transpose_bench.py</code></a></td>
-<td>转置 V2 服务器正确性与 CUDA event 计时入口；调用原始平台通过版</td>
+<td>转置 V2 正确性与 CUDA event 计时入口；调用原始平台通过版</td>
 <td>复用 <code>transpose_v2_leetgpu.py</code>，不包含另一份 kernel</td>
-<td>服务器待测；支持 <code>--correctness-only</code> 和可配置尺寸</td>
+<td>五个服务器小尺寸正确性通过；AutoDL RTX 4090 的 CUDA-event 计时由用户提供并已归档；本服务器 CUDA-event benchmark 未验证</td>
+</tr>
+<tr>
+<td><a href="transpose_profile.py"><code>transpose_profile.py</code></a></td>
+<td>供外部 profiler 启动的转置 workload；复用原始 <code>solve</code>，应用 API 只标记采集范围</td>
+<td>不自行计时；profile 前完成正确性、JIT 和 warmup</td>
+<td>本服务器 NCU kernel replay 已通过；AutoDL Nsight Systems 100 次 kernel 统计由用户提供并已归档</td>
+</tr>
+<tr>
+<td><a href="../../scripts/profile-transpose-nsys.sh"><code>profile-transpose-nsys.sh</code></a></td>
+<td>在已启动的个人 tmux 内运行的 Nsight Systems runner</td>
+<td>每次创建独立任务目录并保存命令、日志、报告、stats 与退出码</td>
+<td>runner 本身尚无实际运行证据</td>
 </tr>
 <tr>
 <td><a href="transpose_v2_leetgpu.py"><code>transpose_v2_leetgpu.py</code></a></td>
 <td>Triton Matrix Transpose V2，32×32 tile；LeetGPU 原始通过代码</td>
-<td><code>LEETGPU_PASS</code>：2026-10-13，SuccessPublicTrace</td>
-<td>0.33 ms，50.5th percentile；服务器待测</td>
+<td><code>GPU_VALIDATED</code>（含 <code>LEETGPU_PASS</code>）：2026-10-13 平台通过；2026-10-15 服务器小尺寸与 4096×4096 FP32 正确性通过</td>
+<td>平台 0.33 ms，50.5th percentile；服务器 NCU 诊断记录见<a href="../../notes/triton/transpose-performance-2026-10-15.html">性能验证</a>，不作为正式 benchmark</td>
 </tr>
 <tr>
 <td><a href="transpose_v2.py"><code>transpose_v2.py</code></a></td>
@@ -82,7 +112,55 @@
 <p>在已安装 CUDA 版 PyTorch 和 Triton 的服务器环境中，从仓库根目录执行：</p>
 <div class="code-panel"><div class="code-caption"><span>BASH</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-bash"><span class="code-line" data-line="1">python solutions/triton/transpose_bench.py --rows 37 --cols 65 --correctness-only</span>
 <span class="code-line" data-line="2">python solutions/triton/transpose_bench.py --rows 4096 --cols 4096 --warmup 20 --repeats 100</span></code></pre></div>
-<p>第一条检查五组边界尺寸；第二条还会检查指定的大矩阵，再比较 V2 和预分配输出上的 <code>output.copy_(input.T)</code>。脚本打印 GPU、版本、shape、stride、dtype、计时条件、平均 ms 和有效 GB/s。该脚本的本地静态检查不代表服务器验证通过。</p>
+<p>第一条检查五组边界尺寸；第二条还会检查指定的大矩阵，再比较 V2 和预分配输出上的 <code>output.copy_(input.T)</code>。脚本打印 GPU、版本、shape、stride、dtype、计时条件、平均 ms 和有效 GB/s。2026-10-15 服务器验证与 NCU 诊断结果见<a href="../../notes/triton/transpose-performance-2026-10-15.html">性能验证记录</a>；后续模型和多算子实践再按真实工作负载开展极致优化，不单独推进此处的参数扫描。</p>
+<h3 id="matrix-transpose-v2-外部-nsight-systems-采集">Matrix Transpose V2 外部 Nsight Systems 采集<a class="heading-anchor" href="#matrix-transpose-v2-%E5%A4%96%E9%83%A8-nsight-systems-%E9%87%87%E9%9B%86" aria-label="链接到Matrix Transpose V2 外部 Nsight Systems 采集">#</a></h3>
+<p><code>transpose_profile.py</code> 由外部 <code>nsys</code> 启动，NVTX 的 <code>transpose/triton</code> 与 <code>transpose/pytorch</code> 始终标识两段 workload；仅传入 <code>--capture-profiler-api</code> 时，CUDA Profiler API 才控制 capture-range。应用不自行计时，也不使用 <code>torch.profiler</code>。输入是连续 FP32 矩阵，输出是预分配的连续 FP32 矩阵；PyTorch 对照通过 <code>out.copy_(x.T)</code> 物化转置。采集前，两种实现分别完成 bitwise 正确性检查、JIT 和 warmup。</p>
+<p>在 AutoDL 当前终端先执行第一段。它记录当前解释器的绝对路径，创建个人根目录，并用独立 socket 启动前台 tmux。若同名会话已存在，只提示 attach，避免重复运行任务。新 shell 启动时清除 <code>BASH_ENV</code> 并禁用 history，不读取 HOME 下的 shell 启动文件：</p>
+<div class="code-panel"><div class="code-caption"><span>BASH</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-bash"><span class="code-line" data-line="1">( <span class="hljs-built_in">set</span> -e</span>
+<span class="code-line" data-line="2">PERSONAL_ROOT=/root/autodl-tmp/w00939120</span>
+<span class="code-line" data-line="3">PROFILE_PYTHON=$(<span class="hljs-built_in">command</span> -v python)</span>
+<span class="code-line" data-line="4"><span class="hljs-keyword">case</span> <span class="hljs-string">&quot;<span class="hljs-variable">$PROFILE_PYTHON</span>&quot;</span> <span class="hljs-keyword">in</span> /*) ;; *) <span class="hljs-built_in">printf</span> <span class="hljs-string">&#x27;python path is not absolute: %s\n&#x27;</span> <span class="hljs-string">&quot;<span class="hljs-variable">$PROFILE_PYTHON</span>&quot;</span> &gt;&amp;2; <span class="hljs-built_in">exit</span> 1 ;; <span class="hljs-keyword">esac</span></span>
+<span class="code-line" data-line="5"><span class="hljs-built_in">test</span> -x <span class="hljs-string">&quot;<span class="hljs-variable">$PROFILE_PYTHON</span>&quot;</span></span>
+<span class="code-line" data-line="6"><span class="hljs-built_in">command</span> -v tmux &gt;/dev/null || { <span class="hljs-built_in">printf</span> <span class="hljs-string">&#x27;tmux is unavailable\n&#x27;</span> &gt;&amp;2; <span class="hljs-built_in">exit</span> 1; }</span>
+<span class="code-line" data-line="7"><span class="hljs-built_in">mkdir</span> -p <span class="hljs-string">&quot;<span class="hljs-variable">$PERSONAL_ROOT</span>&quot;</span> || <span class="hljs-built_in">exit</span> 1</span>
+<span class="code-line" data-line="8"><span class="hljs-built_in">test</span> -d <span class="hljs-string">&quot;<span class="hljs-variable">$PERSONAL_ROOT</span>&quot;</span> &amp;&amp; <span class="hljs-built_in">test</span> ! -L <span class="hljs-string">&quot;<span class="hljs-variable">$PERSONAL_ROOT</span>&quot;</span></span>
+<span class="code-line" data-line="9">PERSONAL_ROOT=$(<span class="hljs-built_in">cd</span> <span class="hljs-string">&quot;<span class="hljs-variable">$PERSONAL_ROOT</span>&quot;</span> &amp;&amp; <span class="hljs-built_in">pwd</span> -P) || <span class="hljs-built_in">exit</span> 1</span>
+<span class="code-line" data-line="10">REPO_ROOT=<span class="hljs-string">&quot;<span class="hljs-variable">$PERSONAL_ROOT</span>/AIINFFRA&quot;</span></span>
+<span class="code-line" data-line="11"><span class="hljs-built_in">export</span> PERSONAL_ROOT REPO_ROOT PROFILE_PYTHON</span>
+<span class="code-line" data-line="12"><span class="hljs-built_in">mkdir</span> -p <span class="hljs-string">&quot;<span class="hljs-variable">$PERSONAL_ROOT</span>/tmp&quot;</span></span>
+<span class="code-line" data-line="13"><span class="hljs-built_in">test</span> -d <span class="hljs-string">&quot;<span class="hljs-variable">$PERSONAL_ROOT</span>/tmp&quot;</span> &amp;&amp; <span class="hljs-built_in">test</span> ! -L <span class="hljs-string">&quot;<span class="hljs-variable">$PERSONAL_ROOT</span>/tmp&quot;</span></span>
+<span class="code-line" data-line="14"><span class="hljs-keyword">if</span> <span class="hljs-built_in">env</span> -u BASH_ENV HISTFILE=/dev/null HISTSIZE=0 HISTFILESIZE=0 TMPDIR=<span class="hljs-string">&quot;<span class="hljs-variable">$PERSONAL_ROOT</span>/tmp&quot;</span> \</span>
+<span class="code-line" data-line="15">  tmux -f /dev/null -S <span class="hljs-string">&quot;<span class="hljs-variable">$PERSONAL_ROOT</span>/.tmux.sock&quot;</span> has-session -t transpose-nsys 2&gt;/dev/null; <span class="hljs-keyword">then</span></span>
+<span class="code-line" data-line="16">  <span class="hljs-built_in">printf</span> <span class="hljs-string">&#x27;Existing session: tmux -f /dev/null -S %s/.tmux.sock attach -t transpose-nsys\n&#x27;</span> <span class="hljs-string">&quot;<span class="hljs-variable">$PERSONAL_ROOT</span>&quot;</span></span>
+<span class="code-line" data-line="17"><span class="hljs-keyword">else</span></span>
+<span class="code-line" data-line="18">  <span class="hljs-built_in">env</span> -u BASH_ENV HISTFILE=/dev/null HISTSIZE=0 HISTFILESIZE=0 TMPDIR=<span class="hljs-string">&quot;<span class="hljs-variable">$PERSONAL_ROOT</span>/tmp&quot;</span> \</span>
+<span class="code-line" data-line="19">    tmux -f /dev/null -S <span class="hljs-string">&quot;<span class="hljs-variable">$PERSONAL_ROOT</span>/.tmux.sock&quot;</span> new-session -c <span class="hljs-string">&quot;<span class="hljs-variable">$PERSONAL_ROOT</span>&quot;</span> -s transpose-nsys \</span>
+<span class="code-line" data-line="20">    -e <span class="hljs-string">&quot;PERSONAL_ROOT=<span class="hljs-variable">$PERSONAL_ROOT</span>&quot;</span> -e <span class="hljs-string">&quot;REPO_ROOT=<span class="hljs-variable">$REPO_ROOT</span>&quot;</span> -e <span class="hljs-string">&quot;PROFILE_PYTHON=<span class="hljs-variable">$PROFILE_PYTHON</span>&quot;</span> \</span>
+<span class="code-line" data-line="21">    -e HISTFILE=/dev/null -e HISTSIZE=0 -e HISTFILESIZE=0 -e BASH_ENV= -e <span class="hljs-string">&quot;TMPDIR=<span class="hljs-variable">$PERSONAL_ROOT</span>/tmp&quot;</span> \</span>
+<span class="code-line" data-line="22">    <span class="hljs-string">&#x27;env -u BASH_ENV HISTFILE=/dev/null HISTSIZE=0 HISTFILESIZE=0 bash --noprofile --norc -i&#x27;</span></span>
+<span class="code-line" data-line="23"><span class="hljs-keyword">fi</span></span>
+<span class="code-line" data-line="24">)</span></code></pre></div>
+<p>确认已进入该 tmux 后，再粘贴第二段。它只在个人目录克隆仓库；已有 checkout 必须干净，并且只允许 fast-forward 更新。旧目录 <code>~/autodl-tmp/Learn/AIINFFRA</code> 不参与操作。runner 使用第一段保存的同一 Python 解释器：</p>
+<div class="code-panel"><div class="code-caption"><span>BASH</span><button class="copy-code" type="button" aria-label="复制本段代码">复制</button></div><pre tabindex="0"><code class="hljs language-bash"><span class="code-line" data-line="1">( <span class="hljs-built_in">set</span> -e</span>
+<span class="code-line" data-line="2">  <span class="hljs-built_in">set</span> +o <span class="hljs-built_in">history</span></span>
+<span class="code-line" data-line="3">  <span class="hljs-built_in">export</span> HISTFILE=/dev/null HISTSIZE=0 HISTFILESIZE=0</span>
+<span class="code-line" data-line="4">  PERSONAL_ROOT=<span class="hljs-variable">${PERSONAL_ROOT:?PERSONAL_ROOT was not passed into tmux}</span></span>
+<span class="code-line" data-line="5">  REPO_ROOT=<span class="hljs-variable">${REPO_ROOT:?REPO_ROOT was not passed into tmux}</span></span>
+<span class="code-line" data-line="6">  PROFILE_PYTHON=<span class="hljs-variable">${PROFILE_PYTHON:?PROFILE_PYTHON was not passed into tmux}</span></span>
+<span class="code-line" data-line="7">  <span class="hljs-keyword">if</span> [[ -d <span class="hljs-string">&quot;<span class="hljs-variable">$REPO_ROOT</span>/.git&quot;</span> ]]; <span class="hljs-keyword">then</span></span>
+<span class="code-line" data-line="8">    <span class="hljs-built_in">cd</span> <span class="hljs-string">&quot;<span class="hljs-variable">$REPO_ROOT</span>&quot;</span></span>
+<span class="code-line" data-line="9">    [[ -z $(git status --porcelain) ]] || { <span class="hljs-built_in">printf</span> <span class="hljs-string">&#x27;Repository is dirty; stopping without updating it.\n&#x27;</span> &gt;&amp;2; <span class="hljs-built_in">exit</span> 1; }</span>
+<span class="code-line" data-line="10">    git pull --ff-only</span>
+<span class="code-line" data-line="11">  <span class="hljs-keyword">else</span></span>
+<span class="code-line" data-line="12">    git <span class="hljs-built_in">clone</span> https://github.com/JPWang-CS/AIINFFRA.git <span class="hljs-string">&quot;<span class="hljs-variable">$REPO_ROOT</span>&quot;</span></span>
+<span class="code-line" data-line="13">  <span class="hljs-keyword">fi</span></span>
+<span class="code-line" data-line="14">  <span class="hljs-built_in">cd</span> <span class="hljs-string">&quot;<span class="hljs-variable">$REPO_ROOT</span>&quot;</span></span>
+<span class="code-line" data-line="15">  bash --noprofile --norc scripts/profile-transpose-nsys.sh \</span>
+<span class="code-line" data-line="16">    --personal-root <span class="hljs-string">&quot;<span class="hljs-variable">$PERSONAL_ROOT</span>&quot;</span> --repo-root <span class="hljs-string">&quot;<span class="hljs-variable">$REPO_ROOT</span>&quot;</span> --python <span class="hljs-string">&quot;<span class="hljs-variable">$PROFILE_PYTHON</span>&quot;</span> \</span>
+<span class="code-line" data-line="17">    --rows 4096 --cols 4096 --warmup 20 --repeats 100 --impl both</span>
+<span class="code-line" data-line="18">)</span></code></pre></div>
+<p>每轮运行在 <code>$PERSONAL_ROOT/runs/transpose-nsys-UTC-PID/</code> 创建新目录，保存 <code>command.sh</code>、<code>task.log</code>、<code>environment.txt</code>、<code>transpose.nsys-rep</code>、<code>stats.txt</code> 和独立退出码。<code>stats.txt</code> 汇总 CUDA kernel 与 NVTX；runner 会核对 workload 完成标记和报告文件。CUDA-event baseline 仍由上面的 <code>transpose_bench.py</code> 单独测量；Nsight Systems 的采集时间不作为 benchmark。</p>
+<p>接口依据：<a href="https://docs.nvidia.com/nsight-systems/UserGuide/index.html">Nsight Systems User Guide</a>；<a href="https://github.com/pytorch/pytorch/blob/v2.12.1/torch/cuda/profiler.py">PyTorch v2.12.1 CUDA Profiler API</a>。</p>
 <h3 id="matmul-leetgpu-入口">MatMul LeetGPU 入口<a class="heading-anchor" href="#matmul-leetgpu-%E5%85%A5%E5%8F%A3" aria-label="链接到MatMul LeetGPU 入口">#</a></h3>
 <p>当前 MatMul 题目是 <a href="https://leetgpu.com/challenges/matrix-multiplication">LeetGPU Matrix Multiplication</a>，题目规格见 <a href="https://github.com/HaoyangPing0324/LeetGPU/blob/main/problems/02_Matrix_Multiplication.md">02_Matrix_Multiplication.md</a>。要求是 FP32、row-major、A(M×N) × B(N×K) = C(M×K)，性能形状为 M=8192、N=6144、K=4096。平台原始代码已归档为 <a href="matmul_leetgpu.py"><code>matmul_leetgpu.py</code></a>，服务器适配版继续独立记录真实性能。</p>
 <p>LeetGPU 最终代码与服务器适配版分开保存：<a href="matmul_leetgpu.py"><code>matmul_leetgpu.py</code></a> 是通过后原样归档的原始平台 <code>solve</code>/kernel；<a href="matmul.py"><code>matmul.py</code></a> 是服务器正确性和性能验证版。历史 <a href="matmul_leetgpu_wip.py"><code>matmul_leetgpu_wip.py</code></a> 保留默认 TF32 导致精度失败的过程证据。</p>

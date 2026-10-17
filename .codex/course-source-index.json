@@ -441,6 +441,7 @@
     "roadmap/curriculum/operators/03-gemm/README.md": ["notes/triton/matmul-performance-analysis.md", "notes/triton/logs/2026-08-29-matmul-k256-s3-nsys.txt", "notes/triton/logs/2026-08-30-matmul-k256-s2-nsys.txt", "solutions/triton/README.md", "solutions/triton/matmul.py", "solutions/triton/matmul_leetgpu.py"],
     "roadmap/curriculum/gpu/01-gpu-hardware-map-and-generations/README.md": ["solutions/triton/README.md", "solutions/triton/matmul_leetgpu.py"],
     "roadmap/curriculum/gpu/05-performance-analysis-and-optimization/README.md": ["notes/triton/matmul-performance-analysis.md", "notes/triton/matmul-nsys-p0-lite-2026-08-30.md", "solutions/triton/README.md", "solutions/triton/matmul.py", "lessons/07-triton-debugging.md", "roadmap/curriculum/gpu/05-resource-model-occupancy-and-roofline/README.md"],
+    "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/README.md": ["roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/examples/graph_execution_modes.py"],
     "roadmap/curriculum/operators/01-memory-and-layout/README.md": ["solutions/triton/README.md"]
   },
   "lessons": {
@@ -665,7 +666,23 @@
       ],
       "referenceParagraphs": [
         "本章沿 CUDA Programming Guide 13.3 展开。手册目录中的印刷页脚与 PDF 页相差 16 页，例如印刷页 271 对应 PDF 第 287 页。相关原文位置是：§2.5 Asynchronous Execution（印刷页 101–115，PDF 117–131）、§4.4 Cooperative Groups（271–275，PDF 287–291）、§4.9 Asynchronous Barriers（304–320，PDF 320–336）、§4.10 Pipelines（323–329，PDF 339–345）、§4.11 Asynchronous Data Copies（331–372，PDF 347–388）、§4.14 Memory Synchronization Domains（388–389，PDF 404–405）以及 §5.7 CUDA C++ Memory Model（671–675，PDF 687–691）。本地手册入口为 [`downloads/cuda-programming-guide.pdf`](../../../../downloads/cuda-programming-guide.pdf)。"
-      ]
+      ],
+      "section_10_execution_modes": {
+        "scope": "Section 10: one FP32 pointwise chain compared across Eager, torch.compile, and explicit CUDA Graph replay.",
+        "official_sources": [
+          "https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/cuda-graphs.html",
+          "https://docs.pytorch.org/docs/stable/generated/torch.compile",
+          "https://docs.pytorch.org/tutorials/recipes/recipes/tuning_guide.html",
+          "https://pytorch.org/blog/accelerating-pytorch-with-cuda-graphs/",
+          "https://docs.pytorch.org/docs/main/user_guide/torch_compiler/torch.compiler_cudagraph_trees.html"
+        ],
+        "figures": [
+          "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/figures/graph-execution-paths.png",
+          "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/figures/graph-static-buffers.png"
+        ],
+        "example": "roadmap/curriculum/gpu/04-synchronization-and-asynchronous-execution/examples/graph_execution_modes.py",
+        "verification": "CPU FP32 reference and shape check only; static DOM, formula, asset, and source excerpt checks. CUDA compile/capture, device correctness, profiler, and performance were not run."
+      }
     },
     "roadmap/curriculum/gpu/05-performance-analysis-and-optimization/README.md": {
       "references": [

@@ -7,6 +7,8 @@
 
 ## 0. 最后更新
 
+- 2026-10-17（保存用户对话中的 Triton Reduction 单 block 与两阶段多 block 原样快照，新增独立 correctness-only 入口及 CPU 独立分组模型；算子正文融合 host/kernel 边界、协作归约、partial 和 `N=1025` 例子，并新增单元卡、讨论记录及周报。NVIDIA L20X（CC 9.0，CUDA 12.6，PyTorch 2.13.0+cu126，Triton 3.7.1）上单 block 36/36、多 block 40/40；随机样例固定 `atol=2e-4, rtol=2e-5`，精确整数样例逐项相等；退出码 0，无性能 benchmark。完整收据见 `notes/triton/logs/2026-10-17-reduction-nvidia-l20x.txt`。LeetGPU 尚无新通过证据，状态保持 `WIP`，服务器 correctness 不替代平台状态。实践焦点转为 Reduction，GPU 基础阅读仍在第 4 章，论文线 MLA 不变；未改原 transpose/matmul/softmax 实现或 GPU 第 4 章并发源文件。）
+- 2026-10-16（第 4 章第 10 节补入同一 FP32 pointwise 链的 Eager、`torch.compile` 与 CUDA Graph 教程、CPU 正确性例程和两张配图；旧锚点与高级 C++ 内容保留。GPU correctness 与性能测量留到模型/多算子阶段。详见[讨论与验证边界](./roadmap/curriculum/decisions/2026-10-16-graph-execution-modes.md)。）
 - 2026-10-15（收口 Triton Matrix Transpose V2：LeetGPU 原始通过版继续保留，状态由 `LEETGPU_PASS` 推进为 `GPU_VALIDATED`；新私有环境五个小尺寸 FP32 检查及 4096×4096 FP32 NCU workload 正确性通过。NCU kernel replay 报告完成、退出码 0；32.224 μs 是 profiler 诊断采集时长，不列为正式 benchmark。集中记录保留环境、shape/launch、指标释义、AutoDL 用户提供的独立计时结果与失败路径边界；原始 NCU 文本单独归档。当前阅读入口改为 GPU 课程第 4 章《线程协作、同步与异步执行》，不推断该章或第 3 章已完成。用户决定极致优化留待后续模型实现与多算子组合按真实工作负载开展，本阶段不继续单算子调参；论文线 MLA 不变。PATH/NOW、单元卡、Triton README、周报及讨论路由已同步；未改课程正文、源码、环境或其他并发文件。）
 
 - 2026-10-15（新增外部 Nsight Systems 转置采集入口：`solutions/triton/transpose_profile.py` 复用原始 LeetGPU `solve`，CUDA Profiler API/NVTX 只控制采集边界与标识；`scripts/profile-transpose-nsys.sh` 要求个人 tmux socket，在个人根目录创建独立任务收据并分别记录 profile、stats 和总退出码。README 补充个人 tmux 运行方式与固定输出语义。本地 CPU/mock、shell 语法与参数边界检查通过；未连接服务器、未运行 Nsight Systems、未使用 GPU或安装依赖。原 kernel、CUDA-event baseline、PATH/NOW 和现有环境未改。）
@@ -388,3 +390,10 @@ roadmap/leetgpu-ladder.md        # 可选 CUDA 深钻
 - 第一章第 6 节改为“概念辨析与常见问题”，继续使用现有 CUDA Vector Add、Triton Vector Add 和 MatMul 片段；完整 CUDA 示例注释只描述代码用途，代码块与 `.cu` 文件仍由构建检查一致。
 - 课程站构建器只发布第一章，不再生成后续章节占位文章、旧稿侧栏、WIP footer 或讨论链接；构建检查 HTML 可见管理词泄漏，并检查 `__global__` 以 `<code>` 形式渲染。
 - 本次没有修改 `PATH.md`、`NOW.md`、`solutions/`，没有运行真实 GPU；浏览器连接失败，因此只进行 HTTP、生成内容、语法和源文件一致性检查，不宣称视觉验收。
+
+## 11. 2026-10-16 Eager、torch.compile 与 CUDA Graph
+
+- 第 4 章第 10 节改名为“图模式：Eager、torch.compile 与 CUDA Graph”，新旧主节标题共用 ID 36；补入统一 FP32 pointwise 链，解释 Eager 提交、Inductor 编译融合与 CUDA Graph 固定地址重放的不同层次，原 CUDA C++ 示例及 0–64 旧 ID 保留。
+- 配套 Python 例程检查三条执行路径和三批不同输入；`--cpu-check` 只检查 CPU 参考语义。真实 GPU 正确性、profiler 与端到端性能测量留到模型和多算子阶段。
+- 两张课程图由内置 ImageGen 生成，原始图片保留在用户生成目录；正式图及生成提示摘要、来源和 SHA-256 记在本章 figures 目录。
+- `.venv` PyTorch 元数据为 `2.7.1+cpu`；官方 API 确认 `torch.compile` 的 `options` 包含 `triton.cudagraphs` 且 `fullgraph` 约束完整捕获图。`--help`、CPU 数值/shape、AST、构建、源码摘录、正文、编辑、导航、离线入口和 132 份 HTML/5851 个本地链接检查通过。离线测试现接受有效的 chapter-only 入口，并验证有效 section、缺失 chapter 与跨章 fragment。未运行 GPU、profiler 或浏览器视觉检查。
