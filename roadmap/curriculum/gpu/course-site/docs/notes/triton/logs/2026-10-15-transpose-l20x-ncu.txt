@@ -1,0 +1,53 @@
+==WARNING== Note: Running with uncontrolled GPU caches. Profiling results may be inconsistent.
+==WARNING== Note: Running with unmodified GPU clocks. If not controlled otherwise, profiling results may be inconsistent.
+==PROF== Connected to process 3633407 (/usr/bin/python3.12)
+metadata input_shape=(4096, 4096) output_shape=(4096, 4096) input_stride=(4096, 1) output_stride=(4096, 1) dtype=torch.float32 device=NVIDIA L20X capability=9.0 torch=2.13.0+cu126 triton=3.7.1 cuda=12.6 impl=triton warmup=20 repeats=100
+==PROF== Profiling "matrix_transpose_kernel": 0%....50%....100% - 10 passes
+PROFILE_TARGET_COMPLETE correctness=PASS
+==PROF== Disconnected from process 3633407
+==PROF== Report: /home/LiuYan/w00939120/aiinffra-test/runs/kernel-replay-2026-10-15-b95c7c7cb3c0/transpose.ncu-rep
+[3633407] python3.12@127.0.0.1
+  matrix_transpose_kernel (128, 128, 1)x(128, 1, 1), Context 1, Stream 7, Device 0, CC 9.0
+    Section: GPU Speed Of Light Throughput
+    ----------------------- ----------- ------------
+    Metric Name             Metric Unit Metric Value
+    ----------------------- ----------- ------------
+    DRAM Frequency                  Ghz         3.20
+    SM Frequency                    Ghz         1.49
+    Elapsed Cycles                cycle        48262
+    Memory Throughput                 %        66.77
+    DRAM Throughput                   %        66.77
+    Duration                         us        32.22
+    L1/TEX Cache Throughput           %        39.65
+    L2 Cache Throughput               %        91.07
+    SM Active Cycles              cycle     50088.23
+    Compute (SM) Throughput           %        27.45
+    ----------------------- ----------- ------------
+
+    OPT   Memory is more heavily utilized than Compute: Look at the Memory Workload Analysis section to identify the    
+          DRAM bottleneck. Check memory replay (coalescing) metrics to make sure you're efficiently utilizing the       
+          bytes transferred. Also consider whether it is possible to do more work per memory access (kernel fusion) or  
+          whether there are values you can (re)compute.                                                                 
+
+    Section: Launch Statistics
+    -------------------------------- --------------- ---------------
+    Metric Name                          Metric Unit    Metric Value
+    -------------------------------- --------------- ---------------
+    Block Size                                                   128
+    Cluster Scheduling Policy                           PolicySpread
+    Cluster Size                                                   0
+    Function Cache Configuration                     CachePreferNone
+    Grid Size                                                  16384
+    Registers Per Thread             register/thread              25
+    Shared Memory Configuration Size           Kbyte          135.17
+    Driver Shared Memory Per Block       Kbyte/block            1.02
+    Dynamic Shared Memory Per Block      Kbyte/block            4.10
+    Static Shared Memory Per Block        byte/block               0
+    # SMs                                         SM             132
+    Stack Size                                                  1024
+    Threads                                   thread         2097152
+    # TPCs                                                        66
+    Enabled TPC IDs                                              all
+    Uses Green Context                                             0
+    Waves Per SM                                                7.76
+    -------------------------------- --------------- ---------------
